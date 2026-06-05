@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+    (function() {
+      var t = localStorage.getItem('ds_theme');
+      if (t) { document.documentElement.setAttribute('data-theme', t); }
+    })();
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Novels & Art</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root {
+      --bg: #0a0a0f; --bg2: #12121a; --bg3: #1a1a26; --bg4: #22223a;
+      --accent: #2dd4bf; --accent2: #0d9488; --gold: #f59e0b;
+      --text: #f1f0ff; --text2: #9b9bc0; --text3: #5a5a80;
+      --border: rgba(255,255,255,0.07); --red: #f87171; --green: #34d399;
+    }
+    html[data-theme="light"] {
+      --bg: #f4f4f8; --bg2: #ffffff; --bg3: #ebebf2; --bg4: #d8d8e8;
+      --accent: #0d9488; --accent2: #0f766e; --gold: #d97706;
+      --text: #0a0a0f; --text2: #3a3a5c; --text3: #7a7a9a;
+      --border: rgba(0,0,0,0.08); --red: #dc2626; --green: #059669;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background-color: var(--bg); color: var(--text); font-family: 'Lato', sans-serif; font-size: 15px; line-height: 1.6; min-height: 100vh; transition: background-color 0.3s, color 0.3s; }
+
+    /* NAV */
+    nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 32px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .logo { font-family: 'Cinzel', serif; font-size: 22px; color: var(--accent); text-decoration: none; letter-spacing: 1px; }
+    .logo span { color: var(--text); transition: color 0.3s; }
+    html[data-theme="light"] .logo span { color: #0a0a0f; }
+    .nav-left { display: flex; align-items: center; gap: 32px; }
+    .nav-btn-group { display: flex; align-items: center; gap: 8px; }
+    .nav-right { display: flex; align-items: center; gap: 8px; position: relative; }
+    .btn { padding: 8px 20px; border-radius: 8px; font-size: 14px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; border: none; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text2); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-primary { background: var(--accent2); color: white; }
+    .btn-primary:hover { background: var(--accent); color: var(--bg); }
+
+    /* SEARCH */
+    .search-dropdown-wrap { position: relative; }
+    .search-trigger-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; color: var(--text2); font-size: 13px; font-family: 'Lato', sans-serif; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; }
+    .search-trigger-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .search-dropdown { display: none; position: absolute; top: calc(100% + 10px); right: 0; width: 320px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; z-index: 200; box-shadow: 0 16px 40px rgba(0,0,0,0.4); animation: fadeDown 0.15s ease; }
+    @keyframes fadeDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+    .search-dropdown.open { display: block; }
+    .search-section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .search-field { position: relative; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .search-field i { position: absolute; left: 10px; color: var(--text3); font-size: 15px; pointer-events: none; }
+    .search-input { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 8px 32px; color: var(--text); font-size: 13px; font-family: 'Lato', sans-serif; outline: none; transition: all 0.2s; width: 100%; }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--text3); }
+    .search-go-btn { background: var(--accent2); border: none; border-radius: 6px; padding: 8px 12px; color: white; font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
+    .search-go-btn:hover { background: var(--accent); color: var(--bg); }
+    .search-divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+
+    /* DM */
+    .dm-wrap { position: relative; }
+    .dm-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; position: relative; }
+    .dm-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .dm-badge { position: absolute; top: -6px; right: -6px; background: var(--accent2); color: white; font-size: 10px; font-weight: 700; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .dm-dropdown { display: none; position: absolute; top: calc(100% + 10px); right: 0; width: 300px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; z-index: 200; box-shadow: 0 16px 40px rgba(0,0,0,0.4); animation: fadeDown 0.15s ease; overflow: hidden; }
+    .dm-dropdown.open { display: block; }
+    .dm-dropdown-header { padding: 12px 14px; border-bottom: 1px solid var(--border); font-family: 'Cinzel', serif; font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; justify-content: space-between; }
+    .dm-dropdown-header a { font-family: 'Lato', sans-serif; font-size: 12px; font-weight: 700; color: var(--accent); text-decoration: none; display: flex; align-items: center; gap: 4px; }
+    .dm-preview-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .dm-preview-item { display: flex; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 8px; cursor: pointer; transition: background 0.15s; text-decoration: none; }
+    .dm-preview-item:hover { background: var(--bg3); }
+    .dm-preview-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+    .dm-preview-body { flex: 1; min-width: 0; }
+    .dm-preview-name { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 1px; display: flex; justify-content: space-between; }
+    .dm-preview-time { font-size: 10px; color: var(--text3); font-weight: 400; }
+    .dm-preview-msg { font-size: 11px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dm-preview-item.unread .dm-preview-msg { color: var(--text2); }
+    .dm-unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+    .dm-footer { border-top: 1px solid var(--border); padding: 10px 14px; text-align: center; }
+    .dm-footer a { color: var(--accent); font-size: 12px; font-weight: 700; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 5px; }
+
+    /* NOTIFICATIONS */
+    .notif-wrap { position: relative; }
+    .notif-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; position: relative; }
+    .notif-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .notif-badge { position: absolute; top: -6px; right: -6px; background: var(--red); color: white; font-size: 10px; font-weight: 700; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .notif-dropdown { display: none; position: absolute; top: calc(100% + 10px); right: 0; width: 340px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; z-index: 200; box-shadow: 0 16px 40px rgba(0,0,0,0.4); animation: fadeDown 0.15s ease; overflow: hidden; }
+    .notif-dropdown.open { display: block; }
+    .notif-tabs { display: flex; background: var(--bg); border-bottom: 1px solid var(--border); padding: 4px; gap: 4px; }
+    .notif-tab { flex: 1; padding: 8px 4px; border: none; border-radius: 6px; font-size: 11px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text3); display: flex; align-items: center; justify-content: center; gap: 4px; }
+    .notif-tab:hover { color: var(--text2); }
+    .notif-tab.active { background: var(--bg2); color: var(--accent); }
+    .notif-panel { display: none; }
+    .notif-panel.active { display: block; }
+    .notif-feed { max-height: 320px; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .notif-feed::-webkit-scrollbar { width: 4px; }
+    .notif-feed::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 4px; }
+    .notif-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: 8px; background: var(--bg3); border: 1px solid var(--border); cursor: pointer; transition: all 0.15s; position: relative; }
+    .notif-item:hover { border-color: rgba(45,212,191,0.3); }
+    .notif-item.unread { background: rgba(45,212,191,0.04); border-color: rgba(45,212,191,0.15); }
+    .notif-cover { width: 40px; height: 40px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; flex-shrink: 0; font-size: 20px; }
+    .notif-body { flex: 1; min-width: 0; }
+    .notif-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+    .notif-text { font-size: 11px; color: var(--text2); line-height: 1.4; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .notif-time { font-size: 10px; color: var(--text3); display: flex; align-items: center; gap: 3px; }
+    .notif-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 4px; }
+    .notif-footer { display: flex; align-items: center; border-top: 1px solid var(--border); }
+    .mark-read-btn { flex: 1; padding: 10px; background: var(--bg3); border: none; border-right: 1px solid var(--border); color: var(--text3); font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .mark-read-btn:hover { color: var(--accent); }
+    .view-all-notif { padding: 10px 14px; color: var(--accent); font-size: 12px; font-weight: 700; text-decoration: none; display: flex; align-items: center; gap: 5px; transition: all 0.2s; white-space: nowrap; font-family: 'Lato', sans-serif; }
+
+    /* USER AVATAR DROPDOWN */
+    .user-nav-wrap { position: relative; }
+    .user-avatar-btn { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg,#1e0040,#6b21a8); border: 2px solid rgba(45,212,191,0.4); display: none; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 15px; font-weight: 700; color: #c084fc; cursor: pointer; overflow: hidden; transition: border-color 0.2s; flex-shrink: 0; }
+    .user-avatar-btn:hover { border-color: var(--accent); }
+    .user-avatar-btn img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .user-dropdown { display: none; position: absolute; top: calc(100% + 10px); right: 0; width: 220px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; z-index: 300; box-shadow: 0 16px 40px rgba(0,0,0,0.5); animation: fadeDown 0.15s ease; overflow: hidden; }
+    .user-dropdown.open { display: block; }
+    .user-dropdown-header { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); }
+    .user-dropdown-name { font-size: 14px; font-weight: 700; color: var(--text); }
+    .user-dropdown-handle { font-size: 12px; color: var(--text3); margin-top: 1px; }
+    .user-dropdown-menu { padding: 6px; }
+    .user-dropdown-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: var(--text2); font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.15s; text-decoration: none; border: none; background: none; width: 100%; text-align: left; }
+    .user-dropdown-item:hover { background: var(--bg3); color: var(--accent); }
+    .user-dropdown-item i { font-size: 16px; color: var(--text3); flex-shrink: 0; }
+    .user-dropdown-item:hover i { color: var(--accent); }
+    .user-dropdown-divider { height: 1px; background: var(--border); margin: 4px 6px; }
+    .user-dropdown-item.signout-btn { color: var(--red); }
+    .user-dropdown-item.signout-btn i { color: var(--red); }
+    .user-dropdown-item.signout-btn:hover { background: rgba(248,113,113,0.08); }
+
+    /* ANNOUNCEMENT BANNER */
+    .ann-banner { display: none; width: 100%; padding: 12px 24px; position: relative; animation: slideDown 0.3s ease; }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    .ann-banner.info    { background: rgba(45,212,191,0.08); border-bottom: 1px solid rgba(45,212,191,0.2); }
+    .ann-banner.warning { background: rgba(245,158,11,0.08); border-bottom: 1px solid rgba(245,158,11,0.2); }
+    .ann-banner.success { background: rgba(52,211,153,0.08); border-bottom: 1px solid rgba(52,211,153,0.2); }
+    .ann-banner.event   { background: rgba(192,132,252,0.08); border-bottom: 1px solid rgba(192,132,252,0.2); }
+    .ann-inner { max-width: 960px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
+    .ann-icon { font-size: 18px; flex-shrink: 0; }
+    .ann-banner.info .ann-icon    { color: #2dd4bf; } .ann-banner.info .ann-text    { color: #2dd4bf; }
+    .ann-banner.warning .ann-icon { color: #f59e0b; } .ann-banner.warning .ann-text { color: #f59e0b; }
+    .ann-banner.success .ann-icon { color: #34d399; } .ann-banner.success .ann-text { color: #34d399; }
+    .ann-banner.event .ann-icon   { color: #c084fc; } .ann-banner.event .ann-text   { color: #c084fc; }
+    .ann-text { flex: 1; font-size: 13px; font-weight: 700; }
+    .ann-dismiss { background: none; border: none; color: inherit; cursor: pointer; font-size: 18px; opacity: 0.6; padding: 0; display: flex; align-items: center; transition: opacity 0.2s; }
+    .ann-dismiss:hover { opacity: 1; }
+
+    /* POLL */
+    .poll-banner { display: none; width: 100%; padding: 16px 24px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+    .poll-inner { max-width: 960px; margin: 0 auto; }
+    .poll-question { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 10px; display: flex; align-items: center; gap: 7px; }
+    .poll-question i { color: var(--accent); }
+    .poll-options { display: flex; flex-wrap: wrap; gap: 8px; }
+    .poll-option-btn { padding: 6px 16px; background: var(--bg3); border: 1px solid var(--border); border-radius: 20px; color: var(--text2); font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+    .poll-option-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .poll-option-btn.voted { background: rgba(45,212,191,0.1); border-color: var(--accent); color: var(--accent); }
+    .poll-results { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .poll-results.show { display: block; }
+    .poll-result-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px; }
+    .poll-result-label { min-width: 120px; max-width: 160px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .poll-result-bar { flex: 1; height: 6px; background: var(--bg4); border-radius: 3px; overflow: hidden; }
+    .poll-result-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.4s; }
+    .poll-result-pct { font-size: 11px; color: var(--text3); min-width: 36px; text-align: right; }
+    .poll-results-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+    .poll-total { font-size: 11px; color: var(--text3); }
+    .poll-close-results { background: none; border: none; color: var(--text3); font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: color 0.2s; padding: 0; }
+    .poll-close-results:hover { color: var(--accent); }
+
+    /* PAGE LAYOUT */
+    .page-wrap { display: flex; align-items: flex-start; position: relative; }
+    .hero-banner { flex: 1; min-width: 0; overflow: hidden; padding: 40px 0; background: var(--bg); }
+    .banner-scroll-wrap { display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+
+    /* SCROLL ROWS */
+    .scroll-label { display: flex; align-items: center; gap: 8px; padding: 24px 40px 4px; font-family: 'Cinzel', serif; font-size: 18px; font-weight: 600; cursor: pointer; user-select: none; }
+    .scroll-label i { font-size: 20px; color: var(--accent); }
+    .scroll-label:hover .scroll-toggle-btn { opacity: 1; }
+    .label-accent { color: var(--accent); }
+    .label-white { color: var(--text); }
+    .scroll-toggle-btn { margin-left: auto; margin-right: 40px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; color: var(--text3); font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.2s; opacity: 0.4; }
+    .scroll-toggle-btn:hover { border-color: var(--accent); color: var(--accent); opacity: 1; }
+    .scroll-row-wrap { position: relative; width: 100%; transition: max-height 0.35s ease, opacity 0.35s ease, margin 0.35s ease; max-height: 300px; opacity: 1; overflow: hidden; }
+    .scroll-row-wrap.collapsed { max-height: 0; opacity: 0; margin: 0; }
+    .scroll-row { overflow-x: auto; width: 100%; cursor: grab; scrollbar-width: none; -ms-overflow-style: none; }
+    .scroll-row:active { cursor: grabbing; }
+    .scroll-row::-webkit-scrollbar { display: none; }
+    .scroll-nav-btn { position: absolute; top: 50%; transform: translateY(-50%); background: var(--bg2); border: 1px solid rgba(45,212,191,0.4); border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--accent); font-size: 18px; transition: all 0.2s; z-index: 10; }
+    .scroll-nav-btn:hover { background: rgba(45,212,191,0.15); box-shadow: 0 0 12px rgba(45,212,191,0.3); }
+    .scroll-nav-left { left: 8px; }
+    .scroll-nav-right { right: 8px; }
+    .scroll-track { display: flex; gap: 14px; width: max-content; padding: 8px 48px; }
+    .mini-cover { width: 110px; height: 155px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 28px; font-weight: 700; flex-shrink: 0; border: 1px solid var(--border); transition: transform 0.2s; cursor: pointer; }
+    .mini-cover:hover { transform: scale(1.05); border-color: var(--accent); box-shadow: 0 8px 30px rgba(45,212,191,0.2), 0 4px 12px rgba(0,0,0,0.5); }
+    .cover-purple { background: linear-gradient(160deg, #1e0040, #6b21a8); color: #c084fc; }
+    .cover-blue   { background: linear-gradient(160deg, #001030, #1d4ed8); color: #60a5fa; }
+    .cover-red    { background: linear-gradient(160deg, #200010, #9f1239); color: #fb7185; }
+    .cover-green  { background: linear-gradient(160deg, #001a10, #065f46); color: #34d399; }
+    .cover-gold   { background: linear-gradient(160deg, #1a0e00, #92400e); color: #fbbf24; }
+    .cover-pink   { background: linear-gradient(160deg, #1a0020, #86198f); color: #f0abfc; }
+    .art-bg1 { background: linear-gradient(135deg, #0f0025, #3b0764); }
+    .art-bg2 { background: linear-gradient(135deg, #001020, #0c4a6e); }
+    .art-bg4 { background: linear-gradient(135deg, #0a1a00, #14532d); }
+    .art-bg5 { background: linear-gradient(135deg, #1a0e00, #78350f); }
+
+    /* SIDEBAR */
+    .activity-sidebar { width: 380px; flex-shrink: 0; background: var(--bg2); border-left: 1px solid var(--border); position: sticky; top: 60px; height: calc(100vh - 60px); display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s ease, opacity 0.3s ease; }
+    .activity-sidebar.collapsed { width: 0; opacity: 0; border-left: none; }
+    .sidebar-collapse-btn { position: fixed; right: 0; top: 50%; transform: translateY(-50%); background: var(--bg2); border: 1px solid var(--border); border-right: none; border-radius: 8px 0 0 8px; width: 20px; height: 60px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text3); font-size: 14px; transition: all 0.3s ease; z-index: 50; }
+    .sidebar-collapse-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .sidebar-tabs { display: flex; background: var(--bg); border-bottom: 1px solid var(--border); padding: 4px; gap: 4px; flex-shrink: 0; }
+    .sidebar-tab { flex: 1; padding: 8px 4px; border: none; border-radius: 6px; font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text3); display: flex; align-items: center; justify-content: center; gap: 5px; }
+    .sidebar-tab:hover { color: var(--text2); }
+    .sidebar-tab.active { background: var(--bg2); color: var(--accent); }
+    .sidebar-panel { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    .sidebar-panel.active { display: flex; }
+    .sidebar-feed { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .sidebar-feed::-webkit-scrollbar { width: 4px; }
+    .sidebar-feed::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 4px; }
+    .view-all-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 4px 12px 12px; padding: 10px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; color: var(--text2); font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; text-decoration: none; transition: all 0.2s; flex-shrink: 0; }
+    .view-all-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.05); }
+
+    /* SIDEBAR ITEMS */
+    .collab-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; gap: 10px; transition: border-color 0.2s; }
+    .collab-item:hover { border-color: rgba(45,212,191,0.3); }
+    .collab-cover { width: 48px; height: 64px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700; flex-shrink: 0; }
+    .collab-body { flex: 1; min-width: 0; }
+    .collab-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .collab-names { font-size: 11px; color: var(--accent); margin-bottom: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .collab-time { font-size: 11px; color: var(--text3); margin-bottom: 8px; display: flex; align-items: center; gap: 4px; }
+    .collab-btns { display: flex; gap: 6px; }
+    .collab-btn { flex: 1; padding: 5px 8px; background: var(--bg4); border: 1px solid var(--border); border-radius: 6px; color: var(--text2); font-size: 11px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 4px; }
+    .collab-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .comment-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; gap: 10px; transition: border-color 0.2s; cursor: pointer; }
+    .comment-item:hover { border-color: rgba(45,212,191,0.3); }
+    .comment-thumb { width: 44px; height: 44px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; flex-shrink: 0; font-size: 22px; }
+    .comment-body { flex: 1; min-width: 0; }
+    .comment-on { font-size: 11px; color: var(--text2); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .comment-type { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; }
+    .comment-type.novel { background: rgba(45,212,191,0.15); color: var(--accent); }
+    .comment-type.art { background: rgba(244,114,182,0.15); color: #f472b6; }
+    .comment-text { font-size: 12px; color: var(--text2); line-height: 1.5; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .comment-meta { display: flex; justify-content: space-between; align-items: center; }
+    .comment-user { font-size: 11px; color: var(--accent); font-weight: 700; }
+    .comment-time { font-size: 11px; color: var(--text3); display: flex; align-items: center; gap: 3px; }
+    .update-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; gap: 10px; cursor: pointer; transition: border-color 0.2s; }
+    .update-item:hover { border-color: rgba(45,212,191,0.3); }
+    .update-cover { width: 44px; height: 60px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; flex-shrink: 0; }
+    .update-body { flex: 1; min-width: 0; }
+    .update-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .update-chapter { font-size: 11px; color: var(--accent); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .update-author { font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+    .update-time { font-size: 11px; color: var(--text3); display: flex; align-items: center; gap: 4px; }
+
+    footer { background: var(--bg2); border-top: 1px solid var(--border); padding: 40px 32px; text-align: center; color: var(--text3); font-size: 13px; }
+    footer .footer-logo { font-family: 'Cinzel', serif; font-size: 20px; color: var(--accent); margin-bottom: 12px; }
+    footer .footer-links { display: flex; justify-content: center; gap: 24px; margin: 16px 0; flex-wrap: wrap; }
+    footer .footer-links a { color: var(--text3); text-decoration: none; font-size: 13px; transition: color 0.2s; }
+    footer .footer-links a:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="nav-left">
+      <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+      <div class="nav-btn-group">
+        <button class="btn btn-primary" id="publish-btn" style="display:none;" onclick="window.location.href='creator.html'"><i class="ti ti-pencil"></i> Publish</button>
+        <button class="btn btn-primary" id="showcase-btn" style="display:none;"><i class="ti ti-photo"></i> Showcase</button>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div class="dm-wrap">
+        <button class="dm-btn" onclick="toggleDm()">
+          <i class="ti ti-message"></i>
+          <span class="dm-badge">3</span>
+        </button>
+        <div class="dm-dropdown" id="dmDropdown">
+          <div class="dm-dropdown-header">Messages <a href="messages.html"><i class="ti ti-external-link"></i> Open inbox</a></div>
+          <div class="dm-preview-list">
+            <a class="dm-preview-item unread" href="messages.html"><div class="dm-preview-avatar cover-red">V</div><div class="dm-preview-body"><div class="dm-preview-name">VoidPen <span class="dm-preview-time">2m</span></div><div class="dm-preview-msg">Hey! Loved the new chapter, the ending was wild 🔥</div></div><div class="dm-unread-dot"></div></a>
+            <a class="dm-preview-item unread" href="messages.html"><div class="dm-preview-avatar art-bg2">⚡</div><div class="dm-preview-body"><div class="dm-preview-name">starlitink <span class="dm-preview-time">14m</span></div><div class="dm-preview-msg">The cover sketch is almost done, sending tomorrow!</div></div><div class="dm-unread-dot"></div></a>
+            <a class="dm-preview-item unread" href="messages.html"><div class="dm-preview-avatar cover-purple">D</div><div class="dm-preview-body"><div class="dm-preview-name">darkcrown_writes <span class="dm-preview-time">1h</span></div><div class="dm-preview-msg">Sure, let's collab on the next arc!</div></div><div class="dm-unread-dot"></div></a>
+            <a class="dm-preview-item" href="messages.html"><div class="dm-preview-avatar art-bg4">🌿</div><div class="dm-preview-body"><div class="dm-preview-name">fernroot <span class="dm-preview-time">3h</span></div><div class="dm-preview-msg">Thank you so much, that means everything!</div></div></a>
+          </div>
+          <div class="dm-footer"><a href="messages.html">View all messages <i class="ti ti-arrow-right"></i></a></div>
+        </div>
+      </div>
+      <div class="notif-wrap">
+        <button class="notif-btn" onclick="toggleNotif()">
+          <i class="ti ti-bell"></i>
+          <span class="notif-badge">5</span>
+        </button>
+        <div class="notif-dropdown" id="notifDropdown">
+          <div class="notif-tabs">
+            <button class="notif-tab active" onclick="switchNotif('novels')"><i class="ti ti-book"></i> Novels</button>
+            <button class="notif-tab" onclick="switchNotif('artists')"><i class="ti ti-palette"></i> Artists</button>
+            <button class="notif-tab" onclick="switchNotif('comments')"><i class="ti ti-message-circle"></i> Comments</button>
+          </div>
+          <div class="notif-panel active" id="notif-novels">
+            <div class="notif-feed">
+              <div class="notif-item unread"><div class="notif-cover cover-purple">S</div><div class="notif-body"><div class="notif-title">Shadow Throne Chronicles</div><div class="notif-text">Chapter 214 — "The Usurper's Crown" is now available</div><div class="notif-time"><i class="ti ti-clock"></i> 3 min ago</div></div><div class="notif-dot"></div></div>
+              <div class="notif-item unread"><div class="notif-cover cover-red">B</div><div class="notif-body"><div class="notif-title">Bloodpact Academy</div><div class="notif-text">Chapter 89 — "The Demon Contract" is now available</div><div class="notif-time"><i class="ti ti-clock"></i> 28 min ago</div></div><div class="notif-dot"></div></div>
+              <div class="notif-item"><div class="notif-cover cover-blue">E</div><div class="notif-body"><div class="notif-title">Echoes of the Void</div><div class="notif-text">Chapter 12 — "Signal Lost" is now available</div><div class="notif-time"><i class="ti ti-clock"></i> 1 hr ago</div></div></div>
+            </div>
+            <div class="notif-footer">
+              <button class="mark-read-btn" onclick="markRead('novels')"><i class="ti ti-checks"></i> Mark all as read</button>
+              <a class="view-all-notif" href="activity.html#updates">View all <i class="ti ti-arrow-right"></i></a>
+            </div>
+          </div>
+          <div class="notif-panel" id="notif-artists">
+            <div class="notif-feed">
+              <div class="notif-item unread"><div class="notif-cover art-bg1">🌙</div><div class="notif-body"><div class="notif-title">moonscribe</div><div class="notif-text">Posted a new piece — "Moonveil Cover Art Vol.2"</div><div class="notif-time"><i class="ti ti-clock"></i> 12 min ago</div></div><div class="notif-dot"></div></div>
+              <div class="notif-item unread"><div class="notif-cover art-bg4">🌿</div><div class="notif-body"><div class="notif-title">fernroot</div><div class="notif-text">Posted a new piece — "Forest Spirit Vol.3"</div><div class="notif-time"><i class="ti ti-clock"></i> 45 min ago</div></div><div class="notif-dot"></div></div>
+              <div class="notif-item"><div class="notif-cover art-bg2">⚡</div><div class="notif-body"><div class="notif-title">starlitink</div><div class="notif-text">Posted a new piece — "The Storm Caller II"</div><div class="notif-time"><i class="ti ti-clock"></i> 2 hr ago</div></div></div>
+            </div>
+            <div class="notif-footer">
+              <button class="mark-read-btn" onclick="markRead('artists')"><i class="ti ti-checks"></i> Mark all as read</button>
+              <a class="view-all-notif" href="activity.html#updates">View all <i class="ti ti-arrow-right"></i></a>
+            </div>
+          </div>
+          <div class="notif-panel" id="notif-comments">
+            <div class="notif-feed">
+              <div class="notif-item unread"><div class="notif-cover cover-purple">👍</div><div class="notif-body"><div class="notif-title">lunareader liked your comment</div><div class="notif-text">"The ward scene gave me chills..."</div><div class="notif-time"><i class="ti ti-clock"></i> 5 min ago</div></div><div class="notif-dot"></div></div>
+              <div class="notif-item unread"><div class="notif-cover cover-green">💬</div><div class="notif-body"><div class="notif-title">nx_void replied to your comment</div><div class="notif-text">"I completely agree, that chapter was wild!"</div><div class="notif-time"><i class="ti ti-clock"></i> 22 min ago</div></div><div class="notif-dot"></div></div>
+              <div class="notif-item"><div class="notif-cover cover-gold">👍</div><div class="notif-body"><div class="notif-title">darkcrown liked your comment</div><div class="notif-text">"The color palette on this is incredible..."</div><div class="notif-time"><i class="ti ti-clock"></i> 1 hr ago</div></div></div>
+            </div>
+            <div class="notif-footer">
+              <button class="mark-read-btn" onclick="markRead('comments')"><i class="ti ti-checks"></i> Mark all as read</button>
+              <a class="view-all-notif" href="activity.html#comments">View all <i class="ti ti-arrow-right"></i></a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <a class="btn btn-outline" href="auth.html" id="nav-login-btn">Log In</a>
+      <div class="user-nav-wrap" id="user-nav-wrap">
+        <button class="user-avatar-btn" id="user-avatar-btn" onclick="toggleUserDropdown()">
+          <span id="user-avatar-initial">?</span>
+        </button>
+        <div class="user-dropdown" id="user-dropdown">
+          <div class="user-dropdown-header">
+            <div class="user-dropdown-name" id="dd-display-name">My Account</div>
+            <div class="user-dropdown-handle" id="dd-handle">@username</div>
+          </div>
+          <div class="user-dropdown-menu">
+            <a class="user-dropdown-item" id="dd-profile-link" href="profile.html"><i class="ti ti-user"></i> My Profile</a>
+            <a class="user-dropdown-item" href="following.html#titles"><i class="ti ti-bookmark"></i> Following Titles</a>
+            <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>
+            <a class="user-dropdown-item" href="following.html#artists"><i class="ti ti-palette"></i> Following Artists</a>
+            <a class="user-dropdown-item" href="following.html#history"><i class="ti ti-history"></i> Reading History</a>
+            <a class="user-dropdown-item" href="settings.html"><i class="ti ti-settings"></i> Settings</a>
+            <div class="user-dropdown-divider"></div>
+            <button class="user-dropdown-item signout-btn" onclick="signOut()"><i class="ti ti-logout"></i> Sign Out</button>
+          </div>
+        </div>
+      </div>
+      <div class="search-dropdown-wrap">
+        <button class="search-trigger-btn" onclick="toggleSearch()">
+          <i class="ti ti-search"></i> Search
+          <i class="ti ti-chevron-down" id="search-chevron"></i>
+        </button>
+        <div class="search-dropdown" id="searchDropdown">
+          <div class="search-section">
+            <div class="search-section-label"><i class="ti ti-book"></i> Novels & Authors</div>
+            <div class="search-field"><i class="ti ti-book-2"></i><input type="text" placeholder="Search book titles…" class="search-input"/><button class="search-go-btn">Go</button></div>
+            <div class="search-field"><i class="ti ti-feather"></i><input type="text" placeholder="Search authors…" class="search-input"/><button class="search-go-btn">Go</button></div>
+          </div>
+          <div class="search-divider"></div>
+          <div class="search-section">
+            <div class="search-section-label"><i class="ti ti-palette"></i> Art & Artists</div>
+            <div class="search-field"><i class="ti ti-photo"></i><input type="text" placeholder="Search artwork…" class="search-input"/><button class="search-go-btn">Go</button></div>
+            <div class="search-field"><i class="ti ti-brush"></i><input type="text" placeholder="Search artists…" class="search-input"/><button class="search-go-btn">Go</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ANNOUNCEMENT -->
+  <div class="ann-banner info" id="ann-banner">
+    <div class="ann-inner">
+      <i class="ti ti-speakerphone ann-icon"></i>
+      <span class="ann-text" id="ann-text"></span>
+      <button class="ann-dismiss" id="ann-dismiss"><i class="ti ti-x"></i></button>
+    </div>
+  </div>
+
+  <!-- POLL -->
+  <div class="poll-banner" id="poll-banner">
+    <div class="poll-inner">
+      <div class="poll-question"><i class="ti ti-chart-bar"></i> <span id="poll-question-text"></span></div>
+      <div class="poll-options" id="poll-options"></div>
+      <div style="margin-top:10px;">
+        <button class="poll-option-btn" id="poll-show-results-btn" style="display:none;background:transparent;border-color:rgba(45,212,191,0.3);color:#2dd4bf;"><i class="ti ti-chart-bar"></i> Show results</button>
+      </div>
+      <div class="poll-results" id="poll-results">
+        <div id="poll-results-bars"></div>
+        <div class="poll-results-footer">
+          <span class="poll-total" id="poll-total"></span>
+          <button class="poll-close-results" id="poll-close-results"><i class="ti ti-eye-off"></i> Hide results</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-wrap">
+    <section class="hero-banner">
+      <div class="banner-scroll-wrap">
+
+        <div class="scroll-label" onclick="toggleRow(0)">
+          <i class="ti ti-bell"></i>
+          <span class="label-accent">New Chapters</span>
+          <span class="label-white">from Followed Novels</span>
+          <button class="scroll-toggle-btn" id="toggle-btn-0"><i class="ti ti-chevron-up" id="toggle-icon-0"></i> Hide</button>
+        </div>
+        <div class="scroll-row-wrap" id="wrap-0">
+          <button class="scroll-nav-btn scroll-nav-left" onclick="scrollRow(0,-300)"><i class="ti ti-chevron-left"></i></button>
+          <div class="scroll-row" id="row-0"><div class="scroll-track">
+            <div class="mini-cover cover-purple">S</div><div class="mini-cover cover-red">B</div><div class="mini-cover cover-pink">M</div><div class="mini-cover cover-blue">E</div><div class="mini-cover cover-green">G</div><div class="mini-cover cover-gold">T</div><div class="mini-cover cover-purple">N</div><div class="mini-cover cover-blue">F</div><div class="mini-cover cover-red">D</div><div class="mini-cover cover-green">R</div><div class="mini-cover cover-gold">W</div><div class="mini-cover cover-pink">A</div><div class="mini-cover cover-purple">V</div><div class="mini-cover cover-blue">K</div><div class="mini-cover cover-red">C</div><div class="mini-cover cover-green">H</div><div class="mini-cover cover-gold">I</div><div class="mini-cover cover-pink">L</div><div class="mini-cover cover-purple">O</div><div class="mini-cover cover-blue">Q</div><div class="mini-cover cover-red">U</div><div class="mini-cover cover-green">X</div><div class="mini-cover cover-gold">Y</div><div class="mini-cover cover-pink">Z</div><div class="mini-cover cover-purple">J</div><div class="mini-cover cover-blue">P</div><div class="mini-cover cover-red">T</div><div class="mini-cover cover-green">E</div><div class="mini-cover cover-gold">M</div><div class="mini-cover cover-pink">B</div>
+          </div></div>
+          <button class="scroll-nav-btn scroll-nav-right" onclick="scrollRow(0,300)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+
+        <div class="scroll-label" onclick="toggleRow(1)">
+          <i class="ti ti-palette"></i>
+          <span class="label-accent">New Art</span>
+          <span class="label-white">from Followed Artists</span>
+          <button class="scroll-toggle-btn" id="toggle-btn-1"><i class="ti ti-chevron-up" id="toggle-icon-1"></i> Hide</button>
+        </div>
+        <div class="scroll-row-wrap" id="wrap-1">
+          <button class="scroll-nav-btn scroll-nav-left" onclick="scrollRow(1,-300)"><i class="ti ti-chevron-left"></i></button>
+          <div class="scroll-row" id="row-1"><div class="scroll-track">
+            <div class="mini-cover art-bg1">🌙</div><div class="mini-cover art-bg2">⚡</div><div class="mini-cover art-bg4">🌿</div><div class="mini-cover art-bg5">🔥</div><div class="mini-cover cover-pink">C</div><div class="mini-cover cover-gold">V</div><div class="mini-cover cover-blue">K</div><div class="mini-cover cover-red">P</div><div class="mini-cover art-bg1">🎨</div><div class="mini-cover art-bg2">🌊</div><div class="mini-cover art-bg4">🍃</div><div class="mini-cover art-bg5">✨</div><div class="mini-cover cover-purple">H</div><div class="mini-cover cover-green">X</div><div class="mini-cover cover-gold">Z</div><div class="mini-cover cover-blue">Q</div><div class="mini-cover art-bg1">🔮</div><div class="mini-cover art-bg2">🌸</div><div class="mini-cover art-bg4">🦋</div><div class="mini-cover art-bg5">🌺</div><div class="mini-cover cover-pink">W</div><div class="mini-cover cover-red">N</div><div class="mini-cover cover-purple">A</div><div class="mini-cover cover-green">D</div><div class="mini-cover art-bg1">🌑</div><div class="mini-cover art-bg2">💫</div><div class="mini-cover art-bg4">🌲</div><div class="mini-cover art-bg5">🔱</div><div class="mini-cover cover-gold">R</div><div class="mini-cover cover-blue">T</div>
+          </div></div>
+          <button class="scroll-nav-btn scroll-nav-right" onclick="scrollRow(1,300)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+
+        <div class="scroll-label" onclick="toggleRow(2)">
+          <i class="ti ti-flame"></i>
+          <span class="label-accent">Featured</span>
+          <span class="label-white">Novels</span>
+          <button class="scroll-toggle-btn" id="toggle-btn-2"><i class="ti ti-chevron-up" id="toggle-icon-2"></i> Hide</button>
+        </div>
+        <div class="scroll-row-wrap" id="wrap-2">
+          <button class="scroll-nav-btn scroll-nav-left" onclick="scrollRow(2,-300)"><i class="ti ti-chevron-left"></i></button>
+          <div class="scroll-row" id="row-2"><div class="scroll-track">
+            <div class="mini-cover cover-purple">S</div><div class="mini-cover cover-blue">E</div><div class="mini-cover cover-red">B</div><div class="mini-cover cover-green">G</div><div class="mini-cover cover-gold">T</div><div class="mini-cover cover-pink">M</div><div class="mini-cover cover-purple">N</div><div class="mini-cover cover-blue">F</div><div class="mini-cover cover-red">D</div><div class="mini-cover cover-green">R</div><div class="mini-cover cover-gold">W</div><div class="mini-cover cover-pink">A</div><div class="mini-cover cover-purple">V</div><div class="mini-cover cover-blue">K</div><div class="mini-cover cover-red">C</div><div class="mini-cover cover-green">H</div><div class="mini-cover cover-gold">I</div><div class="mini-cover cover-pink">L</div><div class="mini-cover cover-purple">O</div><div class="mini-cover cover-blue">Q</div><div class="mini-cover cover-red">U</div><div class="mini-cover cover-green">X</div><div class="mini-cover cover-gold">Y</div><div class="mini-cover cover-pink">Z</div><div class="mini-cover cover-purple">J</div><div class="mini-cover cover-blue">P</div><div class="mini-cover cover-red">T</div><div class="mini-cover cover-green">E</div><div class="mini-cover cover-gold">M</div><div class="mini-cover cover-pink">B</div>
+          </div></div>
+          <button class="scroll-nav-btn scroll-nav-right" onclick="scrollRow(2,300)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+
+        <div class="scroll-label" onclick="toggleRow(3)">
+          <i class="ti ti-palette"></i>
+          <span class="label-accent">Featured</span>
+          <span class="label-white">Artwork</span>
+          <button class="scroll-toggle-btn" id="toggle-btn-3"><i class="ti ti-chevron-up" id="toggle-icon-3"></i> Hide</button>
+        </div>
+        <div class="scroll-row-wrap" id="wrap-3">
+          <button class="scroll-nav-btn scroll-nav-left" onclick="scrollRow(3,-300)"><i class="ti ti-chevron-left"></i></button>
+          <div class="scroll-row" id="row-3"><div class="scroll-track">
+            <div class="mini-cover cover-green">L</div><div class="mini-cover cover-pink">C</div><div class="mini-cover cover-gold">V</div><div class="mini-cover cover-blue">K</div><div class="mini-cover cover-red">P</div><div class="mini-cover cover-purple">H</div><div class="mini-cover cover-green">X</div><div class="mini-cover cover-pink">Z</div><div class="mini-cover cover-gold">Q</div><div class="mini-cover cover-blue">J</div><div class="mini-cover cover-red">Y</div><div class="mini-cover cover-purple">O</div><div class="mini-cover art-bg1">🌙</div><div class="mini-cover art-bg2">⚡</div><div class="mini-cover art-bg4">🌿</div><div class="mini-cover art-bg5">🔥</div><div class="mini-cover art-bg1">🎨</div><div class="mini-cover art-bg2">🌊</div><div class="mini-cover art-bg4">🍃</div><div class="mini-cover art-bg5">✨</div><div class="mini-cover cover-green">A</div><div class="mini-cover cover-pink">B</div><div class="mini-cover cover-gold">D</div><div class="mini-cover cover-blue">E</div><div class="mini-cover art-bg1">🔮</div><div class="mini-cover art-bg2">🌸</div><div class="mini-cover art-bg4">🦋</div><div class="mini-cover art-bg5">🌺</div><div class="mini-cover cover-red">F</div><div class="mini-cover cover-purple">G</div>
+          </div></div>
+          <button class="scroll-nav-btn scroll-nav-right" onclick="scrollRow(3,300)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+
+        <div class="scroll-label" onclick="toggleRow(4)">
+          <i class="ti ti-sparkles"></i>
+          <span class="label-accent">New</span>
+          <span class="label-white">Novels</span>
+          <button class="scroll-toggle-btn" id="toggle-btn-4"><i class="ti ti-chevron-up" id="toggle-icon-4"></i> Hide</button>
+        </div>
+        <div class="scroll-row-wrap" id="wrap-4">
+          <button class="scroll-nav-btn scroll-nav-left" onclick="scrollRow(4,-300)"><i class="ti ti-chevron-left"></i></button>
+          <div class="scroll-row" id="row-4"><div class="scroll-track">
+            <div class="mini-cover cover-red">U</div><div class="mini-cover cover-gold">I</div><div class="mini-cover cover-purple">A</div><div class="mini-cover cover-blue">N</div><div class="mini-cover cover-pink">T</div><div class="mini-cover cover-green">S</div><div class="mini-cover cover-red">E</div><div class="mini-cover cover-gold">B</div><div class="mini-cover cover-purple">M</div><div class="mini-cover cover-blue">G</div><div class="mini-cover cover-pink">D</div><div class="mini-cover cover-green">F</div><div class="mini-cover cover-red">H</div><div class="mini-cover cover-gold">J</div><div class="mini-cover cover-purple">K</div><div class="mini-cover cover-blue">L</div><div class="mini-cover cover-pink">O</div><div class="mini-cover cover-green">P</div><div class="mini-cover cover-red">Q</div><div class="mini-cover cover-gold">R</div><div class="mini-cover cover-purple">V</div><div class="mini-cover cover-blue">W</div><div class="mini-cover cover-pink">X</div><div class="mini-cover cover-green">Y</div><div class="mini-cover cover-red">Z</div><div class="mini-cover cover-gold">C</div><div class="mini-cover cover-purple">Q</div><div class="mini-cover cover-blue">R</div><div class="mini-cover cover-pink">T</div><div class="mini-cover cover-green">W</div>
+          </div></div>
+          <button class="scroll-nav-btn scroll-nav-right" onclick="scrollRow(4,300)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+
+        <div class="scroll-label" onclick="toggleRow(5)">
+          <i class="ti ti-photo-star"></i>
+          <span class="label-accent">New</span>
+          <span class="label-white">Artwork</span>
+          <button class="scroll-toggle-btn" id="toggle-btn-5"><i class="ti ti-chevron-up" id="toggle-icon-5"></i> Hide</button>
+        </div>
+        <div class="scroll-row-wrap" id="wrap-5">
+          <button class="scroll-nav-btn scroll-nav-left" onclick="scrollRow(5,-300)"><i class="ti ti-chevron-left"></i></button>
+          <div class="scroll-row" id="row-5"><div class="scroll-track">
+            <div class="mini-cover cover-blue">W</div><div class="mini-cover cover-purple">R</div><div class="mini-cover cover-gold">C</div><div class="mini-cover cover-red">Z</div><div class="mini-cover cover-green">Q</div><div class="mini-cover cover-pink">X</div><div class="mini-cover cover-blue">J</div><div class="mini-cover cover-purple">K</div><div class="mini-cover cover-gold">Y</div><div class="mini-cover cover-red">H</div><div class="mini-cover cover-green">V</div><div class="mini-cover cover-pink">O</div><div class="mini-cover art-bg1">🌑</div><div class="mini-cover art-bg2">💫</div><div class="mini-cover art-bg4">🌲</div><div class="mini-cover art-bg5">🔱</div><div class="mini-cover art-bg1">🎭</div><div class="mini-cover art-bg2">🌀</div><div class="mini-cover art-bg4">🍀</div><div class="mini-cover art-bg5">⚔️</div><div class="mini-cover cover-blue">A</div><div class="mini-cover cover-purple">B</div><div class="mini-cover cover-gold">D</div><div class="mini-cover cover-red">E</div><div class="mini-cover art-bg1">🧿</div><div class="mini-cover art-bg2">🌠</div><div class="mini-cover art-bg4">🌴</div><div class="mini-cover art-bg5">🗡️</div><div class="mini-cover cover-green">F</div><div class="mini-cover cover-pink">G</div>
+          </div></div>
+          <button class="scroll-nav-btn scroll-nav-right" onclick="scrollRow(5,300)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+
+      </div>
+    </section>
+
+    <button class="sidebar-collapse-btn" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
+      <i class="ti ti-chevron-right" id="sidebar-chevron"></i>
+    </button>
+    <aside class="activity-sidebar" id="activity-sidebar">
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" onclick="switchSidebar('collabs')"><i class="ti ti-users"></i> Collabs</button>
+        <button class="sidebar-tab" onclick="switchSidebar('comments')"><i class="ti ti-message-circle"></i> Comments</button>
+        <button class="sidebar-tab" onclick="switchSidebar('updates')"><i class="ti ti-bell"></i> Updates</button>
+      </div>
+      <div class="sidebar-panel active" id="panel-collabs">
+        <div class="sidebar-feed">
+          <div class="collab-item"><div class="collab-cover cover-purple">B</div><div class="collab-body"><div class="collab-title">Bloodpact Academy</div><div class="collab-names"><i class="ti ti-feather"></i> VoidPen &nbsp;×&nbsp; <i class="ti ti-palette"></i> moonscribe</div><div class="collab-time"><i class="ti ti-clock"></i> 2 minutes ago</div><div class="collab-btns"><button class="collab-btn"><i class="ti ti-feather"></i> Author</button><button class="collab-btn"><i class="ti ti-palette"></i> Artist</button></div></div></div>
+          <div class="collab-item"><div class="collab-cover cover-green">G</div><div class="collab-body"><div class="collab-title">Greenroot: Feral Witch</div><div class="collab-names"><i class="ti ti-feather"></i> fernroot &nbsp;×&nbsp; <i class="ti ti-palette"></i> starlitink</div><div class="collab-time"><i class="ti ti-clock"></i> 18 minutes ago</div><div class="collab-btns"><button class="collab-btn"><i class="ti ti-feather"></i> Author</button><button class="collab-btn"><i class="ti ti-palette"></i> Artist</button></div></div></div>
+          <div class="collab-item"><div class="collab-cover cover-blue">E</div><div class="collab-body"><div class="collab-title">Echoes of the Void</div><div class="collab-names"><i class="ti ti-feather"></i> nullspace &nbsp;×&nbsp; <i class="ti ti-palette"></i> voidarts</div><div class="collab-time"><i class="ti ti-clock"></i> 1 hour ago</div><div class="collab-btns"><button class="collab-btn"><i class="ti ti-feather"></i> Author</button><button class="collab-btn"><i class="ti ti-palette"></i> Artist</button></div></div></div>
+          <div class="collab-item"><div class="collab-cover cover-pink">M</div><div class="collab-body"><div class="collab-title">Moonveil: Cursed Princess</div><div class="collab-names"><i class="ti ti-feather"></i> moonscribe &nbsp;×&nbsp; <i class="ti ti-palette"></i> darkbrush</div><div class="collab-time"><i class="ti ti-clock"></i> 3 hours ago</div><div class="collab-btns"><button class="collab-btn"><i class="ti ti-feather"></i> Author</button><button class="collab-btn"><i class="ti ti-palette"></i> Artist</button></div></div></div>
+        </div>
+        <a class="view-all-btn" href="activity.html#collabs"><i class="ti ti-users"></i> View all collabs <i class="ti ti-arrow-right"></i></a>
+      </div>
+      <div class="sidebar-panel" id="panel-comments">
+        <div class="sidebar-feed">
+          <div class="comment-item"><div class="comment-thumb cover-purple">B</div><div class="comment-body"><div class="comment-on"><span class="comment-type novel">Novel</span> Bloodpact Academy</div><div class="comment-text">"The ward scene gave me chills. Best chapter yet!"</div><div class="comment-meta"><span class="comment-user">lunareader</span><span class="comment-time"><i class="ti ti-clock"></i> 5 min ago</span></div></div></div>
+          <div class="comment-item"><div class="comment-thumb art-bg1">🌙</div><div class="comment-body"><div class="comment-on"><span class="comment-type art">Art</span> Moonveil Cover Art</div><div class="comment-text">"This is absolutely stunning, the lighting is perfect"</div><div class="comment-meta"><span class="comment-user">starlitink</span><span class="comment-time"><i class="ti ti-clock"></i> 12 min ago</span></div></div></div>
+          <div class="comment-item"><div class="comment-thumb cover-green">G</div><div class="comment-body"><div class="comment-on"><span class="comment-type novel">Novel</span> Greenroot: Feral Witch</div><div class="comment-text">"I need the next chapter NOW. This cliffhanger!"</div><div class="comment-meta"><span class="comment-user">nx_void</span><span class="comment-time"><i class="ti ti-clock"></i> 34 min ago</span></div></div></div>
+          <div class="comment-item"><div class="comment-thumb art-bg4">🌿</div><div class="comment-body"><div class="comment-on"><span class="comment-type art">Art</span> Forest Spirit</div><div class="comment-text">"The color palette on this is incredible work"</div><div class="comment-meta"><span class="comment-user">darkcrown</span><span class="comment-time"><i class="ti ti-clock"></i> 1 hr ago</span></div></div></div>
+          <div class="comment-item"><div class="comment-thumb cover-blue">E</div><div class="comment-body"><div class="comment-on"><span class="comment-type novel">Novel</span> Echoes of the Void</div><div class="comment-text">"First contact stories never hit like this one does"</div><div class="comment-meta"><span class="comment-user">voidreader</span><span class="comment-time"><i class="ti ti-clock"></i> 2 hr ago</span></div></div></div>
+        </div>
+        <a class="view-all-btn" href="activity.html#comments"><i class="ti ti-message-circle"></i> View all comments <i class="ti ti-arrow-right"></i></a>
+      </div>
+      <div class="sidebar-panel" id="panel-updates">
+        <div class="sidebar-feed">
+          <div class="update-item"><div class="update-cover cover-purple">S</div><div class="update-body"><div class="update-title">Shadow Throne Chronicles</div><div class="update-chapter">Chapter 214 — "The Usurper's Crown"</div><div class="update-author">by darkcrown_writes</div><div class="update-time"><i class="ti ti-clock"></i> 3 minutes ago</div></div></div>
+          <div class="update-item"><div class="update-cover cover-red">B</div><div class="update-body"><div class="update-title">Bloodpact Academy</div><div class="update-chapter">Chapter 89 — "The Demon Contract"</div><div class="update-author">by VoidPen</div><div class="update-time"><i class="ti ti-clock"></i> 28 minutes ago</div></div></div>
+          <div class="update-item"><div class="update-cover cover-blue">E</div><div class="update-body"><div class="update-title">Echoes of the Void</div><div class="update-chapter">Chapter 12 — "Signal Lost"</div><div class="update-author">by nullspace_author</div><div class="update-time"><i class="ti ti-clock"></i> 1 hour ago</div></div></div>
+          <div class="update-item"><div class="update-cover cover-pink">M</div><div class="update-body"><div class="update-title">Moonveil: Cursed Princess</div><div class="update-chapter">Chapter 28 — "The Last Dawn"</div><div class="update-author">by moonscribe</div><div class="update-time"><i class="ti ti-clock"></i> 2 hours ago</div></div></div>
+          <div class="update-item"><div class="update-cover cover-green">G</div><div class="update-body"><div class="update-title">Greenroot: Feral Witch</div><div class="update-chapter">Chapter 45 — "Root and Bone"</div><div class="update-author">by fernroot</div><div class="update-time"><i class="ti ti-clock"></i> 4 hours ago</div></div></div>
+        </div>
+        <a class="view-all-btn" href="activity.html#updates"><i class="ti ti-bell"></i> View all updates <i class="ti ti-arrow-right"></i></a>
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    <div class="footer-logo">DawnScribe</div>
+    <p>A home for stories, art, and the people who love them.</p>
+    <div class="footer-links">
+      <a href="about.html">About</a><a href="terms.html">Terms of Service</a><a href="privacy.html">Privacy Policy</a><a href="terms.html#dmca">DMCA</a><a href="contact.html">Contact</a>
+    </div>
+    <p style="margin-top:8px;">© 2026 DawnScribe. All rights reserved.</p>
+  </footer>
+
+  <script>
+    var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    /* ── ANNOUNCEMENT ───────────────────────────────────────────── */
+    async function loadAnnouncement() {
+      var result = await db.from('announcements').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(1);
+      if (!result.data || result.data.length === 0) { return; }
+      var ann = result.data[0];
+      if (sessionStorage.getItem('ann-dismissed') === ann.id) { return; }
+      var banner = document.getElementById('ann-banner');
+      banner.className = 'ann-banner ' + (ann.type || 'info');
+      document.getElementById('ann-text').textContent = ann.message;
+      banner.style.display = 'block';
+      document.getElementById('ann-dismiss').addEventListener('click', function() {
+        banner.style.display = 'none';
+        sessionStorage.setItem('ann-dismissed', ann.id);
+      });
+    }
+
+    /* ── POLL ───────────────────────────────────────────────────── */
+    async function loadPoll() {
+      var pollResult = await db.from('polls').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(1);
+      if (!pollResult.data || pollResult.data.length === 0) { return; }
+      var poll = pollResult.data[0];
+      var optsResult = await db.from('poll_options').select('*').eq('poll_id', poll.id);
+      if (!optsResult.data || optsResult.data.length === 0) { return; }
+      document.getElementById('poll-question-text').textContent = poll.question;
+      var optionsEl = document.getElementById('poll-options');
+      optionsEl.innerHTML = '';
+      var votedId = localStorage.getItem('voted-poll-' + poll.id);
+      optsResult.data.forEach(function(opt) {
+        var btn = document.createElement('button');
+        btn.className = 'poll-option-btn' + (votedId === opt.id ? ' voted' : '');
+        btn.dataset.id = opt.id;
+        btn.textContent = opt.option_text;
+        btn.addEventListener('click', async function() {
+          var previousVoteId = localStorage.getItem('voted-poll-' + poll.id);
+          if (previousVoteId === opt.id) { return; }
+          optionsEl.querySelectorAll('.poll-option-btn').forEach(function(b) { b.disabled = true; b.style.opacity = '0.5'; });
+          if (previousVoteId) {
+            var prevFresh = await db.from('poll_options').select('vote_count').eq('id', previousVoteId).single();
+            var prevCount = prevFresh.data ? Math.max(0, prevFresh.data.vote_count - 1) : 0;
+            await db.from('poll_options').update({ vote_count: prevCount }).eq('id', previousVoteId);
+          }
+          var fresh = await db.from('poll_options').select('vote_count').eq('id', opt.id).single();
+          var latestCount = fresh.data ? fresh.data.vote_count : 0;
+          await db.from('poll_options').update({ vote_count: latestCount + 1 }).eq('id', opt.id);
+          localStorage.setItem('voted-poll-' + poll.id, opt.id);
+          optionsEl.querySelectorAll('.poll-option-btn').forEach(function(b) {
+            b.disabled = false; b.style.opacity = ''; b.classList.remove('voted');
+            if (b.dataset.id === opt.id) { b.classList.add('voted'); }
+          });
+          var updated = await db.from('poll_options').select('*').eq('poll_id', poll.id);
+          if (updated.data) { renderPollResults(updated.data); }
+        });
+        optionsEl.appendChild(btn);
+      });
+      document.getElementById('poll-close-results').onclick = function() {
+        document.getElementById('poll-results').classList.remove('show');
+        document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
+      };
+      document.getElementById('poll-show-results-btn').onclick = async function() {
+        var updated = await db.from('poll_options').select('*').eq('poll_id', poll.id);
+        if (updated.data) { renderPollResults(updated.data); }
+      };
+      document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
+      document.getElementById('poll-banner').style.display = 'block';
+    }
+
+    function renderPollResults(options) {
+      var total = options.reduce(function(s, o) { return s + o.vote_count; }, 0);
+      var barsEl = document.getElementById('poll-results-bars');
+      barsEl.innerHTML = '';
+      options.forEach(function(opt) {
+        var pct = total > 0 ? Math.round((opt.vote_count / total) * 100) : 0;
+        barsEl.innerHTML += '<div class="poll-result-row"><span class="poll-result-label">' + opt.option_text + '</span><div class="poll-result-bar"><div class="poll-result-fill" style="width:' + pct + '%"></div></div><span class="poll-result-pct">' + pct + '%</span></div>';
+      });
+      document.getElementById('poll-total').textContent = total + ' vote' + (total === 1 ? '' : 's') + ' total';
+      document.getElementById('poll-results').classList.add('show');
+      document.getElementById('poll-show-results-btn').style.display = 'none';
+    }
+
+    loadAnnouncement();
+    loadPoll();
+
+    /* ── SEARCH ─────────────────────────────────────────────────── */
+    function toggleSearch() {
+      var dropdown = document.getElementById('searchDropdown');
+      var chevron = document.getElementById('search-chevron');
+      dropdown.classList.toggle('open');
+      chevron.style.transform = dropdown.classList.contains('open') ? 'rotate(180deg)' : 'rotate(0deg)';
+      document.getElementById('notifDropdown').classList.remove('open');
+      document.getElementById('user-dropdown').classList.remove('open');
+    }
+
+    /* ── CLICK OUTSIDE ──────────────────────────────────────────── */
+    document.addEventListener('click', function(e) {
+      var searchWrap = document.querySelector('.search-dropdown-wrap');
+      if (searchWrap && !searchWrap.contains(e.target)) {
+        document.getElementById('searchDropdown').classList.remove('open');
+        document.getElementById('search-chevron').style.transform = 'rotate(0deg)';
+      }
+      var notifWrap = document.querySelector('.notif-wrap');
+      if (notifWrap && !notifWrap.contains(e.target)) { document.getElementById('notifDropdown').classList.remove('open'); }
+      var dmWrap = document.querySelector('.dm-wrap');
+      if (dmWrap && !dmWrap.contains(e.target)) { document.getElementById('dmDropdown').classList.remove('open'); }
+      var userNavWrap = document.querySelector('.user-nav-wrap');
+      if (userNavWrap && !userNavWrap.contains(e.target)) { document.getElementById('user-dropdown').classList.remove('open'); }
+    });
+
+    /* ── SCROLL ROWS ────────────────────────────────────────────── */
+    document.querySelectorAll('.scroll-row').forEach(function(row) {
+      var isDown = false, startX, scrollLeft;
+      row.addEventListener('mousedown', function(e) { isDown = true; startX = e.pageX - row.offsetLeft; scrollLeft = row.scrollLeft; });
+      row.addEventListener('mouseleave', function() { isDown = false; });
+      row.addEventListener('mouseup', function() { isDown = false; });
+      row.addEventListener('mousemove', function(e) {
+        if (!isDown) { return; }
+        e.preventDefault();
+        row.scrollLeft = scrollLeft - (e.pageX - row.offsetLeft - startX) * 2;
+      });
+    });
+
+    function scrollRow(index, amount) {
+      var row = document.getElementById('row-' + index);
+      if (row) { row.scrollBy({ left: amount, behavior: 'smooth' }); }
+    }
+
+    /* ── TOGGLE ROW COLLAPSE ────────────────────────────────────── */
+    function toggleRow(index) {
+      var wrap = document.getElementById('wrap-' + index);
+      var btn  = document.getElementById('toggle-btn-' + index);
+      if (!wrap) { return; }
+      var isCollapsed = wrap.classList.toggle('collapsed');
+      btn.innerHTML = isCollapsed
+        ? '<i class="ti ti-chevron-down" id="toggle-icon-' + index + '"></i> Show'
+        : '<i class="ti ti-chevron-up" id="toggle-icon-' + index + '"></i> Hide';
+      var states = JSON.parse(localStorage.getItem('ds_row_states') || '{}');
+      states[index] = isCollapsed;
+      localStorage.setItem('ds_row_states', JSON.stringify(states));
+    }
+
+    /* Restore row states on load */
+    (function() {
+      var states = JSON.parse(localStorage.getItem('ds_row_states') || '{}');
+      Object.keys(states).forEach(function(index) {
+        if (states[index] === true) {
+          var wrap = document.getElementById('wrap-' + index);
+          var btn  = document.getElementById('toggle-btn-' + index);
+          if (wrap) { wrap.classList.add('collapsed'); }
+          if (btn)  { btn.innerHTML = '<i class="ti ti-chevron-down" id="toggle-icon-' + index + '"></i> Show'; }
+        }
+      });
+    })();
+
+    /* ── DM / NOTIF / SIDEBAR ───────────────────────────────────── */
+    function toggleDm() {
+      document.getElementById('dmDropdown').classList.toggle('open');
+      document.getElementById('notifDropdown').classList.remove('open');
+      document.getElementById('searchDropdown').classList.remove('open');
+      document.getElementById('user-dropdown').classList.remove('open');
+    }
+    function toggleNotif() {
+      document.getElementById('notifDropdown').classList.toggle('open');
+      document.getElementById('dmDropdown').classList.remove('open');
+      document.getElementById('searchDropdown').classList.remove('open');
+      document.getElementById('user-dropdown').classList.remove('open');
+    }
+    function switchNotif(tab) {
+      document.querySelectorAll('.notif-tab').forEach(function(t, i) {
+        t.classList.toggle('active', ['novels','artists','comments'][i] === tab);
+      });
+      document.querySelectorAll('.notif-panel').forEach(function(p) { p.classList.remove('active'); });
+      document.getElementById('notif-' + tab).classList.add('active');
+    }
+    function markRead(tab) {
+      document.querySelectorAll('#notif-' + tab + ' .notif-item').forEach(function(item) {
+        item.classList.remove('unread');
+        var dot = item.querySelector('.notif-dot');
+        if (dot) { dot.remove(); }
+      });
+      updateBadge();
+    }
+    function updateBadge() {
+      var unread = document.querySelectorAll('.notif-item.unread').length;
+      var badge = document.querySelector('.notif-badge');
+      if (unread === 0) { badge.style.display = 'none'; }
+      else { badge.style.display = 'flex'; badge.textContent = unread; }
+    }
+    function switchSidebar(tab) {
+      document.querySelectorAll('.sidebar-tab').forEach(function(t, i) {
+        t.classList.toggle('active', ['collabs','comments','updates'][i] === tab);
+      });
+      document.querySelectorAll('.sidebar-panel').forEach(function(p) { p.classList.remove('active'); });
+      document.getElementById('panel-' + tab).classList.add('active');
+    }
+    function toggleSidebar() {
+      var sidebar = document.getElementById('activity-sidebar');
+      var chevron = document.getElementById('sidebar-chevron');
+      sidebar.classList.toggle('collapsed');
+      var isCollapsed = sidebar.classList.contains('collapsed');
+      chevron.className = isCollapsed ? 'ti ti-chevron-left' : 'ti ti-chevron-right';
+      localStorage.setItem('ds_sidebar_collapsed', isCollapsed);
+    }
+    (function() {
+      if (localStorage.getItem('ds_sidebar_collapsed') === 'true') {
+        var sidebar = document.getElementById('activity-sidebar');
+        var chevron = document.getElementById('sidebar-chevron');
+        if (sidebar) { sidebar.classList.add('collapsed'); }
+        if (chevron) { chevron.className = 'ti ti-chevron-left'; }
+      }
+    })();
+
+    /* ── USER NAV ───────────────────────────────────────────────── */
+    (async function initUserNav() {
+      try {
+        var session = (await db.auth.getSession()).data.session;
+        if (!session) { return; }
+        document.getElementById('nav-login-btn').style.display = 'none';
+        document.getElementById('publish-btn').style.display = 'flex';
+        document.getElementById('showcase-btn').style.display = 'flex';
+        var avatarBtn = document.getElementById('user-avatar-btn');
+        avatarBtn.style.display = 'flex';
+        var meta = session.user.user_metadata || {};
+        var username = meta.username || null;
+        var displayName = meta.display_name || username || session.user.email.split('@')[0];
+        document.getElementById('dd-display-name').textContent = displayName;
+        document.getElementById('dd-handle').textContent = username ? '@' + username : session.user.email;
+        document.getElementById('user-avatar-initial').textContent = displayName.charAt(0).toUpperCase();
+        if (username) { document.getElementById('dd-profile-link').href = 'profile.html?user=' + username; }
+        if (username) {
+          try {
+            var res = await db.from('profiles').select('avatar_url,display_name').eq('username', username).maybeSingle();
+            if (res && !res.error && res.data) {
+              if (res.data.display_name) {
+                document.getElementById('dd-display-name').textContent = res.data.display_name;
+                document.getElementById('user-avatar-initial').textContent = res.data.display_name.charAt(0).toUpperCase();
+              }
+              if (res.data.avatar_url) {
+                avatarBtn.innerHTML = '<img src="' + res.data.avatar_url + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
+              }
+            }
+          } catch(e) {}
+        }
+        /* Admin link for site owner only */
+        if (session.user.id === '516db718-edd5-4856-9281-2df642d006f5') {
+          var menu = document.querySelector('.user-dropdown-menu');
+          var divider = document.createElement('div');
+          divider.className = 'user-dropdown-divider';
+          var adminLink = document.createElement('a');
+          adminLink.className = 'user-dropdown-item';
+          adminLink.href = 'WhiteRoomUnbreakable.html';
+          adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>';
+          var signOutBtn = menu.querySelector('.signout-btn');
+          menu.insertBefore(divider, signOutBtn);
+          menu.insertBefore(adminLink, signOutBtn);
+        }
+      } catch(err) { console.warn('User nav:', err); }
+    })();
+
+    function toggleUserDropdown() {
+      var dd = document.getElementById('user-dropdown');
+      dd.classList.toggle('open');
+      document.getElementById('notifDropdown').classList.remove('open');
+      document.getElementById('dmDropdown').classList.remove('open');
+      document.getElementById('searchDropdown').classList.remove('open');
+    }
+
+    async function signOut() {
+      try { await db.auth.signOut(); } catch(e) {}
+      window.location.reload();
+    }
+  </script>
+</body>
+</html>

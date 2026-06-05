@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  (function() {
+    var t = localStorage.getItem('ds_theme');
+    if (t) { document.documentElement.setAttribute('data-theme', t); }
+  })();
+</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Profile</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:#2dd4bf;text-decoration:none;letter-spacing:1px;}
+    .logo span { color: #f1f0ff; transition: color 0.3s; }
+    html[data-theme="light"] .logo span { color: #0a0a0f; }
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:#2dd4bf;color:#2dd4bf;}
+  
+    html[data-theme="light"] {
+  --bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;
+  --accent:#0d9488;--accent2:#0f766e;
+  --text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;
+  --border:rgba(0,0,0,0.08);
+  --red:#dc2626;--green:#059669;--gold:#d97706;
+}
+
+    /* BANNER */
+    .banner-wrap{position:relative;width:100%;height:340px;background:linear-gradient(135deg,#0d0d1a,#1a0a2e,#0a1a2e);overflow:hidden;}
+    .banner-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+    .banner-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(10,10,15,0.85) 100%);}
+    .banner-edit-btn{position:absolute;bottom:14px;right:14px;background:rgba(10,10,15,0.75);border:1px solid rgba(45,212,191,0.4);border-radius:8px;padding:7px 14px;color:#2dd4bf;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:none;align-items:center;gap:6px;transition:all 0.2s;z-index:5;}
+    .banner-edit-btn:hover{background:rgba(45,212,191,0.15);}
+
+    /* AVATAR */
+    .profile-header{max-width:960px;margin:0 auto;padding:0 24px;position:relative;}
+    .avatar-row{display:flex;align-items:flex-end;justify-content:space-between;margin-top:-52px;margin-bottom:16px;flex-wrap:wrap;gap:12px;}
+    .avatar-wrap{position:relative;flex-shrink:0;width:112px;}
+    .avatar{width:104px;height:104px;border-radius:50%;border:4px solid var(--bg);background:linear-gradient(135deg,#1e0040,#6b21a8);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:36px;font-weight:700;color:#c084fc;overflow:hidden;}
+    .avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+    .avatar-edit-btn{position:absolute;bottom:4px;right:4px;background:#0d9488;border:2px solid var(--bg);border-radius:50%;width:30px;height:30px;display:none;align-items:center;justify-content:center;cursor:pointer;color:white;font-size:14px;transition:background 0.2s;z-index:5;}
+    .avatar-edit-btn:hover{background:#2dd4bf;}
+
+    /* VISIBILITY — visitor buttons always visible, owner buttons hidden until JS confirms */
+    .owner-only{display:none;}
+    .visitor-only{display:inline-flex !important;align-items:center;gap:6px;}
+
+    /* HEADER ACTIONS */
+    .header-actions{display:flex;align-items:center;gap:8px;padding-bottom:4px;}
+    .btn{padding:8px 20px;border-radius:8px;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text2);}
+    .btn-outline:hover{border-color:#2dd4bf;color:#2dd4bf;}
+    #follow-btn{background:#0d9488;color:white;min-width:115px;justify-content:center;border:1px solid transparent;padding:8px 20px;border-radius:8px;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    #follow-btn:hover{background:#2dd4bf;color:#0a0a0f;}
+    #follow-btn.following{background:transparent;border:1px solid var(--border);color:var(--text2);}
+    #follow-btn.following:hover{border-color:var(--red);color:var(--red);}
+    #msg-btn{background:transparent;border:1px solid var(--border);color:var(--text2);padding:8px 20px;border-radius:8px;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;text-decoration:none;}
+    #msg-btn:hover{border-color:#2dd4bf;color:#2dd4bf;}
+
+    /* BIO */
+    .bio-display{display:flex;align-items:flex-start;gap:8px;}
+    .bio-text{font-size:14px;color:var(--text2);max-width:560px;line-height:1.6;}
+    .bio-edit-btn{background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-family:'Lato',sans-serif;transition:color 0.2s;flex-shrink:0;margin-top:2px;}
+    .bio-edit-btn:hover{color:#2dd4bf;}
+    .bio-editor{display:none;max-width:560px;}
+    .bio-editor.open{display:block;}
+    .bio-textarea{width:100%;background:var(--bg3);border:1px solid rgba(45,212,191,0.4);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;resize:none;line-height:1.6;}
+    .bio-editor-btns{display:flex;gap:8px;margin-top:8px;}
+    .bio-save-btn{background:#0d9488;border:none;border-radius:7px;padding:7px 16px;color:white;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
+    .bio-cancel-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:7px 16px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
+    .profile-name-row{display:flex;align-items:center;gap:12px;margin-bottom:2px;}
+    .profile-name{font-family:'Lato',sans-serif;font-size:24px;font-weight:700;color:var(--text);}
+
+    /* STATS */
+    .stats-bar{display:flex;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:20px;overflow:hidden;}
+    .stat-item{flex:1;padding:14px 16px;text-align:center;border-right:1px solid var(--border);}
+    .stat-item:last-child{border-right:none;}
+    .stat-item:hover{background:var(--bg3);}
+    .stat-num{font-family:'Cinzel',serif;font-size:20px;font-weight:700;color:#2dd4bf;display:block;}
+    .stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;}
+
+    /* PRESTIGE */
+    .prestige-section{margin-bottom:24px;}
+    .prestige-header{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+    .prestige-title{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--text2);}
+    .prestige-hint{font-size:11px;color:var(--text3);}
+    .badge-row{display:flex;flex-wrap:wrap;gap:8px;min-height:44px;}
+    .badge{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid transparent;user-select:none;}
+    .badge.draggable{cursor:grab;}
+    .badge.draggable:active{cursor:grabbing;}
+    .badge.dragging{opacity:0.5;}
+    .badge.drag-over{box-shadow:0 0 0 2px #2dd4bf;}
+    .badge-gold{background:rgba(245,158,11,0.12);color:#f59e0b;border-color:rgba(245,158,11,0.25);}
+    .badge-teal{background:rgba(45,212,191,0.12);color:#2dd4bf;border-color:rgba(45,212,191,0.25);}
+    .badge-pink{background:rgba(244,114,182,0.12);color:#f472b6;border-color:rgba(244,114,182,0.25);}
+    .badge-purple{background:rgba(192,132,252,0.12);color:#c084fc;border-color:rgba(192,132,252,0.25);}
+    .badge-red{background:rgba(248,113,113,0.12);color:#f87171;border-color:rgba(248,113,113,0.25);}
+    .badge-green{background:rgba(52,211,153,0.12);color:#34d399;border-color:rgba(52,211,153,0.25);}
+
+    /* MODAL */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;}
+    .modal-overlay.open{display:flex;}
+    .modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;}
+    .modal-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:20px;display:flex;align-items:center;gap:8px;}
+    .modal-title i{color:#2dd4bf;}
+    .form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;}
+    .form-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);}
+    .form-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;transition:border-color 0.2s;width:100%;}
+    .form-input:focus{border-color:#2dd4bf;}
+    .form-input::placeholder{color:var(--text3);}
+    .form-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;transition:border-color 0.2s;resize:vertical;min-height:90px;width:100%;}
+    .form-textarea:focus{border-color:#2dd4bf;}
+    .form-textarea::placeholder{color:var(--text3);}
+    .form-select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;cursor:pointer;}
+    .form-select:focus{border-color:#2dd4bf;}
+    .modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap;}
+    .modal-cancel{background:transparent;border:1px solid var(--border);border-radius:8px;padding:9px 20px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
+    .modal-save{background:#0d9488;border:none;border-radius:8px;padding:9px 20px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;}
+    .modal-save:hover{background:#2dd4bf;color:#0a0a0f;}
+    .modal-danger{background:transparent;border:1px solid rgba(248,113,113,0.4);border-radius:8px;padding:9px 20px;color:var(--red);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;}
+    .modal-danger:hover{background:rgba(248,113,113,0.1);}
+
+    /* TABS */
+    .profile-tabs-wrap{max-width:960px;margin:0 auto;padding:0 24px;}
+    .profile-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:32px;overflow-x:auto;scrollbar-width:none;}
+    .profile-tabs::-webkit-scrollbar{display:none;}
+    .profile-tab{padding:12px 22px;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--text3);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;white-space:nowrap;margin-bottom:-1px;}
+    .profile-tab:hover{color:var(--text2);}
+    .profile-tab.active{color:#2dd4bf;border-bottom-color:#2dd4bf;}
+    .tab-panel{display:none;}
+    .tab-panel.active{display:block;}
+
+    /* WORKS */
+    .works-layout{display:grid;grid-template-columns:1fr 1fr;gap:32px;}
+    @media(max-width:640px){.works-layout{grid-template-columns:1fr;}}
+    .works-col-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+    .works-col-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;}
+    .works-col-title i{color:#2dd4bf;}
+    .add-work-btn{background:none;border:1px dashed var(--text3);border-radius:7px;padding:5px 12px;color:var(--text3);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.2s;}
+    .add-work-btn:hover{border-color:#2dd4bf;color:#2dd4bf;}
+    .work-cards{display:flex;flex-direction:column;gap:16px;}
+    .work-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;display:flex;gap:20px;transition:border-color 0.2s;cursor:pointer;}
+    .work-card:hover{border-color:rgba(45,212,191,0.3);}
+    .work-cover{width:160px;height:220px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:40px;font-weight:700;flex-shrink:0;}
+    .art-cover{width:220px;height:220px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:60px;flex-shrink:0;}
+    .work-body{flex:1;min-width:0;}
+    .work-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .work-meta{font-size:11px;color:var(--text3);margin-bottom:6px;}
+    .work-tags{display:flex;flex-wrap:wrap;gap:4px;}
+    .work-tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--text3);border:1px solid var(--border);}
+    .work-tag.genre{background:rgba(45,212,191,0.08);color:#2dd4bf;border-color:rgba(45,212,191,0.2);}
+
+    /* ANNOUNCEMENTS */
+    .announce-wrap{max-width:640px;margin-bottom:36px;}
+    .announce-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:10px;flex-wrap:wrap;}
+    .announce-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;}
+    .announce-title i{color:#2dd4bf;}
+    .announce-follow-info{font-size:12px;color:var(--text3);margin-bottom:20px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:8px;}
+    .announce-follow-info i{color:#2dd4bf;}
+    .post-btn{background:#0d9488;color:white;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .post-btn:hover{background:#2dd4bf;color:#0a0a0f;}
+    .announcement{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px;}
+    .ann-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:8px;}
+    .ann-top-left{flex:1;}
+    .ann-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;margin-bottom:6px;}
+    .ann-tag.update{background:rgba(45,212,191,0.12);color:#2dd4bf;}
+    .ann-tag.personal{background:rgba(192,132,252,0.12);color:#c084fc;}
+    .ann-tag.milestone{background:rgba(245,158,11,0.12);color:#f59e0b;}
+    .ann-title-text{font-size:14px;font-weight:700;color:var(--text);}
+    .ann-top-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+    .ann-time{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:4px;white-space:nowrap;}
+    .ann-edit-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--text3);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:none;align-items:center;gap:4px;transition:all 0.2s;}
+    .ann-edit-btn:hover{border-color:#2dd4bf;color:#2dd4bf;}
+    .ann-body{font-size:13px;color:var(--text2);line-height:1.65;}
+
+    /* INFO */
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:640px;}
+    @media(max-width:540px){.info-grid{grid-template-columns:1fr;}}
+    .info-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;}
+    .info-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+    .info-label i{font-size:14px;color:#2dd4bf;}
+    .info-value{font-size:14px;color:var(--text);font-weight:700;}
+    .info-value.muted{color:var(--text2);font-weight:400;}
+
+    /* READING LIST */
+    .list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
+    .reading-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;gap:12px;cursor:pointer;transition:border-color 0.2s;}
+    .reading-card:hover{border-color:rgba(45,212,191,0.3);}
+    .reading-cover{width:48px;height:66px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:18px;font-weight:700;flex-shrink:0;}
+    .reading-body{flex:1;min-width:0;}
+    .reading-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .reading-author{font-size:11px;color:#2dd4bf;margin-bottom:4px;}
+    .reading-progress{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:4px;}
+    .progress-bar{height:3px;background:var(--bg3);border-radius:2px;margin-top:4px;overflow:hidden;}
+    .progress-fill{height:100%;background:#2dd4bf;border-radius:2px;}
+
+    /* ARTIST LIST */
+    .artist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;}
+    .artist-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color 0.2s;text-decoration:none;}
+    .artist-card:hover{border-color:rgba(45,212,191,0.3);}
+    .artist-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+    .artist-info{flex:1;min-width:0;}
+    .artist-name{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .artist-works{font-size:11px;color:var(--text3);}
+    .unfollow-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--text3);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.15s;}
+    .unfollow-btn:hover{border-color:var(--red);color:var(--red);}
+
+    /* ACTIVITY */
+    .activity-layout{display:grid;grid-template-columns:1fr 1fr;gap:32px;}
+    @media(max-width:640px){.activity-layout{grid-template-columns:1fr;}}
+    .activity-col-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+    .activity-col-title i{color:#2dd4bf;}
+    .activity-item{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;transition:border-color 0.2s;}
+    .activity-item:hover{border-color:rgba(45,212,191,0.3);}
+    .activity-item-on{font-size:11px;color:var(--text2);margin-bottom:5px;display:flex;align-items:center;gap:6px;}
+    .act-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;}
+    .act-badge.novel{background:rgba(45,212,191,0.15);color:#2dd4bf;}
+    .act-badge.art{background:rgba(244,114,182,0.15);color:#f472b6;}
+    .activity-text{font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:6px;}
+    .activity-time{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:4px;}
+    .review-stars{color:var(--gold);font-size:13px;margin-bottom:4px;}
+
+    /* WORK VISITOR BUTTONS */
+    .work-visitor-btn:hover { background: rgba(45,212,191,0.22) !important; }
+
+    /* TOAST */
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:#2dd4bf;}
+
+    /* COVERS */
+    .cover-purple{background:linear-gradient(160deg,#1e0040,#6b21a8);color:#c084fc;}
+    .cover-blue{background:linear-gradient(160deg,#001030,#1d4ed8);color:#60a5fa;}
+    .cover-red{background:linear-gradient(160deg,#200010,#9f1239);color:#fb7185;}
+    .cover-green{background:linear-gradient(160deg,#001a10,#065f46);color:#34d399;}
+    .cover-gold{background:linear-gradient(160deg,#1a0e00,#92400e);color:#fbbf24;}
+    .cover-pink{background:linear-gradient(160deg,#1a0020,#86198f);color:#f0abfc;}
+    .art-bg1{background:linear-gradient(135deg,#0f0025,#3b0764);}
+    .art-bg2{background:linear-gradient(135deg,#001020,#0c4a6e);}
+    .art-bg4{background:linear-gradient(135deg,#0a1a00,#14532d);}
+    .art-bg5{background:linear-gradient(135deg,#1a0e00,#78350f);}
+    .hidden-input{display:none;}
+
+    footer{background:var(--bg2);border-top:1px solid var(--border);padding:32px;text-align:center;color:var(--text3);font-size:13px;}
+    footer .footer-logo{font-family:'Cinzel',serif;font-size:20px;color:#2dd4bf;margin-bottom:10px;}
+    footer .footer-links{display:flex;justify-content:center;gap:24px;margin:12px 0;flex-wrap:wrap;}
+    footer .footer-links a{color:var(--text3);text-decoration:none;transition:color 0.2s;}
+    footer .footer-links a:hover{color:#2dd4bf;}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <input type="file" class="hidden-input" id="avatar-input" accept="image/*">
+  <input type="file" class="hidden-input" id="banner-input" accept="image/*">
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
+
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </nav>
+
+  <!-- BANNER -->
+  <div class="banner-wrap" id="banner-wrap">
+    <div class="banner-overlay"></div>
+    <button class="banner-edit-btn owner-only" id="banner-edit-btn" onclick="document.getElementById('banner-input').click()">
+      <i class="ti ti-photo-edit"></i> Change Banner
+    </button>
+  </div>
+
+  <!-- PROFILE HEADER -->
+  <div class="profile-header">
+    <div class="avatar-row">
+      <div class="avatar-wrap">
+        <div class="avatar" id="avatar-display"><span id="avatar-initial">M</span></div>
+        <button class="avatar-edit-btn owner-only" id="avatar-edit-btn" onclick="document.getElementById('avatar-input').click()" title="Change photo">
+          <i class="ti ti-camera"></i>
+        </button>
+      </div>
+      <div class="header-actions">
+        <button id="follow-btn" class="visitor-only" onclick="toggleFollow()">
+          <i class="ti ti-bell" id="follow-icon"></i><span id="follow-label">Follow</span>
+        </button>
+        <a id="msg-btn" class="visitor-only" href="messages.html?to=moonscribe">
+          <i class="ti ti-message"></i> Message
+        </a>
+        <button class="btn btn-outline owner-only" onclick="openEditModal()">
+          <i class="ti ti-edit"></i> Edit Profile
+        </button>
+        <button class="btn btn-outline" onclick="shareProfile()"><i class="ti ti-share"></i></button>
+      </div>
+    </div>
+
+    <!-- ANNOUNCEMENTS — shown directly under action buttons -->
+    <div id="announce-section" style="margin-top:16px;">
+      <div class="announce-wrap">
+        <div class="announce-header">
+          <div class="announce-title"><i class="ti ti-speakerphone"></i> Announcements</div>
+          <div class="announce-follow-info visitor-only" id="follow-info-el" style="margin-bottom:0;flex:1;margin-left:12px;"><i class="ti ti-bell"></i> Follow this profile to receive announcements in your notifications.</div>
+
+        </div>
+        <div id="announcements-list"></div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:20px;">
+      <div class="profile-name-row">
+        <div class="profile-name" id="display-name">moonscribe</div>
+      </div>
+      <div id="display-handle" style="font-size:14px;color:var(--text3);margin-bottom:8px;">@moonscribe · Writer &amp; Artist</div>
+      <div class="bio-display" id="bio-display">
+        <p class="bio-text" id="bio-text">Weaving dark fantasy one chapter at a time. Author of Moonveil: Cursed Princess. Occasionally I draw too.</p>
+        <button class="bio-edit-btn owner-only" onclick="openBioEditor()"><i class="ti ti-pencil"></i> Edit</button>
+      </div>
+      <div id="social-icons" style="display:flex;gap:8px;margin-top:8px;"></div>
+      <div class="bio-editor" id="bio-editor">
+        <textarea class="bio-textarea" id="bio-textarea" rows="3" maxlength="280"></textarea>
+        <div class="bio-editor-btns">
+          <button class="bio-save-btn" onclick="saveBio()">Save</button>
+          <button class="bio-cancel-btn" onclick="closeBioEditor()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat-item"><span class="stat-num" id="stat-followers">—</span><span class="stat-label">Followers</span></div>
+      <div class="stat-item"><span class="stat-num" id="stat-following">—</span><span class="stat-label">Following</span></div>
+      <div class="stat-item"><span class="stat-num" id="stat-novels">—</span><span class="stat-label">Novels</span></div>
+      <div class="stat-item"><span class="stat-num" id="stat-artworks">—</span><span class="stat-label">Artworks</span></div>
+      <div class="stat-item"><span class="stat-num" id="stat-views">—</span><span class="stat-label">Total Views</span></div>
+    </div>
+
+    <div class="prestige-section">
+      <div class="prestige-header">
+        <span class="prestige-title"><i class="ti ti-award" style="color:#f59e0b;margin-right:6px;"></i>Prestige</span>
+        <span class="prestige-hint owner-only" id="prestige-hint-el">— drag to reorder</span>
+      </div>
+      <div class="badge-row" id="badge-row">
+        <div class="badge badge-gold" data-id="1"><i class="ti ti-star"></i> Early Adopter</div>
+        <div class="badge badge-teal" data-id="2"><i class="ti ti-book"></i> Published Author</div>
+        <div class="badge badge-pink" data-id="3"><i class="ti ti-palette"></i> Verified Artist</div>
+        <div class="badge badge-purple" data-id="4"><i class="ti ti-users"></i> 1k Followers</div>
+        <div class="badge badge-red" data-id="5"><i class="ti ti-flame"></i> Top Creator</div>
+        <div class="badge badge-green" data-id="6"><i class="ti ti-award"></i> Collab Champion</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="profile-tabs-wrap">
+    <div class="profile-tabs">
+      <button class="profile-tab active" data-tab="works" onclick="switchTab(this)"><i class="ti ti-layout-grid"></i> Works</button>
+      <button class="profile-tab" data-tab="info" onclick="switchTab(this)"><i class="ti ti-id-badge"></i> Info</button>
+      <button class="profile-tab" data-tab="reading" onclick="switchTab(this)"><i class="ti ti-books"></i> Reading List</button>
+      <button class="profile-tab" data-tab="artists" onclick="switchTab(this)"><i class="ti ti-brush"></i> Artist List</button>
+      <button class="profile-tab" data-tab="activity" onclick="switchTab(this)"><i class="ti ti-message-circle"></i> Activity</button>
+    </div>
+
+    <!-- WORKS -->
+    <div class="tab-panel active" id="panel-works">
+      <div id="works-layout"></div>
+    </div>
+
+    <!-- INFO -->
+    <div class="tab-panel" id="panel-info">
+      <div class="info-grid">
+        <div class="info-card"><div class="info-label"><i class="ti ti-calendar"></i> Member since</div><div class="info-value" id="info-joined">March 12, 2025</div></div>
+        <div class="info-card"><div class="info-label"><i class="ti ti-clock"></i> Last active</div><div class="info-value">Today</div></div>
+        <div class="info-card"><div class="info-label"><i class="ti ti-map-pin"></i> Location</div><div class="info-value" id="info-location">São Paulo, Brazil</div></div>
+        <div class="info-card"><div class="info-label"><i class="ti ti-gender-bigender"></i> Gender</div><div class="info-value muted" id="info-gender">Not specified</div></div>
+        <div class="info-card"><div class="info-label"><i class="ti ti-feather"></i> Role</div><div class="info-value" id="info-role">Writer &amp; Artist</div></div>
+        <div class="info-card"><div class="info-label"><i class="ti ti-language"></i> Language</div><div class="info-value" id="info-language">English, Portuguese</div></div>
+        <div class="info-card" style="grid-column:span 2;"><div class="info-label"><i class="ti ti-link"></i> Links</div><div id="info-links" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;"></div></div>
+      </div>
+    </div>
+
+    <!-- READING LIST -->
+    <div class="tab-panel" id="panel-reading">
+      <div class="list-grid">
+        <div class="reading-card"><div class="reading-cover cover-purple">S</div><div class="reading-body"><div class="reading-title">Shadow Throne Chronicles</div><div class="reading-author">by darkcrown_writes</div><div class="reading-progress"><i class="ti ti-book-open"></i> Ch. 198 of 214</div><div class="progress-bar"><div class="progress-fill" style="width:92%"></div></div></div></div>
+        <div class="reading-card"><div class="reading-cover cover-red">B</div><div class="reading-body"><div class="reading-title">Bloodpact Academy</div><div class="reading-author">by VoidPen</div><div class="reading-progress"><i class="ti ti-book-open"></i> Ch. 72 of 89</div><div class="progress-bar"><div class="progress-fill" style="width:81%"></div></div></div></div>
+        <div class="reading-card"><div class="reading-cover cover-green">G</div><div class="reading-body"><div class="reading-title">Greenroot: Feral Witch</div><div class="reading-author">by fernroot</div><div class="reading-progress"><i class="ti ti-book-open"></i> Ch. 45 of 45</div><div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div></div></div>
+        <div class="reading-card"><div class="reading-cover cover-blue">E</div><div class="reading-body"><div class="reading-title">Echoes of the Void</div><div class="reading-author">by nullspace_author</div><div class="reading-progress"><i class="ti ti-book-open"></i> Ch. 8 of 12</div><div class="progress-bar"><div class="progress-fill" style="width:67%"></div></div></div></div>
+      </div>
+    </div>
+
+    <!-- ARTIST LIST -->
+    <div class="tab-panel" id="panel-artists">
+      <div class="artist-grid">
+        <a class="artist-card" href="profile.html?user=starlitink"><div class="artist-avatar art-bg2">⚡</div><div class="artist-info"><div class="artist-name">starlitink</div><div class="artist-works">24 artworks</div></div><button class="unfollow-btn owner-only" onclick="event.preventDefault();showToast('Unfollowed starlitink')">Unfollow</button></a>
+        <a class="artist-card" href="profile.html?user=fernroot"><div class="artist-avatar art-bg4">🌿</div><div class="artist-info"><div class="artist-name">fernroot</div><div class="artist-works">18 artworks</div></div><button class="unfollow-btn owner-only" onclick="event.preventDefault();showToast('Unfollowed fernroot')">Unfollow</button></a>
+        <a class="artist-card" href="profile.html?user=darkbrush"><div class="artist-avatar art-bg1">🌑</div><div class="artist-info"><div class="artist-name">darkbrush</div><div class="artist-works">31 artworks</div></div><button class="unfollow-btn owner-only" onclick="event.preventDefault();showToast('Unfollowed darkbrush')">Unfollow</button></a>
+      </div>
+    </div>
+
+    <!-- ACTIVITY -->
+    <div class="tab-panel" id="panel-activity">
+      <div class="activity-layout">
+        <div>
+          <div class="activity-col-title"><i class="ti ti-message-circle"></i> Comments</div>
+          <div class="activity-item"><div class="activity-item-on"><span class="act-badge novel">Novel</span> Bloodpact Academy · Ch. 89</div><div class="activity-text">"The ward scene gave me chills. Best chapter yet!"</div><div class="activity-time"><i class="ti ti-clock"></i> <span class="live-time" data-ts="5"></span></div></div>
+          <div class="activity-item"><div class="activity-item-on"><span class="act-badge art">Art</span> Moonveil Cover Art Vol.2</div><div class="activity-text">"The lighting on this is perfect."</div><div class="activity-time"><i class="ti ti-clock"></i> <span class="live-time" data-ts="45"></span></div></div>
+          <div class="activity-item"><div class="activity-item-on"><span class="act-badge novel">Novel</span> Shadow Throne · Ch. 198</div><div class="activity-text">"I was NOT ready for that reveal."</div><div class="activity-time"><i class="ti ti-clock"></i> <span class="live-time" data-ts="1440"></span></div></div>
+        </div>
+        <div>
+          <div class="activity-col-title"><i class="ti ti-star"></i> Reviews</div>
+          <div class="activity-item"><div class="activity-item-on"><span class="act-badge novel">Novel</span> The Glass Herald</div><div class="review-stars">★★★★★</div><div class="activity-text">"An absolute masterpiece of political fantasy."</div><div class="activity-time"><i class="ti ti-clock"></i> <span class="live-time" data-ts="10080"></span></div></div>
+          <div class="activity-item"><div class="activity-item-on"><span class="act-badge novel">Novel</span> Echoes of the Void</div><div class="review-stars">★★★★☆</div><div class="activity-text">"Really strong start — the atmosphere is haunting."</div><div class="activity-time"><i class="ti ti-clock"></i> <span class="live-time" data-ts="20160"></span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT PROFILE MODAL -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+      <div class="modal-title"><i class="ti ti-edit"></i> Edit Profile</div>
+      <div class="modal-title" style="font-size:14px;margin-bottom:12px;"><i class="ti ti-speakerphone"></i> Post Announcement</div>
+      <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="post-tag"><option value="update">Update</option><option value="milestone">Milestone</option><option value="personal">Personal</option></select></div>
+      <div class="form-group"><label class="form-label">Title</label><input class="form-input" type="text" id="post-title" placeholder="e.g. Chapter 30 is live!"/></div>
+      <div class="form-group"><label class="form-label">Message</label><textarea class="form-textarea" id="post-body" placeholder="Share something with your followers…"></textarea></div>
+      <div class="modal-btns" style="margin-bottom:4px;">
+        <button class="modal-save" style="background:var(--accent2,#7c3aed);" onclick="savePost()"><i class="ti ti-send"></i> Post Announcement</button>
+      </div>
+      <div style="border-top:1px solid var(--border);margin:18px 0 14px;"></div>
+      <div class="modal-title" style="font-size:14px;margin-bottom:12px;"><i class="ti ti-user"></i> Profile Info</div>
+      <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" type="text" id="edit-name"/></div>
+      <div class="form-group"><label class="form-label">Role</label><select class="form-select" id="edit-role"><option>Writer</option><option>Artist</option><option>Reader</option><option selected>Writer &amp; Artist</option><option>Writer &amp; Reader</option><option>Artist &amp; Reader</option><option>Writer, Artist &amp; Reader</option></select></div>
+      <div class="form-group"><label class="form-label">Location</label><input class="form-input" type="text" id="edit-location" placeholder="City, Country"/></div>
+      <div class="form-group"><label class="form-label">Gender</label><select class="form-select" id="edit-gender"><option value="">Prefer not to say</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Other</option></select></div>
+      <div class="form-group"><label class="form-label">Language(s)</label><input class="form-input" type="text" id="edit-language" placeholder="e.g. English, Portuguese"/></div>
+      <div class="form-group"><label class="form-label"><i class="ti ti-brand-twitter" style="color:#1d9bf0;"></i> Twitter / X — Username</label><input class="form-input" type="text" id="edit-twitter" placeholder="e.g. Ananias5"/></div>
+      <div class="form-group"><label class="form-label"><i class="ti ti-coffee" style="color:#ff5e5b;"></i> Ko-fi — Username</label><input class="form-input" type="text" id="edit-kofi" placeholder="e.g. ananias5"/></div>
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="document.getElementById('edit-modal').classList.remove('open')">Cancel</button>
+        <button class="modal-save" onclick="saveProfile()"><i class="ti ti-check"></i> Save Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT ANNOUNCEMENT MODAL -->
+  <div class="modal-overlay" id="edit-ann-modal">
+    <div class="modal">
+      <div class="modal-title"><i class="ti ti-pencil"></i> Edit Announcement</div>
+      <input type="hidden" id="edit-ann-target"/>
+      <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="edit-ann-tag"><option value="update">Update</option><option value="milestone">Milestone</option><option value="personal">Personal</option></select></div>
+      <div class="form-group"><label class="form-label">Title</label><input class="form-input" type="text" id="edit-ann-title"/></div>
+      <div class="form-group"><label class="form-label">Message</label><textarea class="form-textarea" id="edit-ann-body"></textarea></div>
+      <div class="modal-btns">
+        <button class="modal-danger" onclick="deleteAnn()"><i class="ti ti-trash"></i> Delete</button>
+        <button class="modal-cancel" onclick="document.getElementById('edit-ann-modal').classList.remove('open')">Cancel</button>
+        <button class="modal-save" onclick="saveAnn()"><i class="ti ti-check"></i> Save</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-logo">DawnScribe</div>
+    <p>A home for stories, art, and the people who love them.</p>
+    <div class="footer-links"><a href="#">About</a><a href="terms.html">Terms of Service</a><a href="#">Privacy Policy</a><a href="#">DMCA</a><a href="#">Contact</a></div>
+    <p style="margin-top:8px;">© 2026 DawnScribe. All rights reserved.</p>
+  </footer>
+
+  <script>
+    var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    /* ── TABS ───────────────────────────────────────────────────── */
+    function switchTab(btn) {
+      var name = btn.getAttribute('data-tab');
+      var tabs = document.querySelectorAll('.profile-tab');
+      var panels = document.querySelectorAll('.tab-panel');
+      for (var i = 0; i < tabs.length; i++) { tabs[i].classList.remove('active'); }
+      for (var i = 0; i < panels.length; i++) { panels[i].classList.remove('active'); }
+      btn.classList.add('active');
+      var panel = document.getElementById('panel-' + name);
+      if (panel) { panel.classList.add('active'); }
+    }
+
+    /* ── OWNER VISIBILITY ───────────────────────────────────────── */
+    function setOwner(isOwner) {
+      document.body.classList.toggle('is-owner', isOwner);
+      var ownerEls = document.querySelectorAll('.owner-only');
+      var visitorEls = document.querySelectorAll('.visitor-only');
+      for (var i = 0; i < ownerEls.length; i++) {
+        var el = ownerEls[i];
+        var tag = el.tagName.toLowerCase();
+        el.style.display = isOwner ? ((tag === 'span' || tag === 'button' || tag === 'a') ? 'inline-flex' : 'flex') : 'none';
+      }
+      for (var i = 0; i < visitorEls.length; i++) {
+        visitorEls[i].style.display = isOwner ? 'none' : '';
+      }
+      if (isOwner) {
+        var badges = document.querySelectorAll('.badge');
+        for (var i = 0; i < badges.length; i++) {
+          badges[i].setAttribute('draggable', 'true');
+          badges[i].classList.add('draggable');
+        }
+      }
+    }
+
+    /* ── SUPABASE INIT ──────────────────────────────────────────── */
+    (async function init() {
+      try {
+        var urlParams = new URLSearchParams(window.location.search);
+        var viewingUser = urlParams.get('user');
+        var sessionRes = await db.auth.getSession();
+        var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        var loggedInUsername = null;
+        if (session && session.user && session.user.user_metadata) {
+          loggedInUsername = session.user.user_metadata.username || null;
+        }
+        var profileData = null;
+        var resolvedUsername = viewingUser;
+        if (viewingUser) {
+          var res = await db.from('profiles').select('*').eq('username', viewingUser).maybeSingle();
+          if (res && !res.error && res.data) { profileData = res.data; }
+        } else if (session) {
+          var res = await db.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+          if (res && !res.error && res.data) {
+            profileData = res.data;
+            resolvedUsername = res.data.username || null;
+          }
+        }
+        if (profileData) { applyProfileData(profileData, resolvedUsername); }
+        if (profileData && profileData.id) { loadStats(profileData.id); }
+        var isOwner = false;
+        if (!viewingUser && session) {
+        isOwner = true;
+        } else if (viewingUser && session) {
+          isOwner = (viewingUser === loggedInUsername) || (profileData && viewingUser === profileData.username);
+}
+        if (isOwner) {
+          setOwner(true);
+          renderAnnouncements(true);
+          if (profileData && profileData.id) loadWorks(profileData.id);
+          var uTarget = resolvedUsername || viewingUser || 'user';
+          var msgBtn = document.getElementById('msg-btn');
+          if (msgBtn) { msgBtn.href = 'messages.html?to=' + uTarget; }
+        } else {
+          setOwner(false);
+          renderAnnouncements(false);
+          if (profileData && profileData.id) loadWorks(profileData.id);
+          if (session && profileData && profileData.id) {
+            currentProfileId = profileData.id;
+            var followCheck = await db.from('follows')
+              .select('id')
+              .eq('follower_id', session.user.id)
+              .eq('following_id', profileData.id)
+              .maybeSingle();
+            if (followCheck && !followCheck.error && followCheck.data) {
+              setFollowUI(true);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Profile init:', err);
+      }
+    })();
+
+    function applyProfileData(data, username) {
+      if (data.display_name) { document.getElementById('display-name').textContent = data.display_name; }
+      var handle = '@' + (data.username || username || 'user') + (data.role ? ' · ' + data.role : '');
+      document.getElementById('display-handle').textContent = handle;
+      if (data.bio) { document.getElementById('bio-text').textContent = data.bio; }
+      if (data.location) { document.getElementById('info-location').textContent = data.location; document.getElementById('info-location').classList.remove('muted'); }
+      if (data.gender) { document.getElementById('info-gender').textContent = data.gender; document.getElementById('info-gender').classList.remove('muted'); }
+      if (data.role) { document.getElementById('info-role').textContent = data.role; }
+      if (data.language) { document.getElementById('info-language').textContent = data.language; }
+      if (data.created_at) { document.getElementById('info-joined').textContent = new Date(data.created_at).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}); }
+      if (data.avatar_url) {
+        var d = document.getElementById('avatar-display');
+        d.innerHTML = '<img src="' + data.avatar_url + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
+      } else if (data.display_name || data.username) {
+        var init = document.getElementById('avatar-initial');
+        if (init) { init.textContent = (data.display_name || data.username).charAt(0).toUpperCase(); }
+      }
+      if (data.banner_url) {
+        var wrap = document.getElementById('banner-wrap');
+        var img = wrap.querySelector('.banner-img');
+        if (!img) {
+          img = document.createElement('img');
+          img.className = 'banner-img';
+          wrap.insertBefore(img, wrap.firstChild);
+        }
+        img.src = data.banner_url;
+      }
+      if (data.id) { currentProfileId = data.id; }
+      if (data.twitter || data.kofi) { renderSocialIcons(data.twitter || '', data.kofi || ''); }
+      var msgBtn = document.getElementById('msg-btn');
+      if (msgBtn) { msgBtn.href = 'messages.html?to=' + (data.username || username); }
+    }
+
+    /* ── LOAD WORKS ─────────────────────────────────────────────── */
+    async function loadWorks(profileId) {
+      var layout = document.getElementById('works-layout');
+      layout.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;text-align:center;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading…</div>';
+      var result = await db.from('works').select('id,title,cover_url,status,tags_main,type,synopsis,views,chapters_count,word_count,total_readers,updated_at,avg_chapter_days').eq('author_id', profileId).order('created_at', { ascending: false });
+      layout.innerHTML = '';
+      var isOwner = document.body.classList.contains('is-owner');
+      var novels   = (result.data||[]).filter(function(w){ return w.type !== 'artwork'; });
+      var artworks = (result.data||[]).filter(function(w){ return w.type === 'artwork'; });
+      var hasBoth  = novels.length > 0 && artworks.length > 0;
+      if (hasBoth) { layout.className = 'works-layout'; } else { layout.className = ''; }
+      if (novels.length > 0 || isOwner) {
+        var col = document.createElement('div');
+        col.innerHTML = '<div class="works-col-header"><div class="works-col-title"><i class="ti ti-book"></i> Novels</div>' +
+          (isOwner ? '<a class="add-work-btn" href="publish.html"><i class="ti ti-plus"></i> Add</a>' : '') + '</div>';
+        var cards = document.createElement('div');
+        cards.className = 'work-cards';
+        novels.forEach(function(work) {
+          cards.appendChild(buildWorkCard(work, isOwner));
+          if (!isOwner) checkWorkFollowState(work.id);
+        });
+        col.appendChild(cards);
+        layout.appendChild(col);
+      }
+      if (artworks.length > 0 || isOwner) {
+        var col2 = document.createElement('div');
+        col2.innerHTML = '<div class="works-col-header"><div class="works-col-title"><i class="ti ti-palette"></i> Artwork</div>' +
+          (isOwner ? '<a class="add-work-btn" href="publish.html?type=artwork"><i class="ti ti-plus"></i> Add</a>' : '') + '</div>';
+        var cards2 = document.createElement('div');
+        cards2.className = 'work-cards';
+        artworks.forEach(function(work) {
+          cards2.appendChild(buildWorkCard(work, isOwner));
+          if (!isOwner) checkWorkFollowState(work.id);
+        });
+        col2.appendChild(cards2);
+        layout.appendChild(col2);
+      }
+    }
+
+    function buildWorkCard(work, isOwner) {
+      var statusColors = { ongoing:'rgba(45,212,191,0.1)', completed:'rgba(52,211,153,0.1)', hiatus:'rgba(245,158,11,0.1)', dropped:'rgba(248,113,113,0.1)' };
+      var statusTextColors = { ongoing:'#2dd4bf', completed:'#34d399', hiatus:'#f59e0b', dropped:'#f87171' };
+      var mainTags = [];
+      try { mainTags = JSON.parse(work.tags_main || '[]'); } catch(e){}
+
+      // Star rating (from work.rating, 0–5)
+      var rating = parseFloat(work.rating) || 0;
+      var stars = '';
+      for (var s = 1; s <= 5; s++) {
+        if (rating >= s) stars += '<i class="ti ti-star-filled" style="color:#f59e0b;font-size:13px;"></i>';
+        else if (rating >= s - 0.5) stars += '<i class="ti ti-star-half-filled" style="color:#f59e0b;font-size:13px;"></i>';
+        else stars += '<i class="ti ti-star" style="color:var(--text3);font-size:13px;"></i>';
+      }
+      var ratingLabel = rating > 0 ? '<span style="font-size:12px;color:var(--text2);margin-left:4px;">'+rating.toFixed(1)+'</span>' : '';
+
+      // Updated date
+      var updatedStr = '—';
+      if (work.updated_at) {
+        var d = new Date(work.updated_at);
+        updatedStr = d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+      }
+
+      // Stats bar
+      var stats = [
+        { icon:'ti-eye',        val: fmtNum(work.views||0),           tip:'Views' },
+        { icon:'ti-message',    val: fmtNum(work.comments_count||0),  tip:'Comments' },
+        { icon:'ti-books',      val: fmtNum(work.chapters_count||0),  tip:'Chapters' },
+        { icon:'ti-clock',      val: work.avg_chapter_days ? work.avg_chapter_days+'d' : '—', tip:'Avg. chapter frequency' },
+        { icon:'ti-users',      val: fmtNum(work.total_readers||0),   tip:'Readers' },
+        { icon:'ti-writing',    val: fmtNum(work.total_reviews||0),   tip:'Reviews' },
+        { icon:'ti-letter-w',   val: fmtNum(work.word_count||0),      tip:'Words' },
+        { icon:'ti-calendar',   val: updatedStr,                      tip:'Last updated' },
+      ];
+      var statsHtml = stats.map(function(s) {
+        return '<span title="'+s.tip+'" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--text2);white-space:nowrap;">' +
+          '<i class="ti '+s.icon+'" style="font-size:12px;color:var(--text3);"></i>' + s.val + '</span>';
+      }).join('<span style="color:var(--border);margin:0 2px;">·</span>');
+
+      var synopsis = work.synopsis ? '<p style="font-size:12px;color:var(--text2);margin:8px 0 10px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;">'+escHtml(work.synopsis)+'</p>' : '';
+
+      var editBtn = isOwner
+        ? '<div style="position:absolute;top:10px;right:10px;" onclick="event.stopPropagation();">' +
+            '<button onclick="toggleWorkMenu(\'menu-'+work.id+'\')" style="background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.15);border-radius:7px;padding:4px 10px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;backdrop-filter:blur(4px);"><i class="ti ti-pencil"></i> Edit</button>' +
+            '<div id="menu-'+work.id+'" style="display:none;position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;min-width:160px;box-shadow:0 6px 20px rgba(0,0,0,0.3);z-index:10;">' +
+              '<a href="chapters.html?edit='+work.id+'" style="display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:13px;color:var(--text);text-decoration:none;transition:background 0.15s;" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'"><i class="ti ti-books" style="color:var(--accent);"></i> Manage Chapters</a>' +
+              '<a href="chapters.html?edit='+work.id+'&add=1" style="display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:13px;color:var(--text);text-decoration:none;transition:background 0.15s;" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'"><i class="ti ti-plus" style="color:var(--accent);"></i> Add Chapter</a>' +
+            '</div>' +
+          '</div>'
+        : '';
+
+      var card = document.createElement('div');
+      card.className = 'work-card';
+      card.style.cssText = 'position:relative;cursor:pointer;';
+      card.onclick = function(e) {
+        if (!e.target.closest('a') && !e.target.closest('button')) {
+          window.location.href = 'story.html?id=' + work.id;
+        }
+      };
+      card.innerHTML =
+        (work.cover_url
+          ? '<img src="'+escHtml(work.cover_url)+'" alt="cover" style="width:160px;height:220px;border-radius:10px;object-fit:cover;flex-shrink:0;"/>'
+          : '<div class="work-cover cover-purple">' + escHtml((work.title||'?').charAt(0)) + '</div>') +
+        '<div class="work-body" style="display:flex;flex-direction:column;justify-content:space-between;">' +
+          '<div>' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+              '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:'+(statusColors[work.status]||statusColors.ongoing)+';color:'+(statusTextColors[work.status]||statusTextColors.ongoing)+'">' +
+              (work.status||'ongoing').charAt(0).toUpperCase()+(work.status||'ongoing').slice(1)+'</span>' +
+              '<div style="display:flex;align-items:center;gap:2px;">'+stars+ratingLabel+'</div>' +
+            '</div>' +
+            '<div class="work-title" style="font-size:15px;font-weight:700;margin-bottom:4px;">'+escHtml(work.title)+'</div>' +
+            '<div class="work-tags" style="margin-bottom:6px;">'+mainTags.slice(0,3).map(function(t){ return '<span class="work-tag genre">'+escHtml(t)+'</span>'; }).join('')+'</div>' +
+            synopsis +
+          '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:8px;border-top:1px solid var(--border);">'+statsHtml+'</div>' +
+          (!isOwner
+            ? '<div style="display:flex;gap:8px;margin-top:10px;">' +
+                '<a id="read-btn-'+work.id+'" href="story.html?id='+work.id+'" class="work-visitor-btn" style="flex:1;padding:8px 10px;background:rgba(45,212,191,0.1);border:1px solid var(--accent);border-radius:8px;color:var(--accent);font-size:12px;font-weight:700;font-family:\'Lato\',sans-serif;display:flex;align-items:center;justify-content:center;gap:5px;text-decoration:none;transition:background 0.15s;"><i class="ti ti-book"></i> Read</a>' +
+                '<button id="follow-btn-'+work.id+'" class="work-visitor-btn" style="flex:1;padding:8px 10px;background:rgba(45,212,191,0.1);border:1px solid var(--accent);border-radius:8px;color:var(--accent);font-size:12px;font-weight:700;font-family:\'Lato\',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;transition:background 0.15s;" data-following="0"><i class="ti ti-bookmark"></i> Add to Titles</button>' +
+              '</div>'
+            : '') +
+        '</div>' +
+        editBtn;
+
+      // Wire up follow button after innerHTML is set
+      if (!isOwner) {
+        var followBtn = card.querySelector('#follow-btn-'+work.id);
+        if (followBtn) {
+          followBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            toggleFollowWork(work.id, followBtn);
+          });
+        }
+        var readLink = card.querySelector('#read-btn-'+work.id);
+        if (readLink) readLink.addEventListener('click', function(e){ e.stopPropagation(); });
+      }
+
+      return card;
+    }
+
+    async function checkWorkFollowState(workId) {
+      var s = await db.auth.getSession();
+      if (!s || !s.data || !s.data.session) return;
+      var res = await db.from('work_follows').select('id').eq('user_id', s.data.session.user.id).eq('work_id', workId).maybeSingle();
+      var btn = document.getElementById('follow-btn-' + workId);
+      if (!btn) return;
+      if (res.data) setFollowBtnState(btn, true);
+    }
+
+    function setFollowBtnState(btn, following) {
+      if (following) {
+        btn.innerHTML = '<i class="ti ti-bookmark-filled"></i> Following';
+        btn.style.background = 'rgba(45,212,191,0.2)';
+        btn.style.borderColor = 'var(--accent)';
+        btn.style.color = 'var(--accent)';
+        btn.setAttribute('data-following', '1');
+      } else {
+        btn.innerHTML = '<i class="ti ti-bookmark"></i> Add to Titles';
+        btn.style.background = 'rgba(45,212,191,0.1)';
+        btn.style.borderColor = 'var(--accent)';
+        btn.style.color = 'var(--accent)';
+        btn.setAttribute('data-following', '0');
+      }
+    }
+
+    async function toggleFollowWork(workId, btn) {
+      var s = await db.auth.getSession();
+      if (!s || !s.data || !s.data.session) { showToast('Please log in to follow', 'ti-alert-triangle'); return; }
+      var userId = s.data.session.user.id;
+      var isFollowing = btn.getAttribute('data-following') === '1';
+      if (isFollowing) {
+        await db.from('work_follows').delete().eq('user_id', userId).eq('work_id', workId);
+        setFollowBtnState(btn, false);
+        showToast('Removed from Following Titles', 'ti-bookmark-off');
+      } else {
+        await db.from('work_follows').insert({ user_id: userId, work_id: workId });
+        setFollowBtnState(btn, true);
+        showToast('Added to Following Titles!', 'ti-bookmark-filled');
+      }
+    }
+
+    function toggleWorkMenu(id) {
+      var menu = document.getElementById(id);
+      if (!menu) return;
+      var isOpen = menu.style.display === 'block';
+      document.querySelectorAll('[id^="menu-"]').forEach(function(m){ m.style.display = 'none'; });
+      menu.style.display = isOpen ? 'none' : 'block';
+    }
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('[id^="menu-"]') && !e.target.closest('button[onclick^="toggleWorkMenu"]')) {
+        document.querySelectorAll('[id^="menu-"]').forEach(function(m){ m.style.display = 'none'; });
+      }
+    });
+
+    /* ── RENDER ANNOUNCEMENTS ────────────────────────────────────── */
+    async function renderAnnouncements(isOwner) {
+      var list = document.getElementById('announcements-list');
+      list.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px 0;">Loading...</div>';
+      try {
+        var profileId = currentProfileId;
+        if (!profileId) {
+          var s = await db.auth.getSession();
+          if (s && s.data && s.data.session) { profileId = s.data.session.user.id; }
+        }
+        if (!profileId) { list.innerHTML = ''; return; }
+        var res = await db.from('profile_announcements')
+          .select('*')
+          .eq('profile_id', profileId)
+          .order('created_at', { ascending: false });
+        list.innerHTML = '';
+        if (res.error) { console.error('Load announcements error:', res.error); list.innerHTML = ''; return; }
+        if (!res.data || res.data.length === 0) {
+          list.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px 0;">No announcements yet.</div>';
+          return;
+        }
+        res.data.forEach(function(ann) {
+          var el = buildAnnEl(ann, isOwner);
+          list.appendChild(el);
+        });
+      } catch(err) { console.error('renderAnnouncements error:', err); list.innerHTML = ''; }
+    }
+
+    function buildAnnEl(ann, isOwner) {
+      var tag = ann.tag || 'update';
+      var id = 'ann-' + ann.id;
+      var timeStr = ann.created_at ? new Date(ann.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Just now';
+      var el = document.createElement('div');
+      el.className = 'announcement';
+      el.id = id;
+      el.setAttribute('data-db-id', ann.id);
+      el.innerHTML =
+        '<div class="ann-top"><div class="ann-top-left">' +
+        '<div class="ann-tag ' + tag + '"><i class="ti ' + (tagIcons[tag]||'ti-bell') + '"></i> ' + (tagLabels[tag]||tag) + '</div>' +
+        '<div class="ann-title-text">' + escHtml(ann.title||'') + '</div></div>' +
+        '<div class="ann-top-right"><span class="ann-time"><i class="ti ti-clock"></i> ' + timeStr + '</span>' +
+        (isOwner ? '<button class="ann-edit-btn" style="display:inline-flex;" onclick="openEditAnnModal(\'' + id + '\')"><i class="ti ti-pencil"></i> Edit</button>' : '') +
+        '</div></div><div class="ann-body">' + escHtml(ann.body||'') + '</div>';
+      return el;
+    }
+
+    /* ── TOAST ──────────────────────────────────────────────────── */
+    function showToast(msg, icon) {
+      var t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg || 'Saved!';
+      t.querySelector('i').className = 'ti ' + (icon || 'ti-check');
+      t.classList.add('show');
+      setTimeout(function() { t.classList.remove('show'); }, 2800);
+    }
+
+    /* ── FOLLOW ─────────────────────────────────────────────────── */
+    var isFollowing = false;
+var currentProfileId = null;
+
+function setFollowUI(following) {
+  isFollowing = following;
+  var btn = document.getElementById('follow-btn');
+  var icon = document.getElementById('follow-icon');
+  var label = document.getElementById('follow-label');
+  if (following) {
+    btn.classList.add('following');
+    icon.className = 'ti ti-bell-off';
+    label.textContent = 'Following';
+  } else {
+    btn.classList.remove('following');
+    icon.className = 'ti ti-bell';
+    label.textContent = 'Follow';
+  }
+}
+
+async function toggleFollow() {
+  try {
+    var sessionRes = await db.auth.getSession();
+    var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+    if (!session) { showToast('Please log in to follow', 'ti-alert-triangle'); return; }
+    if (!currentProfileId) { return; }
+    if (isFollowing) {
+      await db.from('follows')
+        .delete()
+        .eq('follower_id', session.user.id)
+        .eq('following_id', currentProfileId);
+      setFollowUI(false);
+      showToast('Unfollowed', 'ti-bell-off');
+      loadStats(currentProfileId);
+    } else {
+      await db.from('follows')
+        .insert({ follower_id: session.user.id, following_id: currentProfileId });
+      setFollowUI(true);
+      showToast('Now following!', 'ti-bell');
+      loadStats(currentProfileId);
+    }
+  } catch(err) {
+    console.error('Follow error:', err);
+  }
+}
+
+    /* ── SHARE ──────────────────────────────────────────────────── */
+    function shareProfile() {
+      if (navigator.clipboard) { navigator.clipboard.writeText(window.location.href); }
+      showToast('Profile link copied!', 'ti-link');
+    }
+
+    /* ── AVATAR UPLOAD ──────────────────────────────────────────── */
+    document.getElementById('avatar-input').addEventListener('change', async function(e) {
+      var file = e.target.files[0];
+      if (!file) { return; }
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        document.getElementById('avatar-display').innerHTML = '<img src="' + ev.target.result + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
+      };
+      reader.readAsDataURL(file);
+      try {
+        var sessionRes = await db.auth.getSession();
+        var s = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        if (!s) { return; }
+        var ext = file.name.split('.').pop();
+        var path = s.user.id + '/avatar.' + ext;
+        await db.storage.from('avatars').upload(path, file, { upsert: true });
+        var url = db.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+        await db.from('profiles').upsert({ id: s.user.id, avatar_url: url }, { onConflict: 'id' });
+        showToast('Profile picture updated!', 'ti-user');
+      } catch(err) { console.error('Avatar upload error:', err); }
+    });
+
+    /* ── BANNER UPLOAD ──────────────────────────────────────────── */
+    document.getElementById('banner-input').addEventListener('change', async function(e) {
+      var file = e.target.files[0];
+      if (!file) { return; }
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var wrap = document.getElementById('banner-wrap');
+        var img = wrap.querySelector('.banner-img');
+        if (!img) {
+          img = document.createElement('img');
+          img.className = 'banner-img';
+          wrap.insertBefore(img, wrap.firstChild);
+        }
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+      try {
+        var sessionRes = await db.auth.getSession();
+        var s = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        if (!s) { return; }
+        var ext = file.name.split('.').pop();
+        var path = s.user.id + '/banner.' + ext;
+        await db.storage.from('banners').upload(path, file, { upsert: true });
+        var url = db.storage.from('banners').getPublicUrl(path).data.publicUrl;
+        await db.from('profiles').upsert({ id: s.user.id, banner_url: url }, { onConflict: 'id' });
+        showToast('Banner updated!', 'ti-photo');
+      } catch(err) { console.error('Banner upload error:', err); }
+    });
+
+    function fmtNum(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'm';
+      if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+      return n;
+    }
+
+    async function loadStats(profileId) {
+      try {
+        var [followers, following, works, views] = await Promise.all([
+          db.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', profileId),
+          db.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', profileId),
+          db.from('works').select('id,type,views').eq('author_id', profileId),
+          Promise.resolve(null)
+        ]);
+        if (!followers.error) document.getElementById('stat-followers').textContent = fmtNum(followers.count || 0);
+        if (!following.error) document.getElementById('stat-following').textContent = fmtNum(following.count || 0);
+        if (!works.error && works.data) {
+          var novels   = works.data.filter(function(w){ return w.type === 'novel' || w.type === 'Novels' || !w.type || w.type !== 'artwork'; }).length;
+          var artworks = works.data.filter(function(w){ return w.type === 'artwork' || w.type === 'Artwork'; }).length;
+          var totalViews = works.data.reduce(function(sum, w){ return sum + (w.views || 0); }, 0);
+          document.getElementById('stat-novels').textContent   = fmtNum(novels);
+          document.getElementById('stat-artworks').textContent = fmtNum(artworks);
+          document.getElementById('stat-views').textContent    = fmtNum(totalViews);
+        }
+      } catch(err) { console.error('loadStats error:', err); }
+    }
+
+    /* ── BIO ────────────────────────────────────────────────────── */
+    function openBioEditor() {
+      document.getElementById('bio-textarea').value = document.getElementById('bio-text').textContent;
+      document.getElementById('bio-display').style.display = 'none';
+      document.getElementById('bio-editor').classList.add('open');
+      document.getElementById('bio-textarea').focus();
+    }
+    function closeBioEditor() {
+      document.getElementById('bio-editor').classList.remove('open');
+      document.getElementById('bio-display').style.display = 'flex';
+    }
+    async function saveBio() {
+      var val = document.getElementById('bio-textarea').value.trim();
+      document.getElementById('bio-text').textContent = val || 'No bio yet.';
+      closeBioEditor();
+      showToast('Bio saved!');
+      try {
+        var s = (await db.auth.getSession()).data.session;
+        if (s) { await db.from('profiles').upsert({ id: s.user.id, bio: val }, { onConflict: 'id' }); }
+      } catch(err) { console.error(err); }
+    }
+
+    function renderSocialIcons(twitter, kofi) {
+      ['social-icons','info-links'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = '';
+        if (twitter) {
+          var a = document.createElement('a');
+          a.href = 'https://x.com/' + twitter; a.target = '_blank'; a.rel = 'noopener noreferrer';
+          a.setAttribute('data-type','twitter'); a.setAttribute('data-handle', twitter);
+          a.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:#1d9bf0;color:#fff;font-size:15px;text-decoration:none;';
+          a.title = '@' + twitter + ' on X';
+          a.innerHTML = '<i class="ti ti-brand-twitter"></i>';
+          el.appendChild(a);
+        }
+        if (kofi) {
+          var b = document.createElement('a');
+          b.href = 'https://ko-fi.com/' + kofi; b.target = '_blank'; b.rel = 'noopener noreferrer';
+          b.setAttribute('data-type','kofi'); b.setAttribute('data-handle', kofi);
+          b.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:#ff5e5b;color:#fff;font-size:15px;text-decoration:none;';
+          b.title = kofi + ' on Ko-fi';
+          b.innerHTML = '<i class="ti ti-coffee"></i>';
+          el.appendChild(b);
+        }
+      });
+    }
+
+    /* ── EDIT PROFILE MODAL ─────────────────────────────────────── */
+    function openEditModal() {
+      document.getElementById('edit-name').value = document.getElementById('display-name').textContent;
+      document.getElementById('edit-location').value = document.getElementById('info-location').textContent;
+      document.getElementById('edit-language').value = document.getElementById('info-language').textContent;
+      var twitterLink = document.querySelector('#social-icons a[data-type="twitter"]');
+      var kofiLink = document.querySelector('#social-icons a[data-type="kofi"]');
+      document.getElementById('edit-twitter').value = twitterLink ? twitterLink.getAttribute('data-handle') : '';
+      document.getElementById('edit-kofi').value = kofiLink ? kofiLink.getAttribute('data-handle') : '';
+      var currentGender = document.getElementById('info-gender').textContent;
+      var genderSelect = document.getElementById('edit-gender');
+      for (var i = 0; i < genderSelect.options.length; i++) {
+        if (genderSelect.options[i].value === currentGender || genderSelect.options[i].text === currentGender) {
+          genderSelect.selectedIndex = i; break;
+        }
+      }
+      document.getElementById('edit-modal').classList.add('open');
+    }
+    async function saveProfile() {
+      var name     = document.getElementById('edit-name').value.trim();
+      var twitter  = document.getElementById('edit-twitter').value.trim().replace('@','').replace(/^https?:\/\/(www\.)?(twitter\.com|x\.com)\//i,'').replace(/\/.*$/,'');
+      var kofi     = document.getElementById('edit-kofi').value.trim().replace(/^https?:\/\/(www\.)?ko-fi\.com\//i,'').replace(/\/.*$/,'');
+      renderSocialIcons(twitter, kofi);
+      var role     = document.getElementById('edit-role').value;
+      var location = document.getElementById('edit-location').value.trim();
+      var gender   = document.getElementById('edit-gender').value;
+      var language = document.getElementById('edit-language').value.trim();
+      if (name)     { document.getElementById('display-name').textContent = name; }
+      if (location) { document.getElementById('info-location').textContent = location; }
+      if (language) { document.getElementById('info-language').textContent = language; }
+      if (gender)   { document.getElementById('info-gender').textContent = gender; document.getElementById('info-gender').classList.remove('muted'); }
+      if (role)     { document.getElementById('info-role').textContent = role; }
+      var handleEl = document.getElementById('display-handle');
+      var currentHandle = handleEl.textContent.split(' · ')[0];
+      handleEl.textContent = currentHandle + ' · ' + role;
+      document.getElementById('edit-modal').classList.remove('open');
+      showToast('Profile updated!');
+      try {
+        var s = (await db.auth.getSession()).data.session;
+        if (s) {
+          var result = await db.from('profiles').upsert({
+            id: s.user.id, display_name: name,
+            role: role, location: location, gender: gender, language: language,
+            twitter: twitter, kofi: kofi
+          }, { onConflict: 'id' });
+          if (result.error) { console.error('Supabase save error:', result.error); showToast('Save failed: ' + result.error.message, 'ti-alert-triangle'); }
+        }
+      } catch(err) { console.error(err); }
+    }
+    document.getElementById('edit-modal').addEventListener('click', function(e) { if (e.target === this) { this.classList.remove('open'); } });
+
+    /* ── ANNOUNCEMENTS ──────────────────────────────────────────── */
+    var tagIcons  = { update: 'ti-clock', milestone: 'ti-trophy', personal: 'ti-user' };
+    var tagLabels = { update: 'Update', milestone: 'Milestone', personal: 'Personal' };
+
+    function openPostModal() {
+      document.getElementById('post-title').value = '';
+      document.getElementById('post-body').value = '';
+      document.getElementById('post-modal').classList.add('open');
+      setTimeout(function() { document.getElementById('post-title').focus(); }, 50);
+    }
+    async function savePost() {
+      var tag   = document.getElementById('post-tag').value;
+      var title = document.getElementById('post-title').value.trim();
+      var body  = document.getElementById('post-body').value.trim();
+      if (!title || !body) { showToast('Please fill in both fields', 'ti-alert-triangle'); return; }
+      var s = await db.auth.getSession();
+      if (!s || !s.data || !s.data.session) { showToast('Not logged in', 'ti-alert-triangle'); return; }
+      var insert = await db.from('profile_announcements').insert({
+        profile_id: s.data.session.user.id,
+        tag: tag,
+        title: title,
+        body: body,
+        created_at: new Date().toISOString()
+      }).select().single();
+      if (insert.error) { console.error('Announcement save error:', insert.error); showToast('Failed to save: ' + insert.error.message, 'ti-alert-triangle'); return; }
+      var newId = 'ann-' + insert.data.id;
+      var el = document.createElement('div');
+      el.className = 'announcement';
+      el.id = newId;
+      el.setAttribute('data-db-id', insert.data.id);
+      el.innerHTML =
+        '<div class="ann-top"><div class="ann-top-left">' +
+        '<div class="ann-tag ' + tag + '"><i class="ti ' + tagIcons[tag] + '"></i> ' + tagLabels[tag] + '</div>' +
+        '<div class="ann-title-text">' + escHtml(title) + '</div></div>' +
+        '<div class="ann-top-right"><span class="ann-time"><i class="ti ti-clock"></i> Just now</span>' +
+        '<button class="ann-edit-btn" style="display:inline-flex;" onclick="openEditAnnModal(\'' + newId + '\')"><i class="ti ti-pencil"></i> Edit</button>' +
+        '</div></div><div class="ann-body">' + escHtml(body) + '</div>';
+      var list = document.getElementById('announcements-list');
+      list.insertBefore(el, list.firstChild);
+      document.getElementById('edit-modal').classList.remove('open');
+      document.getElementById('post-title').value = '';
+      document.getElementById('post-body').value = '';
+      showToast('Announcement posted!', 'ti-speakerphone');
+    }
+    document.getElementById('edit-modal').addEventListener('click', function(e) { if (e.target === this) { this.classList.remove('open'); } });
+
+    function openEditAnnModal(id) {
+      var el = document.getElementById(id);
+      if (!el) { return; }
+      var tagEl = el.querySelector('.ann-tag');
+      var tagClass = 'update';
+      if (tagEl) {
+        var classes = ['update', 'milestone', 'personal'];
+        for (var i = 0; i < classes.length; i++) {
+          if (tagEl.classList.contains(classes[i])) { tagClass = classes[i]; break; }
+        }
+      }
+      document.getElementById('edit-ann-target').value = id;
+      document.getElementById('edit-ann-tag').value = tagClass;
+      var titleEl = el.querySelector('.ann-title-text');
+      var bodyEl  = el.querySelector('.ann-body');
+      document.getElementById('edit-ann-title').value = titleEl ? titleEl.textContent : '';
+      document.getElementById('edit-ann-body').value  = bodyEl  ? bodyEl.textContent  : '';
+      document.getElementById('edit-ann-modal').classList.add('open');
+    }
+    async function saveAnn() {
+      var id    = document.getElementById('edit-ann-target').value;
+      var tag   = document.getElementById('edit-ann-tag').value;
+      var title = document.getElementById('edit-ann-title').value.trim();
+      var body  = document.getElementById('edit-ann-body').value.trim();
+      if (!title || !body) { showToast('Please fill in both fields', 'ti-alert-triangle'); return; }
+      var el = document.getElementById(id);
+      if (!el) { return; }
+      var dbId = el.getAttribute('data-db-id');
+      if (dbId) {
+        var res = await db.from('profile_announcements').update({ tag: tag, title: title, body: body }).eq('id', dbId);
+        if (res.error) { showToast('Update failed: ' + res.error.message, 'ti-alert-triangle'); return; }
+      }
+      var tagEl = el.querySelector('.ann-tag');
+      if (tagEl) { tagEl.className = 'ann-tag ' + tag; tagEl.innerHTML = '<i class="ti ' + tagIcons[tag] + '"></i> ' + tagLabels[tag]; }
+      var titleEl = el.querySelector('.ann-title-text');
+      var bodyEl  = el.querySelector('.ann-body');
+      if (titleEl) { titleEl.textContent = title; }
+      if (bodyEl)  { bodyEl.textContent  = body; }
+      document.getElementById('edit-ann-modal').classList.remove('open');
+      showToast('Announcement updated!');
+    }
+    async function deleteAnn() {
+      var id = document.getElementById('edit-ann-target').value;
+      var el = document.getElementById(id);
+      var dbId = el ? el.getAttribute('data-db-id') : null;
+      if (dbId) {
+        var res = await db.from('profile_announcements').delete().eq('id', dbId);
+        if (res.error) { showToast('Delete failed: ' + res.error.message, 'ti-alert-triangle'); return; }
+      }
+      if (el) { el.remove(); }
+      document.getElementById('edit-ann-modal').classList.remove('open');
+      showToast('Announcement deleted', 'ti-trash');
+    }
+    document.getElementById('edit-ann-modal').addEventListener('click', function(e) { if (e.target === this) { this.classList.remove('open'); } });
+
+    /* ── BADGE DRAG ─────────────────────────────────────────────── */
+    var badgeRow = document.getElementById('badge-row');
+    var dragSrc = null;
+    badgeRow.addEventListener('dragstart', function(e) {
+      var t = e.target.closest('.badge');
+      if (!t) { return; }
+      dragSrc = t;
+      t.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    badgeRow.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      var t = e.target.closest('.badge');
+      if (t && t !== dragSrc) {
+        var bs = badgeRow.querySelectorAll('.badge');
+        for (var i = 0; i < bs.length; i++) { bs[i].classList.remove('drag-over'); }
+        t.classList.add('drag-over');
+      }
+    });
+    badgeRow.addEventListener('dragleave', function(e) {
+      var t = e.target.closest('.badge');
+      if (t) { t.classList.remove('drag-over'); }
+    });
+    badgeRow.addEventListener('drop', function(e) {
+      e.preventDefault();
+      var t = e.target.closest('.badge');
+      if (!t || t === dragSrc) { return; }
+      t.classList.remove('drag-over');
+      var rect = t.getBoundingClientRect();
+      badgeRow.insertBefore(dragSrc, e.clientX > rect.left + rect.width / 2 ? t.nextSibling : t);
+    });
+    badgeRow.addEventListener('dragend', function() {
+      var bs = badgeRow.querySelectorAll('.badge');
+      for (var i = 0; i < bs.length; i++) { bs[i].classList.remove('dragging', 'drag-over'); }
+      dragSrc = null;
+    });
+
+    /* ── LIVE TIMERS ────────────────────────────────────────────── */
+    function formatAge(m) {
+      if (m < 1) { return 'just now'; }
+      if (m < 60) { var v = Math.floor(m); return v + ' minute' + (v === 1 ? '' : 's') + ' ago'; }
+      var h = Math.floor(m / 60);
+      if (h < 24) { return h + ' hour' + (h === 1 ? '' : 's') + ' ago'; }
+      var d = Math.floor(h / 24);
+      if (d < 30) { return d + ' day' + (d === 1 ? '' : 's') + ' ago'; }
+      var mo = Math.floor(d / 30);
+      return mo + ' month' + (mo === 1 ? '' : 's') + ' ago';
+    }
+    var liveEls = document.querySelectorAll('.live-time');
+    for (var i = 0; i < liveEls.length; i++) {
+      liveEls[i].dataset.start   = Date.now();
+      liveEls[i].dataset.initial = parseFloat(liveEls[i].dataset.ts) || 0;
+      liveEls[i].textContent     = formatAge(liveEls[i].dataset.initial);
+    }
+    setInterval(function() {
+      var els = document.querySelectorAll('.live-time');
+      for (var i = 0; i < els.length; i++) {
+        els[i].textContent = formatAge(parseFloat(els[i].dataset.initial) + (Date.now() - parseFloat(els[i].dataset.start)) / 60000);
+      }
+    }, 60000);
+
+    /* ── HELPERS ────────────────────────────────────────────────── */
+    function escHtml(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+    (function() {
+      var t = localStorage.getItem('ds_theme'); if (t) document.documentElement.setAttribute('data-theme', t);
+      var w = localStorage.getItem('ds_reader_width'); if (w) document.documentElement.style.setProperty('--reader-width', w);
+      var s = localStorage.getItem('ds_reader_size');  if (s) document.documentElement.style.setProperty('--reader-size', s + 'px');
+      var l = localStorage.getItem('ds_reader_lh');    if (l) document.documentElement.style.setProperty('--reader-lh', l);
+    })();
+  </script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Reading</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&family=Merriweather:wght@300;400;700&family=Source+Serif+4:wght@300;400;600&family=Nunito:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;--shadow:rgba(0,0,0,0.4);
+      --reader-bg:#1a1a26;--reader-text:#9b9bc0;--reader-font:'Lato',sans-serif;--reader-size:16px;--reader-lh:1.8;--reader-width:650px;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#d97706;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+
+    /* NAV */
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:12px;}
+    .nav-left{display:flex;align-items:center;gap:10px;min-width:0;}
+    .nav-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+    .logo{font-family:'Cinzel',serif;font-size:18px;color:var(--accent);text-decoration:none;letter-spacing:1px;flex-shrink:0;}
+    .logo span{color:#f1f0ff;}
+    html[data-theme="light"] .logo span{color:#0a0a0f;}
+    .nav-chapter-info{min-width:0;}
+    .nav-work-title{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .nav-chapter-title{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .nav-icon-btn{background:none;border:1px solid var(--border);border-radius:7px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:16px;transition:all 0.2s;text-decoration:none;flex-shrink:0;}
+    .nav-icon-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .edit-chapter-btn{background:rgba(45,212,191,0.08);border:1px solid rgba(45,212,191,0.25);border-radius:7px;padding:6px 12px;color:var(--accent);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:none;align-items:center;gap:5px;transition:all 0.2s;}
+    .edit-chapter-btn:hover{background:rgba(45,212,191,0.15);}
+    .edit-chapter-btn.visible{display:flex;}
+
+    /* READING AREA */
+    .reader-wrap{max-width:var(--reader-width);margin:0 auto;padding:40px 24px 40px;}
+    .chapter-header{margin-bottom:32px;text-align:center;}
+    .chapter-number{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px;}
+    .chapter-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--text);margin-bottom:12px;}
+    .chapter-meta-row{display:flex;align-items:center;justify-content:center;gap:14px;font-size:12px;color:var(--text3);}
+    .chapter-divider{width:60px;height:2px;background:var(--border);margin:20px auto;}
+
+    /* PAGE CONTENT */
+    .page-content{background:var(--reader-bg);border-radius:12px;padding:32px;margin-bottom:24px;font-family:var(--reader-font);font-size:var(--reader-size);line-height:var(--reader-lh);color:var(--reader-text);min-height:300px;transition:background 0.3s,color 0.3s;}
+    .page-content p{margin-bottom:0.6em;text-indent:2em;}
+    .page-content p+p{margin-top:0;}
+    .page-content h1+p,.page-content h2+p,.page-content h3+p,.page-content blockquote+p,.page-content p:first-child{text-indent:0;}
+    .page-content h1,.page-content h2,.page-content h3{font-family:'Cinzel',serif;color:var(--text);margin-bottom:0.5em;margin-top:1em;}
+    .page-content blockquote{border-left:3px solid var(--accent);padding-left:16px;color:var(--text3);font-style:italic;margin:1em 0;}
+    .page-content strong{color:var(--text);}
+    .page-content ul,.page-content ol{padding-left:24px;margin-bottom:1em;}
+
+    /* TIMER BAR */
+    .timer-bar-wrap{margin-bottom:16px;}
+    .timer-bar-label{display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:6px;}
+    .timer-bar{height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;}
+    .timer-bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:width 0.5s linear;width:0%;}
+    .timer-bar-fill.done{background:var(--green);}
+
+    /* PAGE NAV */
+    .page-nav{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:32px;flex-wrap:wrap;}
+    .page-nav-btn{background:none;border:1px solid var(--border);border-radius:9px;padding:10px 20px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .page-nav-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+    .page-nav-btn:disabled{opacity:0.35;cursor:not-allowed;}
+    .page-nav-btn.primary{background:var(--accent2);border-color:var(--accent2);color:white;}
+    .page-nav-btn.primary:hover:not(:disabled){background:var(--accent);border-color:var(--accent);color:var(--bg);}
+    .page-nav-btn.locked{opacity:0.5;cursor:not-allowed;}
+    .page-info{font-size:13px;color:var(--text3);}
+
+    /* CHAPTER NAV */
+    .chapter-nav{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:40px;}
+    .chapter-nav-btn{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;transition:all 0.2s;text-decoration:none;display:flex;flex-direction:column;gap:3px;}
+    .chapter-nav-btn:hover{border-color:var(--accent);}
+    .chapter-nav-btn.next{text-align:right;align-items:flex-end;}
+    .chapter-nav-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);}
+    .chapter-nav-title{font-size:13px;font-weight:700;color:var(--text);}
+
+    /* PARAGRAPH COMMENTS */
+    .para-wrap{position:relative;}
+    .reader-settings-btn{background:none;border:1px solid var(--border);border-radius:7px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:16px;transition:all 0.2s;position:relative;}
+    .reader-settings-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .reader-settings-panel{position:absolute;top:calc(100% + 10px);right:0;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;width:300px;z-index:200;box-shadow:0 8px 32px rgba(0,0,0,0.3);display:none;flex-direction:column;gap:18px;}
+    .reader-settings-panel.open{display:flex;}
+    .rs-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:8px;}
+    .rs-options{display:flex;gap:8px;flex-wrap:wrap;}
+    .rs-opt{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:13px;color:var(--text2);cursor:pointer;transition:all 0.2s;font-family:'Lato',sans-serif;}
+    .rs-opt:hover{border-color:var(--accent);color:var(--accent);}
+    .rs-opt.active{background:rgba(45,212,191,0.12);border-color:var(--accent);color:var(--accent);font-weight:700;}
+    .rs-slider{width:100%;accent-color:var(--accent);}
+    .para-wrap:hover .para-comment-btn{opacity:1;}
+    .para-comment-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .para-comment-btn .count{position:absolute;top:-5px;right:-5px;background:var(--accent);color:white;border-radius:50%;width:14px;height:14px;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:700;}
+
+    /* BOTTOM COMMENTS */
+    .bottom-section{border-top:1px solid var(--border);padding-top:32px;margin-bottom:40px;}
+    .bottom-section-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:16px;display:flex;align-items:center;gap:7px;}
+    .bottom-section-title i{color:var(--accent);}
+    .comment-card{background:var(--bg2);border-radius:10px;padding:14px;margin-bottom:10px;}
+    .comment-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+    .comment-avatar{width:30px;height:30px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text3);overflow:hidden;flex-shrink:0;}
+    .comment-avatar img{width:100%;height:100%;object-fit:cover;}
+    .comment-name{font-size:13px;font-weight:700;color:var(--text);}
+    .comment-time{font-size:11px;color:var(--text3);margin-left:auto;}
+    .comment-body{font-size:13px;color:var(--text2);line-height:1.6;}
+    .comment-gif{max-width:240px;border-radius:8px;margin-top:8px;}
+    .comment-input-area{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:12px;}
+    .comment-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;resize:none;min-height:70px;transition:all 0.2s;margin-bottom:8px;}
+    .comment-textarea:focus{border-color:var(--accent);}
+    .comment-actions-row{display:flex;gap:8px;justify-content:flex-end;}
+    .comment-submit{background:var(--accent2);border:none;border-radius:8px;padding:8px 18px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .comment-submit:hover{background:var(--accent);color:var(--bg);}
+    .login-prompt{font-size:13px;color:var(--text3);padding:12px 0;}
+    .login-prompt a{color:var(--accent);}
+    .empty-comments{text-align:center;padding:24px;color:var(--text3);font-size:13px;}
+
+    /* PARA COMMENT PANEL */
+    .para-panel-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+    .para-panel-overlay.open{opacity:1;pointer-events:all;}
+    .para-panel{background:var(--bg2);border-radius:16px 16px 0 0;width:100%;max-width:600px;max-height:70vh;display:flex;flex-direction:column;transform:translateY(20px);transition:transform 0.2s;}
+    .para-panel-overlay.open .para-panel{transform:translateY(0);}
+    .para-panel-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+    .para-panel-title{font-size:14px;font-weight:700;color:var(--text);}
+    .para-panel-close{background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;}
+    .para-panel-body{flex:1;overflow-y:auto;padding:16px 20px;}
+    .para-panel-footer{padding:12px 20px;border-top:1px solid var(--border);}
+    .para-input-row{display:flex;gap:8px;}
+    .para-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;transition:all 0.2s;}
+    .para-input:focus{border-color:var(--accent);}
+    .para-send-btn{background:var(--accent2);border:none;border-radius:8px;padding:8px 14px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+    .para-send-btn:hover{background:var(--accent);color:var(--bg);}
+
+    /* EDIT OVERLAY */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:200;padding:24px;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+    .overlay.open{opacity:1;pointer-events:all;}
+    .overlay-panel{background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:720px;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;}
+    .overlay-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg2);z-index:5;border-radius:16px 16px 0 0;}
+    .overlay-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);}
+    .overlay-close{background:none;border:1px solid var(--border);border-radius:7px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:16px;transition:all 0.2s;}
+    .overlay-close:hover{border-color:var(--red);color:var(--red);}
+    .overlay-body{padding:24px;flex:1;}
+    .overlay-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--bg2);border-radius:0 0 16px 16px;}
+    .field-group{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+    .field-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);}
+    .field-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:all 0.2s;width:100%;}
+    .field-input:focus{border-color:var(--accent);}
+    .save-btn{background:var(--accent2);border:none;border-radius:9px;padding:10px 24px;color:white;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;}
+    .save-btn:hover{background:var(--accent);color:var(--bg);}
+    .save-btn:disabled{opacity:0.5;cursor:not-allowed;}
+    .cancel-btn{background:none;border:1px solid var(--border);border-radius:9px;padding:10px 20px;color:var(--text2);font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .cancel-btn:hover{border-color:var(--red);color:var(--red);}
+    .word-count-edit{font-size:11px;color:var(--text3);text-align:right;margin-top:6px;}
+
+    /* QUILL EDIT */
+    .ql-toolbar.ql-snow{background:var(--bg3);border:1px solid var(--border);border-radius:8px 8px 0 0;padding:8px;}
+    .ql-container.ql-snow{background:var(--bg3);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;min-height:260px;}
+    .ql-editor{color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.8;min-height:260px;}
+    .ql-editor.ql-blank::before{color:var(--text3);font-style:normal;}
+    .ql-snow .ql-stroke{stroke:var(--text2);}
+    .ql-snow .ql-fill{fill:var(--text2);}
+    .ql-snow .ql-picker{color:var(--text2);}
+    .ql-snow .ql-picker-options{background:var(--bg2);border-color:var(--border);}
+    .ql-snow.ql-toolbar button:hover .ql-stroke,.ql-snow.ql-toolbar button.ql-active .ql-stroke{stroke:var(--accent);}
+    .ql-snow.ql-toolbar button:hover .ql-fill,.ql-snow.ql-toolbar button.ql-active .ql-fill{fill:var(--accent);}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:600;pointer-events:none;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Done!</span></div>
+
+  <!-- EDIT OVERLAY -->
+  <div class="overlay" id="edit-overlay">
+    <div class="overlay-panel">
+      <div class="overlay-header">
+        <div class="overlay-title">Edit Chapter</div>
+        <button class="overlay-close" onclick="closeEditOverlay()"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="overlay-body">
+        <div class="field-group">
+          <label class="field-label">Chapter Title</label>
+          <input class="field-input" type="text" id="edit-title-input" maxlength="100"/>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Chapter Content</label>
+          <div id="edit-editor"></div>
+          <div class="word-count-edit"><span id="edit-word-count">0</span> words</div>
+        </div>
+      </div>
+      <div class="overlay-footer">
+        <button class="cancel-btn" onclick="closeEditOverlay()">Cancel</button>
+        <button class="save-btn" id="save-edit-btn" onclick="saveEdit()"><i class="ti ti-check"></i> Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARA COMMENT PANEL -->
+  <div class="para-panel-overlay" id="para-panel-overlay">
+    <div class="para-panel">
+      <div class="para-panel-header">
+        <div class="para-panel-title" id="para-panel-title">Paragraph Comments</div>
+        <button class="para-panel-close" onclick="closeParaPanel()"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="para-panel-body" id="para-panel-body"></div>
+      <div class="para-panel-footer" id="para-panel-footer"></div>
+    </div>
+  </div>
+
+  <nav>
+    <div class="nav-left">
+      <a class="logo" href="dawnscribe.html">Dawn<span>Scribe</span></a>
+      <div class="nav-chapter-info">
+        <div class="nav-work-title" id="nav-work-title">Loading…</div>
+        <div class="nav-chapter-title" id="nav-chapter-title"></div>
+      </div>
+    </div>
+    <div class="nav-right">
+      <button class="edit-chapter-btn" id="edit-chapter-btn" onclick="openEditOverlay()">
+        <i class="ti ti-pencil"></i> Edit Chapter
+      </button>
+      <div style="position:relative;">
+        <button class="reader-settings-btn" id="reader-settings-btn" onclick="toggleReaderSettings()" title="Reading settings">
+          <i class="ti ti-typography"></i>
+        </button>
+        <div class="reader-settings-panel" id="reader-settings-panel">
+          <div>
+            <div class="rs-label">Page Width</div>
+            <div class="rs-options" id="rs-width-opts">
+              <button class="rs-opt" data-width="650px" onclick="setWidth(this)">Narrow</button>
+              <button class="rs-opt" data-width="800px" onclick="setWidth(this)">Medium</button>
+              <button class="rs-opt" data-width="1000px" onclick="setWidth(this)">Wide</button>
+              <button class="rs-opt" data-width="100%" onclick="setWidth(this)">Full</button>
+            </div>
+          </div>
+          <div>
+            <div class="rs-label">Font Size — <span id="rs-size-val">16px</span></div>
+            <input class="rs-slider" type="range" min="13" max="24" value="16" id="rs-font-slider" oninput="setFontSize(this.value)"/>
+          </div>
+          <div>
+            <div class="rs-label">Line Spacing</div>
+            <div class="rs-options" id="rs-lh-opts">
+              <button class="rs-opt" data-lh="1.5" onclick="setLineHeight(this)">Compact</button>
+              <button class="rs-opt" data-lh="1.8" onclick="setLineHeight(this)">Normal</button>
+              <button class="rs-opt" data-lh="2.2" onclick="setLineHeight(this)">Relaxed</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <a class="nav-icon-btn" id="nav-story-link" href="#" title="Back to story"><i class="ti ti-arrow-left"></i></a>
+    </div>
+  </nav>
+
+  <div class="reader-wrap">
+    <div class="chapter-header">
+      <div class="chapter-number" id="chapter-number"></div>
+      <div class="chapter-title" id="chapter-title-display">Loading…</div>
+      <div class="chapter-meta-row" id="chapter-meta-row"></div>
+      <div class="chapter-divider"></div>
+    </div>
+
+    <!-- TIMER BAR -->
+    <div class="timer-bar-wrap" id="timer-bar-wrap" style="display:none;">
+      <div class="timer-bar-label">
+        <span id="timer-label">Reading timer — please read before continuing</span>
+        <span id="timer-countdown"></span>
+      </div>
+      <div class="timer-bar"><div class="timer-bar-fill" id="timer-fill"></div></div>
+    </div>
+
+    <!-- PAGE CONTENT -->
+    <div class="page-content" id="page-content"></div>
+
+    <!-- PAGE NAV -->
+    <div class="page-nav" id="page-nav">
+      <button class="page-nav-btn" id="prev-page-btn" onclick="prevPage()" disabled><i class="ti ti-chevron-left"></i> Previous Page</button>
+      <span class="page-info" id="page-info"></span>
+      <button class="page-nav-btn primary" id="next-page-btn" onclick="nextPage()">Next Page <i class="ti ti-chevron-right"></i></button>
+    </div>
+
+    <!-- CHAPTER NAV -->
+    <div class="chapter-nav" id="chapter-nav"></div>
+
+    <!-- BOTTOM COMMENTS -->
+    <div class="bottom-section">
+      <div class="bottom-section-title"><i class="ti ti-message-circle"></i> Chapter Comments</div>
+      <div id="chapter-comments-list"></div>
+      <div id="chapter-comment-form"></div>
+    </div>
+
+  </div>
+
+  <script>
+    var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    var currentSession = null;
+    var chapterData = null;
+    var workData = null;
+    var allChapters = [];
+    var pages = [];
+    var currentPage = 0;
+    var timerDone = false;
+    var timerInterval = null;
+    var TIMER_SECONDS = 120; // 2 minutes per page
+    var WORDS_PER_PAGE = 500;
+    var isOwner = false;
+    var editQuill = null;
+    var activeParaIndex = null;
+    var readingProgress = {};
+
+    function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function formatDate(s){ if(!s) return '—'; return new Date(s).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
+    function timeAgo(s){ var d=Math.floor((Date.now()-new Date(s))/1000); if(d<60) return 'just now'; if(d<3600) return Math.floor(d/60)+'m ago'; if(d<86400) return Math.floor(d/3600)+'h ago'; return formatDate(s); }
+    function getChapterId(){ return new URLSearchParams(window.location.search).get('id'); }
+
+    function showToast(msg, icon){
+      var t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg||'Done!';
+      t.querySelector('i').className='ti '+(icon||'ti-check');
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); },2800);
+    }
+
+    // ── READING SETTINGS ─────────────────────────────────────────
+    function applyReadingSettings() {
+      var saved = localStorage.getItem('ds_reading');
+      if (!saved) return;
+      try {
+        var r = JSON.parse(saved);
+        var bgMap = { default:'#1a1a26', black:'#000000', sepia:'#f5e6c8', white:'#ffffff' };
+        var colorMap = { default:'#9b9bc0', black:'#888888', sepia:'#5c4a2a', white:'#333333' };
+        var fontMap = { lato:"'Lato',sans-serif", merriweather:"'Merriweather',serif", 'source-serif':"'Source Serif 4',serif", nunito:"'Nunito',sans-serif", georgia:'Georgia,serif', mono:'monospace' };
+        if (r.bg) { document.documentElement.style.setProperty('--reader-bg', bgMap[r.bg]||bgMap.default); document.documentElement.style.setProperty('--reader-text', colorMap[r.bg]||colorMap.default); }
+        if (r.font) document.documentElement.style.setProperty('--reader-font', fontMap[r.font]||fontMap.lato);
+        if (r.fontsize) document.documentElement.style.setProperty('--reader-size', r.fontsize+'px');
+        if (r.lineheight) document.documentElement.style.setProperty('--reader-lh', (r.lineheight/10).toFixed(1));
+        if (r.width) document.documentElement.style.setProperty('--reader-width', r.width+'px');
+      } catch(e){}
+    }
+
+    // ── PAGINATE CONTENT ─────────────────────────────────────────
+    function paginateContent(html) {
+      var div = document.createElement('div');
+      div.innerHTML = html;
+      var paras = Array.from(div.querySelectorAll('p, h1, h2, h3, blockquote, ul, ol'));
+      if (!paras.length) { paras = [div]; }
+
+      var pageList = [];
+      var currentPageParas = [];
+      var currentWords = 0;
+
+      paras.forEach(function(p) {
+        var words = p.textContent.trim().split(/\s+/).filter(Boolean).length;
+        if (currentWords + words > WORDS_PER_PAGE && currentPageParas.length > 0) {
+          pageList.push(currentPageParas);
+          currentPageParas = [];
+          currentWords = 0;
+        }
+        currentPageParas.push(p.outerHTML || p.innerHTML);
+        currentWords += words;
+      });
+      if (currentPageParas.length) pageList.push(currentPageParas);
+      if (!pageList.length) pageList.push([div.innerHTML]);
+      return pageList;
+    }
+
+    // ── RENDER PAGE ──────────────────────────────────────────────
+    function renderPage(idx) {
+      currentPage = idx;
+      // Save page position per chapter
+      if (chapterData && chapterData.id) {
+        localStorage.setItem('ds_page_' + chapterData.id, idx);
+      }
+      var content = document.getElementById('page-content');
+      content.innerHTML = pages[idx].join('');
+      document.getElementById('page-info').textContent = 'Page ' + (idx+1) + ' of ' + pages.length;
+      document.getElementById('prev-page-btn').disabled = idx === 0;
+
+      var nextBtn = document.getElementById('next-page-btn');
+      var isLastPage = idx === pages.length - 1;
+      var alreadyRead = isChapterRead();
+
+      if (isLastPage) {
+        nextBtn.innerHTML = '<i class="ti ti-check"></i> Finish Chapter';
+        nextBtn.onclick = finishChapter;
+      } else {
+        nextBtn.innerHTML = 'Next Page <i class="ti ti-chevron-right"></i>';
+        nextBtn.onclick = nextPage;
+      }
+
+      // Timer — only for unread chapters
+      if (!alreadyRead) {
+        startTimer(nextBtn);
+      } else {
+        // Already read — no timer, free navigation
+        nextBtn.disabled = false;
+        nextBtn.classList.remove('locked');
+        document.getElementById('timer-bar-wrap').style.display = 'none';
+      }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ── TIMER ────────────────────────────────────────────────────
+    function startTimer(nextBtn) {
+      clearInterval(timerInterval);
+      timerDone = false;
+      nextBtn.disabled = true;
+      nextBtn.classList.add('locked');
+
+      var wrap = document.getElementById('timer-bar-wrap');
+      var fill = document.getElementById('timer-fill');
+      var countdown = document.getElementById('timer-countdown');
+      var label = document.getElementById('timer-label');
+      wrap.style.display = 'block';
+      fill.style.width = '0%';
+      fill.classList.remove('done');
+      label.textContent = 'Reading timer — please read the page before continuing';
+
+      var elapsed = 0;
+      timerInterval = setInterval(function() {
+        elapsed++;
+        var pct = Math.min((elapsed / TIMER_SECONDS) * 100, 100);
+        fill.style.width = pct + '%';
+        var remaining = TIMER_SECONDS - elapsed;
+        countdown.textContent = remaining > 0 ? remaining + 's' : '';
+
+        if (elapsed >= TIMER_SECONDS) {
+          clearInterval(timerInterval);
+          timerDone = true;
+          fill.classList.add('done');
+          label.textContent = '✓ Ready to continue';
+          countdown.textContent = '';
+          nextBtn.disabled = false;
+          nextBtn.classList.remove('locked');
+        }
+      }, 1000);
+    }
+
+    function nextPage() {
+      if (currentPage < pages.length - 1) renderPage(currentPage + 1);
+    }
+    function prevPage() {
+      if (currentPage > 0) {
+        clearInterval(timerInterval);
+        renderPage(currentPage - 1);
+      }
+    }
+
+    // ── READING PROGRESS ─────────────────────────────────────────
+    function loadReadingProgress() {
+      var saved = localStorage.getItem('ds_reading_progress');
+      readingProgress = saved ? JSON.parse(saved) : {};
+    }
+    function isChapterRead() {
+      if (!workData || !chapterData) return false;
+      return !!(readingProgress[workData.id] && readingProgress[workData.id][chapterData.id]);
+    }
+    function markChapterRead() {
+      if (!workData || !chapterData) return;
+      if (!readingProgress[workData.id]) readingProgress[workData.id] = {};
+      readingProgress[workData.id][chapterData.id] = true;
+      localStorage.setItem('ds_reading_progress', JSON.stringify(readingProgress));
+    }
+
+    async function finishChapter() {
+      clearInterval(timerInterval);
+      if (!isChapterRead()) {
+        markChapterRead();
+        // Save to Supabase if logged in
+        if (currentSession) {
+          await db.from('reading_progress').upsert({
+            user_id: currentSession.user.id,
+            work_id: workData.id,
+            chapter_id: chapterData.id,
+            chapter_number: chapterData.chapter_number,
+            completed: true,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id,chapter_id' });
+        }
+        showToast('Chapter complete! +1 reading progress', 'ti-circle-check');
+      }
+      renderChapterNav();
+      // Scroll to chapter nav
+      document.getElementById('chapter-nav').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ── CHAPTER UNLOCK ────────────────────────────────────────────
+    function isChapterUnlocked(chapter) {
+      if (!chapter || !workData) return false;
+      // Chapter 1 always unlocked
+      if (chapter.chapter_number === 1) return true;
+      // Owner always unlocked
+      if (isOwner) return true;
+      // Find the previous chapter
+      var prev = allChapters.find(function(c){ return c.chapter_number === chapter.chapter_number - 1; });
+      if (!prev) return true;
+      return isChapterRead() || !!(readingProgress[workData.id] && readingProgress[workData.id][prev.id]);
+    }
+
+    // ── CHAPTER NAV ──────────────────────────────────────────────
+    function renderChapterNav() {
+      var navEl = document.getElementById('chapter-nav');
+      var idx = allChapters.findIndex(function(c){ return c.id === chapterData.id; });
+      var prev = allChapters[idx - 1];
+      var next = allChapters[idx + 1];
+
+      navEl.innerHTML = '';
+
+      // Previous chapter — always accessible
+      if (prev) {
+        var prevBtn = document.createElement('a');
+        prevBtn.className = 'chapter-nav-btn';
+        prevBtn.href = 'chapter.html?id=' + prev.id;
+        prevBtn.innerHTML = '<span class="chapter-nav-label"><i class="ti ti-chevron-left"></i> Previous</span><span class="chapter-nav-title">Ch.' + prev.chapter_number + ' — ' + escHtml(prev.title) + '</span>';
+        navEl.appendChild(prevBtn);
+      } else {
+        navEl.appendChild(document.createElement('div'));
+      }
+
+      // Next chapter — locked until current chapter is read
+      if (next) {
+        var currentRead = isChapterRead();
+        var nextUnlocked = currentRead || isOwner;
+        var nextBtn = document.createElement(nextUnlocked ? 'a' : 'div');
+        nextBtn.className = 'chapter-nav-btn next' + (nextUnlocked ? '' : ' locked');
+        if (nextUnlocked) {
+          nextBtn.href = 'chapter.html?id=' + next.id;
+        } else {
+          nextBtn.style.cssText = 'opacity:0.4;cursor:not-allowed;';
+        }
+        nextBtn.innerHTML =
+          '<span class="chapter-nav-label">' + (nextUnlocked ? 'Next <i class="ti ti-chevron-right"></i>' : '<i class="ti ti-lock"></i> Locked') + '</span>' +
+          '<span class="chapter-nav-title">Ch.' + next.chapter_number + ' — ' + escHtml(next.title) + '</span>' +
+          (!nextUnlocked ? '<span style="font-size:11px;color:var(--text3);margin-top:2px;">Finish this chapter to unlock</span>' : '');
+        navEl.appendChild(nextBtn);
+      }
+    }
+
+    // ── EDIT OVERLAY ─────────────────────────────────────────────
+    /* ── READER SETTINGS ─────────────────────────────────────────── */
+    function toggleReaderSettings() {
+      document.getElementById('reader-settings-panel').classList.toggle('open');
+    }
+    document.addEventListener('click', function(e) {
+      var panel = document.getElementById('reader-settings-panel');
+      var btn = document.getElementById('reader-settings-btn');
+      if (panel && panel.classList.contains('open') && !panel.contains(e.target) && !btn.contains(e.target)) {
+        panel.classList.remove('open');
+      }
+    });
+    function setWidth(btn) {
+      var width = btn.getAttribute('data-width');
+      document.documentElement.style.setProperty('--reader-width', width);
+      localStorage.setItem('ds_reader_width', width);
+      document.querySelectorAll('#rs-width-opts .rs-opt').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+    }
+    function setFontSize(val) {
+      document.documentElement.style.setProperty('--reader-size', val + 'px');
+      localStorage.setItem('ds_reader_size', val);
+      document.getElementById('rs-size-val').textContent = val + 'px';
+      document.getElementById('rs-font-slider').value = val;
+    }
+    function setLineHeight(btn) {
+      var lh = btn.getAttribute('data-lh');
+      document.documentElement.style.setProperty('--reader-lh', lh);
+      localStorage.setItem('ds_reader_lh', lh);
+      document.querySelectorAll('#rs-lh-opts .rs-opt').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+    }
+    function loadReaderPrefs() {
+      var width = localStorage.getItem('ds_reader_width');
+      var size  = localStorage.getItem('ds_reader_size');
+      var lh    = localStorage.getItem('ds_reader_lh');
+      if (width) {
+        document.documentElement.style.setProperty('--reader-width', width);
+        document.querySelectorAll('#rs-width-opts .rs-opt').forEach(function(b){
+          b.classList.toggle('active', b.getAttribute('data-width') === width);
+        });
+      } else {
+        var defaultBtn = document.querySelector('#rs-width-opts .rs-opt[data-width="650px"]');
+        if (!defaultBtn) defaultBtn = document.querySelector('#rs-width-opts .rs-opt');
+        if (defaultBtn) defaultBtn.classList.add('active');
+      }
+      if (size) { setFontSize(size); }
+      else { document.querySelector('#rs-width-opts') && document.getElementById('rs-font-slider') && (document.getElementById('rs-font-slider').value = 16); }
+      if (lh) {
+        document.documentElement.style.setProperty('--reader-lh', lh);
+        document.querySelectorAll('#rs-lh-opts .rs-opt').forEach(function(b){
+          b.classList.toggle('active', b.getAttribute('data-lh') === lh);
+        });
+      } else {
+        var defaultLh = document.querySelector('#rs-lh-opts .rs-opt[data-lh="1.8"]');
+        if (defaultLh) defaultLh.classList.add('active');
+      }
+    }
+    document.addEventListener('DOMContentLoaded', loadReaderPrefs);
+
+    /* ── EDIT OVERLAY ────────────────────────────────────────────── */
+    function openEditOverlay() {
+      document.getElementById('edit-overlay').classList.add('open');
+      if (!editQuill) {
+        editQuill = new Quill('#edit-editor', {
+          theme: 'snow',
+          modules: { toolbar: [[{header:[1,2,3,false]}],['bold','italic','underline','strike'],['blockquote'],[{list:'ordered'},{list:'bullet'}],[{align:[]}],['link'],['clean']] }
+        });
+        editQuill.on('text-change', function(){
+          var w = editQuill.getText().trim().split(/\s+/).filter(Boolean).length;
+          document.getElementById('edit-word-count').textContent = w;
+        });
+      }
+      editQuill.root.innerHTML = chapterData.content || '';
+      var w = editQuill.getText().trim().split(/\s+/).filter(Boolean).length;
+      document.getElementById('edit-word-count').textContent = w;
+    }
+
+    function closeEditOverlay() {
+      document.getElementById('edit-overlay').classList.remove('open');
+    }
+
+    document.getElementById('edit-overlay').addEventListener('click', function(e){
+      if (e.target === this) closeEditOverlay();
+    });
+
+    async function saveEdit() {
+      var title = document.getElementById('edit-title-input').value.trim();
+      var content = editQuill ? editQuill.root.innerHTML : '';
+      var text = editQuill ? editQuill.getText().trim() : '';
+      if (!title) { showToast('Please add a title', 'ti-alert-triangle'); return; }
+      if (text.length < 5) { showToast('Please add some content', 'ti-alert-triangle'); return; }
+
+      var btn = document.getElementById('save-edit-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Saving…';
+
+      var wordCount = text.split(/\s+/).filter(Boolean).length;
+      var result = await db.from('chapters').update({
+        title: title,
+        content: content,
+        word_count: wordCount
+      }).eq('id', chapterData.id);
+
+      if (result.error) {
+        showToast('Error: ' + result.error.message, 'ti-x');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-check"></i> Save Changes';
+        return;
+      }
+
+      // Update work updated_at
+      await db.from('works').update({ updated_at: new Date().toISOString() }).eq('id', workData.id);
+
+      chapterData.title = title;
+      chapterData.content = content;
+      document.getElementById('chapter-title-display').textContent = title;
+      document.getElementById('nav-chapter-title').textContent = title;
+
+      // Re-paginate with new content
+      pages = paginateContent(content);
+      renderPage(0);
+
+      closeEditOverlay();
+      showToast('Chapter saved!');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-check"></i> Save Changes';
+    }
+
+    // ── PARAGRAPH COMMENTS ────────────────────────────────────────
+    function openParaPanel(idx) {
+      activeParaIndex = idx;
+      document.getElementById('para-panel-title').textContent = 'Comments — Paragraph ' + (idx + 1);
+      document.getElementById('para-panel-overlay').classList.add('open');
+      loadParaComments(idx);
+    }
+
+    function closeParaPanel() {
+      document.getElementById('para-panel-overlay').classList.remove('open');
+      activeParaIndex = null;
+    }
+
+    document.getElementById('para-panel-overlay').addEventListener('click', function(e){
+      if (e.target === this) closeParaPanel();
+    });
+
+    async function loadParaComments(idx) {
+      var body = document.getElementById('para-panel-body');
+      var footer = document.getElementById('para-panel-footer');
+      body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i></div>';
+
+      var result = await db.from('paragraph_comments')
+        .select('*, profiles(username, display_name, avatar_url)')
+        .eq('chapter_id', chapterData.id)
+        .eq('paragraph_index', idx)
+        .order('created_at', { ascending: true });
+
+      var comments = result.data || [];
+      body.innerHTML = '';
+
+      if (!comments.length) {
+        body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px;">No comments on this paragraph yet.</div>';
+      } else {
+        comments.forEach(function(c) {
+          var p = c.profiles || {};
+          var div = document.createElement('div');
+          div.style.cssText = 'padding:10px 0;border-bottom:1px solid var(--border);';
+          div.innerHTML =
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+              '<div class="comment-avatar">' + (p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+              '<div style="font-size:13px;font-weight:700;color:var(--text);">' + escHtml(p.display_name||p.username||'User') + '</div>' +
+              '<div style="font-size:11px;color:var(--text3);margin-left:auto;">' + timeAgo(c.created_at) + '</div>' +
+            '</div>' +
+            '<div style="font-size:13px;color:var(--text2);">' + escHtml(c.content) + '</div>' +
+            (c.gif_url ? '<img class="comment-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '');
+          body.appendChild(div);
+        });
+      }
+
+      // Footer input
+      if (currentSession) {
+        footer.innerHTML =
+          '<div class="para-input-row">' +
+            '<input class="para-input" type="text" id="para-comment-input" placeholder="Add a comment…" maxlength="500"/>' +
+            '<button class="para-send-btn" onclick="submitParaComment()"><i class="ti ti-send"></i></button>' +
+          '</div>';
+        document.getElementById('para-comment-input').addEventListener('keydown', function(e){
+          if (e.key === 'Enter') submitParaComment();
+        });
+      } else {
+        footer.innerHTML = '<div style="font-size:13px;color:var(--text3);"><a href="auth.html" style="color:var(--accent);">Sign in</a> to comment.</div>';
+      }
+    }
+
+    async function submitParaComment() {
+      var input = document.getElementById('para-comment-input');
+      var val = input ? input.value.trim() : '';
+      if (!val) return;
+      var result = await db.from('paragraph_comments').insert({
+        chapter_id: chapterData.id,
+        paragraph_index: activeParaIndex,
+        user_id: currentSession.user.id,
+        content: val
+      });
+      if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
+      input.value = '';
+      loadParaComments(activeParaIndex);
+    }
+
+    // ── CHAPTER COMMENTS ─────────────────────────────────────────
+    async function loadChapterComments() {
+      var result = await db.from('chapter_comments')
+        .select('*, profiles(username, display_name, avatar_url)')
+        .eq('chapter_id', chapterData.id)
+        .is('parent_id', null)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      var comments = result.data || [];
+      var listEl = document.getElementById('chapter-comments-list');
+      listEl.innerHTML = '';
+
+      if (!comments.length) {
+        listEl.innerHTML = '<div class="empty-comments"><i class="ti ti-message-off" style="font-size:22px;display:block;margin-bottom:6px;opacity:0.4;"></i>No comments yet — be the first!</div>';
+      } else {
+        comments.forEach(function(c) {
+          var p = c.profiles || {};
+          var card = document.createElement('div');
+          card.className = 'comment-card';
+          card.innerHTML =
+            '<div class="comment-header">' +
+              '<div class="comment-avatar">' + (p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+              '<div class="comment-name">' + escHtml(p.display_name||p.username||'User') + '</div>' +
+              '<div class="comment-time">' + timeAgo(c.created_at) + '</div>' +
+            '</div>' +
+            '<div class="comment-body">' + escHtml(c.content) + '</div>' +
+            (c.gif_url ? '<img class="comment-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '');
+          listEl.appendChild(card);
+        });
+      }
+
+      var formEl = document.getElementById('chapter-comment-form');
+      if (currentSession) {
+        formEl.innerHTML =
+          '<div class="comment-input-area">' +
+            '<textarea class="comment-textarea" id="chapter-comment-input" placeholder="Leave a comment on this chapter…" maxlength="1000"></textarea>' +
+            '<div class="comment-actions-row">' +
+              '<button class="comment-submit" onclick="submitChapterComment()"><i class="ti ti-send"></i> Post Comment</button>' +
+            '</div>' +
+          '</div>';
+      } else {
+        formEl.innerHTML = '<div class="login-prompt"><a href="auth.html">Sign in</a> to leave a comment.</div>';
+      }
+    }
+
+    async function submitChapterComment() {
+      var input = document.getElementById('chapter-comment-input');
+      var val = input ? input.value.trim() : '';
+      if (!val) return;
+      var result = await db.from('chapter_comments').insert({
+        chapter_id: chapterData.id,
+        user_id: currentSession.user.id,
+        content: val
+      });
+      if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
+      input.value = '';
+      showToast('Comment posted!');
+      loadChapterComments();
+    }
+
+    // ── INIT ─────────────────────────────────────────────────────
+    (async function init() {
+      applyReadingSettings();
+      loadReadingProgress();
+
+      var chapterId = getChapterId();
+      if (!chapterId) { document.getElementById('chapter-title-display').textContent = 'Chapter not found.'; return; }
+
+      var sessionRes = await db.auth.getSession();
+      currentSession = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+
+      // Load chapter
+      var chapResult = await db.from('chapters').select('*').eq('id', chapterId).maybeSingle();
+      if (!chapResult.data) { document.getElementById('chapter-title-display').textContent = 'Chapter not found.'; return; }
+      chapterData = chapResult.data;
+
+      // Load work
+      var workResult = await db.from('works').select('*').eq('id', chapterData.work_id).maybeSingle();
+      workData = workResult.data;
+
+      // Load all chapters for nav
+      var allChapResult = await db.from('chapters').select('id,chapter_number,title').eq('work_id', chapterData.work_id).eq('status','published').order('chapter_number',{ascending:true});
+      allChapters = allChapResult.data || [];
+
+      // Check ownership
+      isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
+
+      // ── ACCESS GUARD ──────────────────────────────────────────
+      // Block access to locked chapters unless owner
+      if (!isOwner && chapterData.chapter_number > 1) {
+        var prevChapter = allChapters.find(function(c){ return c.chapter_number === chapterData.chapter_number - 1; });
+        if (prevChapter) {
+          var prevRead = readingProgress[workData.id] && readingProgress[workData.id][prevChapter.id];
+          if (!prevRead) {
+            // Find the last chapter they can access
+            var lastUnlocked = allChapters[0];
+            for (var i = 0; i < allChapters.length; i++) {
+              var ch = allChapters[i];
+              if (ch.chapter_number === 1) { lastUnlocked = ch; continue; }
+              var pch = allChapters[i - 1];
+              var pRead = readingProgress[workData.id] && readingProgress[workData.id][pch.id];
+              if (pRead) { lastUnlocked = ch; } else { break; }
+            }
+            showToast('Read Chapter ' + lastUnlocked.chapter_number + ' first!', 'ti-lock');
+            setTimeout(function(){
+              window.location.href = 'chapter.html?id=' + lastUnlocked.id;
+            }, 1500);
+            return;
+          }
+        }
+      }
+
+      // Nav
+      document.getElementById('nav-work-title').textContent = workData ? workData.title : '';
+      document.getElementById('nav-chapter-title').textContent = chapterData.title;
+      document.getElementById('nav-story-link').href = 'story.html?id=' + chapterData.work_id;
+      document.getElementById('chapter-number').textContent = 'Chapter ' + chapterData.chapter_number;
+      document.getElementById('chapter-title-display').textContent = chapterData.title;
+      document.getElementById('chapter-meta-row').innerHTML =
+        '<span><i class="ti ti-calendar" style="font-size:13px;"></i> ' + formatDate(chapterData.created_at) + '</span>' +
+        '<span><i class="ti ti-file-text" style="font-size:13px;"></i> ' + (chapterData.word_count||0).toLocaleString() + ' words</span>';
+
+      // Show edit button for owner
+      if (isOwner) {
+        document.getElementById('edit-chapter-btn').classList.add('visible');
+      }
+
+      // Paginate — or show full content for owner (no timer, no pages)
+      if (isOwner) {
+        document.getElementById('page-content').innerHTML = chapterData.content || '';
+        document.getElementById('timer-bar-wrap').style.display = 'none';
+        document.getElementById('page-nav').style.display = 'none';
+      } else {
+        pages = paginateContent(chapterData.content || '');
+        var savedPage = parseInt(localStorage.getItem('ds_page_' + chapterData.id)) || 0;
+        if (savedPage >= pages.length) savedPage = 0;
+        renderPage(savedPage);
+        if (savedPage > 0) {
+          showToast('Resumed from page ' + (savedPage + 1), 'ti-bookmark');
+        }
+      }
+      renderChapterNav();
+      await loadChapterComments();
+    })();
+  </script>
+</body>
+</html>

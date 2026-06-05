@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Manage Chapters</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+  <script>(function(){ var t=localStorage.getItem('ds_theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();</script>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#d97706;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+
+    /* NAV */
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:#f1f0ff;}
+    html[data-theme="light"] .logo span{color:#0a0a0f;}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* FULL WIDTH LAYOUT */
+    .page-wrap{width:100%;padding:32px 40px 80px;}
+
+    /* WORK HEADER */
+    .work-header{display:flex;gap:16px;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px 24px;margin-bottom:24px;}
+    .work-header-cover{width:54px;height:76px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:20px;font-weight:700;color:var(--accent);}
+    .work-header-info{flex:1;min-width:0;}
+    .work-header-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:3px;}
+    .work-header-meta{font-size:12px;color:var(--text3);display:flex;gap:16px;flex-wrap:wrap;}
+
+    /* TWO-COL LAYOUT */
+    .cols{display:grid;grid-template-columns:340px 1fr;gap:20px;align-items:start;transition:grid-template-columns 0.3s ease;}
+    .cols.collapsed{grid-template-columns:0px 1fr;}
+    .cols.collapsed .card{width:0;overflow:hidden;padding:0;border:none;min-width:0;}
+    @media(max-width:900px){.cols{grid-template-columns:1fr;}.cols.collapsed{grid-template-columns:1fr;}}
+
+    /* CARD */
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:0;}
+    .card-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+    .card-title i{color:var(--accent);}
+
+    /* CHAPTER LIST */
+    .chapter-row{display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;margin-bottom:7px;transition:border-color 0.2s;cursor:default;}
+    .chapter-row:hover{border-color:rgba(45,212,191,0.2);}
+    .chapter-row.active{border-color:var(--accent);background:rgba(45,212,191,0.05);}
+    .chapter-num{font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:var(--accent);width:28px;flex-shrink:0;text-align:center;}
+    .chapter-info{flex:1;min-width:0;}
+    .chapter-name{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .chapter-meta{font-size:11px;color:var(--text3);margin-top:1px;}
+    .chapter-status{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;flex-shrink:0;}
+    .chapter-status.published{background:rgba(52,211,153,0.1);color:var(--green);}
+    .chapter-status.draft{background:rgba(245,158,11,0.1);color:var(--gold);}
+    .chapter-edit-btn{background:none;border:1px solid var(--border);border-radius:7px;padding:4px 10px;color:var(--text2);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:4px;transition:all 0.2s;flex-shrink:0;}
+    .chapter-edit-btn:hover,.chapter-edit-btn.active-edit{border-color:var(--accent);color:var(--accent);}
+    .empty-state{text-align:center;padding:28px;color:var(--text3);font-size:13px;}
+    .empty-state i{font-size:28px;display:block;margin-bottom:8px;}
+
+    /* EDITOR PANEL */
+    .editor-panel{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;}
+    .editor-panel-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;}
+    .editor-panel-title i{color:var(--accent);}
+    .editor-mode-tag{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;font-family:'Lato',sans-serif;}
+    .editor-mode-tag.add{background:rgba(45,212,191,0.12);color:var(--accent);}
+    .editor-mode-tag.edit{background:rgba(245,158,11,0.12);color:var(--gold);}
+
+    /* FORM */
+    .field-group{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;}
+    .field-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);}
+    .field-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:all 0.2s;width:100%;}
+    .field-input:focus{border-color:var(--accent);}
+    .field-input::placeholder{color:var(--text3);}
+    .word-count{font-size:11px;color:var(--text3);text-align:right;margin-top:4px;}
+
+    /* QUILL */
+    .ql-toolbar.ql-snow{background:var(--bg3);border-color:var(--border) !important;border-radius:8px 8px 0 0;}
+    .ql-container.ql-snow{background:var(--bg3);border-color:var(--border) !important;border-radius:0 0 8px 8px;min-height:480px;}
+    .ql-editor{color:var(--text);font-family:'Lato',sans-serif;font-size:15px;min-height:480px;line-height:1.8;}
+    .ql-editor p{text-indent:2em;}
+    .ql-editor.ql-blank::before{color:var(--text3);}
+    .ql-snow .ql-stroke{stroke:var(--text2);}
+    .ql-snow .ql-fill{fill:var(--text2);}
+    .ql-snow .ql-picker{color:var(--text2);}
+
+    /* BUTTONS */
+    .btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+    .btn-cancel{background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 18px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .btn-cancel:hover{border-color:var(--red);color:var(--red);}
+    .btn-draft{background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 18px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .btn-draft:hover{border-color:var(--accent);color:var(--accent);}
+    .btn-publish{background:var(--accent2);border:none;border-radius:9px;padding:10px 24px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;margin-left:auto;}
+    .btn-publish:hover{background:var(--accent);}
+    .btn-publish:disabled{opacity:0.5;cursor:not-allowed;}
+    .add-chapter-btn{background:rgba(45,212,191,0.08);border:1px dashed rgba(45,212,191,0.3);border-radius:10px;padding:11px;width:100%;color:var(--accent);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all 0.2s;margin-top:8px;}
+    .add-chapter-btn:hover{background:rgba(45,212,191,0.14);border-color:var(--accent);}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 20px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--text);opacity:0;transition:all 0.3s;z-index:999;pointer-events:none;white-space:nowrap;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+    @keyframes spin{to{transform:rotate(360deg);}}
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="logo" href="dawnscribe.html">Dawn<span>Scribe</span></a>
+  <a class="back-btn" id="back-btn" href="profile.html"><i class="ti ti-arrow-left"></i> Back to Profile</a>
+</nav>
+
+<div class="page-wrap">
+
+  <!-- WORK HEADER -->
+  <div class="work-header" id="work-header">
+    <div class="work-header-cover" id="work-cover-el">?</div>
+    <div class="work-header-info">
+      <div class="work-header-title" id="work-title-el">Loading…</div>
+      <div class="work-header-meta" id="work-meta-el"></div>
+    </div>
+  </div>
+
+  <!-- TWO COLUMNS -->
+  <div class="cols">
+
+    <!-- LEFT: CHAPTER LIST -->
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between;">
+        <span><i class="ti ti-books"></i> Chapters</span>
+        <button onclick="toggleChapterPanel()" id="toggle-panel-btn" title="Collapse chapter list" style="background:none;border:1px solid var(--border);border-radius:7px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:14px;transition:all 0.2s;flex-shrink:0;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'"><i class="ti ti-layout-sidebar-left-collapse"></i></button>
+      </div>
+      <div id="chapter-list"><div class="empty-state"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i>Loading…</div></div>
+      <button class="add-chapter-btn" onclick="setModeAdd()"><i class="ti ti-plus"></i> Add New Chapter</button>
+    </div>
+
+    <!-- RIGHT: EDITOR -->
+    <div class="editor-panel" id="editor-panel">
+      <div class="editor-panel-title">
+        <span><i class="ti ti-pencil"></i> <span id="editor-title-label">Add New Chapter</span></span>
+        <span class="editor-mode-tag add" id="editor-mode-tag">New</span>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Chapter Title</label>
+        <input class="field-input" type="text" id="chapter-title-input" placeholder='e.g. "Chapter 2 — Into the Dark"' maxlength="100"/>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Content</label>
+        <div id="chapter-editor"></div>
+        <div class="word-count"><span id="word-count">0</span> words</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-cancel" id="cancel-btn" onclick="setModeAdd()" style="display:none;"><i class="ti ti-x"></i> Cancel Edit</button>
+        <button class="btn-draft" onclick="submitChapter('draft')"><i class="ti ti-device-floppy"></i> Save Draft</button>
+        <button id="view-chapter-btn" onclick="viewChapter()" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 18px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:none;align-items:center;gap:6px;transition:all 0.2s;white-space:nowrap;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'"><i class="ti ti-eye"></i> View Chapter</button>
+        <button class="btn-publish" id="publish-btn" onclick="submitChapter('published')"><i class="ti ti-rocket"></i> <span id="publish-label">Publish Chapter</span></button>
+      </div>
+      <div id="delete-btn-wrap" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+        <button onclick="confirmDeleteChapter()" style="background:none;border:1px solid rgba(248,113,113,0.3);border-radius:8px;padding:8px 16px;color:var(--red);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;width:100%;justify-content:center;" onmouseover="this.style.background='rgba(248,113,113,0.08)';this.style.borderColor='var(--red)'" onmouseout="this.style.background='none';this.style.borderColor='rgba(248,113,113,0.3)'"><i class="ti ti-trash"></i> Delete Chapter</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="delete-dialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;max-width:460px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.5);">
+    <div style="font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--red);margin-bottom:10px;display:flex;align-items:center;gap:8px;"><i class="ti ti-trash"></i> Delete Chapter</div>
+    <p style="font-size:14px;color:var(--text2);margin-bottom:6px;">Are you sure you want to erase the entire chapter?</p>
+    <p style="font-size:13px;color:var(--text3);margin-bottom:28px;">This action cannot be undone.</p>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <button onclick="closeDeleteDialog()" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 20px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;white-space:nowrap;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">Cancel</button>
+      <button onclick="deleteChapter()" style="background:var(--red);border:none;border-radius:8px;padding:10px 20px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;white-space:nowrap;margin-left:auto;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'"><i class="ti ti-trash"></i> Yes, Delete It</button>
+    </div>
+  </div>
+</div>
+
+<div id="switch-dialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;max-width:520px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.5);">
+    <div style="font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:8px;"><i class="ti ti-alert-triangle" style="color:var(--gold);"></i> Unsaved Changes</div>
+    <p style="font-size:14px;color:var(--text2);margin-bottom:6px;">You're switching to another chapter.</p>
+    <p style="font-size:14px;color:var(--text2);margin-bottom:28px;">Do you want to save your current progress before moving on?</p>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <button onclick="resolveSwitchDialog('cancel')" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 18px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;white-space:nowrap;" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">Stay Here</button>
+      <button onclick="resolveSwitchDialog('discard')" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 18px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;white-space:nowrap;" onmouseover="this.style.borderColor='var(--text3)'" onmouseout="this.style.borderColor='var(--border)'">Discard Changes</button>
+      <button onclick="resolveSwitchDialog('save')" style="background:var(--accent2);border:none;border-radius:8px;padding:10px 20px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;white-space:nowrap;margin-left:auto;" onmouseover="this.style.background='var(--accent)'" onmouseout="this.style.background='var(--accent2)'"><i class="ti ti-device-floppy"></i> Save & Switch</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><i class="ti ti-check" id="toast-icon"></i><span id="toast-msg">Saved!</span></div>
+
+<script>
+  const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  var workId = null;
+  var workData = null;
+  var currentSession = null;
+  var quill = null;
+  var chapterCount = 0;
+  var editingChapterId = null;
+  var originalTitle = '';
+  var originalText = '';
+  var currentChapterStatus = 'published';
+
+  function getWorkId() {
+    var p = new URLSearchParams(window.location.search);
+    return p.get('edit') || p.get('id');
+  }
+
+  function showToast(msg, icon) {
+    var t = document.getElementById('toast');
+    document.getElementById('toast-msg').textContent = msg || 'Saved!';
+    document.getElementById('toast-icon').className = 'ti ' + (icon || 'ti-check');
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2800);
+  }
+
+  function formatDate(str) {
+    if (!str) return '—';
+    return new Date(str).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+  }
+
+  function setModeAdd() {
+    editingChapterId = null;
+    originalTitle = '';
+    originalText = '';
+    document.getElementById('chapter-title-input').value = '';
+    if (quill) quill.setContents([]);
+    document.getElementById('word-count').textContent = '0';
+    document.getElementById('editor-title-label').textContent = 'Add New Chapter';
+    document.getElementById('editor-mode-tag').textContent = 'New';
+    document.getElementById('editor-mode-tag').className = 'editor-mode-tag add';
+    document.getElementById('cancel-btn').style.display = 'none';
+    document.getElementById('delete-btn-wrap').style.display = 'none';
+    document.getElementById('view-chapter-btn').style.display = 'none';
+    document.getElementById('publish-label').textContent = 'Publish Chapter';
+    document.querySelectorAll('.chapter-row').forEach(function(r){ r.classList.remove('active'); });
+    document.querySelectorAll('.chapter-edit-btn').forEach(function(b){ b.classList.remove('active-edit'); });
+  }
+
+  function viewChapter() {
+    if (!editingChapterId) return;
+    window.open('chapter.html?id=' + editingChapterId, '_blank');
+  }
+
+  async function confirmDeleteChapter() {
+    if (!editingChapterId) return;
+    if (hasUnsavedChanges()) {
+      await submitChapter(currentChapterStatus, true); // silent save
+    }
+    document.getElementById('delete-dialog').style.display = 'flex';
+  }
+  function closeDeleteDialog() {
+    document.getElementById('delete-dialog').style.display = 'none';
+  }
+  async function deleteChapter() {
+    closeDeleteDialog();
+    var res = await db.from('chapters').delete().eq('id', editingChapterId);
+    if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); return; }
+    await db.from('works').update({ updated_at: new Date().toISOString() }).eq('id', workId);
+    showToast('Chapter deleted', 'ti-trash');
+    setModeAdd();
+    await loadChapters();
+  }
+
+  var panelCollapsed = false;
+  function toggleChapterPanel() {
+    panelCollapsed = !panelCollapsed;
+    var cols = document.querySelector('.cols');
+    var btn = document.getElementById('toggle-panel-btn');
+    var icon = btn.querySelector('i');
+    cols.classList.toggle('collapsed', panelCollapsed);
+    icon.className = panelCollapsed ? 'ti ti-layout-sidebar-left-expand' : 'ti ti-layout-sidebar-left-collapse';
+    btn.title = panelCollapsed ? 'Expand chapter list' : 'Collapse chapter list';
+  }
+
+  var _switchResolve = null;
+  function showSwitchDialog() {
+    return new Promise(function(resolve) {
+      _switchResolve = resolve;
+      var d = document.getElementById('switch-dialog');
+      d.style.display = 'flex';
+    });
+  }
+  function resolveSwitchDialog(action) {
+    document.getElementById('switch-dialog').style.display = 'none';
+    if (_switchResolve) { _switchResolve(action); _switchResolve = null; }
+  }
+
+  function hasUnsavedChanges() {
+    if (!editingChapterId) return false;
+    var currentTitle = document.getElementById('chapter-title-input').value.trim();
+    var currentText = quill ? quill.getText().trim() : '';
+    return currentTitle !== originalTitle || currentText !== originalText;
+  }
+
+  async function setModeEdit(chapterId, btn, row) {
+    // If already editing a different chapter, warn first
+    if (editingChapterId && editingChapterId !== chapterId) {
+      if (hasUnsavedChanges()) {
+        var action = await showSwitchDialog();
+        if (action === 'save') {
+          await submitChapter(currentChapterStatus);
+        } else if (action === 'cancel') {
+          return; // stay on current chapter
+        }
+        // 'discard' falls through
+      }
+    }
+    // Highlight active row
+    document.querySelectorAll('.chapter-row').forEach(function(r){ r.classList.remove('active'); });
+    document.querySelectorAll('.chapter-edit-btn').forEach(function(b){ b.classList.remove('active-edit'); });
+    row.classList.add('active');
+    btn.classList.add('active-edit');
+
+    // Load chapter content
+    var res = await db.from('chapters').select('*').eq('id', chapterId).maybeSingle();
+    if (!res.data) { showToast('Could not load chapter', 'ti-alert-triangle'); return; }
+    var ch = res.data;
+
+    editingChapterId = chapterId;
+    currentChapterStatus = ch.status || 'published';
+    document.getElementById('chapter-title-input').value = ch.title || '';
+    if (quill) quill.root.innerHTML = ch.content || '';
+    var w = quill ? quill.getText().trim().split(/\s+/).filter(Boolean).length : 0;
+    document.getElementById('word-count').textContent = w;
+    originalTitle = ch.title || '';
+    originalText = quill ? quill.getText().trim() : '';
+    document.getElementById('editor-title-label').textContent = 'Editing: ' + (ch.title || 'Chapter');
+    document.getElementById('editor-mode-tag').textContent = 'Editing';
+    document.getElementById('editor-mode-tag').className = 'editor-mode-tag edit';
+    document.getElementById('cancel-btn').style.display = 'flex';
+    document.getElementById('delete-btn-wrap').style.display = 'block';
+    document.getElementById('view-chapter-btn').style.display = 'flex';
+    document.getElementById('publish-label').textContent = ch.status === 'draft' ? 'Publish Chapter' : 'Save Changes';
+
+    // Scroll editor into view on mobile
+    document.getElementById('editor-panel').scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+
+  async function loadWork() {
+    workId = getWorkId();
+    if (!workId) { document.getElementById('work-title-el').textContent = 'No work specified.'; return; }
+
+    var { data: { session } } = await db.auth.getSession();
+    if (!session) {
+      await new Promise(function(res){ setTimeout(res, 300); });
+      var retry = await db.auth.getSession();
+      session = retry && retry.data ? retry.data.session : null;
+    }
+    if (!session) { window.location.href = 'auth.html'; return; }
+    currentSession = session;
+
+    var res = await db.from('works').select('*').eq('id', workId).eq('author_id', currentSession.user.id).maybeSingle();
+    if (!res.data) { document.getElementById('work-title-el').textContent = 'Work not found or access denied.'; return; }
+    workData = res.data;
+
+    var coverEl = document.getElementById('work-cover-el');
+    if (workData.cover_url) {
+      coverEl.outerHTML = '<img class="work-header-cover" id="work-cover-el" src="'+workData.cover_url+'" alt="cover"/>';
+    } else {
+      coverEl.textContent = (workData.title || '?').charAt(0).toUpperCase();
+    }
+    document.getElementById('work-title-el').textContent = workData.title || 'Untitled';
+    document.getElementById('work-meta-el').innerHTML =
+      '<span><i class="ti ti-calendar" style="font-size:11px;"></i> Created ' + formatDate(workData.created_at) + '</span>' +
+      '<span><i class="ti ti-refresh" style="font-size:11px;"></i> Updated ' + formatDate(workData.updated_at) + '</span>';
+
+    await loadChapters();
+    initEditor();
+  }
+
+  async function loadChapters() {
+    var res = await db.from('chapters').select('id,chapter_number,title,status,word_count,created_at').eq('work_id', workId).order('chapter_number', { ascending: true });
+    var list = document.getElementById('chapter-list');
+    var chapters = res.data || [];
+    chapterCount = chapters.length;
+
+    if (!chapters.length) {
+      list.innerHTML = '<div class="empty-state"><i class="ti ti-books"></i>No chapters yet.<br>Add your first one!</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    chapters.forEach(function(ch) {
+      var row = document.createElement('div');
+      row.className = 'chapter-row';
+      var btn = document.createElement('button');
+      btn.className = 'chapter-edit-btn';
+      btn.innerHTML = '<i class="ti ti-pencil"></i> Edit';
+      btn.onclick = function(e) { e.stopPropagation(); setModeEdit(ch.id, btn, row); };
+      row.innerHTML =
+        '<div class="chapter-num">' + ch.chapter_number + '</div>' +
+        '<div class="chapter-info">' +
+          '<div class="chapter-name">' + (ch.title || 'Untitled Chapter') + '</div>' +
+          '<div class="chapter-meta">' + (ch.word_count ? ch.word_count.toLocaleString() + ' words · ' : '') + formatDate(ch.created_at) + '</div>' +
+        '</div>' +
+        '<span class="chapter-status ' + (ch.status||'draft') + '">' + (ch.status === 'published' ? 'Published' : 'Draft') + '</span>';
+      row.appendChild(btn);
+      list.appendChild(row);
+    });
+  }
+
+  function initEditor() {
+    quill = new Quill('#chapter-editor', {
+      theme: 'snow',
+      placeholder: 'Write your chapter here…',
+      modules: { toolbar: [
+        [{ header: [1, 2, 3, false] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        ['blockquote'],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        [{ align: [] }],
+        ['link'],
+        ['clean']
+      ]}
+    });
+    quill.on('text-change', function() {
+      var w = quill.getText().trim().split(/\s+/).filter(Boolean).length;
+      document.getElementById('word-count').textContent = w;
+    });
+  }
+
+  async function submitChapter(status, silent) {
+    var title = document.getElementById('chapter-title-input').value.trim();
+    var content = quill ? quill.root.innerHTML : '';
+    var text = quill ? quill.getText().trim() : '';
+
+    if (!title) { showToast('Please add a chapter title', 'ti-alert-triangle'); return; }
+    if (text.length < 10) { showToast('Please write some content', 'ti-alert-triangle'); return; }
+
+    var btn = document.getElementById('publish-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Saving…';
+
+    var wordCount = text.split(/\s+/).filter(Boolean).length;
+
+    if (editingChapterId) {
+      // UPDATE existing chapter
+      var res = await db.from('chapters').update({
+        title: title, content: content, word_count: wordCount, status: status, updated_at: new Date().toISOString()
+      }).eq('id', editingChapterId);
+      if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); btn.disabled = false; btn.innerHTML = '<i class="ti ti-rocket"></i> <span id="publish-label">Save Changes</span>'; return; }
+      if (!silent) showToast('Chapter updated!', 'ti-check');
+    } else {
+      // INSERT new chapter
+      var res = await db.from('chapters').insert({
+        work_id: workId, author_id: currentSession.user.id,
+        title: title, content: content,
+        chapter_number: chapterCount + 1, word_count: wordCount, status: status
+      });
+      if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); btn.disabled = false; btn.innerHTML = '<i class="ti ti-rocket"></i> <span id="publish-label">Publish Chapter</span>'; return; }
+      if (!silent) showToast(status === 'published' ? 'Chapter published!' : 'Draft saved!', status === 'published' ? 'ti-rocket' : 'ti-device-floppy');
+    }
+
+    await db.from('works').update({ updated_at: new Date().toISOString() }).eq('id', workId);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-rocket"></i> <span id="publish-label">Publish Chapter</span>';
+    if (!silent) { setModeAdd(); await loadChapters(); }
+  }
+
+  loadWork();
+</script>
+</body>
+</html>
