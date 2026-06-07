@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Artwork</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;display:flex;flex-direction:column;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+    @keyframes popIn{from{opacity:0;transform:scale(0.6);}to{opacity:1;transform:scale(1);}}
+
+    /* NAV */
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:var(--text);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* OWNER BAR */
+    .owner-bar{background:rgba(45,212,191,0.06);border-bottom:1px solid rgba(45,212,191,0.15);padding:10px 32px;display:none;align-items:center;gap:12px;flex-wrap:wrap;}
+    .owner-bar-label{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-right:4px;}
+    .owner-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:6px 14px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.2s;text-decoration:none;}
+    .owner-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .owner-btn.danger:hover{border-color:var(--red);color:var(--red);}
+
+    /* PAGE */
+    .page-wrap{max-width:760px;margin:48px auto 80px;padding:0 24px;flex:1;animation:fadeIn 0.3s ease;}
+
+    /* ARTWORK DISPLAY */
+    .artwork-frame{background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-bottom:28px;}
+    .artwork-img-wrap{display:flex;align-items:center;justify-content:center;background:#05050a;cursor:zoom-in;min-height:300px;max-height:700px;overflow:hidden;}
+    .artwork-img-wrap img{max-width:100%;max-height:700px;object-fit:contain;display:block;transition:transform 0.3s;}
+    .artwork-img-wrap:hover img{transform:scale(1.01);}
+    .artwork-meta{padding:20px 24px;}
+    .artwork-title{font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;}
+    .artwork-date{font-size:12px;color:var(--text3);}
+
+    /* ARTIST BAR */
+    .artist-bar{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:14px;margin-bottom:20px;}
+    .artist-avatar{width:48px;height:48px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:var(--text2);overflow:hidden;flex-shrink:0;text-decoration:none;}
+    .artist-avatar img{width:100%;height:100%;object-fit:cover;}
+    .artist-info{flex:1;min-width:0;}
+    .artist-name{font-size:15px;font-weight:700;color:var(--text);text-decoration:none;display:block;}
+    .artist-name:hover{color:var(--accent);}
+    .artist-handle{font-size:12px;color:var(--text3);}
+    .follow-btn{background:var(--accent2);border:none;border-radius:8px;padding:8px 18px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:6px;flex-shrink:0;}
+    .follow-btn:hover{background:var(--accent);color:var(--bg);}
+    .follow-btn.following{background:transparent;border:1px solid var(--border);color:var(--text2);}
+    .follow-btn.following:hover{border-color:var(--red);color:var(--red);}
+
+    /* COLLAB TAG */
+    .collab-tag{background:rgba(45,212,191,0.07);border:1px solid rgba(45,212,191,0.2);border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:12px;margin-bottom:20px;text-decoration:none;transition:border-color 0.2s;}
+    .collab-tag:hover{border-color:rgba(45,212,191,0.4);}
+    .collab-tag-icon{width:38px;height:38px;border-radius:8px;background:rgba(45,212,191,0.1);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--accent);flex-shrink:0;}
+    .collab-tag-body{flex:1;min-width:0;}
+    .collab-tag-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);margin-bottom:2px;}
+    .collab-tag-title{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .collab-tag-sub{font-size:11px;color:var(--text3);}
+    .collab-tag-arrow{color:var(--text3);font-size:16px;}
+
+    /* TAGS */
+    .tags-row{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:24px;}
+    .tag-pill{font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);}
+
+    /* REACTIONS */
+    .reactions-section{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:24px;}
+    .reactions-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);margin-bottom:14px;display:flex;align-items:center;gap:10px;}
+    .reactions-display{display:flex;flex-wrap:wrap;gap:8px;min-height:36px;margin-bottom:12px;}
+    .reaction-chip{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:6px 12px;cursor:pointer;font-size:14px;display:flex;align-items:center;gap:6px;transition:all 0.2s;font-family:'Lato',sans-serif;}
+    .reaction-chip:hover{border-color:rgba(45,212,191,0.4);transform:translateY(-1px);}
+    .reaction-chip.mine{border-color:var(--accent);background:rgba(45,212,191,0.1);}
+    .reaction-chip.mine .chip-count{color:var(--accent);}
+    .chip-emoji{font-size:18px;line-height:1;}
+    .chip-count{font-size:12px;font-weight:700;color:var(--text3);}
+    .add-reaction-btn{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:6px 14px;cursor:pointer;font-size:13px;color:var(--text3);font-family:'Lato',sans-serif;font-weight:700;transition:all 0.2s;display:flex;align-items:center;gap:5px;}
+    .add-reaction-btn:hover{border-color:rgba(45,212,191,0.4);color:var(--text2);}
+    .reactions-login-note{font-size:12px;color:var(--text3);margin-top:4px;display:none;}
+    /* EMOJI PICKER */
+    .emoji-picker{display:none;background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-top:12px;overflow:hidden;animation:fadeIn 0.15s ease;}
+    .emoji-picker.open{display:block;}
+    .picker-search-wrap{padding:12px 14px 8px;border-bottom:1px solid var(--border);}
+    .picker-search{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;outline:none;transition:border-color 0.2s;}
+    .picker-search:focus{border-color:var(--accent);}
+    .picker-search::placeholder{color:var(--text3);}
+    .picker-cats{display:flex;gap:2px;padding:8px 10px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none;}
+    .picker-cats::-webkit-scrollbar{display:none;}
+    .picker-cat-btn{background:transparent;border:none;border-radius:6px;padding:5px 8px;cursor:pointer;font-size:16px;transition:background 0.15s;flex-shrink:0;}
+    .picker-cat-btn:hover{background:var(--bg3);}
+    .picker-cat-btn.active{background:rgba(45,212,191,0.15);}
+    .picker-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:10px;max-height:200px;overflow-y:auto;scrollbar-width:thin;}
+    .picker-grid::-webkit-scrollbar{width:4px;}
+    .picker-grid::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:4px;}
+    .picker-emoji{background:transparent;border:none;border-radius:6px;padding:5px;font-size:20px;cursor:pointer;transition:background 0.1s;line-height:1;}
+    .picker-emoji:hover{background:var(--bg3);}
+    .picker-empty{grid-column:1/-1;text-align:center;padding:20px;color:var(--text3);font-size:13px;}
+
+    /* COMMENTS */
+    .comments-section{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 22px;}
+    .comments-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+    .comment-count-badge{font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:1px 8px;color:var(--text3);}
+    .comment-card{background:var(--bg3);border-radius:10px;padding:12px 14px;margin-bottom:8px;}
+    .comment-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+    .comment-avatar{width:28px;height:28px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text3);overflow:hidden;flex-shrink:0;}
+    .comment-avatar img{width:100%;height:100%;object-fit:cover;}
+    .comment-name{font-size:13px;font-weight:700;color:var(--text);}
+    .comment-date{font-size:11px;color:var(--text3);margin-left:auto;}
+    .comment-text{font-size:13px;color:var(--text2);line-height:1.6;}
+    .comment-input-wrap{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+    .comment-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;resize:none;min-height:70px;transition:border-color 0.2s;}
+    .comment-textarea:focus{border-color:var(--accent);}
+    .comment-submit{background:var(--accent2);border:none;border-radius:8px;padding:8px 18px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;align-self:flex-end;transition:all 0.2s;display:flex;align-items:center;gap:6px;}
+    .comment-submit:hover{background:var(--accent);color:var(--bg);}
+    .comment-login-note{font-size:13px;color:var(--text3);text-align:center;padding:12px;display:none;}
+    .comment-login-note a{color:var(--accent);text-decoration:none;}
+
+    /* RELATED */
+    .related-section{margin-top:32px;}
+    .related-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);margin-bottom:16px;}
+    .related-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;}
+    .related-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:all 0.2s;text-decoration:none;display:block;}
+    .related-card:hover{border-color:rgba(45,212,191,0.3);transform:translateY(-2px);}
+    .related-img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--bg4);}
+    .related-img-placeholder{width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--text3);background:var(--bg3);}
+    .related-title{font-size:12px;font-weight:700;color:var(--text);padding:8px 10px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+    /* STATES */
+    .state-wrap{text-align:center;padding:80px 24px;}
+    .state-icon{font-size:40px;color:var(--text3);margin-bottom:16px;}
+    .state-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;}
+    .state-body{font-size:14px;color:var(--text3);}
+
+    /* LIGHTBOX */
+    .lightbox{position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:500;display:none;align-items:center;justify-content:center;cursor:zoom-out;}
+    .lightbox.show{display:flex;}
+    .lightbox img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;}
+    .lightbox-close{position:fixed;top:20px;right:24px;background:rgba(255,255,255,0.1);border:none;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:white;font-size:18px;transition:background 0.2s;}
+    .lightbox-close:hover{background:rgba(255,255,255,0.2);}
+
+    /* DELETE MODAL */
+    .del-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:400;display:none;align-items:center;justify-content:center;padding:24px;}
+    .del-backdrop.show{display:flex;}
+    .del-modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:28px;max-width:420px;width:100%;}
+    .del-modal h3{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;}
+    .del-modal p{font-size:13px;color:var(--text3);margin-bottom:16px;line-height:1.6;}
+    .del-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;outline:none;margin-bottom:16px;transition:border-color 0.2s;}
+    .del-input:focus{border-color:var(--red);}
+    .del-actions{display:flex;gap:10px;justify-content:flex-end;}
+    .del-cancel{background:transparent;border:1px solid var(--border);border-radius:8px;padding:9px 20px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .del-cancel:hover{border-color:var(--text3);}
+    .del-confirm{background:var(--red);border:none;border-radius:8px;padding:9px 20px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .del-confirm:hover{opacity:0.85;}
+    .del-confirm:disabled{opacity:0.5;cursor:not-allowed;}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 22px;font-size:13px;font-weight:700;color:var(--text);z-index:600;transition:transform 0.3s;display:flex;align-items:center;gap:8px;white-space:nowrap;}
+    .toast.show{transform:translateX(-50%) translateY(0);}
+
+    footer{background:var(--bg2);border-top:1px solid var(--border);padding:28px;text-align:center;color:var(--text3);font-size:13px;margin-top:auto;}
+    .footer-links{display:flex;justify-content:center;gap:24px;margin:10px 0;flex-wrap:wrap;}
+    .footer-links a{color:var(--text3);text-decoration:none;transition:color 0.2s;}
+    .footer-links a:hover{color:var(--accent);}
+
+    @media(max-width:600px){
+      .reaction-btn{padding:8px 12px;}
+      .reaction-label{display:none;}
+    }
+
+    /* EDIT MODAL */
+    .edit-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:400;display:none;align-items:center;justify-content:center;padding:24px;}
+    .edit-backdrop.show{display:flex;}
+    .edit-modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;}
+    .edit-modal-header{padding:20px 24px 0;display:flex;align-items:center;justify-content:space-between;}
+    .edit-modal-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);}
+    .edit-modal-close{background:transparent;border:none;color:var(--text3);font-size:20px;cursor:pointer;padding:4px;transition:color 0.2s;}
+    .edit-modal-close:hover{color:var(--text);}
+    .edit-modal-body{padding:20px 24px;}
+    .edit-field{margin-bottom:16px;}
+    .edit-label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:7px;}
+    .edit-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;outline:none;transition:border-color 0.2s;}
+    .edit-input:focus{border-color:var(--accent);}
+    .edit-textarea{resize:none;min-height:90px;line-height:1.6;}
+    .edit-modal-footer{padding:0 24px 20px;display:flex;gap:10px;justify-content:flex-end;}
+    .edit-cancel{background:transparent;border:1px solid var(--border);border-radius:8px;padding:9px 20px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .edit-cancel:hover{border-color:var(--text3);}
+    .edit-save{background:var(--accent2);border:none;border-radius:8px;padding:9px 20px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:6px;}
+    .edit-save:hover{background:var(--accent);color:var(--bg);}
+    .edit-save:disabled{opacity:0.5;cursor:not-allowed;}
+    .edit-msg{margin:0 24px 16px;font-size:13px;font-weight:700;border-radius:8px;padding:10px 14px;display:none;}
+    .edit-msg.success{background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.3);color:var(--green);}
+    .edit-msg.error{background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);color:var(--red);}
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back</a>
+  </nav>
+
+  <!-- OWNER BAR -->
+  <div class="owner-bar" id="owner-bar">
+    <span class="owner-bar-label"><i class="ti ti-palette"></i> Your Art</span>
+    <button class="owner-btn" onclick="openEditModal()"><i class="ti ti-edit"></i> Edit</button>
+    <button class="owner-btn danger" onclick="openDeleteModal()"><i class="ti ti-trash"></i> Delete</button>
+  </div>
+
+  <!-- MAIN -->
+  <div class="page-wrap" id="page-wrap">
+    <div class="state-wrap" id="loading-state">
+      <div class="state-icon"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div>
+    </div>
+  </div>
+
+
+  <!-- EDIT MODAL -->
+  <div class="edit-backdrop" id="edit-backdrop">
+    <div class="edit-modal">
+      <div class="edit-modal-header">
+        <div class="edit-modal-title"><i class="ti ti-palette" style="color:var(--accent);margin-right:8px;"></i>Edit Artwork</div>
+        <button class="edit-modal-close" onclick="closeEditModal()"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="edit-modal-body">
+        <div class="edit-field">
+          <label class="edit-label">Title</label>
+          <input class="edit-input" type="text" id="edit-title" maxlength="120" placeholder="Artwork title…"/>
+        </div>
+        <div class="edit-field">
+          <label class="edit-label">Flavour Text</label>
+          <textarea class="edit-input edit-textarea" id="edit-flavor" maxlength="500" placeholder="A short description or artist note…"></textarea>
+        </div>
+        <div class="edit-field">
+          <label class="edit-label">Tags <span style="font-weight:400;text-transform:none;letter-spacing:0;">(comma-separated)</span></label>
+          <input class="edit-input" type="text" id="edit-tags" placeholder="e.g. fantasy, character art, digital"/>
+        </div>
+      </div>
+      <div class="edit-msg" id="edit-msg"></div>
+      <div class="edit-modal-footer">
+        <button class="edit-cancel" onclick="closeEditModal()">Cancel</button>
+        <button class="edit-save" id="edit-save-btn" onclick="saveEdit()"><i class="ti ti-check"></i> Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIGHTBOX -->
+  <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+    <button class="lightbox-close" onclick="closeLightbox()"><i class="ti ti-x"></i></button>
+    <img id="lightbox-img" src="" alt=""/>
+  </div>
+
+  <!-- DELETE MODAL -->
+  <div class="del-backdrop" id="del-backdrop">
+    <div class="del-modal">
+      <h3>Delete Artwork</h3>
+      <p>This cannot be undone. Type the title of your artwork to confirm.</p>
+      <input class="del-input" type="text" id="del-input" placeholder="Artwork title…"/>
+      <div class="del-actions">
+        <button class="del-cancel" onclick="closeDeleteModal()">Cancel</button>
+        <button class="del-confirm" id="del-confirm-btn" onclick="confirmDelete()" disabled>Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <footer>
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="about.html">About</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="guidelines.html">Community Guidelines</a>
+      <a href="contact.html">Contact</a>
+    </div>
+    <p>© 2026 DawnScribe. All rights reserved.</p>
+  </footer>
+
+  <script>
+    const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+
+    // ── EMOJI DATA
+    const EMOJI_CATS = [
+      { label: '😊', name: 'Smileys', emojis: [
+        ['😀','grinning'],['😁','beaming'],['😂','joy'],['🤣','rofl'],['😃','smiley'],['😄','smile'],['😅','sweat smile'],['😆','laughing'],['😉','wink'],['😊','blush'],['😋','yum'],['😎','sunglasses'],['😍','heart eyes'],['🥰','smiling hearts'],['😘','kiss'],['🤩','star struck'],['🥳','partying'],['😏','smirk'],['😒','unamused'],['😞','disappointed'],['😔','pensive'],['😟','worried'],['😕','confused'],['🙁','frowning'],['☹️','frowning face'],['😣','persevere'],['😖','confounded'],['😫','tired'],['😩','weary'],['🥺','pleading'],['😢','cry'],['😭','loudly crying'],['😤','triumph'],['😠','angry'],['😡','rage'],['🤬','cursing'],['😈','smiling imp'],['👿','angry imp'],['💀','skull'],['☠️','skull crossbones'],['🤯','mind blown'],['😱','scream'],['😨','fearful'],['😰','anxious'],['😳','flushed'],['🥵','hot'],['🥶','cold'],['😶','no mouth'],['😐','neutral'],['😑','expressionless'],['🙄','eye roll'],['😬','grimace'],['🤐','zipper mouth'],['🤫','shushing'],['🤭','hand over mouth'],['🤔','thinking'],['🤗','hugs'],['😴','sleeping'],['🥱','yawning'],['😷','mask'],['🤒','thermometer'],['🤕','head bandage'],['🤢','nauseated'],['🤮','vomiting'],['🥴','woozy'],['😵','dizzy'],['🤪','zany'],['🤑','money mouth'],['😝','squinting tongue'],['😛','tongue'],['😜','winking tongue'],['👻','ghost'],['👽','alien'],['🤖','robot'],['💩','poop'],['🎃','jack o lantern'],['😺','smiling cat'],['😸','grinning cat'],['😹','joy cat'],['😻','heart eyes cat'],['😼','smirk cat'],['😽','kissing cat'],['🙀','weary cat'],['😿','crying cat'],['😾','pouting cat'],
+      ]},
+      { label: '❤️', name: 'Hearts & Love', emojis: [
+        ['❤️','red heart'],['🧡','orange heart'],['💛','yellow heart'],['💚','green heart'],['💙','blue heart'],['💜','purple heart'],['🖤','black heart'],['🤍','white heart'],['🤎','brown heart'],['💔','broken heart'],['❣️','heart exclamation'],['💕','two hearts'],['💞','revolving hearts'],['💓','beating heart'],['💗','growing heart'],['💖','sparkling heart'],['💘','heart arrow'],['💝','heart ribbon'],['💟','heart decoration'],['♥️','heart suit'],['😍','heart eyes'],['🥰','smiling hearts'],['💑','couple heart'],['💏','kiss'],['👫','couple'],['💋','kiss mark'],['💌','love letter'],['💍','ring'],['🌹','rose'],['💐','bouquet'],
+      ]},
+      { label: '🔥', name: 'Fire & Energy', emojis: [
+        ['🔥','fire'],['⚡','lightning'],['💥','explosion'],['✨','sparkles'],['🌟','glowing star'],['⭐','star'],['💫','dizzy star'],['🌠','shooting star'],['☄️','comet'],['🌊','wave'],['🌀','cyclone'],['❄️','snowflake'],['🌪','tornado'],['🌈','rainbow'],['☀️','sun'],['🌙','moon'],['🌕','full moon'],['⚡','zap'],['💢','anger'],['‼️','double exclamation'],['⚠️','warning'],['🎆','fireworks'],['🎇','sparkler'],['🧨','firecracker'],['🪄','magic wand'],
+      ]},
+      { label: '👑', name: 'Prestige', emojis: [
+        ['👑','crown'],['🏆','trophy'],['🥇','gold medal'],['🥈','silver medal'],['🥉','bronze medal'],['🎖️','medal'],['🏅','sports medal'],['🎗️','ribbon'],['💎','gem'],['💰','money bag'],['💸','money wings'],['🌠','shooting star'],['🦁','lion'],['🐉','dragon'],['🦅','eagle'],['🦋','butterfly'],['🕊️','dove'],['🦄','unicorn'],['⚔️','sword'],['🛡️','shield'],['🔮','crystal ball'],['🧿','evil eye'],['🪬','hamsa'],['✡️','star of david'],['🔱','trident'],
+      ]},
+      { label: '🎨', name: 'Art & Creative', emojis: [
+        ['🎨','palette'],['🖌️','paintbrush'],['🖍️','crayon'],['✏️','pencil'],['📝','memo'],['📖','book'],['📚','books'],['🎭','arts'],['🎬','clapper'],['🎤','microphone'],['🎵','music note'],['🎶','musical notes'],['🎸','guitar'],['🎹','piano'],['🎺','trumpet'],['🎻','violin'],['🥁','drum'],['🪗','accordion'],['📸','camera flash'],['📷','camera'],['🖼️','picture frame'],['🗿','moai'],['🏛️','classical building'],['🌌','milky way'],['🎇','sparkler'],['🪩','disco ball'],['💡','bulb'],['🔭','telescope'],['🪐','planet'],['🌸','blossom'],
+      ]},
+      { label: '🌿', name: 'Nature', emojis: [
+        ['🌸','cherry blossom'],['🌺','hibiscus'],['🌻','sunflower'],['🌹','rose'],['🌷','tulip'],['🌱','seedling'],['🌿','herb'],['🍀','clover'],['🍃','leaves'],['🍂','fallen leaf'],['🍁','maple leaf'],['🌾','sheaf'],['🌵','cactus'],['🎋','bamboo'],['🎍','pine decoration'],['🌴','palm'],['🌲','tree'],['🌳','deciduous tree'],['🦋','butterfly'],['🐝','bee'],['🌊','wave'],['⛰️','mountain'],['🏔️','snow mountain'],['🌋','volcano'],['🗻','mount fuji'],['🌄','sunrise mountain'],['🌅','sunrise'],['🌠','shooting star'],['🌌','milky way'],['🪷','lotus'],['🐚','shell'],['🪸','coral'],
+      ]},
+      { label: '🐾', name: 'Animals', emojis: [
+        ['🐶','dog'],['🐱','cat'],['🐭','mouse'],['🐹','hamster'],['🐰','rabbit'],['🦊','fox'],['🐻','bear'],['🐼','panda'],['🐨','koala'],['🐯','tiger'],['🦁','lion'],['🐮','cow'],['🐷','pig'],['🐸','frog'],['🐵','monkey'],['🐔','chicken'],['🐧','penguin'],['🐦','bird'],['🦆','duck'],['🦅','eagle'],['🦉','owl'],['🦇','bat'],['🐺','wolf'],['🐗','boar'],['🐴','horse'],['🦄','unicorn'],['🐝','bee'],['🦋','butterfly'],['🐌','snail'],['🐛','bug'],['🐜','ant'],['🦟','mosquito'],['🐢','turtle'],['🐍','snake'],['🦎','lizard'],['🐊','crocodile'],['🐉','dragon'],['🦕','sauropod'],['🐳','whale'],['🐬','dolphin'],['🦈','shark'],['🐙','octopus'],['🦑','squid'],['🦀','crab'],
+      ]},
+      { label: '⚡', name: 'Symbols', emojis: [
+        ['⭐','star'],['🌟','glowing star'],['💫','dizzy'],['✨','sparkles'],['❤️','heart'],['💔','broken heart'],['💯','hundred'],['🔥','fire'],['👍','thumbs up'],['👎','thumbs down'],['👏','clapping'],['🙌','raising hands'],['🤝','handshake'],['✌️','victory'],['🤞','crossed fingers'],['🫶','heart hands'],['💪','muscle'],['🫂','people hugging'],['🧠','brain'],['👁️','eye'],['💎','gem'],['🔮','crystal ball'],['⚡','lightning'],['🌈','rainbow'],['🎯','bullseye'],['🧩','puzzle'],['🎲','dice'],['♾️','infinity'],['🔑','key'],['🗝️','old key'],['🪄','magic wand'],['⚔️','sword'],['🛡️','shield'],['🌀','cyclone'],['💠','diamond'],['🔷','blue diamond'],['🔶','orange diamond'],
+      ]},
+    ];
+
+    var workId = null;
+    var workData = null;
+    var session = null;
+    var myReaction = null;   // current user's reaction key or null
+    var reactionCounts = {}; // { love: 3, fire: 1, … }
+    var isFollowing = false;
+
+    function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    function timeAgo(ts){
+      var d = Math.floor((Date.now() - new Date(ts)) / 1000);
+      if(d < 60) return 'just now';
+      if(d < 3600) return Math.floor(d/60) + 'm ago';
+      if(d < 86400) return Math.floor(d/3600) + 'h ago';
+      if(d < 2592000) return Math.floor(d/86400) + 'd ago';
+      return new Date(ts).toLocaleDateString();
+    }
+
+    function showToast(msg, icon){
+      var t = document.getElementById('toast');
+      t.innerHTML = '<i class="ti ' + (icon||'ti-check') + '"></i> ' + msg;
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 3000);
+    }
+
+    // ── INIT
+    async function init(){
+      var params = new URLSearchParams(window.location.search);
+      workId = params.get('id');
+      if(!workId){ showError('No artwork specified.'); return; }
+
+      var { data: { session: s } } = await db.auth.getSession();
+      session = s;
+
+      // Load artwork
+      var { data, error } = await db.from('works')
+        .select('*')
+        .eq('id', workId)
+        .eq('type', 'artwork')
+        .maybeSingle();
+
+      if(error || !data){ showError('Artwork not found.'); return; }
+      workData = data;
+      document.title = 'DawnScribe — ' + (data.title || 'Artwork');
+
+      // Load artist profile separately (author_id has no FK constraint)
+      var { data: profileData } = await db.from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .eq('id', data.author_id)
+        .maybeSingle();
+      workData.profiles = profileData || {};
+
+      // Load collab novel if applicable
+      var collabNovel = null;
+      if(data.collab_work_id && data.collab_status === 'approved'){
+        var { data: cn } = await db.from('works')
+          .select('id, title, author_id')
+          .eq('id', data.collab_work_id)
+          .maybeSingle();
+        if(cn){
+          var { data: cnProfile } = await db.from('profiles')
+            .select('username, display_name')
+            .eq('id', cn.author_id)
+            .maybeSingle();
+          cn.profiles = cnProfile || {};
+        }
+        collabNovel = cn;
+      }
+
+      // Load reaction counts + my reaction
+      await loadReactions();
+
+      // Load follow status
+      if(session){
+        var { data: fw } = await db.from('follows')
+          .select('id')
+          .eq('follower_id', session.user.id)
+          .eq('following_id', data.profiles.id)
+          .maybeSingle();
+        isFollowing = !!fw;
+      }
+
+      // Owner bar
+      if(session && session.user.id === data.author_id){
+        document.getElementById('owner-bar').style.display = 'flex';
+      }
+
+      renderPage(collabNovel);
+      loadComments();
+      loadRelated();
+    }
+
+    // ── RENDER PAGE
+    function renderPage(collabNovel){
+      var p = workData.profiles || {};
+      var artistName = p.display_name || p.username || 'Unknown';
+      var artistInitial = (artistName[0] || '?').toUpperCase();
+      var avatarHtml = p.avatar_url
+        ? '<img src="' + esc(p.avatar_url) + '" alt="avatar"/>'
+        : artistInitial;
+
+      var tags = [];
+      try{ tags = JSON.parse(workData.tags_all || workData.tags_main || '[]'); }catch(e){}
+
+      var tagsHtml = tags.length
+        ? '<div class="tags-row">' + tags.map(function(t){ return '<span class="tag-pill">' + esc(t) + '</span>'; }).join('') + '</div>'
+        : '';
+
+      var collabHtml = '';
+      if(collabNovel){
+        var cAuthor = (collabNovel.profiles && (collabNovel.profiles.display_name || collabNovel.profiles.username)) || '';
+        collabHtml = '<a class="collab-tag" href="story.html?id=' + collabNovel.id + '">'
+          + '<div class="collab-tag-icon"><i class="ti ti-book-heart"></i></div>'
+          + '<div class="collab-tag-body">'
+          + '<div class="collab-tag-label">Fan Art For</div>'
+          + '<div class="collab-tag-title">' + esc(collabNovel.title) + '</div>'
+          + (cAuthor ? '<div class="collab-tag-sub">by ' + esc(cAuthor) + '</div>' : '')
+          + '</div>'
+          + '<i class="ti ti-arrow-right collab-tag-arrow"></i>'
+          + '</a>';
+      }
+
+      var followBtnClass = isFollowing ? 'follow-btn following' : 'follow-btn';
+      var followBtnContent = isFollowing
+        ? '<i class="ti ti-user-check"></i> Following'
+        : '<i class="ti ti-user-plus"></i> Follow';
+
+      var wrap = document.getElementById('page-wrap');
+      wrap.innerHTML =
+        // Artwork frame
+        '<div class="artwork-frame">'
+          + '<div class="artwork-img-wrap" id="artwork-img-wrap">'
+            + (workData.cover_url
+              ? '<img id="artwork-main-img" src="' + esc(workData.cover_url) + '" alt="' + esc(workData.title) + '" onclick="openLightbox()"/>'
+              : '<div style="padding:60px;color:var(--text3);font-size:14px;">No image available</div>')
+          + '</div>'
+          + '<div class="artwork-meta">'
+            + '<div class="artwork-title">' + esc(workData.title) + '</div>'
+            + '<div class="artwork-date">Posted ' + timeAgo(workData.created_at) + '</div>'
+          + '</div>'
+        + '</div>'
+
+        // Artist bar
+        + '<div class="artist-bar">'
+          + '<a class="artist-avatar" href="profile.html?user=' + esc(p.username) + '">' + avatarHtml + '</a>'
+          + '<div class="artist-info">'
+            + '<a class="artist-name" href="profile.html?user=' + esc(p.username) + '">' + esc(artistName) + '</a>'
+            + '<div class="artist-handle">@' + esc(p.username) + '</div>'
+          + '</div>'
+          + (session && session.user.id !== workData.author_id
+              ? '<button class="' + followBtnClass + '" id="follow-btn" onclick="toggleFollow()">' + followBtnContent + '</button>'
+              : '')
+        + '</div>'
+
+        // Collab tag
+        + collabHtml
+
+        // Tags
+        + tagsHtml
+
+        // Reactions
+        + '<div class="reactions-section">'
+          + '<div class="reactions-label">Reactions</div>'
+          + '<div class="reactions-display" id="reactions-display"></div>'
+          + (session ? '<button class="add-reaction-btn" id="add-reaction-btn" onclick="togglePicker()"><i class="ti ti-mood-smile"></i> Add reaction</button>' : '')
+          + '<div class="reactions-login-note" id="reactions-login-note">Log in to leave a reaction. <a href="auth.html" style="color:var(--accent);text-decoration:none;">Sign in</a></div>'
+          + '<div class="emoji-picker" id="emoji-picker">'
+            + '<div class="picker-search-wrap"><input class="picker-search" id="picker-search" placeholder="Search emojis…" autocomplete="off"/></div>'
+            + '<div class="picker-cats" id="picker-cats"></div>'
+            + '<div class="picker-grid" id="picker-grid"></div>'
+          + '</div>'
+        + '</div>'
+
+        // Comments
+        + '<div class="comments-section">'
+          + '<div class="comments-label">Comments <span class="comment-count-badge" id="comment-count">0</span></div>'
+          + '<div id="comments-list"></div>'
+          + '<div class="comment-input-wrap" id="comment-input-wrap" style="display:none;">'
+            + '<textarea class="comment-textarea" id="comment-input" placeholder="Leave a comment…" maxlength="1000"></textarea>'
+            + '<button class="comment-submit" onclick="submitComment()"><i class="ti ti-send"></i> Post</button>'
+          + '</div>'
+          + '<div class="comment-login-note" id="comment-login-note"><a href="auth.html">Log in</a> to leave a comment.</div>'
+        + '</div>'
+
+        // Related
+        + '<div class="related-section">'
+          + '<div class="related-label">More from this artist</div>'
+          + '<div class="related-grid" id="related-grid"></div>'
+        + '</div>';
+
+      renderReactionChips();
+      renderReactionChips();
+      if(!session){
+        document.getElementById('reactions-login-note').style.display = 'block';
+        document.getElementById('comment-login-note').style.display = 'block';
+      } else {
+        document.getElementById('comment-input-wrap').style.display = 'flex';
+      }
+    }
+
+    // ── REACTIONS
+    async function loadReactions(){
+      var { data: rows } = await db.from('work_reactions')
+        .select('reaction, user_id')
+        .eq('work_id', workId);
+
+      reactionCounts = {};
+      (rows || []).forEach(function(row){
+        reactionCounts[row.reaction] = (reactionCounts[row.reaction] || 0) + 1;
+      });
+
+      myReaction = null;
+      if(session){
+        var mine = (rows || []).find(function(r){ return r.user_id === session.user.id; });
+        myReaction = mine ? mine.reaction : null;
+      }
+    }
+
+    function renderReactionChips(){
+      var display = document.getElementById('reactions-display');
+      if(!display) return;
+      var entries = Object.entries(reactionCounts).filter(function(e){ return e[1] > 0; });
+      entries.sort(function(a,b){
+        if(a[0] === myReaction) return -1;
+        if(b[0] === myReaction) return 1;
+        return b[1] - a[1];
+      });
+      if(!entries.length){
+        display.innerHTML = '<span style="font-size:12px;color:var(--text3);">No reactions yet — be the first!</span>';
+        return;
+      }
+      display.innerHTML = entries.map(function(e){
+        var emoji = e[0], count = e[1];
+        var isMine = myReaction === emoji;
+        return '<button class="reaction-chip' + (isMine ? ' mine' : '') + '" onclick="handleChipClick(this)" data-emoji="' + encodeURIComponent(emoji) + '" title="' + count + ' reaction' + (count!==1?'s':'') + '">'
+          + '<span class="chip-emoji">' + emoji + '</span>'
+          + '<span class="chip-count">' + count + '</span>'
+          + '</button>';
+      }).join('');
+    }
+
+    function handleChipClick(btn){
+      var emoji = decodeURIComponent(btn.dataset.emoji);
+      toggleReaction(emoji);
+    }
+
+    async function toggleReaction(emoji){
+      if(!session){ showToast('Log in to react!', 'ti-user'); return; }
+      var prev = myReaction;
+
+      if(prev === emoji){
+        myReaction = null;
+        reactionCounts[emoji] = Math.max(0, (reactionCounts[emoji]||0) - 1);
+        if(reactionCounts[emoji] === 0) delete reactionCounts[emoji];
+      } else {
+        if(prev){
+          reactionCounts[prev] = Math.max(0, (reactionCounts[prev]||0) - 1);
+          if(reactionCounts[prev] === 0) delete reactionCounts[prev];
+        }
+        myReaction = emoji;
+        reactionCounts[emoji] = (reactionCounts[emoji]||0) + 1;
+      }
+      renderReactionChips();
+      closePicker();
+
+      try{
+        if(prev === emoji){
+          await db.from('work_reactions').delete()
+            .eq('work_id', workId).eq('user_id', session.user.id);
+        } else {
+          await db.from('work_reactions').upsert({
+            work_id: workId,
+            user_id: session.user.id,
+            reaction: emoji
+          }, { onConflict: 'work_id,user_id' });
+        }
+      } catch(e){
+        myReaction = prev;
+        await loadReactions();
+        renderReactionChips();
+        showToast('Something went wrong.', 'ti-alert-circle');
+      }
+    }
+
+    // ── EMOJI PICKER
+    var pickerOpen = false;
+    var activeCat = 0;
+
+    function togglePicker(){
+      pickerOpen = !pickerOpen;
+      var picker = document.getElementById('emoji-picker');
+      if(!picker) return;
+      if(pickerOpen){
+        picker.classList.add('open');
+        buildPickerCats();
+        renderPickerGrid(EMOJI_CATS[activeCat].emojis);
+        setTimeout(function(){ var s = document.getElementById('picker-search'); if(s) s.focus(); }, 60);
+      } else {
+        picker.classList.remove('open');
+      }
+    }
+
+    function closePicker(){
+      pickerOpen = false;
+      var picker = document.getElementById('emoji-picker');
+      if(picker) picker.classList.remove('open');
+    }
+
+    function buildPickerCats(){
+      var bar = document.getElementById('picker-cats');
+      if(!bar) return;
+      bar.innerHTML = EMOJI_CATS.map(function(cat, i){
+        return '<button class="picker-cat-btn' + (i===activeCat?' active':'') + '" title="' + cat.name + '" onclick="switchCat(' + i + ')">' + cat.label + '</button>';
+      }).join('');
+    }
+
+    function switchCat(i){
+      activeCat = i;
+      var s = document.getElementById('picker-search');
+      if(s) s.value = '';
+      buildPickerCats();
+      renderPickerGrid(EMOJI_CATS[i].emojis);
+    }
+
+    function renderPickerGrid(emojis){
+      var grid = document.getElementById('picker-grid');
+      if(!grid) return;
+      if(!emojis.length){
+        grid.innerHTML = '<div class="picker-empty">No emojis found</div>';
+        return;
+      }
+      grid.innerHTML = emojis.map(function(e){
+        return '<button class="picker-emoji" title="' + e[1] + '" onclick="toggleReaction(\'' + e[0] + '\')">' + e[0] + '</button>';
+      }).join('');
+    }
+
+    document.addEventListener('input', function(e){
+      if(e.target && e.target.id === 'picker-search'){
+        var q = e.target.value.trim().toLowerCase();
+        if(!q){ renderPickerGrid(EMOJI_CATS[activeCat].emojis); return; }
+        var all = [];
+        EMOJI_CATS.forEach(function(cat){ all = all.concat(cat.emojis); });
+        renderPickerGrid(all.filter(function(em){ return em[1].indexOf(q) !== -1; }));
+      }
+    });
+
+    document.addEventListener('click', function(e){
+      if(!pickerOpen) return;
+      var picker = document.getElementById('emoji-picker');
+      var addBtn = document.getElementById('add-reaction-btn');
+      if(picker && !picker.contains(e.target) && addBtn && !addBtn.contains(e.target)){
+        closePicker();
+      }
+    });
+
+    // ── FOLLOW
+    async function toggleFollow(){
+      if(!session) return;
+      var btn = document.getElementById('follow-btn');
+      var artistId = workData.profiles.id;
+      if(isFollowing){
+        await db.from('follows').delete()
+          .eq('follower_id', session.user.id).eq('following_id', artistId);
+        isFollowing = false;
+        btn.className = 'follow-btn';
+        btn.innerHTML = '<i class="ti ti-user-plus"></i> Follow';
+      } else {
+        await db.from('follows').insert({ follower_id: session.user.id, following_id: artistId });
+        isFollowing = true;
+        btn.className = 'follow-btn following';
+        btn.innerHTML = '<i class="ti ti-user-check"></i> Following';
+        showToast('Now following ' + (workData.profiles.display_name || workData.profiles.username), 'ti-heart');
+      }
+    }
+
+    // ── COMMENTS
+    async function loadComments(){
+      var { data, error } = await db.from('chapter_comments')
+        .select('id, content, created_at, user_id')
+        .eq('work_id', workId)
+        .order('created_at', { ascending: false });
+
+      var list = document.getElementById('comments-list');
+      var countEl = document.getElementById('comment-count');
+      if(!list) return;
+
+      var comments = data || [];
+      if(countEl) countEl.textContent = comments.length;
+
+      if(!comments.length){
+        list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px;"><i class="ti ti-message-off"></i> No comments yet. Be the first!</div>';
+        return;
+      }
+
+      // Fetch profiles for commenters separately
+      var commenterIds = [...new Set(comments.map(function(c){ return c.user_id; }).filter(Boolean))];
+      var profileMap = {};
+      if(commenterIds.length){
+        var { data: cProfiles } = await db.from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', commenterIds);
+        (cProfiles || []).forEach(function(p){ profileMap[p.id] = p; });
+      }
+
+      list.innerHTML = comments.map(function(c){
+        var p = profileMap[c.user_id] || {};
+        var name = p.display_name || p.username || 'User';
+        var avatarHtml = p.avatar_url
+          ? '<img src="' + esc(p.avatar_url) + '" alt=""/>'
+          : '<i class="ti ti-user"></i>';
+        return '<div class="comment-card">'
+          + '<div class="comment-header">'
+            + '<div class="comment-avatar">' + avatarHtml + '</div>'
+            + '<div class="comment-name">' + esc(name) + '</div>'
+            + '<div class="comment-date">' + timeAgo(c.created_at) + '</div>'
+          + '</div>'
+          + '<div class="comment-text">' + esc(c.content) + '</div>'
+          + '</div>';
+      }).join('');
+    }
+
+    async function submitComment(){
+      var input = document.getElementById('comment-input');
+      var content = input.value.trim();
+      if(!content || !session) return;
+      var btn = document.querySelector('.comment-submit');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';
+      var { error } = await db.from('chapter_comments').insert({
+        work_id: workId,
+        user_id: session.user.id,
+        content: content
+      });
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-send"></i> Post';
+      if(error){ showToast('Failed to post comment.', 'ti-alert-circle'); return; }
+      input.value = '';
+      showToast('Comment posted!', 'ti-check');
+      loadComments();
+    }
+
+    // ── RELATED
+    async function loadRelated(){
+      if(!workData) return;
+      var { data } = await db.from('works')
+        .select('id, title, cover_url')
+        .eq('author_id', workData.author_id)
+        .eq('type', 'artwork')
+        .eq('is_published', true)
+        .neq('id', workId)
+        .order('created_at', { ascending: false })
+        .limit(6);
+
+      var grid = document.getElementById('related-grid');
+      if(!grid) return;
+      if(!data || !data.length){
+        grid.parentElement.style.display = 'none';
+        return;
+      }
+      grid.innerHTML = data.map(function(w){
+        var imgHtml = w.cover_url
+          ? '<img class="related-img" src="' + esc(w.cover_url) + '" alt="' + esc(w.title) + '"/>'
+          : '<div class="related-img-placeholder">🎨</div>';
+        return '<a class="related-card" href="artwork.html?id=' + w.id + '">'
+          + imgHtml
+          + '<div class="related-title">' + esc(w.title) + '</div>'
+          + '</a>';
+      }).join('');
+    }
+
+    // ── LIGHTBOX
+    function openLightbox(){
+      var img = document.getElementById('artwork-main-img');
+      if(!img) return;
+      document.getElementById('lightbox-img').src = img.src;
+      document.getElementById('lightbox').classList.add('show');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox(){
+      document.getElementById('lightbox').classList.remove('show');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeLightbox(); });
+
+    // ── DELETE
+    var artworkTitle = '';
+    function openDeleteModal(){
+      artworkTitle = workData ? workData.title : '';
+      document.getElementById('del-input').value = '';
+      document.getElementById('del-confirm-btn').disabled = true;
+      document.getElementById('del-backdrop').classList.add('show');
+    }
+    function closeDeleteModal(){
+      document.getElementById('del-backdrop').classList.remove('show');
+    }
+    document.getElementById('del-input').addEventListener('input', function(){
+      document.getElementById('del-confirm-btn').disabled = this.value.trim() !== artworkTitle;
+    });
+    async function confirmDelete(){
+      var btn = document.getElementById('del-confirm-btn');
+      btn.disabled = true;
+      btn.textContent = 'Deleting…';
+      var { error } = await db.from('works').delete().eq('id', workId);
+      if(error){ showToast('Delete failed: ' + error.message, 'ti-alert-circle'); btn.disabled = false; btn.textContent = 'Delete'; return; }
+      showToast('Artwork deleted.', 'ti-trash');
+      setTimeout(function(){ window.location.href = 'index.html'; }, 1200);
+    }
+
+    // ── EDIT MODAL
+    function openEditModal(){
+      if(!workData) return;
+      document.getElementById('edit-title').value = workData.title || '';
+      document.getElementById('edit-flavor').value = workData.synopsis || workData.flavor_text || '';
+      var tags = [];
+      try{ tags = JSON.parse(workData.tags_all || workData.tags_main || '[]'); }catch(e){}
+      document.getElementById('edit-tags').value = tags.join(', ');
+      var msg = document.getElementById('edit-msg');
+      msg.className = 'edit-msg'; msg.style.display = 'none';
+      document.getElementById('edit-backdrop').classList.add('show');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeEditModal(){
+      document.getElementById('edit-backdrop').classList.remove('show');
+      document.body.style.overflow = '';
+    }
+
+    async function saveEdit(){
+      var title = document.getElementById('edit-title').value.trim();
+      var flavor = document.getElementById('edit-flavor').value.trim();
+      var tagsRaw = document.getElementById('edit-tags').value;
+      var tags = tagsRaw.split(',').map(function(t){ return t.trim(); }).filter(Boolean);
+
+      if(!title){ showEditMsg('error', 'Title cannot be empty.'); return; }
+
+      var btn = document.getElementById('edit-save-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Saving…';
+
+      var { error } = await db.from('works').update({
+        title: title,
+        synopsis: flavor,
+        flavor_text: flavor,
+        tags_all: JSON.stringify(tags),
+        tags_main: JSON.stringify(tags.slice(0,3)),
+      }).eq('id', workId);
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-check"></i> Save Changes';
+
+      if(error){ showEditMsg('error', 'Save failed: ' + error.message); return; }
+
+      // Update local data so page reflects changes without reload
+      workData.title = title;
+      workData.synopsis = flavor;
+      workData.flavor_text = flavor;
+      workData.tags_all = JSON.stringify(tags);
+      workData.tags_main = JSON.stringify(tags.slice(0,3));
+      document.title = 'DawnScribe — ' + title;
+      var titleEl = document.querySelector('.artwork-title');
+      if(titleEl) titleEl.textContent = title;
+
+      showEditMsg('success', 'Artwork updated!');
+      setTimeout(closeEditModal, 1200);
+    }
+
+    function showEditMsg(type, msg){
+      var el = document.getElementById('edit-msg');
+      el.className = 'edit-msg ' + type;
+      el.innerHTML = '<i class="ti ti-' + (type==='success'?'circle-check':'alert-circle') + '"></i> ' + msg;
+      el.style.display = 'block';
+    }
+
+    document.getElementById('edit-backdrop').addEventListener('click', function(e){
+      if(e.target === this) closeEditModal();
+    });
+
+    // ── ERROR
+    function showError(msg){
+      document.getElementById('page-wrap').innerHTML =
+        '<div class="state-wrap"><div class="state-icon"><i class="ti ti-alert-circle"></i></div>'
+        + '<div class="state-title">Oops</div>'
+        + '<div class="state-body">' + msg + '</div></div>';
+    }
+
+    init();
+  </script>
+</body>
+</html>

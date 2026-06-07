@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+    (function() { var t = localStorage.getItem('ds_theme'); if (t) document.documentElement.setAttribute('data-theme', t); })();
+  </script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — My Works</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;--shadow:rgba(0,0,0,0.4);}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#d97706;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+
+    /* NAV */
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:#f1f0ff;}
+    html[data-theme="light"] .logo span{color:#0a0a0f;}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* PAGE */
+    .page{max-width:900px;margin:0 auto;padding:40px 24px 80px;}
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:32px;flex-wrap:wrap;gap:12px;}
+    .page-title{font-family:'Cinzel',serif;font-size:26px;font-weight:700;color:var(--text);}
+    .page-title span{color:var(--accent);}
+    .new-story-btn{background:var(--accent2);border:none;border-radius:10px;padding:11px 22px;color:white;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;text-decoration:none;}
+    .new-story-btn:hover{background:var(--accent);color:var(--bg);}
+
+    /* WORKS GRID */
+    .works-list{display:flex;flex-direction:column;gap:16px;}
+    .work-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;display:flex;gap:18px;transition:border-color 0.2s;}
+    .work-card:hover{border-color:rgba(45,212,191,0.2);}
+    .work-cover{width:80px;aspect-ratio:2/3;border-radius:8px;object-fit:cover;background:var(--bg3);flex-shrink:0;border:1px solid var(--border);}
+    .work-cover-placeholder{width:80px;aspect-ratio:2/3;border-radius:8px;background:var(--bg3);flex-shrink:0;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:22px;}
+    .work-info{flex:1;min-width:0;}
+    .work-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .work-meta-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+    .work-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;}
+    .work-badge.ongoing{background:rgba(45,212,191,0.1);color:var(--accent);}
+    .work-badge.completed{background:rgba(52,211,153,0.1);color:var(--green);}
+    .work-badge.hiatus{background:rgba(245,158,11,0.1);color:var(--gold);}
+    .work-badge.dropped{background:rgba(248,113,113,0.1);color:var(--red);}
+    .work-badge.original{background:rgba(45,212,191,0.08);color:var(--accent);}
+    .work-badge.fanfic{background:rgba(244,114,182,0.08);color:#f472b6;}
+    .work-stats{display:flex;gap:14px;margin-bottom:12px;flex-wrap:wrap;}
+    .work-stat{font-size:12px;color:var(--text3);display:flex;align-items:center;gap:4px;}
+    .work-stat i{font-size:13px;}
+    .work-actions{display:flex;gap:8px;flex-wrap:wrap;}
+    .work-btn{background:none;border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.2s;color:var(--text2);text-decoration:none;}
+    .work-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .work-btn.primary{background:var(--accent2);border-color:var(--accent2);color:white;}
+    .work-btn.primary:hover{background:var(--accent);border-color:var(--accent);color:var(--bg);}
+    .work-btn.danger:hover{border-color:var(--red);color:var(--red);}
+
+    /* EMPTY STATE */
+    .empty-state{text-align:center;padding:80px 24px;}
+    .empty-state i{font-size:56px;color:var(--bg4);display:block;margin-bottom:16px;}
+    .empty-state h2{font-family:'Cinzel',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+    .empty-state p{font-size:14px;color:var(--text3);margin-bottom:24px;}
+
+    /* AUTH WALL */
+    .auth-wall{text-align:center;padding:80px 24px;}
+    .auth-wall i{font-size:52px;color:var(--bg4);display:block;margin-bottom:16px;}
+    .auth-wall h2{font-family:'Cinzel',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+    .auth-wall p{font-size:14px;color:var(--text3);margin-bottom:24px;}
+    .auth-wall a{background:var(--accent2);color:white;padding:10px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px;}
+
+    /* CHAPTER OVERLAY */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:200;padding:24px;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+    .overlay.open{opacity:1;pointer-events:all;}
+    .overlay-panel{background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:720px;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;}
+    .overlay-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg2);z-index:5;border-radius:16px 16px 0 0;}
+    .overlay-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);}
+    .overlay-title span{color:var(--accent);}
+    .overlay-close{background:none;border:1px solid var(--border);border-radius:7px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:16px;transition:all 0.2s;}
+    .overlay-close:hover{border-color:var(--red);color:var(--red);}
+    .overlay-body{padding:24px;flex:1;}
+    .overlay-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--bg2);border-radius:0 0 16px 16px;}
+    .field-group{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+    .field-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);}
+    .field-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:all 0.2s;width:100%;}
+    .field-input:focus{border-color:var(--accent);}
+    .field-input::placeholder{color:var(--text3);}
+    .word-count{font-size:11px;color:var(--text3);text-align:right;margin-top:6px;}
+    .save-btn{background:var(--accent2);border:none;border-radius:9px;padding:10px 24px;color:white;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;}
+    .save-btn:hover{background:var(--accent);color:var(--bg);}
+    .save-btn:disabled{opacity:0.5;cursor:not-allowed;}
+    .cancel-btn{background:none;border:1px solid var(--border);border-radius:9px;padding:10px 20px;color:var(--text2);font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .cancel-btn:hover{border-color:var(--red);color:var(--red);}
+
+    /* QUILL IN OVERLAY */
+    .ql-toolbar.ql-snow{background:var(--bg3);border:1px solid var(--border);border-radius:8px 8px 0 0;padding:8px;}
+    .ql-container.ql-snow{background:var(--bg3);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;min-height:260px;}
+    .ql-editor{color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.8;min-height:260px;}
+    .ql-editor.ql-blank::before{color:var(--text3);font-style:normal;}
+    .ql-snow .ql-stroke{stroke:var(--text2);}
+    .ql-snow .ql-fill{fill:var(--text2);}
+    .ql-snow .ql-picker{color:var(--text2);}
+    .ql-snow .ql-picker-options{background:var(--bg2);border-color:var(--border);}
+    .ql-snow.ql-toolbar button:hover .ql-stroke,.ql-snow.ql-toolbar button.ql-active .ql-stroke{stroke:var(--accent);}
+    .ql-snow.ql-toolbar button:hover .ql-fill,.ql-snow.ql-toolbar button.ql-active .ql-fill{fill:var(--accent);}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:600;pointer-events:none;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    .del-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+    .del-backdrop.show{opacity:1;pointer-events:all;}
+    .del-modal{background:var(--bg2);border:1px solid rgba(248,113,113,0.2);border-radius:16px;padding:32px;max-width:420px;width:100%;transform:translateY(10px);transition:transform 0.2s;}
+    .del-backdrop.show .del-modal{transform:translateY(0);}
+    .del-icon{width:52px;height:52px;border-radius:14px;background:rgba(248,113,113,0.1);display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--red);margin:0 auto 16px;}
+    .del-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);text-align:center;margin-bottom:8px;}
+    .del-body{font-size:13px;color:var(--text2);text-align:center;line-height:1.7;margin-bottom:6px;}
+    .del-warn{font-size:12px;color:var(--red);text-align:center;font-weight:700;margin-bottom:20px;}
+    .del-confirm-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:border-color 0.2s;margin-bottom:16px;}
+    .del-confirm-input:focus{border-color:var(--red);}
+    .del-confirm-input::placeholder{color:var(--text3);}
+    .del-actions{display:flex;gap:10px;}
+    .del-cancel{flex:1;background:transparent;border:1px solid var(--border);border-radius:9px;padding:10px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
+    .del-cancel:hover{border-color:var(--text3);color:var(--text);}
+    .del-confirm{flex:1;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);border-radius:9px;padding:10px;color:var(--red);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;}
+    .del-confirm:hover:not(:disabled){background:var(--red);color:white;}
+    .del-confirm:disabled{opacity:0.4;cursor:not-allowed;}
+  </style>
+</head>
+<body>
+
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
+
+  <!-- DELETE WORK MODAL -->
+  <div class="del-backdrop" id="del-backdrop">
+    <div class="del-modal">
+      <div class="del-icon"><i class="ti ti-trash"></i></div>
+      <div class="del-title" id="del-modal-title">Delete Story</div>
+      <div class="del-body">This will permanently delete the story and all its chapters. This cannot be undone.</div>
+      <div class="del-warn"><i class="ti ti-alert-triangle"></i> All chapters will be deleted forever.</div>
+      <input type="text" class="del-confirm-input" id="del-confirm-input" placeholder="Type the story title to confirm"/>
+      <div class="del-actions">
+        <button class="del-cancel" id="del-cancel">Cancel</button>
+        <button class="del-confirm" id="del-confirm" disabled><i class="ti ti-trash"></i> Delete Forever</button>
+      </div>
+    </div>
+  </div>
+
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </nav>
+
+  <!-- CHAPTER OVERLAY -->
+  <div class="overlay" id="chapter-overlay">
+    <div class="overlay-panel">
+      <div class="overlay-header">
+        <div class="overlay-title">Add Chapter — <span id="overlay-work-title"></span></div>
+        <button class="overlay-close" onclick="closeOverlay()"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="overlay-body">
+        <div class="field-group">
+          <label class="field-label">Chapter Title <span style="color:var(--red);">*</span></label>
+          <input class="field-input" type="text" id="chapter-title-input" placeholder='e.g. "Chapter 2 — The Storm"' maxlength="100"/>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Chapter Content <span style="color:var(--red);">*</span></label>
+          <div id="chapter-editor"></div>
+          <div class="word-count"><span id="word-count">0</span> words</div>
+        </div>
+      </div>
+      <div class="overlay-footer">
+        <button class="cancel-btn" onclick="closeOverlay()">Cancel</button>
+        <button class="save-btn" id="save-chapter-btn" onclick="saveChapter()"><i class="ti ti-check"></i> Publish Chapter</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="auth-wall-wrap" style="display:none;">
+    <div class="auth-wall">
+      <i class="ti ti-lock"></i>
+      <h2>Sign in to manage your works</h2>
+      <p>You need to be logged in to access your creator dashboard.</p>
+      <a href="auth.html"><i class="ti ti-login"></i> Sign In</a>
+    </div>
+  </div>
+
+  <div id="page-content" style="display:none;">
+    <div class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">My <span>Works</span></div>
+          <div style="font-size:13px;color:var(--text3);margin-top:4px;" id="works-count"></div>
+        </div>
+        <a class="new-story-btn" href="publish.html"><i class="ti ti-plus"></i> Publish New Story</a>
+      </div>
+      <div class="works-list" id="works-list">
+        <div style="text-align:center;padding:40px;color:var(--text3);"><i class="ti ti-loader" style="animation:spin 1s linear infinite;font-size:24px;display:block;margin-bottom:8px;"></i>Loading your works…</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    var currentSession = null;
+    var activeWorkId = null;
+    var activeWorkChapterCount = 0;
+    var quill = null;
+
+    function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function formatDate(s){ if(!s) return '—'; return new Date(s).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
+
+    function showToast(msg, icon){
+      var t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg || 'Done!';
+      t.querySelector('i').className = 'ti '+(icon||'ti-check');
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 2800);
+    }
+
+    // ── RENDER WORKS ─────────────────────────────────────────────
+    function renderWorks(works, chapterCounts) {
+      var list = document.getElementById('works-list');
+      document.getElementById('works-count').textContent = works.length + ' stor' + (works.length !== 1 ? 'ies' : 'y') + ' published';
+
+      if (!works.length) {
+        list.innerHTML = '<div class="empty-state">' +
+          '<i class="ti ti-book-off"></i>' +
+          '<h2>No stories yet</h2>' +
+          '<p>Your published stories will appear here.</p>' +
+          '</div>';
+        return;
+      }
+
+      list.innerHTML = '';
+      works.forEach(function(work) {
+        var chCount = chapterCounts[work.id] || 0;
+        var mainTags = [];
+        try { mainTags = JSON.parse(work.tags_main || '[]'); } catch(e) {}
+
+        var card = document.createElement('div');
+        card.className = 'work-card';
+        card.innerHTML =
+          (work.cover_url
+            ? '<img class="work-cover" src="'+escHtml(work.cover_url)+'" alt="cover"/>'
+            : '<div class="work-cover-placeholder"><i class="ti ti-book"></i></div>') +
+          '<div class="work-info">' +
+            '<div class="work-title">' + escHtml(work.title) + '</div>' +
+            '<div class="work-meta-row">' +
+              '<span class="work-badge ' + work.status + '">' + work.status.charAt(0).toUpperCase() + work.status.slice(1) + '</span>' +
+              '<span class="work-badge ' + (work.is_fanfiction ? 'fanfic' : 'original') + '">' + (work.is_fanfiction ? 'Fanfiction' : 'Original') + '</span>' +
+              (mainTags.slice(0,2).map(function(t){ return '<span style="font-size:11px;color:var(--text3);">'+escHtml(t)+'</span>'; }).join('<span style="color:var(--text3);font-size:11px;"> · </span>')) +
+            '</div>' +
+            '<div class="work-stats">' +
+              '<span class="work-stat"><i class="ti ti-list"></i> ' + chCount + ' chapter' + (chCount !== 1 ? 's' : '') + '</span>' +
+              '<span class="work-stat"><i class="ti ti-calendar"></i> Published ' + formatDate(work.created_at) + '</span>' +
+              (work.updated_at ? '<span class="work-stat"><i class="ti ti-clock"></i> Updated ' + formatDate(work.updated_at) + '</span>' : '') +
+            '</div>' +
+            '<div class="work-actions">' +
+              '<button class="work-btn primary add-ch-btn" data-id="'+work.id+'" data-title="'+escHtml(work.title)+'" data-count="'+chCount+'"><i class="ti ti-plus"></i> Add Chapter</button>' +
+              '<a class="work-btn" href="'+(work.type==="artwork"?"artwork.html":"story.html")+'?id='+work.id+'"><i class="ti ti-eye"></i> '+(work.type==="artwork"?"View Art":"View Story")+'</a>' +
+              '<a class="work-btn" href="publish.html?edit='+work.id+'"><i class="ti ti-edit"></i> Edit Story</a>' +
+              '<button class="work-btn danger delete-btn" data-id="'+work.id+'"><i class="ti ti-trash"></i> Delete</button>' +
+            '</div>' +
+          '</div>';
+
+        // Wire up buttons
+        card.querySelector('.add-ch-btn').addEventListener('click', function() {
+          openChapterOverlay(this.dataset.id, this.dataset.title, parseInt(this.dataset.count));
+        });
+        card.querySelector('.delete-btn').addEventListener('click', function() {
+          deleteWork(this.dataset.id, work.title);
+        });
+
+        list.appendChild(card);
+      });
+    }
+
+    // ── CHAPTER OVERLAY ──────────────────────────────────────────
+    function openChapterOverlay(workId, workTitle, chapterCount) {
+      activeWorkId = workId;
+      activeWorkChapterCount = chapterCount;
+      document.getElementById('overlay-work-title').textContent = workTitle;
+      document.getElementById('chapter-title-input').value = '';
+      if (quill) quill.setContents([]);
+      document.getElementById('word-count').textContent = '0';
+      document.getElementById('chapter-overlay').classList.add('open');
+      // Init quill on first open
+      if (!quill) {
+        quill = new Quill('#chapter-editor', {
+          theme: 'snow',
+          placeholder: 'Write your chapter here…',
+          modules: {
+            toolbar: [
+              [{ header: [1, 2, 3, false] }],
+              ['bold', 'italic', 'underline', 'strike'],
+              ['blockquote'],
+              [{ list: 'ordered' }, { list: 'bullet' }],
+              [{ indent: '-1' }, { indent: '+1' }],
+              [{ align: [] }],
+              ['link'],
+              ['clean']
+            ]
+          }
+        });
+        quill.on('text-change', function() {
+          var words = quill.getText().trim().split(/\s+/).filter(Boolean).length;
+          document.getElementById('word-count').textContent = words;
+        });
+      }
+    }
+
+    function closeOverlay() {
+      document.getElementById('chapter-overlay').classList.remove('open');
+      activeWorkId = null;
+    }
+
+    // Close on backdrop click
+    document.getElementById('chapter-overlay').addEventListener('click', function(e) {
+      if (e.target === this) closeOverlay();
+    });
+
+    async function saveChapter() {
+      var title = document.getElementById('chapter-title-input').value.trim();
+      var content = quill ? quill.root.innerHTML : '';
+      var text = quill ? quill.getText().trim() : '';
+
+      if (!title) { showToast('Please add a chapter title', 'ti-alert-triangle'); return; }
+      if (text.length < 10) { showToast('Please write some content', 'ti-alert-triangle'); return; }
+
+      var btn = document.getElementById('save-chapter-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Publishing…';
+
+      var wordCount = text.split(/\s+/).filter(Boolean).length;
+      var chapterNumber = activeWorkChapterCount + 1;
+
+      var result = await db.from('chapters').insert({
+        work_id: activeWorkId,
+        author_id: currentSession.user.id,
+        title: title,
+        content: content,
+        chapter_number: chapterNumber,
+        word_count: wordCount,
+        status: 'published'
+      });
+
+      if (result.error) {
+        showToast('Error: ' + result.error.message, 'ti-x');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-check"></i> Publish Chapter';
+        return;
+      }
+
+      // Update work's updated_at
+      await db.from('works').update({ updated_at: new Date().toISOString() }).eq('id', activeWorkId);
+
+      showToast('Chapter ' + chapterNumber + ' published!');
+      closeOverlay();
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-check"></i> Publish Chapter';
+      loadWorks(); // Refresh the list
+    }
+
+    // ── DELETE WORK ──────────────────────────────────────────────
+    async function deleteWork(workId, title) {
+      // Open styled delete modal
+      var backdrop = document.getElementById('del-backdrop');
+      document.getElementById('del-modal-title').textContent = 'Delete "' + title + '"';
+      document.getElementById('del-confirm-input').value = '';
+      document.getElementById('del-confirm').disabled = true;
+      backdrop.classList.add('show');
+      setTimeout(function(){ document.getElementById('del-confirm-input').focus(); }, 150);
+      // Store pending delete workId
+      backdrop.dataset.pendingId = workId;
+      backdrop.dataset.pendingTitle = title;
+      return; // actual deletion handled by modal confirm button
+
+      // Delete chapters first
+      await db.from('chapters').delete().eq('work_id', workId);
+      await db.from('work_coauthors').delete().eq('work_id', workId);
+      await db.from('works').delete().eq('id', workId);
+
+      showToast('Story deleted', 'ti-trash');
+      loadWorks();
+    }
+
+    // ── LOAD WORKS ───────────────────────────────────────────────
+    async function loadWorks() {
+      var worksResult = await db.from('works')
+        .select('*')
+        .eq('author_id', currentSession.user.id)
+        .neq('type', 'artwork')
+        .order('created_at', { ascending: false });
+
+      var works = worksResult.data || [];
+
+      // Get chapter counts for each work
+      var chapterCounts = {};
+      if (works.length) {
+        var ids = works.map(function(w){ return w.id; });
+        var chapResult = await db.from('chapters')
+          .select('work_id')
+          .in('work_id', ids)
+          .eq('status', 'published');
+        if (chapResult.data) {
+          chapResult.data.forEach(function(c) {
+            chapterCounts[c.work_id] = (chapterCounts[c.work_id] || 0) + 1;
+          });
+        }
+      }
+
+      renderWorks(works, chapterCounts);
+    }
+
+    // ── INIT ─────────────────────────────────────────────────────
+    (async function init() {
+      var sessionRes = await db.auth.getSession();
+      currentSession = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+
+      if (!currentSession) {
+        document.getElementById('auth-wall-wrap').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('page-content').style.display = 'block';
+      await loadWorks();
+    })();
+    // ── DELETE MODAL EVENTS ──────────────────────────────────────
+    (function(){
+      var backdrop = document.getElementById('del-backdrop');
+      document.getElementById('del-cancel').addEventListener('click', function(){
+        backdrop.classList.remove('show');
+      });
+      backdrop.addEventListener('click', function(e){ if(e.target===this) backdrop.classList.remove('show'); });
+      document.getElementById('del-confirm-input').addEventListener('input', function(){
+        var expected = (backdrop.dataset.pendingTitle||'').trim();
+        document.getElementById('del-confirm').disabled = this.value.trim() !== expected;
+      });
+      document.getElementById('del-confirm').addEventListener('click', async function(){
+        var workId = backdrop.dataset.pendingId;
+        if(!workId) return;
+        this.innerHTML = '<i class="ti ti-loader-2"></i> Deleting…';
+        this.disabled = true;
+        backdrop.classList.remove('show');
+        try {
+          await db.from('chapter_comments').delete().eq('work_id', workId);
+          await db.from('reviews').delete().eq('work_id', workId);
+          await db.from('reading_progress').delete().eq('work_id', workId);
+          await db.from('work_follows').delete().eq('work_id', workId);
+          await db.from('work_tag_suggestions').delete().eq('work_id', workId);
+          await db.from('work_coauthors').delete().eq('work_id', workId);
+          await db.from('chapters').delete().eq('work_id', workId);
+          await db.from('works').delete().eq('id', workId);
+          showToast('Story deleted.', 'ti-trash');
+          setTimeout(function(){ loadWorks(); }, 800);
+        } catch(err) {
+          console.error(err);
+          showToast('Delete failed: '+(err.message||'Unknown error'), 'ti-x');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

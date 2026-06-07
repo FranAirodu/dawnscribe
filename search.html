@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Search</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;display:flex;flex-direction:column;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+
+    /* NAV */
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:16px;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;flex-shrink:0;}
+    .logo span{color:var(--text);}
+    .nav-search-bar{flex:1;max-width:520px;display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:0 14px;transition:border-color 0.2s;}
+    .nav-search-bar:focus-within{border-color:var(--accent);}
+    .nav-search-bar i{color:var(--text3);font-size:16px;flex-shrink:0;}
+    .nav-search-bar input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:'Lato',sans-serif;font-size:14px;padding:10px 0;}
+    .nav-search-bar input::placeholder{color:var(--text3);}
+    .tag-mode-btn{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:0 14px;height:42px;display:flex;align-items:center;gap:7px;color:var(--text3);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;white-space:nowrap;flex-shrink:0;}
+    .tag-mode-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .tag-mode-btn.active{background:rgba(45,212,191,0.1);border-color:var(--accent);color:var(--accent);}
+    .tag-mode-btn i{font-size:15px;}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;flex-shrink:0;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* FILTERS */
+    .filters-bar{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;display:flex;align-items:center;gap:8px;overflow-x:auto;scrollbar-width:none;}
+    .filters-bar::-webkit-scrollbar{display:none;}
+    .filter-tab{background:transparent;border:none;border-bottom:2px solid transparent;padding:14px 16px;color:var(--text3);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;white-space:nowrap;display:flex;align-items:center;gap:6px;}
+    .filter-tab:hover{color:var(--text2);}
+    .filter-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+    .filter-count{background:rgba(45,212,191,0.15);color:var(--accent);font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;}
+
+    /* PAGE */
+    .page-wrap{max-width:900px;margin:40px auto 80px;padding:0 24px;flex:1;}
+    .results-header{margin-bottom:28px;}
+    .results-title{font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;}
+    .results-title span{color:var(--accent);}
+    .results-meta{font-size:13px;color:var(--text3);}
+
+    /* CARDS */
+    .results-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .result-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;gap:16px;align-items:flex-start;transition:border-color 0.2s;text-decoration:none;color:inherit;}
+    .result-card:hover{border-color:rgba(45,212,191,0.3);}
+    .result-cover{width:80px;height:110px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:white;overflow:hidden;}
+    .result-cover img{width:80px;height:110px;border-radius:8px;object-fit:cover;display:block;}
+    .result-cover.round{width:64px;height:64px;border-radius:50%;align-self:center;font-size:22px;}
+    .result-cover.round img{width:64px;height:64px;border-radius:50%;object-fit:cover;}
+    .result-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;}
+    .result-title{font-size:14px;font-weight:700;color:var(--text);}
+    .result-sub{font-size:11px;color:var(--text3);}
+    .result-flavor{font-size:12px;color:var(--text2);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+    .result-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;}
+    .result-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);}
+    .result-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;}
+    .badge-author{background:rgba(45,212,191,0.1);border:1px solid rgba(45,212,191,0.3);color:var(--accent);}
+    .badge-artist{background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.3);color:#a78bfa;}
+    .badge-reader{background:rgba(96,165,250,0.1);border:1px solid rgba(96,165,250,0.3);color:#60a5fa;}
+
+    /* States */
+    .state-wrap{text-align:center;padding:60px 24px;}
+    .state-icon{font-size:40px;color:var(--text3);margin-bottom:16px;}
+    .state-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;}
+    .state-body{font-size:14px;color:var(--text3);max-width:360px;margin:0 auto 24px;}
+    .state-btn{display:inline-flex;align-items:center;gap:7px;background:var(--accent2);color:white;padding:10px 22px;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700;transition:all 0.2s;}
+    .state-btn:hover{background:var(--accent);color:var(--bg);}
+
+    /* ARTWORK 3-COLUMN GRID */
+    .artwork-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+    .artwork-bubble{display:flex;flex-direction:row;align-items:stretch;background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;text-decoration:none;color:inherit;transition:border-color 0.2s;}
+    .artwork-bubble:hover{border-color:rgba(45,212,191,0.35);}
+    .artwork-thumb{width:180px;min-height:120px;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;color:white;overflow:hidden;border-radius:0;}
+    .artwork-thumb img{width:180px;height:100%;min-height:120px;object-fit:cover;display:block;flex-shrink:0;}
+    .artwork-info{flex:1;min-width:0;padding:12px 14px;display:flex;flex-direction:column;gap:4px;justify-content:center;}
+    .artwork-title{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .artwork-artist{font-size:11px;color:var(--accent);}
+    .artwork-artist:hover{text-decoration:underline;}
+    .artwork-flavor{font-size:12px;color:var(--text2);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+    .artwork-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;}
+    .badge-collab{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.3);color:#a78bfa;display:inline-flex;align-items:center;gap:4px;}
+    @media(max-width:1000px){.artwork-grid{grid-template-columns:1fr 1fr;}}
+    @media(max-width:700px){.artwork-grid{grid-template-columns:1fr;}.artwork-thumb,.artwork-thumb img{width:100px;}.results-grid{grid-template-columns:1fr;}}
+
+    /* Load more */
+    .load-more-wrap{text-align:center;margin-top:24px;}
+    .load-more-btn{background:transparent;border:1px solid var(--border);border-radius:9px;padding:10px 28px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .load-more-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    footer{background:var(--bg2);border-top:1px solid var(--border);padding:28px;text-align:center;color:var(--text3);font-size:13px;margin-top:auto;}
+    .footer-links{display:flex;justify-content:center;gap:24px;margin:10px 0;flex-wrap:wrap;}
+    .footer-links a{color:var(--text3);text-decoration:none;transition:color 0.2s;}
+    .footer-links a:hover{color:var(--accent);}
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <div class="nav-search-bar">
+      <i class="ti ti-search" id="search-icon"></i>
+      <input type="text" id="nav-search-input" placeholder="Search DawnScribe…" autocomplete="off"/>
+    </div>
+    <button class="tag-mode-btn" id="tag-mode-btn" onclick="toggleTagMode()">
+      <i class="ti ti-tag"></i> Search by Tag
+    </button>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back</a>
+  </nav>
+
+  <div class="filters-bar">
+    <button class="filter-tab active" data-type="titles" onclick="switchTab(this)"><i class="ti ti-book-2"></i> Titles <span class="filter-count" id="count-titles">—</span></button>
+    <button class="filter-tab" data-type="authors" onclick="switchTab(this)"><i class="ti ti-feather"></i> Authors <span class="filter-count" id="count-authors">—</span></button>
+    <button class="filter-tab" data-type="artwork" onclick="switchTab(this)"><i class="ti ti-photo"></i> Artwork <span class="filter-count" id="count-artwork">—</span></button>
+    <button class="filter-tab" data-type="artists" onclick="switchTab(this)"><i class="ti ti-brush"></i> Artists <span class="filter-count" id="count-artists">—</span></button>
+  </div>
+
+  <div class="page-wrap">
+    <div class="results-header">
+      <h1 class="results-title">Results for <span id="query-display"></span></h1>
+      <p class="results-meta" id="results-meta"></p>
+    </div>
+    <div id="results-container">
+      <div class="state-wrap"><div class="state-icon"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div></div>
+    </div>
+    <div class="load-more-wrap" id="load-more-wrap" style="display:none;">
+      <button class="load-more-btn" onclick="loadMore()"><i class="ti ti-chevron-down"></i> Load more</button>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="about.html">About</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="guidelines.html">Community Guidelines</a>
+      <a href="contact.html">Contact</a>
+    </div>
+    <p>© 2026 DawnScribe. All rights reserved.</p>
+  </footer>
+
+  <script>
+    const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+
+    const PAGE_SIZE = 20;
+    var state = { type: 'titles', query: '', offset: 0, total: 0, results: [] };
+    var counts = { titles: null, authors: null, artwork: null, artists: null };
+
+    const coverColors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa','#fb923c'];
+    function coverColor(id) { return coverColors[Math.abs(id || 0) % coverColors.length]; }
+    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    // Parse URL params
+    function getParams() {
+      var p = new URLSearchParams(window.location.search);
+      return { type: p.get('type') || 'titles', q: (p.get('q') || '').trim() };
+    }
+
+
+    // ── TAB SWITCH
+    function switchTab(btn) {
+      document.querySelectorAll('.filter-tab').forEach(function(t){ t.classList.remove('active'); });
+      btn.classList.add('active');
+      var newType = btn.dataset.type;
+      state.type = newType;
+      state.offset = 0;
+      state.results = [];
+      updateUrl();
+      runSearch(true);
+    }
+
+    function updateUrl() {
+      var url = new URL(window.location.href);
+      url.searchParams.set('type', state.type);
+      url.searchParams.set('q', state.query);
+      history.replaceState(null, '', url.toString());
+    }
+
+    // ── TAG MODE ──────────────────────────────────────────────────
+    var tagMode = false;
+
+    function toggleTagMode() {
+      tagMode = !tagMode;
+      var btn = document.getElementById('tag-mode-btn');
+      var icon = document.getElementById('search-icon');
+      var input = document.getElementById('nav-search-input');
+      if (tagMode) {
+        btn.classList.add('active');
+        btn.innerHTML = '<i class="ti ti-tag"></i> Tag Mode On';
+        icon.className = 'ti ti-tag';
+        input.placeholder = 'Search by tag… e.g. fantasy, romance';
+      } else {
+        btn.classList.remove('active');
+        btn.innerHTML = '<i class="ti ti-tag"></i> Search by Tag';
+        icon.className = 'ti ti-search';
+        input.placeholder = 'Search DawnScribe…';
+      }
+      if (input.value.trim()) runSearch(true);
+    }
+
+    // ── QUERIES
+    async function queryTitles(q, offset) {
+      var col = tagMode ? 'tags_all' : 'title';
+      return await db.from('works')
+        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id', { count: 'exact' })
+        .ilike(col, '%' + q + '%')
+        .eq('type', 'novel')
+        .eq('is_published', true)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+    }
+
+    async function queryAuthors(q, offset) {
+      return await db.from('profiles')
+        .select('id, username, display_name, avatar_url, role, bio', { count: 'exact' })
+        .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
+        .order('username')
+        .range(offset, offset + PAGE_SIZE - 1);
+    }
+
+    async function queryArtwork(q, offset) {
+      var col = tagMode ? 'tags_all' : 'title';
+      return await db.from('works')
+        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id', { count: 'exact' })
+        .ilike(col, '%' + q + '%')
+        .eq('type', 'artwork')
+        .eq('is_published', true)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+    }
+
+    async function queryArtists(q, offset) {
+      return await db.from('profiles')
+        .select('id, username, display_name, avatar_url, role, bio', { count: 'exact' })
+        .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
+        .ilike('role', '%Artist%')
+        .order('username')
+        .range(offset, offset + PAGE_SIZE - 1);
+    }
+
+    var queryFns = { titles: queryTitles, authors: queryAuthors, artwork: queryArtwork, artists: queryArtists };
+
+    // ── RENDER
+    function renderWorkCard(w, profileMap, collabSet) {
+      var prof = (profileMap && profileMap[w.author_id]) || {};
+      var author = prof.display_name || prof.username || 'Unknown';
+      var authorHandle = prof.username || '';
+      var color = coverColor(w.id);
+      var letter = (w.title || '?')[0].toUpperCase();
+      var isCollab = collabSet && collabSet[w.id];
+
+      // ── ARTWORK bubble layout
+      if (w.type === 'artwork') {
+        var thumbHtml = w.cover_url
+          ? '<img src="' + esc(w.cover_url) + '" alt="' + esc(w.title) + '"/>'
+          : letter;
+        var flavorText = w.synopsis || w.flavor_text || '';
+        var flavorHtml = flavorText
+          ? '<div class="artwork-flavor">' + esc(flavorText) + '</div>'
+          : '';
+        var collabHtml = isCollab
+          ? '<span class="badge-collab"><i class="ti ti-users"></i> Collab</span>'
+          : '';
+        return '<a class="artwork-bubble" href="artwork.html?id=' + w.id + '">'
+          + '<div class="artwork-thumb" style="background:' + color + ';">' + thumbHtml + '</div>'
+          + '<div class="artwork-info">'
+          + '<div class="artwork-title">' + esc(w.title) + '</div>'
+          + '<a class="artwork-artist" href="profile.html?user=' + esc(authorHandle) + '" onclick="event.stopPropagation()">by ' + esc(author) + '</a>'
+          + flavorHtml
+          + (collabHtml ? '<div class="artwork-meta">' + collabHtml + '</div>' : '')
+          + '</div></a>';
+      }
+
+      // ── NOVEL list layout (unchanged)
+      var coverHtml = w.cover_url
+        ? '<img src="' + esc(w.cover_url) + '" alt="cover"/>'
+        : letter;
+      var tags = [];
+      if (w.tags_main) {
+        try { tags = JSON.parse(w.tags_main); } catch(e) { tags = []; }
+        tags = tags.slice(0, 3);
+      }
+      var tagHtml = tags.map(function(t){ return '<span class="result-tag">' + esc(t) + '</span>'; }).join('');
+      var flavorHtml2 = w.synopsis
+        ? '<div class="result-flavor">' + esc(w.synopsis) + '</div>'
+        : '';
+      return '<a class="result-card" href="story.html?id=' + w.id + '">'
+        + '<div class="result-cover" style="background:' + color + ';">' + coverHtml + '</div>'
+        + '<div class="result-body">'
+        + '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:2px;display:block;">Novel</span>'
+        + '<div class="result-title">' + esc(w.title) + '</div>'
+        + '<div class="result-sub">by <a href="profile.html?user=' + esc(authorHandle) + '" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none;">' + esc(author) + '</a></div>'
+        + flavorHtml2
+        + (tagHtml ? '<div class="result-tags">' + tagHtml + '</div>' : '')
+        + '</div></a>';
+    }
+    function renderProfileCard(p) {
+      var name = p.display_name || p.username;
+      var initial = (name || '?')[0].toUpperCase();
+      var coverHtml = p.avatar_url ? '<img src="' + esc(p.avatar_url) + '" alt="avatar"/>' : initial;
+      var roles = (p.role || '').split(',').map(function(r){ return r.trim(); }).filter(Boolean);
+      var badgeHtml = roles.map(function(r) {
+        var cls = r === 'Artist' ? 'badge-artist' : r === 'Reader' ? 'badge-reader' : 'badge-author';
+        return '<span class="result-badge ' + cls + '">' + esc(r) + '</span>';
+      }).join('');
+      var bio = p.bio ? '<div class="result-sub" style="margin-bottom:6px;">' + esc(p.bio.slice(0, 100)) + (p.bio.length > 100 ? '…' : '') + '</div>' : '';
+      return '<a class="result-card" href="profile.html?user=' + esc(p.username) + '">'
+        + '<div class="result-cover round" style="background:var(--bg4);">' + coverHtml + '</div>'
+        + '<div class="result-body">'
+        + '<div class="result-title">' + esc(name) + '</div>'
+        + '<div class="result-sub">@' + esc(p.username) + '</div>'
+        + bio
+        + (badgeHtml ? '<div class="result-tags">' + badgeHtml + '</div>' : '')
+        + '</div></a>';
+    }
+
+     function renderResults(items, type, append, profileMap, collabSet) {
+      var container = document.getElementById('results-container');
+      var isProfile = (type === 'authors' || type === 'artists');
+      var isArtwork = (type === 'artwork');
+
+      if (!append) {
+        if (!items.length) {
+          container.innerHTML = '<div class="state-wrap">'
+            + '<div class="state-icon"><i class="ti ti-search-off"></i></div>'
+            + '<div class="state-title">No results found</div>'
+            + '<div class="state-body">Try a different search term, or browse the homepage to discover new content.</div>'
+            + '<a class="state-btn" href="index.html"><i class="ti ti-compass"></i> Browse DawnScribe</a>'
+            + '</div>';
+          return;
+        }
+        var gridClass = isArtwork ? 'artwork-grid' : 'results-grid';
+        container.innerHTML = '<div class="' + gridClass + '" id="results-grid"></div>';
+      }
+
+      var grid = document.getElementById('results-grid');
+      items.forEach(function(item) {
+        var html = isProfile ? renderProfileCard(item) : renderWorkCard(item, profileMap, collabSet);
+        var temp = document.createElement('div');
+        temp.innerHTML = html;
+        var node = temp.firstElementChild;
+        if (node) grid.appendChild(node);
+      });
+    }
+
+    // ── SEARCH
+    async function runSearch(reset) {
+      if (reset) {
+        state.offset = 0;
+        state.results = [];
+        document.getElementById('results-container').innerHTML =
+          '<div class="state-wrap"><div class="state-icon"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div></div>';
+        document.getElementById('load-more-wrap').style.display = 'none';
+      }
+
+      var q = state.query;
+      var type = state.type;
+
+      try {
+        var { data, count, error } = await queryFns[type](q, state.offset);
+        if (error) throw error;
+
+        var items = data || [];
+        state.results = state.results.concat(items);
+        state.offset += items.length;
+        if (counts[type] === null && count !== null) {
+          counts[type] = count;
+          updateCountBadge(type, count);
+        }
+
+        // For work results, batch-fetch author profiles separately (no FK join available)
+        var profileMap = {};
+        var collabSet = {};
+        var isWorkType = (type === 'titles' || type === 'artwork');
+        if (isWorkType && items.length) {
+          var authorIds = items.map(function(w){ return w.author_id; }).filter(Boolean);
+          if (authorIds.length) {
+            var { data: profs } = await db.from('profiles')
+              .select('id, username, display_name')
+              .in('id', authorIds);
+            (profs || []).forEach(function(p){ profileMap[p.id] = p; });
+          }
+          // Fetch collab info for artwork
+          if (type === 'artwork') {
+            var workIds = items.map(function(w){ return w.id; });
+            var { data: collabs } = await db.from('work_coauthors')
+              .select('work_id')
+              .in('work_id', workIds);
+            (collabs || []).forEach(function(c){ collabSet[c.work_id] = true; });
+          }
+        }
+
+        renderResults(items, type, !reset, profileMap, collabSet);
+
+        document.getElementById('results-meta').textContent =
+          (counts[type] !== null ? counts[type] : state.results.length) + ' result' +
+          ((counts[type] !== 1) ? 's' : '');
+
+        var hasMore = counts[type] !== null ? state.offset < counts[type] : items.length === PAGE_SIZE;
+        document.getElementById('load-more-wrap').style.display = hasMore ? 'block' : 'none';
+
+      } catch(e) {
+        document.getElementById('results-container').innerHTML =
+          '<div class="state-wrap"><div class="state-icon"><i class="ti ti-alert-circle"></i></div>'
+          + '<div class="state-title">Something went wrong</div>'
+          + '<div class="state-body">Please try again.</div></div>';
+      }
+    }
+
+    function loadMore() {
+      runSearch(false);
+    }
+
+    function updateCountBadge(type, count) {
+      var el = document.getElementById('count-' + type);
+      if (el) el.textContent = count > 999 ? '999+' : count;
+    }
+
+    // ── ALL COUNTS (run in background)
+    async function fetchAllCounts(q) {
+      var types = ['titles','authors','artwork','artists'];
+      types.forEach(async function(t) {
+        if (t === state.type) return; // already have it
+        try {
+          var { count } = await queryFns[t](q, 0);
+          counts[t] = count || 0;
+          updateCountBadge(t, counts[t]);
+        } catch(e) {}
+      });
+    }
+
+    // ── NAV SEARCH BAR
+    var navInput = document.getElementById('nav-search-input');
+    var navTimer = null;
+    navInput.addEventListener('input', function() {
+      clearTimeout(navTimer);
+      navTimer = setTimeout(function() {
+        var q = navInput.value.trim();
+        if (!q) return;
+        state.query = q;
+        state.offset = 0;
+        counts = { titles: null, authors: null, artwork: null, artists: null };
+        document.getElementById('query-display').textContent = '"' + q + '"';
+        updateUrl();
+        runSearch(true);
+        fetchAllCounts(q);
+      }, 350);
+    });
+
+    navInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        clearTimeout(navTimer);
+        var q = navInput.value.trim();
+        if (!q) return;
+        state.query = q;
+        state.offset = 0;
+        counts = { titles: null, authors: null, artwork: null, artists: null };
+        document.getElementById('query-display').textContent = '"' + q + '"';
+        updateUrl();
+        runSearch(true);
+        fetchAllCounts(q);
+      }
+    });
+
+    // ── INIT
+    (function init() {
+      var params = getParams();
+      state.type = params.type;
+      state.query = params.q;
+
+      // Set active tab
+      document.querySelectorAll('.filter-tab').forEach(function(t) {
+        t.classList.toggle('active', t.dataset.type === state.type);
+      });
+
+      // Set nav input
+      navInput.value = state.query;
+      document.getElementById('query-display').textContent = state.query ? '"' + state.query + '"' : '';
+
+      if (!state.query) {
+        document.getElementById('results-container').innerHTML =
+          '<div class="state-wrap">'
+          + '<div class="state-icon"><i class="ti ti-search"></i></div>'
+          + '<div class="state-title">Start searching</div>'
+          + '<div class="state-body">Type something in the search bar above to find novels, authors, artwork, and artists.</div>'
+          + '</div>';
+        return;
+      }
+
+      runSearch(true);
+      fetchAllCounts(state.query);
+    })();
+  </script>
+
+</body>
+</html>

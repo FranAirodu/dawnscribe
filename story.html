@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+    (function() { var t = localStorage.getItem('ds_theme'); if (t) document.documentElement.setAttribute('data-theme', t); })();
+  </script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Story</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;--pink:#f472b6;--shadow:rgba(0,0,0,0.4);}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#d97706;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+
+    /* NAV */
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:#f1f0ff;}
+    html[data-theme="light"] .logo span{color:#0a0a0f;}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* HERO BANNER */
+    .hero-banner{position:relative;width:100%;height:320px;background:linear-gradient(135deg,#0d0d1a,#1a0a2e,#0a1a2e);overflow:hidden;}
+    .hero-banner-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+    .hero-banner-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(10,10,15,0.3) 0%,rgba(10,10,15,0.92) 100%);}
+    .hero-banner-blur{position:absolute;inset:0;backdrop-filter:blur(2px);}
+
+    /* STORY HEADER */
+    .story-header-wrap{max-width:1000px;margin:0 auto;padding:0 24px;}
+    .story-header{display:grid;grid-template-columns:180px 1fr;gap:28px;margin-top:-80px;position:relative;z-index:2;align-items:flex-end;padding-bottom:24px;}
+    @media(max-width:640px){.story-header{grid-template-columns:120px 1fr;gap:16px;margin-top:-50px;}}
+
+    /* COVER */
+    .story-cover-wrap{flex-shrink:0;}
+    .story-cover{width:180px;aspect-ratio:2/3;border-radius:12px;object-fit:cover;border:3px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,0.6);background:var(--bg3);}
+    .story-cover-placeholder{width:180px;aspect-ratio:2/3;border-radius:12px;background:var(--bg3);border:3px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:40px;}
+    @media(max-width:640px){.story-cover,.story-cover-placeholder{width:120px;}}
+
+    /* STORY META */
+    .story-meta{padding-bottom:8px;}
+    .story-type-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;padding:3px 10px;border-radius:20px;margin-bottom:8px;}
+    .story-type-badge.original{background:rgba(45,212,191,0.12);color:var(--accent);}
+    .story-type-badge.fanfic{background:rgba(244,114,182,0.12);color:var(--pink);}
+    .story-title{font-family:'Cinzel',serif;font-size:28px;font-weight:700;color:var(--text);line-height:1.2;margin-bottom:6px;}
+    @media(max-width:640px){.story-title{font-size:20px;}}
+    .story-author-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+    .story-author-link{display:flex;align-items:center;gap:6px;text-decoration:none;color:var(--text2);font-size:13px;font-weight:700;transition:color 0.2s;}
+    .story-author-link:hover{color:var(--accent);}
+    .story-author-avatar{width:24px;height:24px;border-radius:50%;background:var(--bg4);object-fit:cover;border:1px solid var(--border);}
+    .story-author-avatar-placeholder{width:24px;height:24px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);}
+    .coauthor-sep{color:var(--text3);font-size:12px;}
+    .story-tags-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
+    .story-tag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;background:rgba(45,212,191,0.08);color:var(--accent);border:1px solid rgba(45,212,191,0.15);}
+    .story-tag.main-tag{background:rgba(245,158,11,0.1);color:var(--gold);border-color:rgba(245,158,11,0.2);}
+    .story-tag.silver-tag{background:rgba(192,192,192,0.08);color:#c0c0c0;border-color:rgba(192,192,192,0.2);}
+    .story-stats-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+    .story-stat{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text3);}
+    .story-stat i{font-size:13px;}
+    .rating-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;}
+    .rating-badge.safe{background:rgba(52,211,153,0.1);color:var(--green);}
+    .rating-badge.mature{background:rgba(248,113,113,0.1);color:var(--red);}
+    .status-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;}
+    .status-badge.ongoing{background:rgba(45,212,191,0.1);color:var(--accent);}
+    .status-badge.completed{background:rgba(52,211,153,0.1);color:var(--green);}
+    .status-badge.hiatus{background:rgba(245,158,11,0.1);color:var(--gold);}
+    .status-badge.dropped{background:rgba(248,113,113,0.1);color:var(--red);}
+
+    /* ACTION BUTTONS */
+    .story-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+    .btn-read{background:var(--accent2);border:none;border-radius:9px;padding:10px 24px;color:white;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;text-decoration:none;}
+    .btn-read:hover{background:var(--accent);color:var(--bg);}
+    .btn-outline{background:transparent;border:1px solid var(--border);border-radius:9px;padding:10px 18px;color:var(--text2);font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;}
+    .btn-outline:hover{border-color:var(--accent);color:var(--accent);}
+    .btn-outline.active{border-color:var(--accent);color:var(--accent);background:rgba(45,212,191,0.06);}
+
+    /* MAIN CONTENT */
+    .story-body{max-width:1000px;margin:0 auto;padding:24px 24px 80px;display:grid;grid-template-columns:1fr 300px;gap:24px;}
+    @media(max-width:760px){.story-body{grid-template-columns:1fr;}}
+
+    /* SECTIONS */
+    .section{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+    .section-title{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:7px;}
+    .section-title i{color:var(--accent);}
+
+    /* SYNOPSIS */
+    .artwork-info-panel{display:none;flex-direction:column;gap:18px;margin-bottom:24px;}
+    .artwork-field-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px;}
+    .artwork-field-text{font-size:14px;color:var(--text2);line-height:1.8;white-space:pre-wrap;}
+    .artwork-inspired{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+    .synopsis-toggle{background:none;border:none;color:var(--accent);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;margin-top:10px;padding:0;display:flex;align-items:center;gap:4px;}
+    .disclaimer-box{background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:10px 14px;margin-top:12px;font-size:12px;color:var(--gold);display:flex;gap:7px;align-items:flex-start;}
+
+    /* AI ART NOTICE */
+    .ai-notice{background:rgba(167,139,250,0.06);border:1px solid rgba(167,139,250,0.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#a78bfa;}
+    .ai-notice-title{font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+    .ai-intent-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+    .ai-intent-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.25);color:#a78bfa;}
+
+    /* CHAPTER LIST */
+    .chapter-list{display:flex;flex-direction:column;gap:2px;}
+    .chapter-item{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;transition:background 0.15s;cursor:pointer;text-decoration:none;}
+    .chapter-item:hover{background:var(--bg3);}
+    .chapter-item.read{opacity:0.6;}
+    .chapter-item.locked{opacity:0.45;cursor:not-allowed;pointer-events:none;}
+    .chapter-lock-icon{font-size:13px;color:var(--text3);flex-shrink:0;}
+    .chapter-num{font-size:12px;font-weight:700;color:var(--text3);min-width:32px;}
+    .chapter-info{flex:1;min-width:0;}
+    .chapter-name{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .chapter-meta{font-size:11px;color:var(--text3);margin-top:1px;}
+    .chapter-new{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(45,212,191,0.12);color:var(--accent);margin-left:6px;}
+    .chapter-read-check{font-size:14px;color:var(--green);flex-shrink:0;}
+    .chapters-load-more{background:none;border:1px dashed var(--border);border-radius:8px;padding:9px;color:var(--text3);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;width:100%;margin-top:8px;transition:all 0.2s;}
+    .chapters-load-more:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* REVIEWS */
+    .stars-row{display:flex;gap:4px;margin-bottom:4px;}
+    .star{font-size:20px;cursor:pointer;color:var(--bg4);transition:color 0.15s;}
+    .star.filled{color:var(--gold);}
+    .review-card{background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:10px;}
+    .review-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+    .review-avatar{width:32px;height:32px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text3);overflow:hidden;flex-shrink:0;}
+    .review-avatar img{width:100%;height:100%;object-fit:cover;}
+    .review-name{font-size:13px;font-weight:700;color:var(--text);}
+    .review-date{font-size:11px;color:var(--text3);}
+    .review-stars{display:flex;gap:2px;}
+    .review-star{font-size:13px;color:var(--gold);}
+    .review-text{font-size:13px;color:var(--text2);line-height:1.6;}
+    .review-lock{background:var(--bg3);border-radius:10px;padding:20px;text-align:center;color:var(--text3);}
+    .review-lock i{font-size:28px;display:block;margin-bottom:8px;color:var(--bg4);}
+    .review-lock p{font-size:13px;margin-bottom:4px;}
+    .review-lock small{font-size:11px;color:var(--text3);}
+    .review-form{margin-bottom:16px;}
+    .review-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;width:100%;resize:vertical;min-height:80px;transition:all 0.2s;}
+    .review-textarea:focus{border-color:var(--accent);}
+    .review-submit{background:var(--accent2);border:none;border-radius:8px;padding:9px 20px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;margin-top:8px;transition:all 0.2s;}
+    .review-submit:hover{background:var(--accent);color:var(--bg);}
+
+    /* COMMENTS */
+    .comment-card{background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:8px;}
+    .comment-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+    .comment-avatar{width:28px;height:28px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text3);overflow:hidden;flex-shrink:0;}
+    .comment-avatar img{width:100%;height:100%;object-fit:cover;}
+    .comment-name{font-size:13px;font-weight:700;color:var(--text);}
+    .comment-date{font-size:11px;color:var(--text3);}
+    .comment-text{font-size:13px;color:var(--text2);line-height:1.6;}
+    .comment-input-wrap{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+    .comment-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;resize:none;min-height:70px;transition:all 0.2s;}
+    .comment-textarea:focus{border-color:var(--accent);}
+    .comment-submit{background:var(--accent2);border:none;border-radius:8px;padding:8px 18px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;align-self:flex-end;transition:all 0.2s;}
+    .comment-submit:hover{background:var(--accent);color:var(--bg);}
+
+    /* SIDEBAR */
+    .sidebar-section{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;}
+    .sidebar-title{font-family:'Cinzel',serif;font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+    .sidebar-title i{color:var(--accent);font-size:14px;}
+    .info-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;}
+    .info-row:last-child{border-bottom:none;}
+    .info-label{color:var(--text3);font-size:12px;}
+    .info-value{color:var(--text2);font-weight:700;font-size:12px;text-align:right;}
+    .author-card{display:flex;align-items:center;gap:10px;text-decoration:none;padding:6px;border-radius:8px;transition:background 0.2s;}
+    .author-card:hover{background:var(--bg3);}
+    .author-card-avatar{width:40px;height:40px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--text3);overflow:hidden;flex-shrink:0;}
+    .author-card-avatar img{width:100%;height:100%;object-fit:cover;}
+    .author-card-name{font-size:13px;font-weight:700;color:var(--text);}
+    .author-card-handle{font-size:11px;color:var(--text3);}
+    .collab-badge{display:flex;align-items:center;gap:7px;padding:10px 12px;background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);border-radius:8px;font-size:12px;color:#a78bfa;font-weight:700;margin-top:8px;}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+
+    .empty-state{text-align:center;padding:24px;color:var(--text3);font-size:13px;}
+    .empty-state i{font-size:24px;display:block;margin-bottom:8px;opacity:0.4;}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+    /* OWNER CONTROLS */
+    .owner-bar{background:rgba(45,212,191,0.05);border:1px solid rgba(45,212,191,0.15);border-radius:10px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+    .owner-bar-label{font-size:12px;color:var(--accent);font-weight:700;display:flex;align-items:center;gap:5px;flex:1;}
+    .owner-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:6px 14px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.2s;}
+    .owner-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .owner-btn.danger:hover{border-color:var(--red);color:var(--red);}
+
+    /* DELETE MODAL */
+    .del-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+    .del-modal-backdrop.show{opacity:1;pointer-events:all;}
+    .del-modal{background:var(--bg2);border:1px solid rgba(248,113,113,0.2);border-radius:16px;padding:32px;max-width:420px;width:100%;transform:translateY(10px);transition:transform 0.2s;}
+    .del-modal-backdrop.show .del-modal{transform:translateY(0);}
+    .del-modal-icon{width:52px;height:52px;border-radius:14px;background:rgba(248,113,113,0.1);display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--red);margin:0 auto 16px;}
+    .del-modal-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);text-align:center;margin-bottom:10px;}
+    .del-modal-body{font-size:13px;color:var(--text2);text-align:center;line-height:1.7;margin-bottom:8px;}
+    .del-modal-warning{font-size:12px;color:var(--red);text-align:center;margin-bottom:24px;font-weight:700;}
+    .del-confirm-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:border-color 0.2s;margin-bottom:16px;}
+    .del-confirm-input:focus{border-color:var(--red);}
+    .del-confirm-input::placeholder{color:var(--text3);}
+    .del-modal-actions{display:flex;gap:10px;}
+    .del-cancel-btn{flex:1;background:transparent;border:1px solid var(--border);border-radius:9px;padding:10px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .del-cancel-btn:hover{border-color:var(--text3);color:var(--text);}
+    .del-confirm-btn{flex:1;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);border-radius:9px;padding:10px;color:var(--red);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px;}
+    .del-confirm-btn:hover:not(:disabled){background:var(--red);color:white;border-color:var(--red);}
+    .del-confirm-btn:disabled{opacity:0.4;cursor:not-allowed;}
+  </style>
+</head>
+<body>
+
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
+
+  <!-- DELETE STORY MODAL -->
+  <div class="del-modal-backdrop" id="del-modal-backdrop">
+    <div class="del-modal">
+      <div class="del-modal-icon"><i class="ti ti-trash"></i></div>
+      <div class="del-modal-title">Delete Story</div>
+      <div class="del-modal-body">This will permanently delete your story, all chapters, and all associated data. This cannot be undone.</div>
+      <div class="del-modal-warning"><i class="ti ti-alert-triangle"></i> Reviews and comments will also be deleted.</div>
+      <input type="text" class="del-confirm-input" id="del-confirm-input" placeholder="Type the story title to confirm"/>
+      <div class="del-modal-actions">
+        <button class="del-cancel-btn" id="del-cancel-btn">Cancel</button>
+        <button class="del-confirm-btn" id="del-confirm-btn" disabled><i class="ti ti-trash"></i> Delete Forever</button>
+      </div>
+    </div>
+  </div>
+
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </nav>
+
+  <!-- HERO BANNER -->
+  <div class="hero-banner" id="hero-banner">
+    <img class="hero-banner-img" id="hero-banner-img" style="display:none;"/>
+    <div class="hero-banner-blur"></div>
+    <div class="hero-banner-overlay"></div>
+  </div>
+
+  <!-- STORY HEADER -->
+  <div class="story-header-wrap">
+    <div class="story-header">
+      <div class="story-cover-wrap">
+        <img class="story-cover" id="story-cover" style="display:none;"/>
+        <div class="story-cover-placeholder" id="story-cover-placeholder"><i class="ti ti-book"></i></div>
+      </div>
+      <div class="story-meta">
+        <div id="story-type-badge"></div>
+        <div class="story-title" id="story-title">Loading…</div>
+        <div class="story-author-row" id="story-author-row"></div>
+        <div class="story-tags-row" id="story-tags-row"></div>
+        <div class="story-stats-row" id="story-stats-row"></div>
+        <div class="story-actions" id="story-actions"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div class="story-body">
+
+    <!-- MAIN COLUMN -->
+    <div class="story-main">
+
+      <!-- OWNER BAR (shown only to story owner) -->
+      <div class="owner-bar" id="owner-bar" style="display:none;">
+        <div class="owner-bar-label"><i class="ti ti-crown"></i> You own this story</div>
+        <a class="owner-btn" id="manage-chapters-btn" href="#"><i class="ti ti-books"></i> Manage Chapters</a>
+        <a class="owner-btn" id="edit-story-btn" href="#"><i class="ti ti-edit"></i> Edit Story</a>
+        <button class="owner-btn danger" id="delete-story-btn"><i class="ti ti-trash"></i> Delete</button>
+      </div>
+
+      <!-- AI ART NOTICE -->
+      <div class="ai-notice" id="ai-notice" style="display:none;">
+        <div class="ai-notice-title"><i class="ti ti-robot"></i> This story uses AI-generated artwork</div>
+        <div id="ai-intent-text" style="font-size:12px;opacity:0.8;"></div>
+        <div class="ai-intent-chips" id="ai-intent-chips"></div>
+      </div>
+
+      <!-- ARTWORK INFO PANEL (shown instead of synopsis+chapters for artwork type) -->
+      <div class="artwork-info-panel" id="artwork-info-panel">
+        <div>
+          <div class="artwork-field-label"><i class="ti ti-align-left"></i> Description</div>
+          <div class="artwork-field-text" id="artwork-description"></div>
+        </div>
+        <div class="artwork-inspired" id="artwork-inspired-wrap" style="display:none;">
+          <div class="artwork-field-label"><i class="ti ti-bulb"></i> What Inspired This</div>
+          <div class="artwork-field-text" id="artwork-inspired"></div>
+        </div>
+      </div>
+
+      <!-- SYNOPSIS -->
+      <div class="section" id="synopsis-section">
+        <div class="section-title"><i class="ti ti-align-left"></i> Synopsis</div>
+        <div class="synopsis-text" id="synopsis-text"></div>
+        <button class="synopsis-toggle" id="synopsis-toggle" style="display:none;" onclick="toggleSynopsis()">
+          <i class="ti ti-chevron-down"></i> Show more
+        </button>
+        <div class="disclaimer-box" id="disclaimer-box" style="display:none;">
+          <i class="ti ti-alert-triangle" style="flex-shrink:0;margin-top:1px;"></i>
+          <span id="disclaimer-text"></span>
+        </div>
+      </div>
+
+      <!-- CHAPTERS -->
+      <div class="section" id="chapters-section">
+        <div class="section-title"><i class="ti ti-list"></i> Chapters <span id="chapter-count" style="font-family:'Lato';font-size:13px;font-weight:400;color:var(--text3);margin-left:4px;"></span></div>
+        <div class="chapter-list" id="chapter-list">
+          <div class="empty-state"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i>Loading chapters…</div>
+        </div>
+        <button class="chapters-load-more" id="load-more-btn" style="display:none;" onclick="loadMoreChapters()">
+          <i class="ti ti-chevron-down"></i> Load more chapters
+        </button>
+      </div>
+
+      <!-- REVIEWS -->
+      <div class="section" id="reviews-section">
+        <div class="section-title"><i class="ti ti-star"></i> Reviews <span id="review-count" style="font-family:'Lato';font-size:13px;font-weight:400;color:var(--text3);margin-left:4px;"></span></div>
+        <div id="reviews-content"></div>
+      </div>
+
+      <!-- COMMENTS -->
+      <div class="section">
+        <div class="section-title"><i class="ti ti-message-circle"></i> Comments <span id="comment-count" style="font-family:'Lato';font-size:13px;font-weight:400;color:var(--text3);margin-left:4px;"></span></div>
+        <div id="comments-list"></div>
+        <div class="comment-input-wrap" id="comment-input-wrap" style="display:none;">
+          <textarea class="comment-textarea" id="comment-input" placeholder="Leave a comment…" maxlength="1000"></textarea>
+          <button class="comment-submit" onclick="submitComment()"><i class="ti ti-send"></i> Post</button>
+        </div>
+        <div id="comment-login-prompt" style="font-size:13px;color:var(--text3);margin-top:10px;display:none;">
+          <a href="auth.html" style="color:var(--accent);">Sign in</a> to leave a comment.
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SIDEBAR -->
+    <div class="story-sidebar">
+
+      <!-- STORY INFO -->
+      <div class="sidebar-section">
+        <div class="sidebar-title"><i class="ti ti-info-circle"></i> Story Info</div>
+        <div id="sidebar-info"></div>
+      </div>
+
+      <!-- AUTHOR -->
+      <div class="sidebar-section">
+        <div class="sidebar-title"><i class="ti ti-user"></i> Author</div>
+        <div id="sidebar-author"></div>
+      </div>
+
+      <!-- RATING SUMMARY -->
+      <div class="sidebar-section">
+        <div class="sidebar-title"><i class="ti ti-star"></i> Rating</div>
+        <div id="sidebar-rating" style="text-align:center;padding:8px 0;">
+          <div style="font-family:'Cinzel',serif;font-size:32px;font-weight:700;color:var(--gold);" id="avg-rating">—</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;" id="rating-count"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    var currentSession = null;
+    var workData = null;
+    var allChapters = [];
+    var chaptersShown = 20;
+    var readProgress = {};
+    var selectedRating = 0;
+    var synopsisExpanded = false;
+
+    // ── HELPERS ──────────────────────────────────────────────────
+    function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function formatDate(s) { if(!s) return '—'; return new Date(s).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
+    function timeAgo(s) {
+      var d = Math.floor((Date.now()-new Date(s))/1000);
+      if(d<60) return 'just now';
+      if(d<3600) return Math.floor(d/60)+'m ago';
+      if(d<86400) return Math.floor(d/3600)+'h ago';
+      if(d<604800) return Math.floor(d/86400)+'d ago';
+      return formatDate(s);
+    }
+    function getWorkId() {
+      var params = new URLSearchParams(window.location.search);
+      return params.get('id');
+    }
+    function showToast(msg, icon) {
+      var t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg || 'Done!';
+      t.querySelector('i').className = 'ti '+(icon||'ti-check');
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 2800);
+    }
+
+    // ── LOAD READING PROGRESS ────────────────────────────────────
+    function loadReadingProgress() {
+      var saved = localStorage.getItem('ds_reading_progress');
+      readProgress = saved ? JSON.parse(saved) : {};
+    }
+    function getChaptersRead(workId) {
+      if (!readProgress[workId]) return 0;
+      return Object.keys(readProgress[workId]).filter(function(k){ return readProgress[workId][k]; }).length;
+    }
+    function isChapterRead(workId, chapterId) {
+      return !!(readProgress[workId] && readProgress[workId][chapterId]);
+    }
+    function getLastReadChapter() {
+      if (!workData || !allChapters.length) return null;
+      var wid = workData.id;
+      if (!readProgress[wid]) return null;
+      var read = allChapters.filter(function(c){ return readProgress[wid][c.id]; });
+      if (!read.length) return null;
+      return read[read.length - 1];
+    }
+
+    // ── SYNOPSIS TOGGLE ──────────────────────────────────────────
+    function toggleSynopsis() {
+      synopsisExpanded = !synopsisExpanded;
+      var el = document.getElementById('synopsis-text');
+      var btn = document.getElementById('synopsis-toggle');
+      if (synopsisExpanded) {
+        el.style.webkitLineClamp = 'unset';
+        el.style.overflow = 'visible';
+        btn.innerHTML = '<i class="ti ti-chevron-up"></i> Show less';
+      } else {
+        el.style.webkitLineClamp = '6';
+        el.style.overflow = 'hidden';
+        btn.innerHTML = '<i class="ti ti-chevron-down"></i> Show more';
+      }
+    }
+
+    // ── LANGUAGE MAP ─────────────────────────────────────────────
+    var LANGUAGE_NAMES = {
+      'en':'English','pt':'Portuguese','es':'Spanish','fr':'French',
+      'de':'German','ja':'Japanese','ko':'Korean','zh':'Chinese',
+      'id':'Indonesian','ar':'Arabic','ru':'Russian','it':'Italian',
+      'nl':'Dutch','pl':'Polish','tr':'Turkish','vi':'Vietnamese',
+      'th':'Thai','hi':'Hindi','other':'Other'
+    };
+    function getLanguageName(code) {
+      if (!code) return 'English';
+      return LANGUAGE_NAMES[code.toLowerCase()] || code;
+    }
+
+    // ── STATUS CONFIG ────────────────────────────────────────────
+    var STATUS_CONFIG = {
+      ongoing:   { label: 'Ongoing',   icon: 'ti-clock',          color: 'var(--accent)', bg: 'rgba(45,212,191,0.1)',   notice: null },
+      completed: { label: 'Completed', icon: 'ti-circle-check',   color: 'var(--green)',  bg: 'rgba(52,211,153,0.1)',   notice: null },
+      hiatus:    { label: 'On Hiatus', icon: 'ti-player-pause',   color: 'var(--gold)',   bg: 'rgba(245,158,11,0.1)',   notice: 'The author has paused this story. Updates may resume in the future.' },
+      dropped:   { label: 'Dropped',   icon: 'ti-circle-x',       color: 'var(--red)',    bg: 'rgba(248,113,113,0.1)',  notice: 'The author has stopped updating this story. It is unlikely to continue.' }
+    };
+    function getStatusConfig(status) {
+      return STATUS_CONFIG[status] || STATUS_CONFIG.ongoing;
+    }
+
+    // ── RENDER WORK ──────────────────────────────────────────────
+    function renderWork(work, authors) {
+      document.title = 'DawnScribe — ' + work.title;
+
+      // Banner
+      // If this is an artwork, redirect to artwork.html instead
+      if (work.type === 'artwork') {
+        window.location.replace('artwork.html?id=' + workId);
+        return;
+      }
+
+      // ── NOVEL MODE ───────────────────────────────────────────────
+      var bannerUrl = work.banner_url || (authors[0] && authors[0].banner_url);
+      if (bannerUrl) {
+        var bannerImg = document.getElementById('hero-banner-img');
+        bannerImg.src = bannerUrl;
+        bannerImg.style.display = 'block';
+      }
+
+      // Cover
+      if (work.cover_url) {
+        var cover = document.getElementById('story-cover');
+        cover.src = work.cover_url;
+        cover.style.display = 'block';
+        document.getElementById('story-cover-placeholder').style.display = 'none';
+      }
+
+      // Type badge
+      document.getElementById('story-type-badge').innerHTML =
+        '<span class="story-type-badge ' + (work.is_fanfiction ? 'fanfic' : 'original') + '">' +
+        (work.is_fanfiction ? '<i class="ti ti-heart"></i> Fanfiction' : '<i class="ti ti-sparkles"></i> Original') + '</span>';
+
+      // Title
+      document.getElementById('story-title').textContent = work.title;
+
+      // Authors
+      var authorRow = document.getElementById('story-author-row');
+      authorRow.innerHTML = '<span style="font-size:12px;color:var(--text3);">by</span> ';
+      authors.forEach(function(a, i) {
+        var link = document.createElement('a');
+        link.className = 'story-author-link';
+        link.href = 'profile.html?user=' + encodeURIComponent(a.username || a.id);
+        link.innerHTML = (a.avatar_url
+          ? '<img class="story-author-avatar" src="'+escHtml(a.avatar_url)+'" alt=""/>'
+          : '<div class="story-author-avatar-placeholder"><i class="ti ti-user"></i></div>') +
+          escHtml(a.display_name || a.username || 'Unknown');
+        authorRow.appendChild(link);
+        if (i < authors.length - 1) {
+          var sep = document.createElement('span');
+          sep.className = 'coauthor-sep';
+          sep.textContent = ' & ';
+          authorRow.appendChild(sep);
+        }
+      });
+
+      // Tags
+      var tagsRow = document.getElementById('story-tags-row');
+      var goldTags = [];
+      var silverTags = [];
+      var allTags = [];
+      try { goldTags   = JSON.parse(work.tags_gold   || work.tags_main || '[]'); } catch(e){}
+      try { silverTags = JSON.parse(work.tags_silver  || '[]'); } catch(e){}
+      try { allTags    = JSON.parse(work.tags_all     || '[]'); } catch(e){}
+      var knownTags  = goldTags.concat(silverTags);
+      var extraTags  = allTags.filter(function(t){ return knownTags.indexOf(t) === -1; });
+      goldTags.forEach(function(t) {
+        var span = document.createElement('span');
+        span.className = 'story-tag main-tag';
+        span.innerHTML = '★ ' + escHtml(t);
+        tagsRow.appendChild(span);
+      });
+      silverTags.forEach(function(t) {
+        var span = document.createElement('span');
+        span.className = 'story-tag silver-tag';
+        span.innerHTML = '◆ ' + escHtml(t);
+        tagsRow.appendChild(span);
+      });
+      extraTags.slice(0, 6).forEach(function(t) {
+        var span = document.createElement('span');
+        span.className = 'story-tag';
+        span.textContent = t;
+        tagsRow.appendChild(span);
+      });
+      if (extraTags.length > 6) {
+        var more = document.createElement('span');
+        more.className = 'story-tag';
+        more.style.opacity = '0.6';
+        more.textContent = '+' + (extraTags.length - 6) + ' more';
+        tagsRow.appendChild(more);
+      }
+
+      // Stats row
+      var ratingText = [];
+      if (work.content_rating_gore) ratingText.push('Gore');
+      if (work.content_rating_erotica) ratingText.push('Erotica');
+      var isMature = ratingText.length > 0;
+      var sc = getStatusConfig(work.status);
+      var statsRow = document.getElementById('story-stats-row');
+      statsRow.innerHTML =
+        '<span class="rating-badge ' + (isMature ? 'mature' : 'safe') + '">' +
+        (isMature ? '<i class="ti ti-alert-triangle"></i> ' + ratingText.join(' · ') : '<i class="ti ti-shield-check"></i> Safe') + '</span>' +
+        '<span class="status-badge ' + work.status + '"><i class="ti ' + sc.icon + '"></i> ' + sc.label + '</span>' +
+        '<span class="story-stat"><i class="ti ti-language"></i> ' + escHtml(getLanguageName(work.language)) + '</span>';
+
+      // Synopsis
+      var synText = document.getElementById('synopsis-text');
+      synText.textContent = work.synopsis || 'No synopsis provided.';
+      if ((work.synopsis || '').length > 500) {
+        synText.style.webkitLineClamp = '6';
+        synText.style.display = '-webkit-box';
+        synText.style.webkitBoxOrient = 'vertical';
+        synText.style.overflow = 'hidden';
+        document.getElementById('synopsis-toggle').style.display = 'flex';
+      }
+
+      // Disclaimer
+      if (work.disclaimer) {
+        document.getElementById('disclaimer-box').style.display = 'flex';
+        document.getElementById('disclaimer-text').textContent = work.disclaimer;
+      }
+
+      // AI art notice
+      if (work.art_is_ai) {
+        var aiNotice = document.getElementById('ai-notice');
+        aiNotice.style.display = 'block';
+        var chips = document.getElementById('ai-intent-chips');
+        if (work.art_intent_collab) {
+          chips.innerHTML += '<span class="ai-intent-chip"><i class="ti ti-users"></i> Open to art collab</span>';
+        }
+        if (work.art_intent_hire) {
+          chips.innerHTML += '<span class="ai-intent-chip"><i class="ti ti-briefcase"></i> Looking to hire an artist</span>';
+        }
+        if (!work.art_intent_collab && !work.art_intent_hire) {
+          document.getElementById('ai-intent-text').textContent = 'The author is comfortable with AI art for this story.';
+        }
+      }
+
+      // Sidebar info
+      var sc2 = getStatusConfig(work.status);
+      var statusValueHtml = '<span style="color:' + sc2.color + ';font-weight:700;display:flex;align-items:center;gap:4px;"><i class="ti ' + sc2.icon + '"></i>' + sc2.label + '</span>';
+      var noticeHtml = sc2.notice
+        ? '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.6;background:' + sc2.bg + ';color:' + sc2.color + ';border:1px solid ' + sc2.color + '22;display:flex;gap:7px;align-items:flex-start;"><i class="ti ti-info-circle" style="flex-shrink:0;margin-top:1px;"></i><span>' + sc2.notice + '</span></div>'
+        : '';
+      document.getElementById('sidebar-info').innerHTML =
+        '<div class="info-row"><span class="info-label">Status</span>' + statusValueHtml + '</div>' +
+        '<div class="info-row"><span class="info-label">Type</span><span class="info-value">' + (work.is_fanfiction ? 'Fanfiction' : 'Original') + '</span></div>' +
+        '<div class="info-row"><span class="info-label">Language</span><span class="info-value">' + escHtml(getLanguageName(work.language)) + '</span></div>' +
+        '<div class="info-row"><span class="info-label">Published</span><span class="info-value">' + formatDate(work.created_at) + '</span></div>' +
+        '<div class="info-row"><span class="info-label">Updated</span><span class="info-value">' + formatDate(work.updated_at || work.created_at) + '</span></div>' +
+        noticeHtml;
+
+      // Collab badge in sidebar
+      if (work.collab_open) {
+        document.getElementById('sidebar-author').insertAdjacentHTML('afterend',
+          '<div class="collab-badge"><i class="ti ti-palette"></i> Open to art collaboration</div>');
+      }
+
+      // Sidebar authors
+      var sidebarAuthor = document.getElementById('sidebar-author');
+      sidebarAuthor.innerHTML = '';
+      authors.forEach(function(a) {
+        var link = document.createElement('a');
+        link.className = 'author-card';
+        link.href = 'profile.html?user=' + encodeURIComponent(a.username || a.id);
+        link.innerHTML =
+          '<div class="author-card-avatar">' + (a.avatar_url ? '<img src="'+escHtml(a.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+          '<div><div class="author-card-name">' + escHtml(a.display_name || a.username || 'Unknown') + '</div>' +
+          '<div class="author-card-handle">@' + escHtml(a.username || '') + '</div></div>';
+        sidebarAuthor.appendChild(link);
+      });
+    }
+
+    // ── RENDER CHAPTERS ──────────────────────────────────────────
+    function isChapterUnlocked(ch, idx) {
+      if (idx === 0) return true; // Chapter 1 always unlocked
+      var prev = allChapters[idx - 1];
+      if (!prev) return true;
+      return isChapterRead(workData.id, prev.id);
+    }
+
+    function renderChapters() {
+      var list = document.getElementById('chapter-list');
+      list.innerHTML = '';
+      var shown = allChapters.slice(0, chaptersShown);
+      if (!shown.length) {
+        list.innerHTML = '<div class="empty-state"><i class="ti ti-book-off"></i>No chapters yet.</div>';
+        return;
+      }
+      var weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      shown.forEach(function(ch, idx) {
+        var isRead = isChapterRead(workData.id, ch.id);
+        var unlocked = isChapterUnlocked(ch, idx);
+        var isNew = new Date(ch.created_at).getTime() > weekAgo;
+        var words = ch.word_count ? ch.word_count.toLocaleString() + ' words' : '';
+        var item = document.createElement(unlocked ? 'a' : 'div');
+        item.className = 'chapter-item' + (isRead ? ' read' : '') + (!unlocked ? ' locked' : '');
+        if (unlocked) item.href = 'chapter.html?id=' + ch.id;
+        item.innerHTML =
+          '<div class="chapter-num">Ch.' + ch.chapter_number + '</div>' +
+          '<div class="chapter-info">' +
+            '<div class="chapter-name">' + escHtml(ch.title) + (isNew && unlocked ? '<span class="chapter-new">NEW</span>' : '') + '</div>' +
+            '<div class="chapter-meta">' + (words ? words + ' · ' : '') + formatDate(ch.created_at) + '</div>' +
+          '</div>' +
+          (isRead ? '<i class="ti ti-circle-check chapter-read-check"></i>' :
+           !unlocked ? '<i class="ti ti-lock chapter-lock-icon"></i>' :
+           '<i class="ti ti-chevron-right" style="color:var(--text3);font-size:13px;"></i>');
+        list.appendChild(item);
+      });
+      document.getElementById('chapter-count').textContent = '(' + allChapters.length + ')';
+      document.getElementById('load-more-btn').style.display = allChapters.length > chaptersShown ? 'block' : 'none';
+    }
+
+    function loadMoreChapters() { chaptersShown += 20; renderChapters(); }
+
+    // ── ACTION BUTTONS ───────────────────────────────────────────
+    function renderActions() {
+      var actionsEl = document.getElementById('story-actions');
+      actionsEl.innerHTML = '';
+      if (!allChapters.length) return;
+
+      var lastRead = getLastReadChapter();
+      var readBtn = document.createElement('a');
+      readBtn.className = 'btn-read';
+
+      if (lastRead) {
+        var lastIdx = allChapters.findIndex(function(c){ return c.id === lastRead.id; });
+        var nextChapter = allChapters[lastIdx + 1] || lastRead;
+        var isFinished = lastIdx >= allChapters.length - 1;
+        readBtn.href = 'chapter.html?id=' + nextChapter.id;
+        readBtn.innerHTML = isFinished
+          ? '<i class="ti ti-refresh"></i> Re-read'
+          : '<i class="ti ti-player-play"></i> Continue — Ch.' + nextChapter.chapter_number;
+      } else {
+        readBtn.href = 'chapter.html?id=' + allChapters[0].id;
+        readBtn.innerHTML = '<i class="ti ti-book"></i> Start Reading';
+      }
+      actionsEl.appendChild(readBtn);
+
+      // Follow button
+      var followBtn = document.createElement('button');
+      followBtn.className = 'btn-outline' + (isFollowingWork ? ' active' : '');
+      followBtn.innerHTML = '<i class="ti ti-' + (isFollowingWork ? 'bookmark-filled' : 'bookmark') + '"></i> ' + (isFollowingWork ? 'Following' : 'Follow Story');
+      followBtn.addEventListener('click', function() { toggleFollowWork(); });
+      actionsEl.appendChild(followBtn);
+    }
+
+    // ── FOLLOW STORY ─────────────────────────────────────────────
+    var isFollowingWork = false;
+
+    async function loadFollowState() {
+      if (!currentSession) return;
+      var result = await db.from('work_follows')
+        .select('id')
+        .eq('user_id', currentSession.user.id)
+        .eq('work_id', workData.id)
+        .maybeSingle();
+      isFollowingWork = !!(result.data);
+    }
+
+    async function toggleFollowWork() {
+      if (!currentSession) { window.location.href = 'auth.html'; return; }
+      if (isFollowingWork) {
+        await db.from('work_follows').delete().eq('user_id', currentSession.user.id).eq('work_id', workData.id);
+        isFollowingWork = false;
+        showToast('Removed from Following Titles', 'ti-bookmark-off');
+      } else {
+        await db.from('work_follows').insert({ user_id: currentSession.user.id, work_id: workData.id });
+        isFollowingWork = true;
+        showToast('Added to Following Titles!', 'ti-bookmark-filled');
+      }
+      renderActions();
+    }
+
+    // ── REVIEWS ──────────────────────────────────────────────────
+    async function loadReviews() {
+      var chaptersRead = getChaptersRead(workData.id);
+      var canReview = chaptersRead >= 5;
+      var reviewsEl = document.getElementById('reviews-content');
+
+      // Load existing reviews
+      var result = await db.from('reviews').select('*, profiles(username, display_name, avatar_url)').eq('work_id', workData.id).order('created_at', { ascending: false });
+      var reviews = (result.data || []);
+      document.getElementById('review-count').textContent = '(' + reviews.length + ')';
+
+      // Rating summary
+      if (reviews.length) {
+        var avg = reviews.reduce(function(s, r){ return s + r.rating; }, 0) / reviews.length;
+        document.getElementById('avg-rating').textContent = avg.toFixed(1);
+        document.getElementById('rating-count').textContent = reviews.length + ' review' + (reviews.length !== 1 ? 's' : '');
+      } else {
+        document.getElementById('avg-rating').textContent = '—';
+        document.getElementById('rating-count').textContent = 'No reviews yet';
+      }
+
+      reviewsEl.innerHTML = '';
+
+      // Review form
+      if (currentSession) {
+        if (canReview) {
+          var alreadyReviewed = reviews.find(function(r){ return r.user_id === currentSession.user.id; });
+          if (!alreadyReviewed) {
+            var formHtml = '<div class="review-form">' +
+              '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">Leave a Review</div>' +
+              '<div class="stars-row" id="stars-row"></div>' +
+              '<textarea class="review-textarea" id="review-textarea" placeholder="Share your thoughts on this story…" maxlength="2000"></textarea>' +
+              '<button class="review-submit" onclick="submitReview()"><i class="ti ti-send"></i> Submit Review</button>' +
+              '</div>';
+            reviewsEl.innerHTML = formHtml;
+            renderStars(0);
+          }
+        } else {
+          reviewsEl.innerHTML = '<div class="review-lock">' +
+            '<i class="ti ti-lock"></i>' +
+            '<p>Read 5 chapters to unlock reviews</p>' +
+            '<small>You\'ve read ' + chaptersRead + '/5 chapters</small>' +
+            '</div>';
+        }
+      } else {
+        reviewsEl.innerHTML = '<div class="review-lock">' +
+          '<i class="ti ti-lock"></i>' +
+          '<p><a href="auth.html" style="color:var(--accent);">Sign in</a> and read 5 chapters to leave a review</p>' +
+          '</div>';
+      }
+
+      // Existing reviews
+      if (!reviews.length) {
+        reviewsEl.innerHTML += '<div class="empty-state"><i class="ti ti-star-off"></i>No reviews yet — be the first!</div>';
+      } else {
+        reviews.forEach(function(r) {
+          var p = r.profiles || {};
+          var stars = '';
+          for (var i = 1; i <= 5; i++) stars += '<span class="review-star">' + (i <= r.rating ? '★' : '☆') + '</span>';
+          reviewsEl.innerHTML += '<div class="review-card">' +
+            '<div class="review-header">' +
+              '<div class="review-avatar">' + (p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+              '<div style="flex:1;">' +
+                '<div class="review-name">' + escHtml(p.display_name || p.username || 'User') + '</div>' +
+                '<div class="review-date">' + timeAgo(r.created_at) + '</div>' +
+              '</div>' +
+              '<div class="review-stars">' + stars + '</div>' +
+            '</div>' +
+            (r.content ? '<div class="review-text">' + escHtml(r.content) + '</div>' : '') +
+            '</div>';
+        });
+      }
+    }
+
+    function renderStars(rating) {
+      selectedRating = rating;
+      var row = document.getElementById('stars-row');
+      if (!row) return;
+      row.innerHTML = '';
+      for (var i = 1; i <= 5; i++) {
+        var star = document.createElement('span');
+        star.className = 'star' + (i <= rating ? ' filled' : '');
+        star.textContent = '★';
+        (function(val){ star.addEventListener('click', function(){ renderStars(val); }); star.addEventListener('mouseover', function(){ renderStars(val); }); })(i);
+        row.appendChild(star);
+      }
+      row.addEventListener('mouseleave', function(){ renderStars(selectedRating); });
+    }
+
+    async function submitReview() {
+      if (!selectedRating) { showToast('Please select a star rating', 'ti-alert-triangle'); return; }
+      var content = document.getElementById('review-textarea').value.trim();
+      var result = await db.from('reviews').insert({
+        work_id: workData.id,
+        user_id: currentSession.user.id,
+        rating: selectedRating,
+        content: content || null
+      });
+      if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
+      showToast('Review posted!');
+      loadReviews();
+    }
+
+    // ── COMMENTS ─────────────────────────────────────────────────
+    async function loadComments() {
+      var result = await db.from('chapter_comments')
+        .select('*, profiles(username, display_name, avatar_url)')
+        .eq('work_id', workData.id)
+        .is('parent_id', null)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      var comments = result.data || [];
+      document.getElementById('comment-count').textContent = '(' + comments.length + ')';
+      var listEl = document.getElementById('comments-list');
+      listEl.innerHTML = '';
+      if (!comments.length) {
+        listEl.innerHTML = '<div class="empty-state"><i class="ti ti-message-off"></i>No comments yet.</div>';
+      } else {
+        comments.forEach(function(c) {
+          var p = c.profiles || {};
+          listEl.innerHTML += '<div class="comment-card">' +
+            '<div class="comment-header">' +
+              '<div class="comment-avatar">' + (p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+              '<div class="comment-name">' + escHtml(p.display_name || p.username || 'User') + '</div>' +
+              '<div class="comment-date" style="margin-left:auto;">' + timeAgo(c.created_at) + '</div>' +
+            '</div>' +
+            '<div class="comment-text">' + escHtml(c.content) + '</div>' +
+            '</div>';
+        });
+      }
+      if (currentSession) {
+        document.getElementById('comment-input-wrap').style.display = 'flex';
+      } else {
+        document.getElementById('comment-login-prompt').style.display = 'block';
+      }
+    }
+
+    async function submitComment() {
+      var content = document.getElementById('comment-input').value.trim();
+      if (!content) return;
+      var result = await db.from('chapter_comments').insert({
+        work_id: workData.id,
+        user_id: currentSession.user.id,
+        content: content
+      });
+      if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
+      document.getElementById('comment-input').value = '';
+      showToast('Comment posted!');
+      loadComments();
+      // Sync comments_count on the work
+      var countRes = await db.from('chapter_comments').select('id', { count: 'exact', head: true }).eq('work_id', workData.id);
+      if (!countRes.error) { await db.from('works').update({ comments_count: countRes.count || 0 }).eq('id', workData.id); }
+    }
+
+
+    // ── OWNER BAR ────────────────────────────────────────────────
+    function setupOwnerBar(workId) {
+      var bar = document.getElementById('owner-bar');
+      bar.style.display = 'flex';
+      document.getElementById('manage-chapters-btn').href = 'chapters.html?edit=' + workId;
+      document.getElementById('edit-story-btn').href = 'publish.html?edit=' + workId;
+      document.getElementById('delete-story-btn').addEventListener('click', openDeleteModal);
+    }
+
+    // ── DELETE MODAL ─────────────────────────────────────────────
+    function openDeleteModal() {
+      document.getElementById('del-confirm-input').value = '';
+      document.getElementById('del-confirm-btn').disabled = true;
+      document.getElementById('del-modal-backdrop').classList.add('show');
+      setTimeout(function(){ document.getElementById('del-confirm-input').focus(); }, 150);
+    }
+    function closeDeleteModal() {
+      document.getElementById('del-modal-backdrop').classList.remove('show');
+    }
+    document.getElementById('del-cancel-btn').addEventListener('click', closeDeleteModal);
+    document.getElementById('del-modal-backdrop').addEventListener('click', function(e){
+      if (e.target === this) closeDeleteModal();
+    });
+    document.getElementById('del-confirm-input').addEventListener('input', function() {
+      var expected = (workData && workData.title) ? workData.title.trim() : '';
+      document.getElementById('del-confirm-btn').disabled = this.value.trim() !== expected;
+    });
+    document.getElementById('del-confirm-btn').addEventListener('click', async function() {
+      if (!workData || !currentSession) return;
+      var btn = this;
+      btn.innerHTML = '<i class="ti ti-loader-2"></i> Deleting…';
+      btn.disabled = true;
+      try {
+        var wid = workData.id;
+        var uid = currentSession.user.id;
+        // Delete in order: comments → reviews → reading progress → work_follows → chapters → work
+        await db.from('chapter_comments').delete().eq('work_id', wid);
+        await db.from('reviews').delete().eq('work_id', wid);
+        await db.from('reading_progress').delete().eq('work_id', wid);
+        await db.from('work_follows').delete().eq('work_id', wid);
+        await db.from('work_tag_suggestions').delete().eq('work_id', wid);
+        await db.from('chapters').delete().eq('work_id', wid);
+        var delResult = await db.from('works').delete().eq('id', wid).eq('author_id', uid);
+        if (delResult.error) throw delResult.error;
+        // Clear local view key
+        localStorage.removeItem('ds_viewed_' + wid);
+        showToast('Story deleted.', 'ti-trash');
+        setTimeout(function(){ window.location.href = 'profile.html'; }, 1500);
+      } catch(err) {
+        console.error('Delete error:', err);
+        showToast('Delete failed: ' + (err.message || 'Unknown error'), 'ti-x');
+        btn.innerHTML = '<i class="ti ti-trash"></i> Delete Forever';
+        btn.disabled = false;
+      }
+    });
+
+    // ── INIT ─────────────────────────────────────────────────────
+    (async function init() {
+      var workId = getWorkId();
+      if (!workId) { document.getElementById('story-title').textContent = 'Story not found.'; return; }
+
+      loadReadingProgress();
+
+      var sessionRes = await db.auth.getSession();
+      currentSession = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+
+      // Load work
+      var workResult = await db.from('works').select('*').eq('id', workId).maybeSingle();
+      if (!workResult.data) { document.getElementById('story-title').textContent = 'Story not found.'; return; }
+      workData = workResult.data;
+
+      // Load author(s)
+      var authorIds = [workData.author_id];
+      var coResult = await db.from('work_coauthors').select('user_id').eq('work_id', workId);
+      if (coResult.data) coResult.data.forEach(function(c){ authorIds.push(c.user_id); });
+      var authorsResult = await db.from('profiles').select('id,username,display_name,avatar_url,banner_url').in('id', authorIds);
+      var authors = authorsResult.data || [];
+      // Put main author first
+      authors.sort(function(a, b){ return a.id === workData.author_id ? -1 : 1; });
+
+      // Load chapters
+      var chapResult = await db.from('chapters').select('id,chapter_number,title,word_count,created_at').eq('work_id', workId).eq('status','published').order('chapter_number', { ascending: true });
+      allChapters = chapResult.data || [];
+
+      renderWork(workData, authors);
+      renderChapters();
+      await loadFollowState();
+      renderActions();
+      await loadReviews();
+      await loadComments();
+
+      // Show owner controls if the logged-in user is the author
+      if (currentSession && workData.author_id === currentSession.user.id) {
+        setupOwnerBar(workData.id);
+      }
+
+      // Increment view count (once per session per work)
+      var viewKey = 'ds_viewed_' + workId;
+      if (!localStorage.getItem(viewKey)) {
+        localStorage.setItem(viewKey, '1');
+        await db.from('works').update({ views: (workData.views || 0) + 1 }).eq('id', workId);
+      }
+    })();
+  </script>
+
+  <footer style="background:var(--bg2);border-top:1px solid var(--border);padding:32px;text-align:center;color:var(--text3);font-size:13px;margin-top:40px;">
+    <div style="font-family:'Cinzel',serif;font-size:20px;color:var(--accent);margin-bottom:10px;">DawnScribe</div>
+    <p>A home for stories, art, and the people who love them.</p>
+    <div style="display:flex;justify-content:center;gap:24px;margin:12px 0;flex-wrap:wrap;">
+      <a href="index.html" style="color:var(--text3);text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">Home</a>
+      <a href="about.html" style="color:var(--text3);text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">About</a>
+      <a href="terms.html" style="color:var(--text3);text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">Terms of Service</a>
+      <a href="privacy.html" style="color:var(--text3);text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">Privacy Policy</a>
+      <a href="guidelines.html" style="color:var(--text3);text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">Community Guidelines</a>
+      <a href="contact.html" style="color:var(--text3);text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">Contact</a>
+    </div>
+    <p style="margin-top:8px;">© 2026 DawnScribe. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,1719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Publish a Story</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <!-- Quill rich text editor -->
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+  <style>
+    :root {
+      --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;
+      --accent:#2dd4bf;--accent2:#0d9488;
+      --text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;
+      --border:rgba(255,255,255,0.07);
+      --red:#f87171;--green:#34d399;--gold:#f59e0b;--pink:#f472b6;
+      --shadow:rgba(0,0,0,0.4);
+    }
+    html[data-theme="light"] {
+      --bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;
+      --accent:#0d9488;--accent2:#0f766e;
+      --text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;
+      --border:rgba(0,0,0,0.08);
+      --red:#dc2626;--green:#059669;--gold:#d97706;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:#f1f0ff;}
+    html[data-theme="light"] .logo span{color:#0a0a0f;}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* LAYOUT */
+    .publish-layout{display:grid;grid-template-columns:1fr 320px;gap:24px;max-width:1100px;margin:0 auto;padding:40px 24px 80px;}
+    .publish-main{min-width:0;}
+    .publish-sidebar{display:flex;flex-direction:column;gap:16px;}
+    @media(max-width:800px){.publish-layout{grid-template-columns:1fr;}.publish-sidebar{order:-1;}}
+
+    /* SECTIONS */
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:20px;}
+    .card-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+    .card-title i{color:var(--accent);}
+    .card-desc{font-size:13px;color:var(--text3);margin-bottom:20px;}
+    .step-badge{width:22px;height:22px;background:var(--accent2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;flex-shrink:0;}
+
+    /* FORM ELEMENTS */
+    .field-group{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+    .field-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);display:flex;align-items:center;gap:5px;}
+    .field-label .required{color:var(--red);}
+    .field-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:all 0.2s;width:100%;}
+    .field-input:focus{border-color:var(--accent);}
+    .field-input::placeholder{color:var(--text3);}
+    .field-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:all 0.2s;width:100%;resize:vertical;min-height:100px;}
+    .field-textarea:focus{border-color:var(--accent);}
+    .field-textarea::placeholder{color:var(--text3);}
+    .field-select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:all 0.2s;width:100%;cursor:pointer;}
+    .field-select:focus{border-color:var(--accent);}
+    .field-hint{font-size:11px;color:var(--text3);}
+    .char-count{font-size:11px;color:var(--text3);text-align:right;margin-top:3px;}
+    .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+
+    /* IMAGE UPLOAD */
+    .img-upload-wrap{position:relative;cursor:pointer;}
+    .img-upload-cover{width:100%;aspect-ratio:2/3;background:var(--bg3);border:2px dashed var(--border);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;overflow:hidden;}
+    .img-upload-cover:hover{border-color:var(--accent);}
+    .img-upload-cover.has-img{border-style:solid;border-color:var(--border);}
+    /* Crop modal */
+    .crop-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;}
+    .crop-modal{background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:28px;max-width:820px;width:100%;display:flex;flex-direction:row;gap:28px;align-items:stretch;}
+    .crop-modal-left{flex-shrink:0;width:420px;display:flex;flex-direction:column;gap:10px;}
+    .crop-modal-right{flex:1;display:flex;flex-direction:column;gap:14px;min-width:150px;}
+    .crop-modal-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);}
+    .crop-modal-desc{font-size:13px;color:var(--text3);line-height:1.65;}
+    .crop-viewport{position:relative;width:100%;aspect-ratio:2/3;background:#000;border-radius:10px;overflow:hidden;cursor:grab;user-select:none;touch-action:none;}
+    .crop-viewport:active{cursor:grabbing;}
+    .crop-img{position:absolute;top:0;left:0;transform-origin:top left;}
+    .crop-overlay{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 3px var(--accent);}
+    .crop-corner{position:absolute;width:16px;height:16px;border-color:var(--accent);border-style:solid;border-width:0;}
+    .crop-corner.tl{top:6px;left:6px;border-top-width:3px;border-left-width:3px;border-radius:2px 0 0 0;}
+    .crop-corner.tr{top:6px;right:6px;border-top-width:3px;border-right-width:3px;border-radius:0 2px 0 0;}
+    .crop-corner.bl{bottom:6px;left:6px;border-bottom-width:3px;border-left-width:3px;border-radius:0 0 0 2px;}
+    .crop-corner.br{bottom:6px;right:6px;border-bottom-width:3px;border-right-width:3px;border-radius:0 0 2px 0;}
+    .crop-hint{font-size:12px;color:var(--text3);text-align:center;}
+    .crop-spacer{flex:1;}
+    .crop-actions{display:flex;flex-direction:column;gap:10px;}
+    .crop-btn-cancel{background:transparent;border:1px solid var(--border);border-radius:8px;padding:10px 20px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;font-weight:700;cursor:pointer;transition:all 0.2s;width:100%;}
+    .crop-btn-cancel:hover{border-color:var(--text2);}
+    .crop-btn-confirm{background:var(--accent);border:none;border-radius:8px;padding:12px 22px;color:#0a0a0f;font-size:14px;font-family:'Lato',sans-serif;font-weight:700;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:7px;width:100%;}
+    .crop-btn-confirm:hover{background:var(--accent2);}
+    @media(max-width:640px){.crop-modal{flex-direction:column;}.crop-modal-left{width:100%;}.crop-actions{flex-direction:row;}}
+    .upload-icon{font-size:28px;color:var(--text3);}
+    .upload-label{font-size:12px;color:var(--text3);font-weight:700;}
+    .upload-sub{font-size:11px;color:var(--text3);}
+    .upload-preview{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:8px;}
+    .upload-overlay{position:absolute;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.2s;border-radius:8px;}
+    .img-upload-wrap:hover .upload-overlay{opacity:1;}
+    .upload-overlay span{color:white;font-size:12px;font-weight:700;}
+    input[type=file]{display:none;}
+
+    /* RATING CHECKBOXES */
+    .rating-options{display:flex;flex-direction:column;gap:8px;}
+    .rating-option{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;user-select:none;}
+    .rating-option:hover{border-color:var(--text3);}
+    .rating-option.checked{border-color:var(--accent);}
+    .rating-option.checked.gore{border-color:var(--red);background:rgba(248,113,113,0.06);}
+    .rating-option.checked.erotica{border-color:var(--pink);background:rgba(244,114,182,0.06);}
+    .rating-option.checked.safe{border-color:var(--green);background:rgba(52,211,153,0.06);}
+    .rating-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+    .rating-icon.safe{background:rgba(52,211,153,0.15);color:var(--green);}
+    .rating-icon.gore{background:rgba(248,113,113,0.15);color:var(--red);}
+    .rating-icon.erotica{background:rgba(244,114,182,0.15);color:var(--pink);}
+    .rating-text .rating-label{font-size:14px;font-weight:700;color:var(--text);}
+    .rating-text .rating-sub{font-size:12px;color:var(--text3);}
+    .checkbox-box{width:18px;height:18px;border:2px solid var(--border);border-radius:4px;margin-left:auto;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.2s;font-size:11px;color:white;}
+    .rating-option.checked .checkbox-box{background:var(--accent);border-color:var(--accent);}
+    .rating-option.checked.gore .checkbox-box{background:var(--red);border-color:var(--red);}
+    .rating-option.checked.erotica .checkbox-box{background:var(--pink);border-color:var(--pink);}
+
+    /* TYPE TOGGLE */
+    .type-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .type-card{padding:14px 16px;background:var(--bg3);border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;text-align:center;user-select:none;}
+    .type-card:hover{border-color:var(--text3);}
+    .type-card.selected{border-color:var(--accent);background:rgba(45,212,191,0.06);}
+    .type-card i{font-size:22px;color:var(--text3);display:block;margin-bottom:6px;}
+    .type-card.selected i{color:var(--accent);}
+    .type-card .type-label{font-size:13px;font-weight:700;color:var(--text);}
+    .type-card .type-sub{font-size:11px;color:var(--text3);margin-top:2px;}
+    .fanfic-notice{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--gold);display:none;align-items:center;gap:6px;margin-top:10px;}
+    .fanfic-notice.show{display:flex;}
+
+    /* TAGS */
+    .tag-section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+    .main-tags-slots{display:flex;gap:8px;margin-bottom:16px;}
+    .main-tag-slot{flex:1;height:38px;background:var(--bg3);border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text3);position:relative;transition:all 0.2s;}
+    .main-tag-slot.filled{border-style:solid;border-color:var(--accent);background:rgba(45,212,191,0.08);color:var(--accent);font-weight:700;cursor:pointer;}
+    .main-tag-slot.filled.gold{border-color:var(--gold);background:rgba(245,158,11,0.08);color:var(--gold);}
+    .main-tag-slot.filled.silver{border-color:#c0c0c0;background:rgba(192,192,192,0.08);color:#c0c0c0;}
+    .main-tag-slot .slot-x{position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:var(--red);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;color:white;cursor:pointer;}
+    .tag-chip.selected-silver{background:rgba(192,192,192,0.1);border-color:#c0c0c0;color:#c0c0c0;}
+    .tag-chip.selected-silver::before{content:'◆ ';}
+    .tag-chip.selected-gold::before{content:'★ ';}
+    .tag-chip.selected-gold{background:rgba(245,158,11,0.12);border-color:var(--gold);color:var(--gold);}
+    .tag-count{font-size:12px;color:var(--text3);margin-bottom:10px;}
+    .tag-count span{color:var(--accent);font-weight:700;}
+    .tag-search-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;margin-bottom:10px;transition:all 0.2s;}
+    .tag-search-input:focus{border-color:var(--accent);}
+    .tag-search-input::placeholder{color:var(--text3);}
+    .tag-category-wrap{margin-bottom:14px;}
+    .tag-cat-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:6px;display:flex;align-items:center;gap:5px;}
+    .tag-cat-title::after{content:'';flex:1;height:1px;background:var(--border);}
+    .tag-chips{display:flex;flex-wrap:wrap;gap:6px;}
+    .tag-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;transition:all 0.15s;border:1px solid var(--border);background:var(--bg3);color:var(--text2);user-select:none;}
+    .tag-chip:hover{border-color:var(--accent);color:var(--accent);}
+    .tag-chip.selected-main{background:rgba(45,212,191,0.12);border-color:var(--accent);color:var(--accent);}
+    .tag-chip.selected-main::before{content:'★ ';}
+    .tag-chip.selected-extra{background:rgba(155,155,192,0.1);border-color:var(--text3);color:var(--text2);}
+    .tag-chip.selected-extra::before{content:'✓ ';}
+    .tag-chip.disabled{opacity:0.35;cursor:not-allowed;}
+
+    /* CO-AUTHORS */
+    .coauthor-search-row{display:flex;gap:8px;margin-bottom:12px;}
+    .coauthor-search-row .field-input{flex:1;}
+    .search-btn{background:var(--accent2);border:none;border-radius:8px;padding:9px 16px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;}
+    .search-btn:hover{background:var(--accent);color:var(--bg);}
+    .coauthor-result{display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;}
+    .coauthor-avatar{width:32px;height:32px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--text3);flex-shrink:0;overflow:hidden;}
+    .coauthor-avatar img{width:100%;height:100%;object-fit:cover;}
+    .coauthor-name{flex:1;font-size:13px;font-weight:700;color:var(--text);}
+    .coauthor-add-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;color:var(--text2);transition:all 0.2s;}
+    .coauthor-add-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .coauthor-added{background:rgba(45,212,191,0.08);border-color:var(--accent);color:var(--accent);font-size:11px;}
+    .coauthors-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+    .coauthor-tag{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(45,212,191,0.06);border:1px solid rgba(45,212,191,0.2);border-radius:8px;}
+    .coauthor-tag-name{flex:1;font-size:13px;color:var(--accent);font-weight:700;}
+    .coauthor-remove{background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;transition:color 0.2s;}
+    .coauthor-remove:hover{color:var(--red);}
+
+    /* COLLAB TOGGLE */
+    .collab-toggle{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--bg3);border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;user-select:none;}
+    .collab-toggle.on{border-color:var(--accent);background:rgba(45,212,191,0.06);}
+    .collab-toggle-left{display:flex;align-items:center;gap:12px;}
+    .collab-icon{width:34px;height:34px;border-radius:8px;background:rgba(167,139,250,0.15);color:#a78bfa;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+    .collab-label{font-size:14px;font-weight:700;color:var(--text);}
+    .collab-sub{font-size:12px;color:var(--text3);margin-top:1px;}
+    .toggle-pill{width:44px;height:24px;background:var(--bg4);border-radius:12px;position:relative;transition:background 0.2s;flex-shrink:0;}
+    .toggle-pill.on{background:var(--accent);}
+    .toggle-pill::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;background:white;border-radius:50%;transition:transform 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3);}
+    .toggle-pill.on::after{transform:translateX(20px);}
+
+    /* RICH TEXT EDITOR */
+    .ql-toolbar.ql-snow{background:var(--bg3);border:1px solid var(--border);border-radius:8px 8px 0 0;padding:8px;}
+    .ql-container.ql-snow{background:var(--bg3);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;min-height:300px;}
+    .ql-editor{color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.8;min-height:300px;}
+    .ql-editor.ql-blank::before{color:var(--text3);font-style:normal;}
+    .ql-snow .ql-stroke{stroke:var(--text2);}
+    .ql-snow .ql-fill{fill:var(--text2);}
+    .ql-snow .ql-picker{color:var(--text2);}
+    .ql-snow .ql-picker-options{background:var(--bg2);border-color:var(--border);}
+    .ql-snow.ql-toolbar button:hover .ql-stroke,.ql-snow.ql-toolbar button.ql-active .ql-stroke{stroke:var(--accent);}
+    .ql-snow.ql-toolbar button:hover .ql-fill,.ql-snow.ql-toolbar button.ql-active .ql-fill{fill:var(--accent);}
+    .word-count{font-size:11px;color:var(--text3);text-align:right;margin-top:6px;}
+
+    /* SIDEBAR CARDS */
+    .sidebar-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;}
+    .sidebar-card-title{font-family:'Cinzel',serif;font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+    .sidebar-card-title i{color:var(--accent);font-size:15px;}
+    .cover-preview-wrap{width:100%;aspect-ratio:2/3;background:var(--bg3);border-radius:8px;overflow:hidden;margin-bottom:10px;display:flex;align-items:center;justify-content:center;}
+    .cover-preview-wrap img{width:100%;height:100%;object-fit:cover;}
+    .cover-placeholder{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--text3);}
+    .cover-placeholder i{font-size:28px;}
+    .cover-placeholder span{font-size:12px;}
+    .preview-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px;word-break:break-word;}
+    .preview-tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;}
+    .preview-tag{font-size:10px;padding:2px 7px;background:rgba(45,212,191,0.1);color:var(--accent);border-radius:10px;font-weight:700;}
+    .preview-rating{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:4px;}
+
+    /* PUBLISH BTN */
+    .publish-btn{background:var(--accent2);border:none;border-radius:10px;padding:14px 32px;color:white;font-size:15px;font-weight:700;font-family:'Cinzel',serif;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.2s;width:100%;justify-content:center;}
+    .publish-btn:hover{background:var(--accent);color:var(--bg);}
+    .publish-btn:disabled{opacity:0.5;cursor:not-allowed;}
+    .save-draft-btn{background:none;border:1px solid var(--border);border-radius:10px;padding:11px 24px;color:var(--text2);font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;width:100%;justify-content:center;margin-bottom:8px;}
+    .save-draft-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .checklist{display:flex;flex-direction:column;gap:6px;}
+    .check-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text3);}
+    .check-item.done{color:var(--green);}
+    .check-item i{font-size:13px;}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+
+    /* AUTH WALL */
+    .auth-wall{text-align:center;padding:80px 24px;max-width:500px;margin:0 auto;}
+    .auth-wall i{font-size:52px;color:var(--bg4);display:block;margin-bottom:16px;}
+    .auth-wall h2{font-family:'Cinzel',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+    .auth-wall p{font-size:14px;color:var(--text3);margin-bottom:24px;}
+    .auth-wall a{background:var(--accent2);color:white;padding:10px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px;}
+
+    /* Artwork free-text tags */
+    .art-tag-input-wrap{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:8px 12px;min-height:46px;cursor:text;transition:border-color 0.2s;}
+    .art-tag-input-wrap:focus-within{border-color:var(--accent);}
+    .art-tag-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(45,212,191,0.12);border:1px solid rgba(45,212,191,0.3);color:var(--accent);font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;}
+    .art-tag-pill button{background:none;border:none;color:var(--accent);cursor:pointer;font-size:14px;padding:0;line-height:1;opacity:0.7;}
+    .art-tag-pill button:hover{opacity:1;}
+    .art-tag-input{border:none;outline:none;background:transparent;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;min-width:120px;flex:1;}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+    /* AI ART DISCLOSURE */
+    .ai-art-btn{flex:1;display:flex;align-items:center;gap:8px;padding:11px 14px;background:var(--bg3);border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;font-size:13px;font-weight:700;color:var(--text2);user-select:none;}
+    .ai-art-btn:hover{border-color:var(--text3);}
+    .ai-art-btn.selected{border-color:var(--accent);background:rgba(45,212,191,0.07);color:var(--accent);}
+    .ai-art-btn i{font-size:16px;flex-shrink:0;}
+    .ai-intent-btn{display:flex;align-items:center;gap:12px;padding:13px 16px;background:var(--bg3);border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;user-select:none;}
+    .ai-intent-btn:hover{border-color:var(--text3);}
+    .ai-intent-btn.selected{border-color:var(--accent);background:rgba(45,212,191,0.07);}
+    .ai-intent-btn i{font-size:20px;color:var(--text3);flex-shrink:0;transition:color 0.2s;}
+    .ai-intent-btn.selected i{color:var(--accent);}
+    .intent-label{font-size:13px;font-weight:700;color:var(--text);}
+    .intent-sub{font-size:11px;color:var(--text3);margin-top:2px;}
+    .intent-check{width:18px;height:18px;border:2px solid var(--border);border-radius:4px;margin-left:auto;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:white;transition:all 0.2s;}
+    .ai-intent-btn.selected .intent-check{background:var(--accent);border-color:var(--accent);}
+    .ai-intent-btn.selected .intent-check::after{content:'✓';}
+  </style>
+</head>
+<body>
+
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
+
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </nav>
+
+  <div id="auth-wall-wrap" style="display:none;">
+    <div class="auth-wall">
+      <i class="ti ti-lock"></i>
+      <h2>Sign in to publish</h2>
+      <p>You need to be logged in to publish a story on DawnScribe.</p>
+      <a href="auth.html"><i class="ti ti-login"></i> Sign In</a>
+    </div>
+  </div>
+
+  <div id="publish-content" style="display:none;">
+  <div class="publish-layout">
+
+    <!-- ── MAIN COLUMN ── -->
+    <div class="publish-main">
+
+      <!-- STEP 1: ARTWORK IMAGE -->
+      <div class="card">
+        <div class="card-title"><div class="step-badge">1</div><i class="ti ti-photo"></i> Artwork Image</div>
+        <div class="card-desc">Upload your artwork. After uploading you'll set how it's cropped for thumbnails — the full image is always preserved and shown when viewers click on it.</div>
+        <div class="field-group">
+          <label class="field-label">Artwork Image <span class="required">*</span></label>
+          <div class="img-upload-wrap" onclick="document.getElementById('cover-input').click()">
+            <div class="img-upload-cover" id="cover-drop">
+              <i class="ti ti-photo-up upload-icon"></i>
+              <div class="upload-label">Click to upload artwork</div>
+              <div class="upload-sub">Any size · JPG, PNG, WEBP</div>
+            </div>
+            <img id="cover-preview" class="upload-preview" style="display:none;"/>
+            <div class="upload-overlay"><span><i class="ti ti-pencil"></i> Change Image</span></div>
+          </div>
+          <input type="file" id="cover-input" accept="image/*" onchange="onArtworkUpload()"/>
+        </div>
+
+        <!-- AI ART DISCLOSURE -->
+        <div class="field-group" style="margin-bottom:0;">
+          <label class="field-label"><i class="ti ti-robot" style="font-size:13px;"></i> Is this artwork AI-generated? <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Being transparent helps artists and readers know what to expect. No judgment either way.</div>
+          <div style="display:flex;gap:8px;margin-bottom:10px;">
+            <div class="ai-art-btn" id="ai-no" onclick="selectAiArt('no')">
+              <i class="ti ti-pencil"></i>
+              <span>No — human-made art</span>
+            </div>
+            <div class="ai-art-btn" id="ai-yes" onclick="selectAiArt('yes')">
+              <i class="ti ti-robot"></i>
+              <span>Yes — AI-generated</span>
+            </div>
+          </div>
+
+          <!-- Intent options — only shown when AI is selected -->
+          <div id="ai-intent-wrap" style="display:none;">
+            <div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Let the community know your intent — you can select both:</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div class="ai-intent-btn" id="intent-collab" onclick="toggleIntent('collab')">
+                <i class="ti ti-users"></i>
+                <div>
+                  <div class="intent-label">I'm hoping someone collabs with me</div>
+                  <div class="intent-sub">Open to an artist co-creating the visuals for this story</div>
+                </div>
+                <div class="intent-check" id="icheck-collab"></div>
+              </div>
+              <div class="ai-intent-btn" id="intent-hire" onclick="toggleIntent('hire')">
+                <i class="ti ti-briefcase"></i>
+                <div>
+                  <div class="intent-label">I'm looking to hire an artist to replace it</div>
+                  <div class="intent-sub">I want to commission a human artist when I'm able to</div>
+                </div>
+                <div class="intent-check" id="icheck-hire"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: STORY INFO -->
+      <div class="card">
+        <div class="card-title"><div class="step-badge">2</div><i class="ti ti-info-circle"></i> Story Info</div>
+        <div class="card-desc">The basics that appear on your story's page and in search results.</div>
+        <div class="field-group">
+          <label class="field-label">Title <span class="required">*</span></label>
+          <input class="field-input" type="text" id="field-title" placeholder="Your story's title" maxlength="100" oninput="updatePreview();updateChecklist();"/>
+          <div class="char-count" id="title-count">0/100</div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Synopsis <span class="required">*</span></label>
+          <textarea class="field-textarea" id="field-synopsis" placeholder="Hook your readers — tell them what your story is about without spoiling it." maxlength="30000" oninput="document.getElementById('synopsis-count').textContent=this.value.length+'/30000';updateChecklist();" style="min-height:200px;"></textarea>
+          <div class="char-count" id="synopsis-count">0/30000</div>
+        </div>
+        <div class="field-row" id="field-row-status-language">
+          <div class="field-group">
+            <label class="field-label">Status <span class="required">*</span></label>
+            <select class="field-select" id="field-status">
+              <option value="ongoing">Ongoing</option>
+              <option value="completed">Completed</option>
+              <option value="hiatus">On Hiatus</option>
+              <option value="dropped">Dropped</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Language <span class="required">*</span></label>
+            <select class="field-select" id="field-language">
+              <option value="en">English</option>
+              <option value="pt">Portuguese</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="ja">Japanese</option>
+              <option value="ko">Korean</option>
+              <option value="zh">Chinese</option>
+              <option value="id">Indonesian</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Content Disclaimer <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+          <textarea class="field-textarea" id="field-disclaimer" placeholder="e.g. This story contains depictions of suicide, self-harm, and abuse. Reader discretion is advised." maxlength="400" style="min-height:70px;"></textarea>
+          <div class="field-hint">Use this to warn readers about sensitive topics before they start reading.</div>
+        </div>
+      </div>
+
+      <!-- STEP 3: STORY TYPE -->
+      <div class="card" id="card-story-type">
+        <div class="card-title"><div class="step-badge">3</div><i class="ti ti-layers-difference"></i> Story Type</div>
+        <div class="card-desc">Is this an original story or based on an existing work?</div>
+        <div class="type-toggle">
+          <div class="type-card selected" id="type-original" onclick="selectType('original')">
+            <i class="ti ti-sparkles"></i>
+            <div class="type-label">Original</div>
+            <div class="type-sub">Your own world & characters</div>
+          </div>
+          <div class="type-card" id="type-fanfic" onclick="selectType('fanfic')">
+            <i class="ti ti-heart"></i>
+            <div class="type-label">Fanfiction</div>
+            <div class="type-sub">Based on existing IP</div>
+          </div>
+        </div>
+        <div class="fanfic-notice" id="fanfic-notice">
+          <i class="ti ti-alert-triangle"></i>
+          Fanfiction works are excluded from Prestige achievements and avatar cosmetics due to copyright restrictions.
+        </div>
+      </div>
+
+      <!-- STEP 4: CONTENT RATING -->
+      <div class="card">
+        <div class="card-title"><div class="step-badge">4</div><i class="ti ti-shield"></i> Content Rating</div>
+        <div class="card-desc">Be honest — readers use this to filter their feed. You can select Gore and Erotica together.</div>
+        <div class="rating-options">
+          <div class="rating-option checked safe" id="rating-safe" onclick="toggleRating('safe')">
+            <div class="rating-icon safe"><i class="ti ti-shield-check"></i></div>
+            <div class="rating-text"><div class="rating-label">Safe</div><div class="rating-sub">No graphic violence or explicit sexual content</div></div>
+            <div class="checkbox-box"><i class="ti ti-check"></i></div>
+          </div>
+          <div class="rating-option gore" id="rating-gore" onclick="toggleRating('gore')">
+            <div class="rating-icon gore"><i class="ti ti-droplet"></i></div>
+            <div class="rating-text"><div class="rating-label">Gore</div><div class="rating-sub">Contains graphic violence or disturbing imagery</div></div>
+            <div class="checkbox-box"></div>
+          </div>
+          <div class="rating-option erotica" id="rating-erotica" onclick="toggleRating('erotica')">
+            <div class="rating-icon erotica"><i class="ti ti-heart"></i></div>
+            <div class="rating-text"><div class="rating-label">Erotica</div><div class="rating-sub">Contains explicit sexual content — 18+ only</div></div>
+            <div class="checkbox-box"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 5: TAGS -->
+      <div class="card" id="card-tags">
+        <div class="card-title"><div class="step-badge">5</div><i class="ti ti-tags"></i> Tags</div>
+        <div class="card-desc">Pick 3 Gold tags (Prestige), 5 Silver tags (community search), then up to 20 extra tags. First click = Gold, second click = Silver, third click = Extra, fourth click = remove.</div>
+
+        <div class="tag-section-label"><i class="ti ti-star" style="color:var(--gold);"></i> Gold Tags — Prestige &amp; Avatar unlocks (pick exactly 3)</div>
+        <div class="main-tags-slots" id="gold-tag-slots">
+          <div class="main-tag-slot gold" id="gold-slot-0">Gold 1</div>
+          <div class="main-tag-slot gold" id="gold-slot-1">Gold 2</div>
+          <div class="main-tag-slot gold" id="gold-slot-2">Gold 3</div>
+        </div>
+
+        <div class="tag-section-label" style="margin-top:12px;"><i class="ti ti-diamond" style="color:#c0c0c0;"></i> Silver Tags — community search &amp; genre medals (pick up to 5)</div>
+        <div class="main-tags-slots" id="silver-tag-slots" style="flex-wrap:wrap;">
+          <div class="main-tag-slot silver" id="silver-slot-0">Silver 1</div>
+          <div class="main-tag-slot silver" id="silver-slot-1">Silver 2</div>
+          <div class="main-tag-slot silver" id="silver-slot-2">Silver 3</div>
+          <div class="main-tag-slot silver" id="silver-slot-3">Silver 4</div>
+          <div class="main-tag-slot silver" id="silver-slot-4">Silver 5</div>
+        </div>
+
+        <div class="tag-count" style="margin-top:12px;">Extra tags: <span id="extra-tag-count">0</span>/20</div>
+        <input class="tag-search-input" type="text" id="tag-search" placeholder="Search tags…" oninput="filterTags(this.value)"/>
+        <div id="tag-categories-wrap"></div>
+      </div>
+
+      <!-- STEP 6: CO-AUTHORS -->
+      <div class="card">
+        <div class="card-title"><div class="step-badge">6</div><i class="ti ti-users"></i> Co-Authors <span style="font-family:'Lato';font-size:13px;font-weight:400;color:var(--text3);margin-left:4px;">(optional)</span></div>
+        <div class="card-desc">Search for other DawnScribe users to add as co-authors.</div>
+        <div class="coauthors-list" id="coauthors-list"></div>
+        <div class="coauthor-search-row">
+          <input class="field-input" type="text" id="coauthor-search" placeholder="Search by username…" onkeydown="if(event.key==='Enter')searchCoauthors()"/>
+          <button class="search-btn" onclick="searchCoauthors()"><i class="ti ti-search"></i> Search</button>
+        </div>
+        <div id="coauthor-results"></div>
+      </div>
+
+      <!-- STEP 7: ART COLLAB -->
+      <div class="card" id="card-art-collab">
+        <div class="card-title"><div class="step-badge">7</div><i class="ti ti-palette"></i> Art Collaboration</div>
+        <div class="card-desc">Let artists know if you're open to having someone create art for your story.</div>
+        <div class="collab-toggle" id="collab-toggle" onclick="toggleCollab()">
+          <div class="collab-toggle-left">
+            <div class="collab-icon"><i class="ti ti-brush"></i></div>
+            <div>
+              <div class="collab-label">Open to Art Collaboration</div>
+              <div class="collab-sub">Artists can reach out to create illustrations for this story</div>
+            </div>
+          </div>
+          <div class="toggle-pill" id="collab-pill"></div>
+        </div>
+      </div>
+
+      <!-- STEP 8: FIRST CHAPTER -->
+      <div class="card" id="card-first-chapter">
+        <div class="card-title"><div class="step-badge">8</div><i class="ti ti-book"></i> First Chapter <span class="required" style="font-family:'Lato';font-size:13px;font-weight:400;letter-spacing:0;">*</span></div>
+        <div class="card-desc">Your story must have at least one chapter before publishing. Readers expect something to read right away.</div>
+        <div class="field-group">
+          <label class="field-label">Chapter Title <span class="required">*</span></label>
+          <input class="field-input" type="text" id="chapter-title" placeholder='e.g. "Chapter 1 — The Beginning" or just "Prologue"' maxlength="100" oninput="updateChecklist()"/>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Chapter Content <span class="required">*</span></label>
+          <div id="chapter-editor"></div>
+          <div class="word-count"><span id="word-count">0</span> words</div>
+        </div>
+      </div>
+
+      <!-- BOTTOM ACTIONS -->
+      <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button class="save-draft-btn" onclick="saveDraft()" style="flex:1;margin-bottom:0;"><i class="ti ti-device-floppy"></i> Save as Draft</button>
+        <button class="publish-btn" id="publish-btn" onclick="publishWork()" style="flex:2;"><i class="ti ti-rocket"></i> Publish Story</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:24px;">You can edit everything after publishing.</div>
+
+    </div>
+
+    <!-- ── SIDEBAR ── -->
+    <div class="publish-sidebar">
+
+      <!-- PREVIEW -->
+      <div class="sidebar-card">
+        <div class="sidebar-card-title"><i class="ti ti-eye"></i> Preview</div>
+        <div class="cover-preview-wrap">
+          <img id="sidebar-cover" style="display:none;width:100%;height:100%;object-fit:cover;"/>
+          <div class="cover-placeholder" id="sidebar-cover-placeholder">
+            <i class="ti ti-photo"></i>
+            <span>No cover yet</span>
+          </div>
+        </div>
+        <div class="preview-title" id="preview-title">Untitled Story</div>
+        <div class="preview-tags" id="preview-tags"></div>
+        <div class="preview-rating" id="preview-rating"><i class="ti ti-shield-check" style="color:var(--green);"></i> Safe</div>
+      </div>
+
+      <!-- CHECKLIST -->
+      <div class="sidebar-card">
+        <div class="sidebar-card-title"><i class="ti ti-checklist"></i> Publishing Checklist</div>
+        <div class="checklist">
+          <div class="check-item" id="check-cover"><i class="ti ti-circle-dashed"></i> Cover image uploaded</div>
+          <div class="check-item" id="check-title"><i class="ti ti-circle-dashed"></i> Title added</div>
+          <div class="check-item" id="check-synopsis"><i class="ti ti-circle-dashed"></i> Synopsis written</div>
+          <div class="check-item" id="check-tags"><i class="ti ti-circle-dashed"></i> 3 Gold tags selected</div>
+          <div class="check-item" id="check-chapter"><i class="ti ti-circle-dashed"></i> First chapter written</div>
+        </div>
+      </div>
+
+      <!-- PUBLISH BUTTONS — moved to bottom of main form -->
+
+    </div>
+  </div>
+  </div>
+
+  <!-- CROP MODAL -->
+  <div id="crop-modal" style="display:none;" class="crop-modal-backdrop">
+    <div class="crop-modal">
+      <!-- LEFT: viewport -->
+      <div class="crop-modal-left">
+        <div class="crop-viewport" id="crop-viewport">
+          <img id="crop-img" class="crop-img"/>
+          <div class="crop-overlay">
+            <div class="crop-corner tl"></div>
+            <div class="crop-corner tr"></div>
+            <div class="crop-corner bl"></div>
+            <div class="crop-corner br"></div>
+          </div>
+        </div>
+        <p class="crop-hint"><i class="ti ti-hand-move"></i> Drag to reposition · What you see here is the thumbnail</p>
+      </div>
+      <!-- RIGHT: controls -->
+      <div class="crop-modal-right">
+        <div class="crop-modal-title"><i class="ti ti-crop" style="color:var(--accent);margin-right:8px;"></i>Set Thumbnail</div>
+        <p class="crop-modal-desc">Drag the image to position what shows in search results and listings.<br><br>The full artwork is always preserved — viewers see it in full when they click the piece.</p>
+
+        <!-- Size info -->
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">Thumbnail Output</div>
+          <div style="font-size:13px;color:var(--text);font-weight:700;">600 × 900 px <span style="font-size:11px;color:var(--text3);font-weight:400;">(portrait · 2:3)</span></div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.6;">The square preview box is your thumbnail. Anything outside the teal border won't appear in listings — drag to frame the best part of your artwork.</div>
+          <div style="border-top:1px solid var(--border);padding-top:8px;font-size:11px;color:var(--text3);">
+            Original size: <span id="crop-original-size" style="color:var(--text2);font-weight:700;">—</span>
+          </div>
+        </div>
+
+        <div class="crop-spacer"></div>
+        <div class="crop-actions">
+          <button class="crop-btn-confirm" onclick="confirmCrop()"><i class="ti ti-check"></i> Set Thumbnail</button>
+          <button class="crop-btn-cancel" onclick="closeCropModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    var currentSession = null;
+    var coverFile = null;       // thumbnail (square crop canvas blob)
+    var fullArtworkFile = null; // original full image for storage
+    var cropState = { imgEl: null, x: 0, y: 0, scale: 1, dragging: false, lastX: 0, lastY: 0 };
+    var isArtworkMode = false;
+
+    // ── ARTWORK FREE TAGS ──────────────────────────────────────────
+    var artworkTags = [];
+
+    function renderArtworkTags() {
+      var wrap = document.getElementById('art-tag-input-wrap');
+      if (!wrap) return;
+      // Remove existing pills
+      wrap.querySelectorAll('.art-tag-pill').forEach(function(p){ p.remove(); });
+      var inputEl = document.getElementById('art-tag-input');
+      artworkTags.forEach(function(tag) {
+        var pill = document.createElement('span');
+        pill.className = 'art-tag-pill';
+        pill.innerHTML = esc(tag) + '<button onclick="removeArtTag(\'' + esc(tag).replace(/'/g,"\\'") + '\')">×</button>';
+        wrap.insertBefore(pill, inputEl);
+      });
+      // Sync into selectedGoldTags so existing checklist/publish logic sees them
+      selectedGoldTags = artworkTags.slice(0, 3);
+      selectedSilverTags = artworkTags.slice(3, 8);
+      selectedExtraTags = artworkTags.slice(8);
+      var countEl = document.getElementById('art-tag-count');
+      if (countEl) countEl.textContent = artworkTags.length;
+      updateChecklist();
+    }
+
+    function addArtTag(raw) {
+      var tag = raw.trim().toLowerCase().replace(/[^a-z0-9\s\-]/g, '').trim();
+      if (!tag || artworkTags.indexOf(tag) !== -1 || artworkTags.length >= 30) return;
+      artworkTags.push(tag);
+      renderArtworkTags();
+    }
+
+    function removeArtTag(tag) {
+      artworkTags = artworkTags.filter(function(t){ return t !== tag; });
+      renderArtworkTags();
+    }
+
+    function onArtTagKeydown(e) {
+      var input = e.target;
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        addArtTag(input.value.replace(',',''));
+        input.value = '';
+      } else if (e.key === 'Backspace' && input.value === '' && artworkTags.length) {
+        artworkTags.pop();
+        renderArtworkTags();
+      }
+    }
+
+    function onArtTagBlur(e) {
+      if (e.target.value.trim()) {
+        addArtTag(e.target.value);
+        e.target.value = '';
+      }
+    }
+    function setArtworkMode() {
+      isArtworkMode = true;
+
+      // Update page title
+      document.title = 'DawnScribe — Post Artwork';
+
+      // Hide novel-only sections
+      ['card-story-type','card-art-collab','card-first-chapter','field-row-status-language'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+
+      // Relabel Step 2
+      var step2card = document.querySelector('#card-story-type').previousElementSibling;
+      // Update card title
+      var step2title = step2card ? step2card.querySelector('.card-title') : null;
+      if (step2title) step2title.innerHTML = '<div class="step-badge">2</div><i class="ti ti-info-circle"></i> Artwork Info';
+      var step2desc = step2card ? step2card.querySelector('.card-desc') : null;
+      if (step2desc) step2desc.textContent = 'The basics that appear on your artwork\'s page and in search results.';
+
+      // Relabel synopsis → description
+      var synopsisLabel = document.querySelector('label[for="field-synopsis"], .field-label');
+      document.querySelectorAll('.field-label').forEach(function(el) {
+        if (el.textContent.trim().startsWith('Synopsis')) {
+          el.innerHTML = 'Description <span class="required">*</span>';
+        }
+      });
+      var synopsisField = document.getElementById('field-synopsis');
+      if (synopsisField) synopsisField.placeholder = 'Tell viewers about this piece — your inspiration, technique, or story behind it.';
+      var synopsisCount = document.getElementById('synopsis-count');
+
+      // Relabel publish button
+      var btn = document.getElementById('publish-btn');
+      if (btn) btn.innerHTML = '<i class="ti ti-photo-up"></i> Post Artwork';
+
+      // Update checklist
+      var chapterCheck = document.getElementById('check-chapter');
+      if (chapterCheck) chapterCheck.style.display = 'none';
+      var coverCheck = document.getElementById('check-cover');
+      if (coverCheck) coverCheck.innerHTML = '<i class="ti ti-circle-dashed"></i> Artwork image uploaded';
+      var synopsisCheck = document.getElementById('check-synopsis');
+      if (synopsisCheck) synopsisCheck.innerHTML = '<i class="ti ti-circle-dashed"></i> Description written';
+
+      // Sidebar preview label
+      var sidebarTitle = document.querySelector('.sidebar-card-title');
+      if (sidebarTitle) sidebarTitle.innerHTML = '<i class="ti ti-eye"></i> Artwork Preview';
+
+      // Swap tags card to free-text input
+      var tagsCard = document.getElementById('card-tags');
+      if (tagsCard) {
+        tagsCard.innerHTML = '<div class="card-title"><div class="step-badge">5</div><i class="ti ti-tags"></i> Tags <span style="font-family:\'Lato\';font-size:13px;font-weight:400;color:var(--text3);margin-left:4px;">(optional)</span></div>'
+          + '<div class="card-desc">Type a tag and press <strong>Enter</strong> or <strong>comma</strong> to add it. Add as many as you like — be descriptive. Examples: <em>fantasy, character design, digital art, dark theme</em></div>'
+          + '<div class="art-tag-input-wrap" id="art-tag-input-wrap" onclick="document.getElementById(\'art-tag-input\').focus()">'
+          + '<input class="art-tag-input" id="art-tag-input" type="text" placeholder="Type a tag and press Enter…" maxlength="40" onkeydown="onArtTagKeydown(event)" onblur="onArtTagBlur(event)"/>'
+          + '</div>'
+          + '<div style="font-size:11px;color:var(--text3);margin-top:8px;"><span id="art-tag-count">0</span>/30 tags · Backspace removes the last tag</div>';
+      }
+
+      // Hide tag checklist item — tags optional for artwork
+      var tagsCheck = document.getElementById('check-tags');
+      if (tagsCheck) tagsCheck.style.display = 'none';
+    }
+
+    // ── ARTWORK UPLOAD & CROP ──────────────────────────────────────
+    function onArtworkUpload() {
+      var file = document.getElementById('cover-input').files[0];
+      if (!file) return;
+      fullArtworkFile = file;
+      var url = URL.createObjectURL(file);
+      openCropModal(url);
+    }
+
+    function openCropModal(url) {
+      var modal = document.getElementById('crop-modal');
+      var viewport = document.getElementById('crop-viewport');
+      var img = document.getElementById('crop-img');
+      modal.style.display = 'flex';
+
+      img.onload = function() {
+        var vpW = viewport.getBoundingClientRect().width || 420;
+        var vpH = vpW * 1.5;
+        var scaleW = vpW / img.naturalWidth;
+        var scaleH = vpH / img.naturalHeight;
+        var scale = Math.max(scaleW, scaleH);
+        cropState.scale = scale;
+        cropState.x = (vpW - img.naturalWidth * scale) / 2;
+        cropState.y = (vpH - img.naturalHeight * scale) / 2;
+        cropState.imgEl = img;
+        applyCropTransform();
+
+        // Show original dimensions
+        var sizeEl = document.getElementById('crop-original-size');
+        if (sizeEl) sizeEl.textContent = img.naturalWidth + ' × ' + img.naturalHeight + ' px';
+      };
+      img.src = url;
+
+      // Drag events
+      viewport.onmousedown = startDrag;
+      viewport.ontouchstart = startDragTouch;
+    }
+
+    function applyCropTransform() {
+      var img = cropState.imgEl;
+      if (!img) return;
+      var viewport = document.getElementById('crop-viewport');
+      var vpW = viewport.getBoundingClientRect().width || 420;
+      var vpH = vpW * 1.5;
+      var scaledW = img.naturalWidth * cropState.scale;
+      var scaledH = img.naturalHeight * cropState.scale;
+      cropState.x = Math.min(0, Math.max(vpW - scaledW, cropState.x));
+      cropState.y = Math.min(0, Math.max(vpH - scaledH, cropState.y));
+      img.style.width = scaledW + 'px';
+      img.style.height = scaledH + 'px';
+      img.style.transform = 'translate(' + cropState.x + 'px,' + cropState.y + 'px)';
+    }
+
+    function startDrag(e) {
+      e.preventDefault();
+      cropState.dragging = true;
+      cropState.lastX = e.clientX;
+      cropState.lastY = e.clientY;
+      document.onmousemove = doDrag;
+      document.onmouseup = endDrag;
+    }
+    function startDragTouch(e) {
+      var t = e.touches[0];
+      cropState.dragging = true;
+      cropState.lastX = t.clientX;
+      cropState.lastY = t.clientY;
+      document.ontouchmove = function(ev){ ev.preventDefault(); doDragTouch(ev); };
+      document.ontouchend = endDrag;
+    }
+    function doDrag(e) {
+      if (!cropState.dragging) return;
+      cropState.x += e.clientX - cropState.lastX;
+      cropState.y += e.clientY - cropState.lastY;
+      cropState.lastX = e.clientX;
+      cropState.lastY = e.clientY;
+      applyCropTransform();
+    }
+    function doDragTouch(e) {
+      if (!cropState.dragging) return;
+      var t = e.touches[0];
+      cropState.x += t.clientX - cropState.lastX;
+      cropState.y += t.clientY - cropState.lastY;
+      cropState.lastX = t.clientX;
+      cropState.lastY = t.clientY;
+      applyCropTransform();
+    }
+    function endDrag() {
+      cropState.dragging = false;
+      document.onmousemove = null;
+      document.onmouseup = null;
+      document.ontouchmove = null;
+      document.ontouchend = null;
+    }
+
+    function closeCropModal() {
+      document.getElementById('crop-modal').style.display = 'none';
+      // If they cancel and no crop has been confirmed yet, clear the file input
+      if (!coverFile) {
+        document.getElementById('cover-input').value = '';
+        fullArtworkFile = null;
+      }
+    }
+
+    function confirmCrop() {
+      var img = cropState.imgEl;
+      var viewport = document.getElementById('crop-viewport');
+
+      var OUT_W = 600;
+      var OUT_H = 900;
+      var canvas = document.createElement('canvas');
+      canvas.width = OUT_W; canvas.height = OUT_H;
+      var ctx = canvas.getContext('2d');
+
+      // Work out what part of the natural image is visible in the 2:3 viewport
+      var vpW = viewport.getBoundingClientRect().width || 420;
+      var vpH = vpW * 1.5; // 2:3 ratio
+      var srcX = -cropState.x / cropState.scale;
+      var srcY = -cropState.y / cropState.scale;
+      var srcW = vpW / cropState.scale;
+      var srcH = vpH / cropState.scale;
+
+      ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, OUT_W, OUT_H);
+
+      canvas.toBlob(function(blob) {
+        coverFile = new File([blob], 'thumbnail.jpg', { type: 'image/jpeg' });
+
+        // Show the crop result in the upload box and sidebar
+        var thumbUrl = URL.createObjectURL(blob);
+        var prev = document.getElementById('cover-preview');
+        prev.src = thumbUrl; prev.style.display = 'block';
+        document.getElementById('cover-drop').classList.add('has-img');
+        var sidebarCover = document.getElementById('sidebar-cover');
+        sidebarCover.src = thumbUrl; sidebarCover.style.display = 'block';
+        document.getElementById('sidebar-cover-placeholder').style.display = 'none';
+
+        document.getElementById('crop-modal').style.display = 'none';
+        updateChecklist();
+      }, 'image/jpeg', 0.92);
+    }
+    var selectedGoldTags = [];
+    var selectedSilverTags = [];
+    var selectedExtraTags = [];
+    var coauthors = [];
+    var collabOpen = false;
+    var isFanfic = false;
+    var ratings = { safe: true, gore: false, erotica: false };
+    var aiArt = null; // null | 'no' | 'yes'
+    var aiIntent = { collab: false, hire: false };
+    var quill;
+
+    // ── AI ART ─────────────────────────────────────────────────────
+    function selectAiArt(val) {
+      aiArt = aiArt === val ? null : val; // toggle off if clicked again
+      document.getElementById('ai-no').classList.toggle('selected', aiArt === 'no');
+      document.getElementById('ai-yes').classList.toggle('selected', aiArt === 'yes');
+      var intentWrap = document.getElementById('ai-intent-wrap');
+      intentWrap.style.display = aiArt === 'yes' ? 'block' : 'none';
+      if (aiArt !== 'yes') { aiIntent = { collab: false, hire: false }; updateIntentUI(); }
+    }
+
+    function toggleIntent(key) {
+      aiIntent[key] = !aiIntent[key];
+      updateIntentUI();
+    }
+
+    function updateIntentUI() {
+      ['collab','hire'].forEach(function(k) {
+        document.getElementById('intent-' + k).classList.toggle('selected', aiIntent[k]);
+      });
+    }
+
+    // ── TOAST ──────────────────────────────────────────────────────
+    function showToast(msg, icon) {
+      var t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg || 'Saved!';
+      t.querySelector('i').className = 'ti ' + (icon || 'ti-check');
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 3000);
+    }
+
+    function escHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── THEME ──────────────────────────────────────────────────────
+    (function(){ var s=localStorage.getItem('ds_theme'); if(s) document.documentElement.setAttribute('data-theme',s); })();
+
+    // ── STORY TYPE ─────────────────────────────────────────────────
+    function selectType(type) {
+      isFanfic = type === 'fanfic';
+      document.getElementById('type-original').classList.toggle('selected', !isFanfic);
+      document.getElementById('type-fanfic').classList.toggle('selected', isFanfic);
+      document.getElementById('fanfic-notice').classList.toggle('show', isFanfic);
+    }
+
+    // ── CONTENT RATING ─────────────────────────────────────────────
+    function toggleRating(key) {
+      if (key === 'safe') {
+        ratings.safe = true; ratings.gore = false; ratings.erotica = false;
+      } else {
+        ratings[key] = !ratings[key];
+        if (ratings.gore || ratings.erotica) ratings.safe = false;
+        else ratings.safe = true;
+      }
+      ['safe','gore','erotica'].forEach(function(k) {
+        var el = document.getElementById('rating-' + k);
+        el.classList.toggle('checked', ratings[k]);
+        el.querySelector('.checkbox-box').innerHTML = ratings[k] ? '<i class="ti ti-check"></i>' : '';
+      });
+      updatePreview();
+    }
+
+    // ── TAGS ───────────────────────────────────────────────────────
+    var TAG_CATEGORIES = {
+  'Core Genres': [
+    'Fantasy','Dark Fantasy','High Fantasy','Low Fantasy','Urban Fantasy','Science Fantasy',
+    'Sci-Fi','Horror','Romance','Drama','Comedy','Mystery','Thriller','Action','Adventure',
+    'Historical','Literary Fiction','Mythology','Folklore','Fairy Tale'
+  ],
+  'Anime / Manga': [
+    'Isekai','Reverse Isekai','Reincarnation','Transmigration','Transmigrated into a Book',
+    'Transmigrated into a Game','Reincarnated as a Villain','Shounen','Shoujo','Seinen','Josei',
+    'Kodomomuke','Mecha','Super Robot','Real Robot','Magical Girl','Mahou Shoujo',
+    'Harem','Reverse Harem','Otome','Villainess','Otome Game','School Life','Academy',
+    'School Battle','Club Activities','Slice of Life','Iyashikei','Healing','Cozy',
+    'Wholesome','Fluffy','Ecchi','Fan Service','Battle Shounen'
+  ],
+  'Eastern Fantasy': [
+    'Xianxia','Xuanhuan','Wuxia','Cultivation','Martial Arts','Qi','Immortal',
+    'Demon Cultivation','Sword Saint','Body Tempering','Ancient China','Ancient East',
+    'Court Drama','Political Intrigue','Imperial Harem','Sect','Clan','Bloodline',
+    'Spirit Beasts','Pill Refining','Array Master','Weapon Forging','Karma System','Fate/Destiny'
+  ],
+  'System / GameLit': [
+    'LitRPG','GameLit','Dungeon','Dungeon Master','Dungeon Core','System','Status Screen',
+    'Level Up','Skill Tree','Class System','Tower Climbing','Regression','Loop','Time Loop',
+    'Second Chance','Monster Tamer','Beast Tamer','Dragon Rider','Summoner','Necromancer',
+    'Healer','Assassin','Tank','Mage','Knight','Paladin','Priest','Cleric','Rogue',
+    'Ranger','Bard','Alchemist','Blacksmith','Merchant','Cheat Ability','Broken Skill'
+  ],
+  'Power Systems': [
+    'Magic System','Hard Magic System','Soft Magic System','Mana','Chakra','Aura','Ki',
+    'Divine Power','Curse','Contract Magic','Rune Magic','Blood Magic','Elemental Magic',
+    'Summoning Magic','Familiar','Soul Bond','Reincarnation Cycle','Prophecy'
+  ],
+  'Character Archetypes': [
+    'Overpowered MC','Hidden Power','Chosen Hero','Demon Lord','Demon King',
+    'Hero and Demon King','Royalty','Hidden Royalty','Lost Heir','Noble/Aristocracy',
+    'Slave to Freedom','Slave Contract','Farmer/Peasant to Hero','Weak to Strong',
+    'Genius Protagonist','Calculating Protagonist','Lazy Protagonist','Dense Protagonist',
+    'Otaku Protagonist','Shut-in Protagonist','Salary Man','Office Worker',
+    'Multiple Protagonists','Mob Protagonist','Hidden Identity','Anti-Hero',
+    'Villain Protagonist','Misunderstood Protagonist','Pacifist Protagonist'
+  ],
+  'Supernatural': [
+    'Paranormal','Occult','Exorcism','Vampires','Werewolves','Witches','Demons','Angels',
+    'Devils','Fallen Angels','Ghosts','Spirits','Yokai','Shinigami','Fae','Elves','Dwarves',
+    'Mermaids','Shapeshifters','Beastmen','Half-Bloods','Hybrids','Kaiju'
+  ],
+  'Horror & Dark': [
+    'Psychological Horror','Supernatural Horror','Survival Horror','Cosmic Horror',
+    'Body Horror','Slasher','Serial Killer','Haunted House','Cursed Object',
+    'Found Footage Style','Creepypasta Style','Surreal Horror','Folk Horror',
+    'Religious Horror','Monster Horror','Gaslighting','Gore','Disturbing','Grimdark',
+    'Dark','Tragedy','Existential','Gothic','Gothic Romance','Eldritch','Lovecraftian'
+  ],
+  'Sci-Fi Subgenres': [
+    'Cyberpunk','Steampunk','Solarpunk','Biopunk','Dieselpunk','Atompunk',
+    'Space Opera','Hard Sci-Fi','Soft Sci-Fi','Military Sci-Fi','Space Exploration',
+    'Post-Apocalyptic','Dystopian','Utopian','Climate Fiction','Alien Contact',
+    'AI','Virtual Reality','Simulation','Matrix-like','Transhumanism','Genetic Engineering',
+    'Time Travel','Alternate History','Parallel Worlds','Multiverse',
+    'Colony Ship','Generation Ship','Dyson Sphere'
+  ],
+  'Romance': [
+    'Slow Burn','Fast Burn','Enemies to Lovers','Forbidden Love','Arranged Marriage',
+    'Contract Marriage','Accidental Marriage','Fake Marriage','Fake Dating',
+    'Childhood Friends to Lovers','Teacher x Student','Rivals to Lovers',
+    'Best Friends to Lovers','One Night Stand','Soulmates','Fated Pair',
+    'Love at First Sight','Unrequited Love','Mutual Pining','Will They Won\'t They',
+    'Age Gap (Older Woman)','Age Gap (Older Man)','Interspecies Romance',
+    'Human x Monster','Omegaverse','Angst','Hurt/Comfort','Fluff',
+    'Yuri','Yaoi','BL','GL','Poly','Obsessive Love'
+  ],
+  'Relationship Dynamics': [
+    'Found Family','Friendship','Rivalry','Brotherhood','Sisterhood',
+    'Master and Disciple','Mentor','Chosen One','Betrayal','Revenge',
+    'Redemption Arc','Second Chance','Villainess Redemption','Amnesia'
+  ],
+  'Hybrid / Crossgenre': [
+    'Romantic Fantasy','Romantic Comedy','Dark Romance','Horror Romance',
+    'Comedy Horror','Action Romance','Fantasy Mystery','Sci-Fi Mystery',
+    'Historical Romance','Historical Mystery','Progression Fantasy','Epic Fantasy',
+    'Portal Fantasy','Gaslamp Fantasy','Mythpunk','Silkpunk','Weird Fiction',
+    'New Weird','Slipstream','Modern with Magic','Hidden Magic World'
+  ],
+  'Action & Adventure': [
+    'War','Military','Mercenary','Guild','Bounty Hunter','Vigilante',
+    'Heist','Survival','Wilderness','Apocalyptic','Post-War','Zombie','Pandemic',
+    'Pirates','Sailors','Explorers','Treasure Hunt','Kingdom Building','City Building',
+    'Base Building','Army Building'
+  ],
+  'Crafting & Progression': [
+    'Crafting','Cooking','Farming Sim','Slice of Life RPG','Non-Combat',
+    'Harem Building','Kingdom Management','Merchant Life','Adventurer Guild'
+  ],
+  'Psychological & Literary': [
+    'Psychological','Mind Games','Unreliable Narrator','Non-Linear','Multiple POV',
+    'Single POV','Dual POV','Omniscient Narrator','Philosophical','Social Commentary',
+    'Political','Satire','Absurdist','Character Study','Coming of Age',
+    'Identity','Self-Discovery','Redemption','Trauma','Grief','Mental Health','Addiction','Recovery'
+  ],
+  'Emotional Tone': [
+    'Wholesome','Dark and Gritty','Lighthearted','Bittersweet','Hopeful','Hopeless',
+    'Melancholic','Tense','Suspenseful','Cathartic','Emotional','Tearjerker',
+    'Feel Good','Inspirational','Thought Provoking','Disturbing','Unsettling'
+  ],
+  'Story Structure': [
+    'Slow Paced','Fast Paced','Short Chapters','Long Chapters','Action Heavy',
+    'Dialogue Heavy','Introspective','World Building Heavy','Plot Twist Heavy',
+    'Cliffhangers','Episodic','Anthology Format','Short Story','Serial',
+    'Epistolary','Diary','Multiple Endings','Open Ending','Happy Ending',
+    'Bad Ending','Character Death','Infidelity'
+  ],
+  'Setting': [
+    'Feudal Japan','Ancient Greece','Ancient Rome','Viking','Medieval Europe',
+    'Victorian','Renaissance','Wild West','Modern Day','Near Future','Far Future',
+    'Post-War','Cold War','Underground','Underground World','Ocean World','Sky World',
+    'Floating Islands','Flying City','Pocket Dimension','Simulation World',
+    'Ancient Ruins','Cursed Land','Holy Land','Forbidden Zone','Wasteland',
+    'Frozen World','Desert World','Jungle World','Afterlife','Heaven','Hell',
+    'Purgatory','Spirit World','Dream World','Mage Tower'
+  ],
+  'Cultural Fantasy': [
+    'African Fantasy','West African Mythology','Egyptian Mythology',
+    'Aztec/Mesoamerican','Incan Mythology','Native American Mythology',
+    'Polynesian Mythology','Celtic Fantasy','Arthurian','Slavic Fantasy',
+    'Russian Folklore','Persian Fantasy','Arabian Nights','Indian/Hindu Mythology',
+    'Buddhist Fantasy','Shinto','Norse Fantasy','Greek Mythology','Roman Mythology'
+  ],
+  'Identity & Rep': [
+    'LGBTQ+','Trans','Non-Binary','Asexual','Bisexual','Gay','Lesbian',
+    'Disability Rep','Neurodivergent','POC Protagonist','Cultural',
+    'Strong Female Lead','Strong Male Lead','No Romance','No Harem'
+  ],
+  'Mature': [
+    'Mature','Dark Themes','Erotica','BDSM','Dark Romance','Explicit Violence'
+  ],
+  'Combat & Fighting Style': [
+    'Sword Fighting','Dual Wielding','One-Handed Sword','Two-Handed Sword','Rapier','Katana',
+    'Spear Fighting','Polearm','Halberd','Lance','Trident',
+    'Axe Fighting','War Hammer','Mace','Flail',
+    'Archery','Crossbow','Longbow','Sniper',
+    'Hand-to-Hand','Martial Arts','Boxing','Wrestling','Grappling','Street Fighting',
+    'Knife Fighting','Dagger','Hidden Blades','Poison Blade',
+    'Shield Fighter','Tank Fighter','Defensive Combat',
+    'Gun Fighting','Pistol','Rifle','Shotgun','Sniper Rifle','Dual Pistols',
+    'Modern Firearms','Military Combat','Special Forces','Guerrilla Warfare',
+    'Futuristic Weapons','Laser Weapons','Plasma Weapons','Rail Gun','Mech Combat',
+    'Magic vs Modern Weapons','Magic vs Guns','Swords vs Guns','Fantasy Meets Modern',
+    'Magic Combat','Spell Dueling','Mana Combat','Elemental Combat','Rune Combat',
+    'Ki Combat','Qi Combat','Aura Combat','Internal Energy Fighting',
+    'Blood Combat','Curse Combat','Necromantic Combat','Soul Combat',
+    'Summoner Combat','Familiar Combat','Beast Combat','Monster Taming Combat',
+    'Ranged Magic','Area of Effect Magic','Barrier Magic','Healing Combat',
+    'Stealth Combat','Assassination','Ambush','Hit and Run',
+    'Naval Combat','Aerial Combat','Mounted Combat','Cavalry',
+    'Large Scale War','Army vs Army','Siege Warfare','Castle Storming',
+    'Tournament Arc','Arena Fighting','Gladiatorial Combat','Death Match',
+    'Street Brawl','Gang Fight','Underground Fighting Ring',
+    'Non-Lethal Combat','Pacifist Fighter','Reluctant Fighter'
+  ],
+  'Demi-Humans & Beastkin': [
+    'Demi-Human','Beastkin','Beastman','Beast-Human Hybrid',
+    'Cat Girl','Cat Boy','Nekomata','Bakeneko',
+    'Dog Girl','Dog Boy','Wolf Girl','Wolf Boy',
+    'Fox Girl','Fox Boy','Kitsune Girl','Kitsune Boy',
+    'Rabbit Girl','Rabbit Boy','Usagi',
+    'Dragon Girl','Dragon Boy','Dragonkin',
+    'Horse Girl','Centaur Girl','Centaur Boy',
+    'Bird Girl','Bird Boy','Harpy Girl','Tengu',
+    'Fish Girl','Fish Boy','Mermaid','Merman',
+    'Snake Girl','Snake Boy','Lamia','Naga Girl',
+    'Bear Beastkin','Tiger Beastkin','Lion Beastkin','Leopard Beastkin',
+    'Deer Beastkin','Ram Beastkin','Boar Beastkin',
+    'Insect Demi-Human','Arachnid Demi-Human','Ant Folk','Bee Folk',
+    'Plant Demi-Human','Mushroom Folk','Treant Hybrid',
+    'Demi-Human Society','Demi-Human Discrimination','Demi-Human Rights',
+    'Demi-Human Protagonist','Multiple Demi-Human Races','Rare Demi-Human Species'
+  ],
+  'Races & Species — Humanoid': [
+    'Human','Elf','Dark Elf','High Elf','Wood Elf','Sea Elf','Half-Elf',
+    'Dwarf','Gnome','Halfling','Orc','Half-Orc','Goblin','Hobgoblin',
+    'Demon','Half-Demon','Devil','Fallen Angel','Angel','Celestial',
+    'Vampire','Dhampir','Werewolf','Lycan','Beast-Human','Catfolk','Foxfolk',
+    'Rabbit Folk','Lizardfolk','Dragonborn','Tiefling','Aasimar',
+    'Undead Human','Revenant','Lich','Mummy','Zombie Protagonist',
+    'Merfolk','Siren','Naga','Lamia','Harpy','Centaur',
+    'Giant','Titan','Oni','Tengu','Kitsune','Tanuki',
+    'Fairy','Pixie','Sprite','Dryad','Nymph','Sylph',
+    'Golem','Homunculus','Construct','Android','Clone',
+    'Alien','Hybrid Race','Custom Race','Ancient Race','Extinct Race'
+  ],
+  'Races & Species — Non-Humanoid': [
+    'Dragon','Wyvern','Drake','Dragon God','Ancient Dragon',
+    'Phoenix','Gryphon','Manticore','Chimera','Basilisk',
+    'Slime','Slime Evolution','Insectoid','Arachnid','Serpent God',
+    'Eldritch Being','Cosmic Entity','Spirit Form','Soul','Wraith',
+    'Plant Being','Tree Spirit','Elemental','Fire Elemental','Water Elemental',
+    'Earth Elemental','Wind Elemental','Shadow Being','Void Entity',
+    'Demigod','God','Goddess','Minor Deity','Trickster God',
+    'Sea Monster','Kraken','Leviathan','Behemoth'
+  ],
+  'Societies & Civilisations': [
+    'Elven Kingdom','Elven Forest Nation','Dark Elf Empire','High Elf Republic',
+    'Dwarven Hold','Dwarven Forge City','Orcish Horde','Orcish Clan System',
+    'Human Empire','Human Kingdom','City-State','Republic','Democracy',
+    'Demon Empire','Demon Lord Domain','Devil Court','Infernal Hierarchy',
+    'Angelic Order','Celestial Realm','Divine Pantheon','Church State',
+    'Undead Kingdom','Lich King Domain','Vampire Court','Vampire Clan',
+    'Beastman Tribe','Beast Kingdom','Shapeshifter Pack','Lycan Pack',
+    'Dragon Clan','Dragonborn Tribe','Wyvern Riders',
+    'Mage Republic','Wizard Tower Society','Arcane Council','Magic Academy State',
+    'Nomadic Tribes','Desert Clans','Tundra Peoples','Jungle Tribes',
+    'Sea Nation','Island Confederation','Pirate Republic','Merchant Guild State',
+    'Theocracy','Feudal System','Caste System','Slave Society','Matriarchy','Patriarchy',
+    'Isolationist Nation','Xenophobic Society','Multi-Race Alliance','United Races',
+    'Dystopian Society','Utopian Society','Post-Apocalyptic Colony','Survivor Settlement',
+    'AI-Governed Society','Cyberpunk Megacorp State','Galactic Empire','Space Federation',
+    'Hidden Society','Underground City','Sky Nation','Underwater Civilisation'
+  ],
+  'Protagonist Race / Species': [
+    'Human Protagonist','Elf Protagonist','Dark Elf Protagonist','Dwarf Protagonist',
+    'Orc Protagonist','Goblin Protagonist','Demon Protagonist','Devil Protagonist',
+    'Angel Protagonist','Fallen Angel Protagonist','Vampire Protagonist','Werewolf Protagonist',
+    'Beastman Protagonist','Dragon Protagonist','Dragonborn Protagonist','Slime Protagonist',
+    'Undead Protagonist','Ghost Protagonist','Spirit Protagonist','God Protagonist',
+    'Demigod Protagonist','Alien Protagonist','Robot Protagonist','Android Protagonist',
+    'Fairy Protagonist','Mermaid Protagonist','Half-Blood Protagonist','Custom Species Protagonist'
+  ],
+  'Creatures & Monsters': [
+    'Dragons','Undead','Zombies','Skeletons','Liches','Ghosts','Wraiths','Banshees',
+    'Vampires','Werewolves','Demons','Devils','Angels','Fallen Angels',
+    'Goblins','Orcs','Trolls','Giants','Ogres','Cyclops',
+    'Slimes','Mimics','Golems','Constructs',
+    'Basilisks','Medusa','Hydra','Chimera','Manticore','Wyverns',
+    'Faeries','Pixies','Will-o-Wisps','Banshees',
+    'Krakens','Sea Serpents','Leviathans',
+    'Eldritch Horrors','Lovecraftian Creatures','Cosmic Entities',
+    'Spirit Beasts','Divine Beasts','Mythical Creatures',
+    'Insects','Giant Insects','Arachnids','Parasites',
+    'Plant Monsters','Fungal Creatures','Elemental Creatures',
+    'Void Creatures','Shadow Beings','Cursed Creatures',
+    'Mechanical Monsters','Rogue AI','Nano-Swarms'
+  ],
+  'World Features': [
+    'Multiple Moons','Binary Stars','Dying Sun','Eternal Night','Eternal Day',
+    'Flat World','Hollow World','Layered World','Plane-Walking','Dimensional Rifts',
+    'Magic Crystals','Leylines','Magic Zones','Dead Zones','Wild Magic Areas',
+    'Ancient Ruins','Lost Civilisation','Buried Cities','Sunken Kingdoms',
+    'Living Dungeon','Sentient Dungeon','World Tree','World Pillar','World Core',
+    'Floating Continents','Inverted Mountains','Endless Ocean','Shattered World',
+    'Ice Age','Volcanic World','Desert Planet','Ocean Planet','Forest Planet',
+    'Toxic Atmosphere','Irradiated Wasteland','Overgrown World',
+    'Dungeon Floor World','Tower World','Maze World',
+    'Connected Realms','Mirror World','Shadow Realm','Spirit Realm','Divine Realm',
+    'Mana-Rich World','Mana-Depleted World','Tech-Magic Fusion World'
+  ],
+  'Avatar-Linked Aesthetics': [
+    'Dark Academia','Cottagecore','Solarpunk Aesthetic','Cyberpunk Aesthetic',
+    'Gothic Lolita','Steampunk Fashion','Victorian Fashion','Feudal Fashion',
+    'Warrior Culture','Monk Culture','Noble Court Fashion','Peasant Life',
+    'Tribal Markings','War Paint','Battle Scars','Ritual Tattoos',
+    'Celestial Motifs','Demonic Markings','Elven Tattoos','Dwarven Runes',
+    'Mage Robes','Assassin Gear','Paladin Armour','Ranger Gear','Pirate Fashion',
+    'Witch Aesthetic','Druid Aesthetic','Necromancer Aesthetic','Summoner Aesthetic',
+    'Idol Culture','School Uniform','Sports Uniform','Futuristic Suit',
+    'Nature Crowns','Flower Crowns','Skull Accessories','Crystal Accessories',
+    'Wings','Horns','Tail','Halo','Aura','Elemental Markings'
+  ]
+};
+
+    function renderTagCategories(filter) {
+      var wrap = document.getElementById('tag-categories-wrap');
+      wrap.innerHTML = '';
+      Object.keys(TAG_CATEGORIES).forEach(function(cat) {
+        var tags = TAG_CATEGORIES[cat].filter(function(t) {
+          return !filter || t.toLowerCase().includes(filter.toLowerCase());
+        });
+        if (!tags.length) return;
+        var div = document.createElement('div'); div.className = 'tag-category-wrap';
+        var title = document.createElement('div'); title.className = 'tag-cat-title'; title.textContent = cat;
+        div.appendChild(title);
+        var row = document.createElement('div'); row.className = 'tag-chips';
+        tags.forEach(function(tag) {
+          var isGold   = selectedGoldTags.indexOf(tag) !== -1;
+          var isSilver = selectedSilverTags.indexOf(tag) !== -1;
+          var isExtra  = selectedExtraTags.indexOf(tag) !== -1;
+          var atGoldLimit   = selectedGoldTags.length >= 3;
+          var atSilverLimit = selectedSilverTags.length >= 5;
+          var atExtraLimit  = selectedExtraTags.length >= 20;
+          var chip = document.createElement('div');
+          chip.className = 'tag-chip' +
+            (isGold ? ' selected-gold' : isSilver ? ' selected-silver' : isExtra ? ' selected-extra' : '');
+          if (!isGold && !isSilver && !isExtra && atGoldLimit && atSilverLimit && atExtraLimit) chip.classList.add('disabled');
+          chip.textContent = tag;
+          chip.addEventListener('click', function() { handleTagClick(tag); });
+          row.appendChild(chip);
+        });
+        div.appendChild(row); wrap.appendChild(div);
+      });
+    }
+
+    function handleTagClick(tag) {
+      var goldIdx   = selectedGoldTags.indexOf(tag);
+      var silverIdx = selectedSilverTags.indexOf(tag);
+      var extraIdx  = selectedExtraTags.indexOf(tag);
+
+      // Cycle: unselected → gold → silver → extra → remove
+      if (goldIdx !== -1) {
+        // Gold → Silver (if room), else Extra, else remove
+        selectedGoldTags.splice(goldIdx, 1);
+        if (selectedSilverTags.length < 5) {
+          selectedSilverTags.push(tag);
+        } else if (selectedExtraTags.length < 20) {
+          selectedExtraTags.push(tag);
+        }
+        // else just removed — no room anywhere else
+      } else if (silverIdx !== -1) {
+        // Silver → Extra (if room), else remove
+        selectedSilverTags.splice(silverIdx, 1);
+        if (selectedExtraTags.length < 20) {
+          selectedExtraTags.push(tag);
+        }
+      } else if (extraIdx !== -1) {
+        // Extra → remove
+        selectedExtraTags.splice(extraIdx, 1);
+      } else {
+        // Unselected → try Gold first, then Silver, then Extra
+        if (selectedGoldTags.length < 3) {
+          selectedGoldTags.push(tag);
+        } else if (selectedSilverTags.length < 5) {
+          selectedSilverTags.push(tag);
+        } else if (selectedExtraTags.length < 20) {
+          selectedExtraTags.push(tag);
+        } else {
+          showToast('Maximum tags reached (3 Gold + 5 Silver + 20 Extra)', 'ti-alert-triangle');
+          return;
+        }
+      }
+      updateTagSlots();
+      renderTagCategories(document.getElementById('tag-search').value);
+      updateChecklist();
+      updatePreview();
+      document.getElementById('extra-tag-count').textContent = selectedExtraTags.length;
+    }
+
+    function updateTagSlots() {
+      // Gold slots
+      for (var i = 0; i < 3; i++) {
+        var slot = document.getElementById('gold-slot-' + i);
+        if (!slot) continue;
+        if (selectedGoldTags[i]) {
+          slot.textContent = selectedGoldTags[i];
+          slot.classList.add('filled', 'gold');
+          if (!slot.querySelector('.slot-x')) {
+            var x = document.createElement('div');
+            x.className = 'slot-x';
+            x.innerHTML = '✕';
+            (function(idx){ x.addEventListener('click', function(e){
+              e.stopPropagation();
+              selectedGoldTags.splice(idx, 1);
+              updateTagSlots();
+              renderTagCategories(document.getElementById('tag-search').value);
+              updateChecklist(); updatePreview();
+            }); })(i);
+            slot.appendChild(x);
+          }
+        } else {
+          slot.textContent = 'Gold ' + (i + 1);
+          slot.classList.remove('filled');
+          var oldX = slot.querySelector('.slot-x');
+          if (oldX) oldX.remove();
+        }
+      }
+      // Silver slots
+      for (var j = 0; j < 5; j++) {
+        var sslot = document.getElementById('silver-slot-' + j);
+        if (!sslot) continue;
+        if (selectedSilverTags[j]) {
+          sslot.textContent = selectedSilverTags[j];
+          sslot.classList.add('filled', 'silver');
+          if (!sslot.querySelector('.slot-x')) {
+            var sx = document.createElement('div');
+            sx.className = 'slot-x';
+            sx.innerHTML = '✕';
+            (function(jdx){ sx.addEventListener('click', function(e){
+              e.stopPropagation();
+              selectedSilverTags.splice(jdx, 1);
+              updateTagSlots();
+              renderTagCategories(document.getElementById('tag-search').value);
+              updateChecklist(); updatePreview();
+            }); })(j);
+            sslot.appendChild(sx);
+          }
+        } else {
+          sslot.textContent = 'Silver ' + (j + 1);
+          sslot.classList.remove('filled');
+          var oldSx = sslot.querySelector('.slot-x');
+          if (oldSx) oldSx.remove();
+        }
+      }
+    }
+    function updateMainTagSlots() { updateTagSlots(); }
+
+    function filterTags(val) { renderTagCategories(val); }
+
+    // ── CO-AUTHORS ─────────────────────────────────────────────────
+    async function searchCoauthors() {
+      var query = document.getElementById('coauthor-search').value.trim();
+      if (!query) return;
+      var resultsEl = document.getElementById('coauthor-results');
+      resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">Searching…</div>';
+      var result = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('username','%'+query+'%').neq('id', currentSession.user.id).limit(5);
+      if (!result.data || !result.data.length) { resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">No users found.</div>'; return; }
+      resultsEl.innerHTML = '';
+      result.data.forEach(function(user) {
+        var already = coauthors.find(function(c){ return c.id === user.id; });
+        var row = document.createElement('div'); row.className = 'coauthor-result';
+        row.innerHTML = '<div class="coauthor-avatar">' + (user.avatar_url ? '<img src="'+escHtml(user.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+          '<div class="coauthor-name">@' + escHtml(user.username) + '</div>' +
+          '<button class="coauthor-add-btn' + (already?' coauthor-added':'')+'">' + (already ? '✓ Added' : '+ Add') + '</button>';
+        if (!already) {
+          row.querySelector('button').addEventListener('click', function() {
+            coauthors.push(user);
+            renderCoauthors();
+            row.querySelector('button').textContent = '✓ Added';
+            row.querySelector('button').classList.add('coauthor-added');
+          });
+        }
+        resultsEl.appendChild(row);
+      });
+    }
+
+    function renderCoauthors() {
+      var list = document.getElementById('coauthors-list');
+      list.innerHTML = '';
+      coauthors.forEach(function(u) {
+        var tag = document.createElement('div'); tag.className = 'coauthor-tag';
+        tag.innerHTML = '<div class="coauthor-avatar" style="width:28px;height:28px;font-size:12px;">' + (u.avatar_url ? '<img src="'+escHtml(u.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+          '<div class="coauthor-tag-name">@' + escHtml(u.username) + '</div>' +
+          '<button class="coauthor-remove" title="Remove"><i class="ti ti-x"></i></button>';
+        tag.querySelector('button').addEventListener('click', function() {
+          coauthors = coauthors.filter(function(c){ return c.id !== u.id; });
+          renderCoauthors();
+        });
+        list.appendChild(tag);
+      });
+    }
+
+    // ── COLLAB TOGGLE ──────────────────────────────────────────────
+    function toggleCollab() {
+      collabOpen = !collabOpen;
+      document.getElementById('collab-toggle').classList.toggle('on', collabOpen);
+      document.getElementById('collab-pill').classList.toggle('on', collabOpen);
+    }
+
+    // ── PREVIEW & CHECKLIST ────────────────────────────────────────
+    function updatePreview() {
+      var title = document.getElementById('field-title').value.trim() || 'Untitled Story';
+      document.getElementById('preview-title').textContent = title;
+      document.getElementById('title-count').textContent = document.getElementById('field-title').value.length + '/100';
+
+      // Tags
+      var tagsEl = document.getElementById('preview-tags');
+      tagsEl.innerHTML = '';
+      selectedGoldTags.slice(0,3).forEach(function(t) {
+        var span = document.createElement('span'); span.className = 'preview-tag'; span.textContent = t; tagsEl.appendChild(span);
+      });
+
+      // Rating
+      var ratingEl = document.getElementById('preview-rating');
+      var parts = [];
+      if (ratings.gore) parts.push('<i class="ti ti-droplet" style="color:var(--red);"></i> Gore');
+      if (ratings.erotica) parts.push('<i class="ti ti-heart" style="color:var(--pink);"></i> Erotica');
+      if (!parts.length) parts.push('<i class="ti ti-shield-check" style="color:var(--green);"></i> Safe');
+      ratingEl.innerHTML = parts.join(' · ');
+    }
+
+    function updateChecklist() {
+      var hasCover = !!coverFile;
+      var hasTitle = document.getElementById('field-title').value.trim().length > 0;
+      var hasSynopsis = document.getElementById('field-synopsis').value.trim().length > 0;
+      var hasTags = isArtworkMode ? true : selectedGoldTags.length === 3;
+
+      function setCheck(id, done) {
+        var el = document.getElementById(id);
+        if (!el || el.style.display === 'none') return;
+        el.classList.toggle('done', done);
+        el.querySelector('i').className = 'ti ' + (done ? 'ti-circle-check' : 'ti-circle-dashed');
+      }
+      setCheck('check-cover', hasCover);
+      setCheck('check-title', hasTitle);
+      setCheck('check-synopsis', hasSynopsis);
+      setCheck('check-tags', hasTags);
+      if (!isArtworkMode) {
+        var hasChapter = document.getElementById('chapter-title').value.trim().length > 0 && quill && quill.getText().trim().length > 10;
+        setCheck('check-chapter', hasChapter);
+      }
+    }
+
+    // ── UPLOAD FILE TO SUPABASE ────────────────────────────────────
+    async function uploadFile(file, bucket, path) {
+      var result = await db.storage.from(bucket).upload(path, file, { upsert: true });
+      if (result.error) throw result.error;
+      return db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+    }
+
+    // ── SAVE DRAFT ─────────────────────────────────────────────────
+    function saveDraft() {
+      var draft = {
+        title: document.getElementById('field-title').value,
+        synopsis: document.getElementById('field-synopsis').value,
+        status: document.getElementById('field-status').value,
+        language: document.getElementById('field-language').value,
+        disclaimer: document.getElementById('field-disclaimer').value,
+        isFanfic: isFanfic,
+        ratings: ratings,
+        goldTags: selectedGoldTags,
+        silverTags: selectedSilverTags,
+        extraTags: selectedExtraTags,
+        collabOpen: collabOpen,
+        aiArt: aiArt,
+        aiIntent: aiIntent,
+        chapterTitle: document.getElementById('chapter-title').value,
+        chapterContent: quill ? quill.root.innerHTML : '',
+        // Save preview URLs for visual restore (user must re-upload files to publish)
+        coverPreviewUrl: document.getElementById('sidebar-cover').src || null
+      };
+      localStorage.setItem('ds_publish_draft', JSON.stringify(draft));
+      showToast('Draft saved! Re-upload images before publishing.', 'ti-device-floppy');
+    }
+
+    function loadDraft() {
+      var saved = localStorage.getItem('ds_publish_draft');
+      if (!saved) return;
+      try {
+        var d = JSON.parse(saved);
+        if (d.title) document.getElementById('field-title').value = d.title;
+        if (d.synopsis) document.getElementById('field-synopsis').value = d.synopsis;
+        if (d.status) document.getElementById('field-status').value = d.status;
+        if (d.language) document.getElementById('field-language').value = d.language;
+        if (d.disclaimer) document.getElementById('field-disclaimer').value = d.disclaimer;
+        if (d.isFanfic) selectType('fanfic');
+
+        // Restore ratings
+        if (d.ratings) {
+          ratings = d.ratings;
+          ['safe','gore','erotica'].forEach(function(k) {
+            var el = document.getElementById('rating-' + k);
+            el.classList.toggle('checked', ratings[k]);
+            el.querySelector('.checkbox-box').innerHTML = ratings[k] ? '<i class="ti ti-check"></i>' : '';
+          });
+        }
+
+        // Restore tags
+        if (d.goldTags && d.goldTags.length)   { selectedGoldTags   = d.goldTags; }
+        if (d.silverTags && d.silverTags.length){ selectedSilverTags = d.silverTags; }
+        if (d.extraTags && d.extraTags.length)  { selectedExtraTags  = d.extraTags; document.getElementById('extra-tag-count').textContent = selectedExtraTags.length; }
+        updateTagSlots();
+        // Re-render tag chips to show selected state
+        renderTagCategories(document.getElementById('tag-search').value);
+
+        // Restore collab
+        if (d.collabOpen) {
+          collabOpen = true;
+          document.getElementById('collab-toggle').classList.add('on');
+          document.getElementById('collab-pill').classList.add('on');
+        }
+
+        // Restore AI art
+        if (d.aiArt) { selectAiArt(d.aiArt); }
+        if (d.aiIntent) {
+          aiIntent = d.aiIntent;
+          updateIntentUI();
+        }
+
+        // Restore chapter
+        if (d.chapterTitle) document.getElementById('chapter-title').value = d.chapterTitle;
+        if (d.chapterContent && quill) quill.root.innerHTML = d.chapterContent;
+
+        // Restore cover preview (visual only — user must re-upload to publish)
+        if (d.coverPreviewUrl && d.coverPreviewUrl.startsWith('blob:') === false) {
+          var sidebarCover = document.getElementById('sidebar-cover');
+          sidebarCover.src = d.coverPreviewUrl;
+          sidebarCover.style.display = 'block';
+          document.getElementById('sidebar-cover-placeholder').style.display = 'none';
+          document.getElementById('cover-drop').classList.add('has-img');
+          var coverPrev = document.getElementById('cover-preview');
+          coverPrev.src = d.coverPreviewUrl;
+          coverPrev.style.display = 'block';
+        }
+
+        updatePreview();
+        updateChecklist();
+        showToast('Draft restored — please re-upload your images before publishing.', 'ti-device-floppy');
+      } catch(e) { console.error('Draft load error:', e); }
+    }
+
+    // ── PUBLISH ────────────────────────────────────────────────────
+    async function publishWork() {
+      var title = document.getElementById('field-title').value.trim();
+      var synopsis = document.getElementById('field-synopsis').value.trim();
+
+      if (!coverFile) { showToast('Please upload ' + (isArtworkMode ? 'your artwork image' : 'a cover image'), 'ti-alert-triangle'); return; }
+      if (!title) { showToast('Please add a title', 'ti-alert-triangle'); return; }
+      if (!synopsis) { showToast('Please write a ' + (isArtworkMode ? 'description' : 'synopsis'), 'ti-alert-triangle'); return; }
+      if (selectedGoldTags.length < 3 && !isArtworkMode) { showToast('Please select 3 Gold tags', 'ti-alert-triangle'); return; }
+
+      if (!isArtworkMode) {
+        var chapterTitle = document.getElementById('chapter-title').value.trim();
+        var chapterText = quill ? quill.getText().trim() : '';
+        if (!chapterTitle) { showToast('Please add a chapter title', 'ti-alert-triangle'); return; }
+        if (chapterText.length < 10) { showToast('Please write your first chapter', 'ti-alert-triangle'); return; }
+      }
+
+      var btn = document.getElementById('publish-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Publishing…';
+
+      try {
+        var userId = currentSession.user.id;
+        var timestamp = Date.now();
+
+        // Upload thumbnail (cropped square)
+        var coverUrl = await uploadFile(coverFile, 'covers', userId + '/' + timestamp + '_thumb');
+
+        // Upload full original artwork (stored in banner_url, shown in lightbox)
+        var bannerUrl = null;
+        if (fullArtworkFile) {
+          bannerUrl = await uploadFile(fullArtworkFile, 'covers', userId + '/' + timestamp + '_full');
+        }
+
+        // Build insert payload
+        var allTags = selectedGoldTags.concat(selectedSilverTags).concat(selectedExtraTags);
+        var insertPayload = {
+          author_id: userId,
+          title: title,
+          synopsis: synopsis,
+          flavor_text: synopsis,
+          cover_url: coverUrl,
+          banner_url: bannerUrl,
+          content_rating_gore: ratings.gore,
+          content_rating_erotica: ratings.erotica,
+          collab_open: collabOpen,
+          disclaimer: document.getElementById('field-disclaimer').value.trim() || null,
+          tags_gold: JSON.stringify(selectedGoldTags),
+          tags_silver: JSON.stringify(selectedSilverTags),
+          tags_main: JSON.stringify(selectedGoldTags),
+          tags_all: JSON.stringify(allTags),
+          art_is_ai: aiArt === 'yes',
+          art_intent_collab: aiArt === 'yes' && aiIntent.collab,
+          art_intent_hire: aiArt === 'yes' && aiIntent.hire,
+          is_published: true
+        };
+
+        if (isArtworkMode) {
+          insertPayload.type = 'artwork';
+          insertPayload.status = 'completed';
+          insertPayload.language = 'en';
+          insertPayload.is_fanfiction = false;
+        } else {
+          insertPayload.type = 'novel';
+          insertPayload.is_fanfiction = isFanfic;
+          insertPayload.status = document.getElementById('field-status').value;
+          insertPayload.language = document.getElementById('field-language').value;
+        }
+
+        var workResult = await db.from('works').insert(insertPayload).select().single();
+
+        if (workResult.error) {
+          console.error('Works insert error:', JSON.stringify(workResult.error));
+          throw workResult.error;
+        }
+        var workId = workResult.data.id;
+
+        // Insert co-authors
+        if (coauthors.length) {
+          var coRows = coauthors.map(function(c){ return { work_id: workId, user_id: c.id }; });
+          var coResult = await db.from('work_coauthors').insert(coRows);
+          if (coResult.error) console.error('Coauthors insert error:', JSON.stringify(coResult.error));
+        }
+
+        if (!isArtworkMode) {
+          // Insert first chapter (novels only)
+          var chapterContent = quill ? quill.root.innerHTML : '';
+          var chapterText2 = quill ? quill.getText().trim() : '';
+          var wordCount = chapterText2.split(/\s+/).filter(Boolean).length;
+          var chapterResult = await db.from('chapters').insert({
+            work_id: workId,
+            author_id: userId,
+            title: document.getElementById('chapter-title').value.trim(),
+            content: chapterContent,
+            chapter_number: 1,
+            word_count: wordCount,
+            status: 'published'
+          });
+          if (chapterResult.error) {
+            console.error('Chapter insert error:', JSON.stringify(chapterResult.error));
+            throw chapterResult.error;
+          }
+        }
+
+        // Clear draft
+        localStorage.removeItem('ds_publish_draft');
+
+        if (isArtworkMode) {
+          showToast('Artwork posted!', 'ti-photo');
+          setTimeout(function(){ window.location.href = 'artwork.html?id=' + workId; }, 1500);
+        } else {
+          showToast('Story published!', 'ti-rocket');
+          setTimeout(function(){ window.location.href = 'story.html?id=' + workId; }, 1500);
+        }
+
+      } catch(err) {
+        console.error('Publish error:', JSON.stringify(err));
+        showToast('Error: ' + (err.message || JSON.stringify(err)), 'ti-x');
+        btn.disabled = false;
+        btn.innerHTML = isArtworkMode
+          ? '<i class="ti ti-photo-up"></i> Post Artwork'
+          : '<i class="ti ti-rocket"></i> Publish Story';
+      }
+    }
+
+    // ── INIT QUILL ─────────────────────────────────────────────────
+    function initQuill() {
+      quill = new Quill('#chapter-editor', {
+        theme: 'snow',
+        placeholder: 'Write your first chapter here…',
+        modules: {
+          toolbar: [
+            [{ header: [1, 2, 3, false] }],
+            ['bold', 'italic', 'underline', 'strike'],
+            ['blockquote'],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            [{ indent: '-1' }, { indent: '+1' }],
+            [{ align: [] }],
+            ['link'],
+            ['clean']
+          ]
+        }
+      });
+      quill.on('text-change', function() {
+        var words = quill.getText().trim().split(/\s+/).filter(Boolean).length;
+        document.getElementById('word-count').textContent = words;
+        updateChecklist();
+      });
+    }
+
+    // ── INIT ───────────────────────────────────────────────────────
+    (async function init() {
+      var sessionRes = await db.auth.getSession();
+      var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+
+      if (!session) {
+        document.getElementById('auth-wall-wrap').style.display = 'block';
+        return;
+      }
+      currentSession = session;
+      document.getElementById('publish-content').style.display = 'block';
+
+      // Check URL param — artwork mode
+      var urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('type') === 'artwork') {
+        setArtworkMode();
+      } else {
+        initQuill();
+      }
+
+      renderTagCategories('');
+      updatePreview();
+      updateChecklist();
+
+      // Load draft if exists
+      if (localStorage.getItem('ds_publish_draft')) {
+        if (confirm('You have an unsaved draft. Would you like to restore it?')) {
+          setTimeout(loadDraft, 100);
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
