@@ -119,6 +119,8 @@
     .comment-submit:hover{background:var(--accent);color:var(--bg);}
     .comment-login-note{font-size:13px;color:var(--text3);text-align:center;padding:12px;display:none;}
     .comment-login-note a{color:var(--accent);text-decoration:none;}
+    .comment-delete-btn{margin-left:auto;background:transparent;border:none;color:var(--text3);font-size:13px;cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.2s;display:flex;align-items:center;gap:3px;}
+    .comment-delete-btn:hover{color:var(--red);}
 
     /* RELATED */
     .related-section{margin-top:32px;}
@@ -709,7 +711,6 @@
         return;
       }
 
-      // Fetch profiles for commenters separately
       var commenterIds = [...new Set(comments.map(function(c){ return c.user_id; }).filter(Boolean))];
       var profileMap = {};
       if(commenterIds.length){
@@ -719,40 +720,91 @@
         (cProfiles || []).forEach(function(p){ profileMap[p.id] = p; });
       }
 
-      list.innerHTML = comments.map(function(c){
+      var isOwner = session && workData && session.user.id === workData.author_id;
+
+      list.innerHTML = '';
+      comments.forEach(function(c){
         var p = profileMap[c.user_id] || {};
         var name = p.display_name || p.username || 'User';
         var avatarHtml = p.avatar_url
           ? '<img src="' + esc(p.avatar_url) + '" alt=""/>'
           : '<i class="ti ti-user"></i>';
-        return '<div class="comment-card">'
-          + '<div class="comment-header">'
+        var canDelete = session && (session.user.id === c.user_id || isOwner);
+        var card = document.createElement('div');
+        card.className = 'comment-card';
+        card.dataset.commentId = c.id;
+        card.innerHTML =
+          '<div class="comment-header">'
             + '<div class="comment-avatar">' + avatarHtml + '</div>'
             + '<div class="comment-name">' + esc(name) + '</div>'
             + '<div class="comment-date">' + timeAgo(c.created_at) + '</div>'
+            + (canDelete ? '<button class="comment-delete-btn" title="Delete comment"><i class="ti ti-trash"></i></button>' : '')
           + '</div>'
-          + '<div class="comment-text">' + esc(c.content) + '</div>'
-          + '</div>';
-      }).join('');
+          + '<div class="comment-text">' + esc(c.content) + '</div>';
+        if(canDelete){
+          card.querySelector('.comment-delete-btn').addEventListener('click', function(){
+            deleteComment(c.id, card);
+          });
+        }
+        list.appendChild(card);
+      });
     }
 
+    async function deleteComment(commentId, cardEl){
+      if(!session) return;
+      cardEl.style.opacity = '0.4';
+      // Try deleting as commenter first (RLS: user_id match)
+      var { error } = await db.from('artwork_comments').delete()
+        .eq('id', commentId).eq('user_id', session.user.id);
+      if(error){
+        // Artwork owner deleting someone else's comment
+        var { error: err2 } = await db.from('artwork_comments').delete().eq('id', commentId);
+        if(err2){ cardEl.style.opacity = '1'; showToast('Could not delete comment.', 'ti-alert-circle'); return; }
+      }
+      cardEl.remove();
+      var countEl = document.getElementById('comment-count');
+      if(countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent||'0') - 1);
+      showToast('Comment deleted.', 'ti-trash');
+    }
     async function submitComment(){
       var input = document.getElementById('comment-input');
-      var content = input.value.trim();
-      if(!content || !session) return;
+      var commentContent = input.value.trim();
+      if(!commentContent || !session) return;
       var btn = document.querySelector('.comment-submit');
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';
+
       var { error } = await db.from('artwork_comments').insert({
         work_id: workId,
         user_id: session.user.id,
-        content: content
+        content: commentContent
       });
+
       btn.disabled = false;
       btn.innerHTML = '<i class="ti ti-send"></i> Post';
       if(error){ showToast('Failed to post comment.', 'ti-alert-circle'); return; }
+
       input.value = '';
       showToast('Comment posted!', 'ti-check');
+
+      // Notify artwork owner (skip if commenter IS the owner)
+      if(workData && workData.author_id && workData.author_id !== session.user.id){
+        var { data: myProfile } = await db.from('profiles')
+          .select('display_name, username')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        var commenterName = myProfile
+          ? (myProfile.display_name || myProfile.username || 'Someone')
+          : 'Someone';
+        await db.from('notifications').insert({
+          user_id: workData.author_id,
+          type: 'artwork_comment',
+          from_user_id: session.user.id,
+          work_id: workId,
+          message: commenterName + ' commented on your artwork \"' + (workData.title || 'Untitled') + '\"'
+        }).catch(function(){});
+      }
+
       loadComments();
     }
 

@@ -497,6 +497,11 @@
         var viewingUser = urlParams.get('user');
         var sessionRes = await db.auth.getSession();
         var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        if (!session) {
+          await new Promise(function(r){ setTimeout(r, 300); });
+          sessionRes = await db.auth.getSession();
+          session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        }
         var loggedInUsername = null;
         if (session && session.user && session.user.user_metadata) {
           loggedInUsername = session.user.user_metadata.username || null;
@@ -542,15 +547,24 @@
             loadActivity(profileData.id);
             loadReadingList(profileData.id);
           }
-          if (session && profileData && profileData.id) {
+          if (profileData && profileData.id) {
             currentProfileId = profileData.id;
-            var followCheck = await db.from('follows')
-              .select('id')
-              .eq('follower_id', session.user.id)
-              .eq('following_id', profileData.id)
-              .maybeSingle();
-            if (followCheck && !followCheck.error && followCheck.data) {
-              setFollowUI(true);
+            // Re-fetch session here in case it resolved after the initial check
+            var fcSession = session;
+            if (!fcSession) {
+              await new Promise(function(r){ setTimeout(r, 400); });
+              var fcRes = await db.auth.getSession();
+              fcSession = fcRes && fcRes.data ? fcRes.data.session : null;
+            }
+            if (fcSession) {
+              var followCheck = await db.from('follows')
+                .select('id')
+                .eq('follower_id', fcSession.user.id)
+                .eq('following_id', profileData.id)
+                .maybeSingle();
+              if (followCheck && !followCheck.error && followCheck.data) {
+                setFollowUI(true);
+              }
             }
           }
         }
@@ -1227,7 +1241,7 @@ async function toggleFollow() {
       }
       try {
         var res = await db.from('reading_progress')
-          .select('work_id, chapter_id, updated_at, works(id, title, cover_url, chapters_count, profiles(username))')
+          .select('work_id, chapter_id, updated_at')
           .eq('user_id', profileId)
           .order('updated_at', { ascending: false })
           .limit(20);
@@ -1235,7 +1249,22 @@ async function toggleFollow() {
           container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">No reading history yet.</div>';
           return;
         }
-        // Get chapter numbers via a second lookup
+        // Fetch works separately
+        var workIds = [...new Set(res.data.map(function(r){ return r.work_id; }).filter(Boolean))];
+        var worksMap = {};
+        if (workIds.length) {
+          var wRes = await db.from('works').select('id, title, cover_url, chapters_count, author_id').in('id', workIds);
+          (wRes.data||[]).forEach(function(w){ worksMap[w.id] = w; });
+          // Fetch authors
+          var authorIds = [...new Set((wRes.data||[]).map(function(w){ return w.author_id; }).filter(Boolean))];
+          if (authorIds.length) {
+            var aRes = await db.from('profiles').select('id, username').in('id', authorIds);
+            var aMap = {};
+            (aRes.data||[]).forEach(function(p){ aMap[p.id] = p; });
+            Object.values(worksMap).forEach(function(w){ w._author = aMap[w.author_id] || null; });
+          }
+        }
+        // Get chapter numbers
         var chapterIds = res.data.map(function(r){ return r.chapter_id; }).filter(Boolean);
         var chapterNums = {};
         if (chapterIds.length) {
@@ -1245,12 +1274,12 @@ async function toggleFollow() {
         var grid = document.createElement('div');
         grid.className = 'list-grid';
         res.data.forEach(function(r) {
-          var work = r.works;
+          var work = worksMap[r.work_id];
           if (!work) return;
           var total = work.chapters_count || '?';
           var current = chapterNums[r.chapter_id] || '?';
           var pct = (total && current !== '?' && total !== '?') ? Math.round((current / total) * 100) : 0;
-          var author = work.profiles ? work.profiles.username : 'unknown';
+          var author = work._author ? work._author.username : 'unknown';
           var letter = (work.title || '?').charAt(0).toUpperCase();
           var coverHtml = work.cover_url
             ? '<img src="' + escHtml(work.cover_url) + '" style="width:48px;height:66px;border-radius:7px;object-fit:cover;flex-shrink:0;" alt="cover"/>'
@@ -1282,7 +1311,7 @@ async function toggleFollow() {
       try {
         // Get users this profile follows who have artworks
         var res = await db.from('follows')
-          .select('following_id, profiles!follows_following_id_fkey(id, username, display_name, avatar_url)')
+          .select('following_id')
           .eq('follower_id', profileId)
           .limit(40);
         if (res.error || !res.data || res.data.length === 0) {
@@ -1293,26 +1322,30 @@ async function toggleFollow() {
         var followedIds = res.data.map(function(r){ return r.following_id; });
         var artRes = await db.from('works').select('author_id').eq('type','artwork').in('author_id', followedIds);
         var artistIds = new Set((artRes.data||[]).map(function(w){ return w.author_id; }));
-        var artists = res.data.filter(function(r){ return artistIds.has(r.following_id); });
-        if (artists.length === 0) {
+        var artistFollowedIds = followedIds.filter(function(id){ return artistIds.has(id); });
+        if (artistFollowedIds.length === 0) {
           container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">Not following any artists yet.</div>';
           return;
         }
+        // Fetch profiles for artists separately
+        var profRes = await db.from('profiles').select('id, username, display_name, avatar_url').in('id', artistFollowedIds);
+        var profMap = {};
+        (profRes.data||[]).forEach(function(p){ profMap[p.id] = p; });
         // Get artwork counts
-        var countRes = await db.from('works').select('author_id').eq('type','artwork').in('author_id', artists.map(function(a){ return a.following_id; }));
+        var countRes = await db.from('works').select('author_id').eq('type','artwork').in('author_id', artistFollowedIds);
         var counts = {};
         (countRes.data||[]).forEach(function(w){ counts[w.author_id] = (counts[w.author_id]||0) + 1; });
         var grid = document.createElement('div');
         grid.className = 'artist-grid';
-        artists.forEach(function(r) {
-          var p = r.profiles;
+        artistFollowedIds.forEach(function(followedId) {
+          var p = profMap[followedId];
           if (!p) return;
           var name = p.display_name || p.username || 'Unknown';
           var letter = name.charAt(0).toUpperCase();
           var avatarHtml = p.avatar_url
             ? '<img src="' + escHtml(p.avatar_url) + '" style="width:44px;height:44px;border-radius:50%;object-fit:cover;" alt="avatar"/>'
             : '<div class="artist-avatar art-bg2" style="width:44px;height:44px;font-size:18px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:linear-gradient(135deg,#001020,#0c4a6e);color:#60a5fa;">' + letter + '</div>';
-          var artCount = counts[r.following_id] || 0;
+          var artCount = counts[followedId] || 0;
           var card = document.createElement('a');
           card.className = 'artist-card';
           card.href = 'profile.html?user=' + encodeURIComponent(p.username);
@@ -1349,20 +1382,49 @@ async function toggleFollow() {
     async function loadActivity(profileId) {
       var container = document.getElementById('activity-container');
       try {
-        var [commentsRes, reviewsRes] = await Promise.all([
-          db.from('chapter_comments')
-            .select('id, content, created_at, chapter_id, chapters(chapter_number, work_id, works(title))')
-            .eq('user_id', profileId)
-            .order('created_at', { ascending: false })
-            .limit(10),
-          db.from('reviews')
-            .select('id, rating, content, created_at, work_id, works(title, type)')
-            .eq('user_id', profileId)
-            .order('created_at', { ascending: false })
-            .limit(10)
-        ]);
-        var hasComments = commentsRes.data && commentsRes.data.length > 0;
-        var hasReviews  = reviewsRes.data  && reviewsRes.data.length  > 0;
+        // Fetch chapter_comments — table only has chapter_id (no work_id column)
+        var commentsRes = await db.from('chapter_comments')
+          .select('id, content, created_at, chapter_id')
+          .eq('user_id', profileId)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        var comments = commentsRes.data || [];
+        // Fetch chapters then works separately
+        if (comments.length) {
+          var cChIds = [...new Set(comments.map(function(c){ return c.chapter_id; }).filter(Boolean))];
+          var chMap = {}, cwMap = {};
+          if (cChIds.length) {
+            var chRes2 = await db.from('chapters').select('id, chapter_number, work_id').in('id', cChIds);
+            (chRes2.data||[]).forEach(function(ch){ chMap[ch.id] = ch; });
+            var cWorkIds = [...new Set((chRes2.data||[]).map(function(ch){ return ch.work_id; }).filter(Boolean))];
+            if (cWorkIds.length) {
+              var cwRes = await db.from('works').select('id, title').in('id', cWorkIds);
+              (cwRes.data||[]).forEach(function(w){ cwMap[w.id] = w; });
+            }
+          }
+          comments.forEach(function(c){
+            c._chapter = chMap[c.chapter_id] || null;
+            c._work = c._chapter ? (cwMap[c._chapter.work_id] || null) : null;
+          });
+        }
+        // Fetch reviews using no-FK-join pattern
+        var reviewsRes = await db.from('reviews')
+          .select('id, rating, content, created_at, work_id')
+          .eq('user_id', profileId)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        var reviews = reviewsRes.data || [];
+        if (reviews.length) {
+          var rWorkIds = [...new Set(reviews.map(function(r){ return r.work_id; }).filter(Boolean))];
+          var rwMap = {};
+          if (rWorkIds.length) {
+            var rwRes = await db.from('works').select('id, title, type').in('id', rWorkIds);
+            (rwRes.data||[]).forEach(function(w){ rwMap[w.id] = w; });
+          }
+          reviews.forEach(function(r){ r._work = rwMap[r.work_id] || null; });
+        }
+        var hasComments = comments.length > 0;
+        var hasReviews  = reviews.length > 0;
         if (!hasComments && !hasReviews) {
           container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">No public activity yet.</div>';
           return;
@@ -1373,10 +1435,12 @@ async function toggleFollow() {
         var commentsCol = document.createElement('div');
         commentsCol.innerHTML = '<div class="activity-col-title"><i class="ti ti-message-circle"></i> Comments</div>';
         if (hasComments) {
-          commentsRes.data.forEach(function(c) {
-            var work = c.chapters && c.chapters.works ? c.chapters.works : null;
-            var chNum = c.chapters ? c.chapters.chapter_number : '?';
+          comments.forEach(function(c) {
+            var work = c._work;
+            var ch = c._chapter;
+            var chNum = ch ? ch.chapter_number : '?';
             var workTitle = work ? work.title : 'Unknown';
+            var workId = work ? work.id : (ch ? ch.work_id : null);
             var timeStr = c.created_at ? new Date(c.created_at).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : '';
             var item = document.createElement('div');
             item.className = 'activity-item';
@@ -1384,7 +1448,7 @@ async function toggleFollow() {
               '<div class="activity-item-on"><span class="act-badge novel">Novel</span> ' + escHtml(workTitle) + ' · Ch. ' + chNum + '</div>' +
               '<div class="activity-text">"' + escHtml((c.content||'').slice(0,120)) + (c.content && c.content.length > 120 ? '…' : '') + '"</div>' +
               '<div class="activity-time"><i class="ti ti-clock"></i> ' + timeStr + '</div>';
-            if (work) { item.onclick = function(){ window.location.href = 'chapter.html?work=' + c.chapters.work_id + '&chapter=' + c.chapter_id; }; }
+            if (workId) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'chapter.html?work=' + workId + '&chapter=' + c.chapter_id; }; }
             commentsCol.appendChild(item);
           });
         } else {
@@ -1394,8 +1458,8 @@ async function toggleFollow() {
         var reviewsCol = document.createElement('div');
         reviewsCol.innerHTML = '<div class="activity-col-title"><i class="ti ti-star"></i> Reviews</div>';
         if (hasReviews) {
-          reviewsRes.data.forEach(function(r) {
-            var work = r.works;
+          reviews.forEach(function(r) {
+            var work = r._work;
             var workTitle = work ? work.title : 'Unknown';
             var rating = parseInt(r.rating) || 0;
             var stars = '';
@@ -1408,7 +1472,7 @@ async function toggleFollow() {
               '<div class="review-stars">' + stars + '</div>' +
               '<div class="activity-text">"' + escHtml((r.content||'').slice(0,120)) + (r.content && r.content.length > 120 ? '…' : '') + '"</div>' +
               '<div class="activity-time"><i class="ti ti-clock"></i> ' + timeStr + '</div>';
-            if (r.work_id) { item.onclick = function(){ window.location.href = 'story.html?id=' + r.work_id; }; }
+            if (r.work_id) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'story.html?id=' + r.work_id; }; }
             reviewsCol.appendChild(item);
           });
         } else {
@@ -1559,9 +1623,12 @@ async function toggleFollow() {
     }
 
     // Close artwork edit on backdrop click
-    document.getElementById('artwork-edit-modal').addEventListener('click', function(e) {
-      if (e.target === this) closeArtworkEdit();
-    });
+    var _artEditModal = document.getElementById('artwork-edit-modal');
+    if (_artEditModal) {
+      _artEditModal.addEventListener('click', function(e) {
+        if (e.target === this) closeArtworkEdit();
+      });
+    }
 
   </script>
 

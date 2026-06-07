@@ -110,6 +110,7 @@
     .notif-tab { flex: 1; padding: 8px 4px; border: none; border-radius: 6px; font-size: 11px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text3); display: flex; align-items: center; justify-content: center; gap: 4px; }
     .notif-tab:hover { color: var(--text2); }
     .notif-tab.active { background: var(--bg2); color: var(--accent); }
+    .notif-tab-badge { background: var(--red); color: white; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; border-radius: 8px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
     .notif-panel { display: none; }
     .notif-panel.active { display: block; }
     .notif-feed { max-height: 320px; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -372,9 +373,9 @@
         </button>
         <div class="notif-dropdown" id="notifDropdown">
           <div class="notif-tabs">
-            <button class="notif-tab active" onclick="switchNotif('novels')"><i class="ti ti-book"></i> Novels</button>
-            <button class="notif-tab" onclick="switchNotif('artists')"><i class="ti ti-palette"></i> Artists</button>
-            <button class="notif-tab" onclick="switchNotif('comments')"><i class="ti ti-message-circle"></i> Comments</button>
+            <button class="notif-tab active" id="notif-tab-novels" onclick="switchNotif('novels')"><i class="ti ti-book"></i> Novels</button>
+            <button class="notif-tab" id="notif-tab-artists" onclick="switchNotif('artists')"><i class="ti ti-palette"></i> Artists</button>
+            <button class="notif-tab" id="notif-tab-comments" onclick="switchNotif('comments')"><i class="ti ti-message-circle"></i> Comments</button>
           </div>
           <div class="notif-panel active" id="notif-novels">
             <div class="notif-feed" id="notif-feed-novels"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
@@ -770,13 +771,17 @@
       } else {
         novelFeed.innerHTML = '';
         var clearedNovels = getClearedIds('novels');
-        novelNotifs.forEach(function(ch){
+        var unrenderedNovels = novelNotifs.filter(function(ch){ return !clearedNovels[ch.id]; });
+        if(!unrenderedNovels.length){
+          novelFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new chapters from followed stories.</div>';
+        }
+        unrenderedNovels.forEach(function(ch){
           var work = ch.works;
           var title = work?work.title:'Unknown';
           var chLabel = ch.title?'Chapter '+ch.chapter_number+' — "'+ch.title+'"':'Chapter '+ch.chapter_number;
-          var isUnread = !clearedNovels[ch.id];
+          var isUnread = true;
           var item = document.createElement('div');
-          item.className = 'notif-item' + (isUnread?' unread':'');
+          item.className = 'notif-item unread';
           item.dataset.id = ch.id;
           item.style.cursor = 'pointer';
           item.onclick = function(){ if(work) window.location.href='chapter.html?work='+work.id+'&chapter='+ch.id; };
@@ -816,13 +821,17 @@
       } else {
         artistFeed.innerHTML = '';
         var clearedArtists = getClearedIds('artists');
-        artistNotifs.forEach(function(work){
+        var unrenderedArtists = artistNotifs.filter(function(w){ return !clearedArtists[w.id]; });
+        if(!unrenderedArtists.length){
+          artistFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new art from followed artists.</div>';
+        }
+        unrenderedArtists.forEach(function(work){
           var prof = work.profiles;
           var name = prof?(prof.display_name||prof.username||'Unknown'):'Unknown';
           var handle = prof?(prof.username||''):'';
-          var isUnread = !clearedArtists[work.id];
+          var isUnread = true;
           var item = document.createElement('div');
-          item.className = 'notif-item' + (isUnread?' unread':'');
+          item.className = 'notif-item unread';
           item.dataset.id = work.id;
           item.style.cursor = 'pointer';
           item.onclick = function(){ window.location.href='artwork.html?id='+work.id; };
@@ -870,14 +879,18 @@
       } else {
         commentFeed.innerHTML = '';
         var clearedComments = getClearedIds('comments');
-        commentNotifs.forEach(function(cm){
+        var unrenderedComments = commentNotifs.filter(function(cm){ return !clearedComments[cm.id]; });
+        if(!unrenderedComments.length){
+          commentFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new comments on your works.</div>';
+        }
+        unrenderedComments.forEach(function(cm){
           var prof = cm.profiles;
           var work = cm.works;
           var name = prof?(prof.display_name||prof.username||'Someone'):'Someone';
           var workTitle = work?work.title:'your work';
-          var isUnread = !clearedComments[cm.id];
+          var isUnread = true;
           var item = document.createElement('div');
-          item.className = 'notif-item' + (isUnread?' unread':'');
+          item.className = 'notif-item unread';
           item.dataset.id = cm.id;
           item.style.cursor='pointer';
           item.onclick = function(){ if(cm.work_id) window.location.href='story.html?id='+cm.work_id; };
@@ -900,13 +913,29 @@
       var clearedN = getClearedIds('novels');
       var clearedA = getClearedIds('artists');
       var clearedC = getClearedIds('comments');
-      var unreadCount =
-        novelNotifs.filter(function(c){ return !clearedN[c.id]; }).length +
-        artistNotifs.filter(function(w){ return !clearedA[w.id]; }).length +
-        commentNotifs.filter(function(c){ return !clearedC[c.id]; }).length;
+      var unreadNovels   = novelNotifs.filter(function(c){ return !clearedN[c.id]; }).length;
+      var unreadArtists  = artistNotifs.filter(function(w){ return !clearedA[w.id]; }).length;
+      var unreadComments = commentNotifs.filter(function(c){ return !clearedC[c.id]; }).length;
+      var unreadCount = unreadNovels + unreadArtists + unreadComments;
       var notifBadge = document.querySelector('.notif-badge');
       if(unreadCount>0){ notifBadge.textContent=Math.min(unreadCount,99); notifBadge.style.display='flex'; }
       else { notifBadge.style.display='none'; }
+
+      function setTabBadge(tabId, count){
+        var btn = document.getElementById(tabId);
+        if(!btn) return;
+        var existing = btn.querySelector('.notif-tab-badge');
+        if(existing) existing.remove();
+        if(count>0){
+          var badge = document.createElement('span');
+          badge.className = 'notif-tab-badge';
+          badge.textContent = Math.min(count,99);
+          btn.appendChild(badge);
+        }
+      }
+      setTabBadge('notif-tab-novels',   unreadNovels);
+      setTabBadge('notif-tab-artists',  unreadArtists);
+      setTabBadge('notif-tab-comments', unreadComments);
     }
 
     function markAllRead(tab) {
@@ -915,14 +944,14 @@
       var cleared = getClearedIds(tab);
       feed.querySelectorAll('.notif-item[data-id]').forEach(function(item) {
         cleared[item.dataset.id] = true;
-        item.classList.remove('unread');
-        var dot = item.querySelector('.notif-dot');
-        if (dot) dot.remove();
       });
       localStorage.setItem('ds_notif_cleared_' + tab, JSON.stringify(Object.keys(cleared)));
+      feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-checks"></i> All caught up!</div>';
+      var tabBtn = document.getElementById('notif-tab-' + tab);
+      if(tabBtn){ var b = tabBtn.querySelector('.notif-tab-badge'); if(b) b.remove(); }
       var total = document.querySelectorAll('.notif-item.unread').length;
       var badge = document.querySelector('.notif-badge');
-      if (total === 0) badge.style.display = 'none';
+      if(total === 0) badge.style.display = 'none';
       else { badge.textContent = Math.min(total, 99); badge.style.display = 'flex'; }
     }
 
@@ -1107,7 +1136,7 @@
             .select('id,title,cover_url').eq('type','artwork').in('author_id',fuIds)
             .order('created_at',{ascending:false}).limit(30);
           renderCoverRow(row1track, artRes.data||[], function(w){
-            return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id };
+            return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id };
           });
         } else {
           row1track.innerHTML='<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Follow some artists to see their work here.</div>';
@@ -1129,7 +1158,7 @@
       var featArtRes = await db.from('works').select('id,title,cover_url')
         .eq('type','artwork').order('rating',{ascending:false}).limit(30);
       renderCoverRow(row3track, featArtRes.data||[], function(w){
-        return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id };
+        return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id };
       });
 
       // Row 4: Newest novels
@@ -1145,7 +1174,7 @@
       var newArtRes = await db.from('works').select('id,title,cover_url')
         .eq('type','artwork').order('created_at',{ascending:false}).limit(30);
       renderCoverRow(row5track, newArtRes.data||[], function(w){
-        return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id };
+        return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id };
       });
     }
 
