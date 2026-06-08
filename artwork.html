@@ -39,7 +39,7 @@
     .artwork-img-wrap img{max-width:100%;max-height:700px;object-fit:contain;display:block;transition:transform 0.3s;}
     .artwork-img-wrap:hover img{transform:scale(1.01);}
     .artwork-meta{padding:20px 24px;}
-    .artwork-title{font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;}
+    .artwork-title{font-family:'Lato',sans-serif;font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;}
     .artwork-date{font-size:12px;color:var(--text3);}
 
     /* ARTIST BAR */
@@ -121,6 +121,19 @@
     .comment-login-note a{color:var(--accent);text-decoration:none;}
     .comment-delete-btn{margin-left:auto;background:transparent;border:none;color:var(--text3);font-size:13px;cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.2s;display:flex;align-items:center;gap:3px;}
     .comment-delete-btn:hover{color:var(--red);}
+    .comment-reply-btn{background:transparent;border:none;color:var(--text3);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.2s;display:flex;align-items:center;gap:3px;}
+    .comment-reply-btn:hover{color:var(--accent);}
+    .comment-actions{display:flex;align-items:center;gap:4px;margin-top:6px;}
+    .replies-list{margin-top:8px;padding-left:16px;border-left:2px solid var(--border);display:flex;flex-direction:column;gap:8px;}
+    .reply-card{background:var(--bg);border-radius:8px;padding:10px 12px;}
+    .reply-input-wrap{margin-top:8px;padding-left:16px;display:flex;flex-direction:column;gap:6px;}
+    .reply-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:12px;font-family:'Lato',sans-serif;outline:none;width:100%;resize:none;min-height:56px;transition:border-color 0.2s;}
+    .reply-textarea:focus{border-color:var(--accent);}
+    .reply-actions{display:flex;gap:8px;justify-content:flex-end;}
+    .reply-cancel-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:5px 14px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .reply-cancel-btn:hover{border-color:var(--text3);}
+    .reply-submit-btn{background:var(--accent2);border:none;border-radius:7px;padding:5px 14px;color:white;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:5px;}
+    .reply-submit-btn:hover{background:var(--accent);color:var(--bg);}
 
     /* RELATED */
     .related-section{margin-top:32px;}
@@ -692,12 +705,129 @@
       }
     }
 
-    // ── COMMENTS
+    // ── COMMENTS (THREADED)
+    function buildCommentCard(c, profileMap, isOwner, isReply){
+      var p = profileMap[c.user_id] || {};
+      var name = p.display_name || p.username || 'User';
+      var avatarHtml = p.avatar_url
+        ? '<img src="' + esc(p.avatar_url) + '" alt=""/>'
+        : '<i class="ti ti-user"></i>';
+      var canDelete = session && (session.user.id === c.user_id || isOwner);
+      var card = document.createElement('div');
+      card.className = isReply ? 'reply-card' : 'comment-card';
+      card.dataset.commentId = c.id;
+      card.innerHTML =
+        '<div class="comment-header">'
+          + '<div class="comment-avatar" style="' + (isReply ? 'width:24px;height:24px;font-size:11px;' : '') + '">' + avatarHtml + '</div>'
+          + '<div class="comment-name">' + esc(name) + '</div>'
+          + '<div class="comment-date">' + timeAgo(c.created_at) + '</div>'
+          + (canDelete ? '<button class="comment-delete-btn" title="Delete"><i class="ti ti-trash"></i></button>' : '')
+        + '</div>'
+        + '<div class="comment-text">' + esc(c.content) + '</div>'
+        + (session ? '<div class="comment-actions">'
+            + '<button class="comment-reply-btn"><i class="ti ti-corner-down-right"></i> Reply</button>'
+          + '</div>' : '');
+
+      if(canDelete){
+        card.querySelector('.comment-delete-btn').addEventListener('click', function(){
+          deleteComment(c.id, card);
+        });
+      }
+      if(session){
+        card.querySelector('.comment-reply-btn').addEventListener('click', function(){
+          toggleReplyBox(c.id, card, name);
+        });
+      }
+      return card;
+    }
+
+    function toggleReplyBox(parentId, parentCard, parentName){
+      // Remove any other open reply boxes first
+      document.querySelectorAll('.reply-input-wrap').forEach(function(el){ el.remove(); });
+      // If this card already had it open, we're done (it was just removed above)
+      if(parentCard.dataset.replyOpen === '1'){ parentCard.dataset.replyOpen = '0'; return; }
+      parentCard.dataset.replyOpen = '1';
+      var wrap = document.createElement('div');
+      wrap.className = 'reply-input-wrap';
+      wrap.innerHTML =
+        '<textarea class="reply-textarea" placeholder="Replying to ' + esc(parentName) + '…" maxlength="1000"></textarea>'
+        + '<div class="reply-actions">'
+          + '<button class="reply-cancel-btn">Cancel</button>'
+          + '<button class="reply-submit-btn"><i class="ti ti-send"></i> Post Reply</button>'
+        + '</div>';
+      parentCard.appendChild(wrap);
+      wrap.querySelector('.reply-textarea').focus();
+      wrap.querySelector('.reply-cancel-btn').addEventListener('click', function(){
+        wrap.remove(); parentCard.dataset.replyOpen = '0';
+      });
+      wrap.querySelector('.reply-submit-btn').addEventListener('click', function(){
+        submitReply(parentId, wrap, parentCard);
+      });
+    }
+
+    async function submitReply(parentId, wrap, parentCard){
+      var ta = wrap.querySelector('.reply-textarea');
+      var text = ta.value.trim();
+      if(!text) return;
+      var btn = wrap.querySelector('.reply-submit-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';
+
+      var { data: inserted, error } = await db.from('artwork_comments').insert({
+        work_id: workId,
+        user_id: session.user.id,
+        content: text,
+        parent_id: parentId
+      }).select().single();
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-send"></i> Post Reply';
+      if(error){ showToast('Failed to post reply.', 'ti-alert-circle'); return; }
+
+      wrap.remove();
+      parentCard.dataset.replyOpen = '0';
+
+      // Notify original commenter if different from replier
+      var { data: parentCmt } = await db.from('artwork_comments')
+        .select('user_id').eq('id', parentId).maybeSingle();
+      if(parentCmt && parentCmt.user_id !== session.user.id){
+        var { data: myProf } = await db.from('profiles')
+          .select('display_name,username').eq('id', session.user.id).maybeSingle();
+        var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
+        try { await db.from('notifications').insert({
+          user_id: parentCmt.user_id,
+          type: 'artwork_reply',
+          from_user_id: session.user.id,
+          work_id: workId,
+          message: myName + ' replied to your comment on "' + (workData.title || 'Untitled') + '"'
+        }); } catch(e){}
+      }
+
+      // Append reply to the replies list under this card
+      var repliesList = parentCard.querySelector('.replies-list');
+      if(!repliesList){
+        repliesList = document.createElement('div');
+        repliesList.className = 'replies-list';
+        parentCard.appendChild(repliesList);
+      }
+      var { data: myProfile } = await db.from('profiles')
+        .select('id,username,display_name,avatar_url').eq('id', session.user.id).maybeSingle();
+      var profMap = {}; if(myProfile) profMap[myProfile.id] = myProfile;
+      var isOwner = session && workData && session.user.id === workData.author_id;
+      var replyCard = buildCommentCard(inserted, profMap, isOwner, true);
+      repliesList.appendChild(replyCard);
+
+      // Update count
+      var countEl = document.getElementById('comment-count');
+      if(countEl) countEl.textContent = parseInt(countEl.textContent||'0') + 1;
+      showToast('Reply posted!', 'ti-check');
+    }
+
     async function loadComments(){
       var { data, error } = await db.from('artwork_comments')
-        .select('id, content, created_at, user_id')
+        .select('id, content, created_at, user_id, parent_id')
         .eq('work_id', workId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true });
 
       var list = document.getElementById('comments-list');
       var countEl = document.getElementById('comment-count');
@@ -711,40 +841,40 @@
         return;
       }
 
-      var commenterIds = [...new Set(comments.map(function(c){ return c.user_id; }).filter(Boolean))];
+      // Fetch profiles
+      var allIds = [...new Set(comments.map(function(c){ return c.user_id; }).filter(Boolean))];
       var profileMap = {};
-      if(commenterIds.length){
+      if(allIds.length){
         var { data: cProfiles } = await db.from('profiles')
-          .select('id, username, display_name, avatar_url')
-          .in('id', commenterIds);
+          .select('id, username, display_name, avatar_url').in('id', allIds);
         (cProfiles || []).forEach(function(p){ profileMap[p.id] = p; });
       }
 
       var isOwner = session && workData && session.user.id === workData.author_id;
 
+      // Separate top-level and replies
+      var topLevel = comments.filter(function(c){ return !c.parent_id; });
+      var replies   = comments.filter(function(c){ return !!c.parent_id; });
+
+      // Group replies by parent
+      var replyMap = {};
+      replies.forEach(function(r){
+        if(!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
+        replyMap[r.parent_id].push(r);
+      });
+
       list.innerHTML = '';
-      comments.forEach(function(c){
-        var p = profileMap[c.user_id] || {};
-        var name = p.display_name || p.username || 'User';
-        var avatarHtml = p.avatar_url
-          ? '<img src="' + esc(p.avatar_url) + '" alt=""/>'
-          : '<i class="ti ti-user"></i>';
-        var canDelete = session && (session.user.id === c.user_id || isOwner);
-        var card = document.createElement('div');
-        card.className = 'comment-card';
-        card.dataset.commentId = c.id;
-        card.innerHTML =
-          '<div class="comment-header">'
-            + '<div class="comment-avatar">' + avatarHtml + '</div>'
-            + '<div class="comment-name">' + esc(name) + '</div>'
-            + '<div class="comment-date">' + timeAgo(c.created_at) + '</div>'
-            + (canDelete ? '<button class="comment-delete-btn" title="Delete comment"><i class="ti ti-trash"></i></button>' : '')
-          + '</div>'
-          + '<div class="comment-text">' + esc(c.content) + '</div>';
-        if(canDelete){
-          card.querySelector('.comment-delete-btn').addEventListener('click', function(){
-            deleteComment(c.id, card);
+      topLevel.forEach(function(c){
+        var card = buildCommentCard(c, profileMap, isOwner, false);
+        // Append existing replies
+        var childReplies = replyMap[c.id] || [];
+        if(childReplies.length){
+          var repliesList = document.createElement('div');
+          repliesList.className = 'replies-list';
+          childReplies.forEach(function(r){
+            repliesList.appendChild(buildCommentCard(r, profileMap, isOwner, true));
           });
+          card.appendChild(repliesList);
         }
         list.appendChild(card);
       });
@@ -753,19 +883,18 @@
     async function deleteComment(commentId, cardEl){
       if(!session) return;
       cardEl.style.opacity = '0.4';
-      // Try deleting as commenter first (RLS: user_id match)
       var { error } = await db.from('artwork_comments').delete()
         .eq('id', commentId).eq('user_id', session.user.id);
       if(error){
-        // Artwork owner deleting someone else's comment
         var { error: err2 } = await db.from('artwork_comments').delete().eq('id', commentId);
         if(err2){ cardEl.style.opacity = '1'; showToast('Could not delete comment.', 'ti-alert-circle'); return; }
       }
-      cardEl.remove();
       var countEl = document.getElementById('comment-count');
       if(countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent||'0') - 1);
+      cardEl.remove();
       showToast('Comment deleted.', 'ti-trash');
     }
+
     async function submitComment(){
       var input = document.getElementById('comment-input');
       var commentContent = input.value.trim();
@@ -774,38 +903,42 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';
 
-      var { error } = await db.from('artwork_comments').insert({
+      var { data: inserted, error } = await db.from('artwork_comments').insert({
         work_id: workId,
         user_id: session.user.id,
         content: commentContent
-      });
+      }).select().single();
 
       btn.disabled = false;
       btn.innerHTML = '<i class="ti ti-send"></i> Post';
       if(error){ showToast('Failed to post comment.', 'ti-alert-circle'); return; }
-
       input.value = '';
       showToast('Comment posted!', 'ti-check');
 
-      // Notify artwork owner (skip if commenter IS the owner)
+      // Append new comment immediately to the DOM
+      var list = document.getElementById('comments-list');
+      var emptyMsg = list ? list.querySelector('div[style*="text-align:center"]') : null;
+      if(emptyMsg) emptyMsg.remove();
+      var { data: myProfile } = await db.from('profiles')
+        .select('id,username,display_name,avatar_url').eq('id', session.user.id).maybeSingle();
+      var profMap = {}; if(myProfile) profMap[myProfile.id] = myProfile;
+      var isOwner = session && workData && session.user.id === workData.author_id;
+      var newCard = buildCommentCard(inserted, profMap, isOwner, false);
+      if(list) list.appendChild(newCard);
+      var countEl = document.getElementById('comment-count');
+      if(countEl) countEl.textContent = parseInt(countEl.textContent||'0') + 1;
+
+      // Notify artwork owner
       if(workData && workData.author_id && workData.author_id !== session.user.id){
-        var { data: myProfile } = await db.from('profiles')
-          .select('display_name, username')
-          .eq('id', session.user.id)
-          .maybeSingle();
-        var commenterName = myProfile
-          ? (myProfile.display_name || myProfile.username || 'Someone')
-          : 'Someone';
-        await db.from('notifications').insert({
+        var commenterName = myProfile ? (myProfile.display_name || myProfile.username || 'Someone') : 'Someone';
+        try { await db.from('notifications').insert({
           user_id: workData.author_id,
           type: 'artwork_comment',
           from_user_id: session.user.id,
           work_id: workId,
-          message: commenterName + ' commented on your artwork \"' + (workData.title || 'Untitled') + '\"'
-        }).catch(function(){});
+          message: commenterName + ' commented on your artwork "' + (workData.title || 'Untitled') + '"'
+        }); } catch(e){}
       }
-
-      loadComments();
     }
 
     // ── RELATED

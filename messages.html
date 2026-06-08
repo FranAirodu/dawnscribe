@@ -259,6 +259,18 @@
   </div>
 </div>
 
+<!-- DELETE CONVERSATION MODAL -->
+<div class="modal-backdrop" id="delete-modal">
+  <div class="modal">
+    <div class="modal-title"><i class="ti ti-trash" style="color:var(--red);"></i> Delete Conversation</div>
+    <p style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:20px;">This will permanently delete the conversation and all its messages. This cannot be undone.</p>
+    <div class="modal-btns">
+      <button class="modal-cancel" id="delete-modal-cancel">Cancel</button>
+      <button class="modal-send" id="delete-modal-confirm" style="background:var(--red);"><i class="ti ti-trash"></i> Delete</button>
+    </div>
+  </div>
+</div>
+
 <script>
   var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
   var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
@@ -317,26 +329,43 @@
   // ── LOAD CONVERSATIONS ─────────────────────────────────────
   async function loadConversations(){
     var uid = currentSession.user.id;
+    // No FK joins — fetch conversations then profiles separately
     var res = await db.from('conversations')
-      .select('id, participant_a, participant_b, last_message, last_message_at, profiles_a:participant_a(id,username,display_name,avatar_url), profiles_b:participant_b(id,username,display_name,avatar_url)')
+      .select('id, participant_a, participant_b, last_message, last_message_at')
       .or('participant_a.eq.'+uid+',participant_b.eq.'+uid)
       .order('last_message_at', { ascending: false, nullsFirst: false });
     if(res.error){ console.error('Load convos:', res.error); return; }
 
-    // For each convo, count unread messages
     var convos = res.data || [];
-    var unreadRes = await db.from('messages')
-      .select('conversation_id')
-      .is('read_at', null)
-      .neq('sender_id', uid)
-      .in('conversation_id', convos.map(function(c){ return c.id; }));
+
+    // Fetch other participants' profiles separately
+    var otherIds = convos.map(function(c){
+      return c.participant_a === uid ? c.participant_b : c.participant_a;
+    }).filter(Boolean);
+    var profMap = {};
+    if(otherIds.length){
+      var profRes = await db.from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .in('id', otherIds);
+      (profRes.data||[]).forEach(function(p){ profMap[p.id] = p; });
+    }
+
+    // Count unread messages
     var unreadMap = {};
-    (unreadRes.data||[]).forEach(function(m){
-      unreadMap[m.conversation_id] = (unreadMap[m.conversation_id]||0)+1;
-    });
+    if(convos.length){
+      var unreadRes = await db.from('messages')
+        .select('conversation_id')
+        .is('read_at', null)
+        .neq('sender_id', uid)
+        .in('conversation_id', convos.map(function(c){ return c.id; }));
+      (unreadRes.data||[]).forEach(function(m){
+        unreadMap[m.conversation_id] = (unreadMap[m.conversation_id]||0)+1;
+      });
+    }
+
     conversations = convos.map(function(c){
-      var other = c.participant_a === uid ? c.profiles_b : c.profiles_a;
-      return { id: c.id, other: other, last_message: c.last_message, last_message_at: c.last_message_at, unread: unreadMap[c.id]||0 };
+      var otherId = c.participant_a === uid ? c.participant_b : c.participant_a;
+      return { id: c.id, other: profMap[otherId]||null, last_message: c.last_message, last_message_at: c.last_message_at, unread: unreadMap[c.id]||0 };
     });
     renderConvoList();
   }
@@ -561,12 +590,20 @@
   }
 
   // ── DELETE CONVERSATION ────────────────────────────────────
-  async function deleteConversation(){
+  function deleteConversation(){
     if(!activeConvoId) return;
-    if(!confirm('Delete this conversation? This cannot be undone.')) return;
-    await db.from('messages').delete().eq('conversation_id', activeConvoId);
-    await db.from('conversations').delete().eq('id', activeConvoId);
-    conversations = conversations.filter(function(c){ return c.id!==activeConvoId; });
+    document.getElementById('delete-modal').classList.add('show');
+  }
+
+  async function confirmDeleteConversation(){
+    document.getElementById('delete-modal').classList.remove('show');
+    if(!activeConvoId) return;
+    var idToDelete = activeConvoId;
+    var msgRes = await db.from('messages').delete().eq('conversation_id', idToDelete);
+    if(msgRes.error){ showToast('Could not delete messages: ' + msgRes.error.message, 'ti-x'); return; }
+    var convRes = await db.from('conversations').delete().eq('id', idToDelete);
+    if(convRes.error){ showToast('Could not delete conversation: ' + convRes.error.message, 'ti-x'); return; }
+    conversations = conversations.filter(function(c){ return c.id !== idToDelete; });
     activeConvoId = null; activeOtherUser = null;
     document.getElementById('active-convo').style.display = 'none';
     document.getElementById('empty-convo').style.display = 'flex';
@@ -658,6 +695,9 @@
     });
     document.getElementById('send-btn').addEventListener('click', sendMessage);
     document.getElementById('delete-convo-btn').addEventListener('click', deleteConversation);
+    document.getElementById('delete-modal-cancel').addEventListener('click', function(){ document.getElementById('delete-modal').classList.remove('show'); });
+    document.getElementById('delete-modal-confirm').addEventListener('click', confirmDeleteConversation);
+    document.getElementById('delete-modal').addEventListener('click', function(e){ if(e.target===this) this.classList.remove('show'); });
     document.getElementById('mobile-back').addEventListener('click', function(){
       document.getElementById('convo-panel').classList.remove('mobile-open');
     });

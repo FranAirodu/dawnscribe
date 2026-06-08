@@ -340,28 +340,67 @@
 
     // ── LOAD COMMENTS ─────────────────────────────────────────────
     async function loadComments(){
-      var res = await db.from('chapter_comments')
-        .select('id,content,created_at,work_id,chapter_id,user_id')
-        .order('created_at',{ascending:false})
-        .limit(50);
-      var rows = res.data || [];
+      // chapter_comments has no work_id — resolve via chapters
+      // Also merge artwork_comments which has work_id directly
+      var [chapRes, artRes] = await Promise.all([
+        db.from('chapter_comments').select('id,content,created_at,chapter_id,user_id,parent_id').order('created_at',{ascending:false}).limit(80),
+        db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id').order('created_at',{ascending:false}).limit(80)
+      ]);
+
+      var chapRows = (chapRes.data||[]).filter(function(r){ return !r.parent_id; }).map(function(r){ r._src='chapter'; return r; });
+      var artRows  = (artRes.data||[]).filter(function(r){ return !r.parent_id; }).map(function(r){ r._src='artwork'; return r; });
+
+      // Resolve chapter → work for chapter comments
+      var chMap={}, cwMap={};
+      if(chapRows.length){
+        var chIds = [...new Set(chapRows.map(function(r){ return r.chapter_id; }).filter(Boolean))];
+        if(chIds.length){
+          var chRes2 = await db.from('chapters').select('id,work_id').in('id',chIds);
+          (chRes2.data||[]).forEach(function(c){ chMap[c.id]=c; });
+          var cwIds = [...new Set((chRes2.data||[]).map(function(c){ return c.work_id; }).filter(Boolean))];
+          if(cwIds.length){
+            var cwRes = await db.from('works').select('id,title,type').in('id',cwIds);
+            (cwRes.data||[]).forEach(function(w){ cwMap[w.id]=w; });
+          }
+        }
+        chapRows.forEach(function(r){
+          var ch = chMap[r.chapter_id]||null;
+          r.work_id = ch ? ch.work_id : null;
+        });
+      }
+
+      // Resolve works for artwork comments
+      var awMap={};
+      if(artRows.length){
+        var awIds = [...new Set(artRows.map(function(r){ return r.work_id; }).filter(Boolean))];
+        if(awIds.length){
+          var awRes = await db.from('works').select('id,title,type').in('id',awIds);
+          (awRes.data||[]).forEach(function(w){ awMap[w.id]=w; });
+        }
+      }
+
+      // Merge and sort newest first — show all users including current user
+      var rows = chapRows.concat(artRows);
+      rows.sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); });
+      rows = rows.slice(0,50);
 
       if (!rows.length) {
         document.getElementById('comment-list').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text3);font-size:13px;"><i class="ti ti-message-off" style="font-size:28px;display:block;margin-bottom:8px;opacity:0.3;"></i>No comments yet.</div>';
         return;
       }
 
-      // Fetch profiles and works separately
-      var userIds = rows.map(function(r){ return r.user_id; }).filter(Boolean);
-      var workIds = rows.map(function(r){ return r.work_id; }).filter(Boolean);
-      var profsRes = await db.from('profiles').select('id,username,display_name,avatar_url').in('id', userIds);
-      var worksRes = await db.from('works').select('id,title,type').in('id', workIds);
+      // Fetch profiles
+      var userIds = [...new Set(rows.map(function(r){ return r.user_id; }).filter(Boolean))];
       var profsMap = {};
-      (profsRes.data||[]).forEach(function(p){ profsMap[p.id] = p; });
-      var worksMap = {};
-      (worksRes.data||[]).forEach(function(w){ worksMap[w.id] = w; });
+      if(userIds.length){
+        var profsRes = await db.from('profiles').select('id,username,display_name,avatar_url').in('id',userIds);
+        (profsRes.data||[]).forEach(function(p){ profsMap[p.id]=p; });
+      }
 
-      allComments = rows.map(function(r){ return { cm: r, user: profsMap[r.user_id], work: worksMap[r.work_id] }; });
+      // Build combined works map
+      var worksMap = Object.assign({}, cwMap, awMap);
+
+      allComments = rows.map(function(r){ return { cm: r, user: profsMap[r.user_id], work: worksMap[r.work_id]||null }; });
       shownComments = 0;
       document.getElementById('comment-list').innerHTML = '';
       renderMoreComments();
@@ -383,11 +422,14 @@
         var card = document.createElement('div');
         card.className = 'comment-card';
         card.onclick = function(){ if(work.id) window.location.href = destUrl; };
+        var avatarHtml = user.avatar_url
+          ? '<img src="'+esc(user.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt=""/>'
+          : esc((userName.charAt(0)||'?').toUpperCase());
         card.innerHTML =
-          '<div class="comment-thumb '+coverColor(cm.work_id||cm.id)+'">'+esc(coverLetter(workTitle))+'</div>'+
+          '<div class="comment-thumb '+coverColor(cm.user_id||cm.id)+'" style="border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;">'+avatarHtml+'</div>'+
           '<div class="comment-body">'+
             '<div class="comment-on"><span class="comment-type '+workType+'">'+workType.charAt(0).toUpperCase()+workType.slice(1)+'</span> '+esc(workTitle)+'</div>'+
-            '<div class="comment-text">"'+esc((cm.content||'').slice(0,160))+((cm.content&&cm.content.length>160)?'…':'')+'\"</div>'+
+            '<div class="comment-text">"'+esc((cm.content||'').slice(0,160))+((cm.content&&cm.content.length>160)?'...':'')+'"</div>'+
             '<div class="comment-meta">'+
               '<a class="comment-user" href="profile.html?user='+esc(userHandle)+'">'+esc(userName)+'</a>'+
               '<span class="comment-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</span>'+

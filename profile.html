@@ -498,13 +498,9 @@
         var sessionRes = await db.auth.getSession();
         var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
         if (!session) {
-          await new Promise(function(r){ setTimeout(r, 300); });
+          await new Promise(function(r){ setTimeout(r, 350); });
           sessionRes = await db.auth.getSession();
           session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
-        }
-        var loggedInUsername = null;
-        if (session && session.user && session.user.user_metadata) {
-          loggedInUsername = session.user.user_metadata.username || null;
         }
         var profileData = null;
         var resolvedUsername = viewingUser;
@@ -520,12 +516,7 @@
         }
         if (profileData) { applyProfileData(profileData, resolvedUsername); }
         if (profileData && profileData.id) { loadStats(profileData.id); }
-        var isOwner = false;
-        if (!viewingUser && session) {
-        isOwner = true;
-        } else if (viewingUser && session) {
-          isOwner = (viewingUser === loggedInUsername) || (profileData && viewingUser === profileData.username);
-}
+        var isOwner = !!(session && profileData && session.user.id === profileData.id);
         if (isOwner) {
           setOwner(true);
           renderAnnouncements(true);
@@ -547,24 +538,15 @@
             loadActivity(profileData.id);
             loadReadingList(profileData.id);
           }
-          if (profileData && profileData.id) {
+          if (session && profileData && profileData.id) {
             currentProfileId = profileData.id;
-            // Re-fetch session here in case it resolved after the initial check
-            var fcSession = session;
-            if (!fcSession) {
-              await new Promise(function(r){ setTimeout(r, 400); });
-              var fcRes = await db.auth.getSession();
-              fcSession = fcRes && fcRes.data ? fcRes.data.session : null;
-            }
-            if (fcSession) {
-              var followCheck = await db.from('follows')
-                .select('id')
-                .eq('follower_id', fcSession.user.id)
-                .eq('following_id', profileData.id)
-                .maybeSingle();
-              if (followCheck && !followCheck.error && followCheck.data) {
-                setFollowUI(true);
-              }
+            var followCheck = await db.from('follows')
+              .select('id')
+              .eq('follower_id', session.user.id)
+              .eq('following_id', profileData.id)
+              .maybeSingle();
+            if (followCheck && !followCheck.error && followCheck.data) {
+              setFollowUI(true);
             }
           }
         }
@@ -615,6 +597,19 @@
       var isOwner = document.body.classList.contains('is-owner');
       var novels   = (result.data||[]).filter(function(w){ return w.type !== 'artwork'; });
       var artworks = (result.data||[]).filter(function(w){ return w.type === 'artwork'; });
+
+      // Fetch real comment counts for artworks from artwork_comments table
+      if(artworks.length){
+        var artworkIds = artworks.map(function(w){ return w.id; });
+        var acCountRes = await db.from('artwork_comments')
+          .select('work_id')
+          .in('work_id', artworkIds);
+        var acCountMap = {};
+        (acCountRes.data||[]).forEach(function(r){
+          acCountMap[r.work_id] = (acCountMap[r.work_id]||0) + 1;
+        });
+        artworks.forEach(function(w){ w.comments_count = acCountMap[w.id]||0; });
+      }
       var hasBoth  = novels.length > 0 && artworks.length > 0;
       if (hasBoth) { layout.className = 'works-layout'; } else { layout.className = ''; }
       if (novels.length > 0 || isOwner) {
@@ -1249,13 +1244,11 @@ async function toggleFollow() {
           container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">No reading history yet.</div>';
           return;
         }
-        // Fetch works separately
         var workIds = [...new Set(res.data.map(function(r){ return r.work_id; }).filter(Boolean))];
         var worksMap = {};
         if (workIds.length) {
           var wRes = await db.from('works').select('id, title, cover_url, chapters_count, author_id').in('id', workIds);
           (wRes.data||[]).forEach(function(w){ worksMap[w.id] = w; });
-          // Fetch authors
           var authorIds = [...new Set((wRes.data||[]).map(function(w){ return w.author_id; }).filter(Boolean))];
           if (authorIds.length) {
             var aRes = await db.from('profiles').select('id, username').in('id', authorIds);
@@ -1264,7 +1257,6 @@ async function toggleFollow() {
             Object.values(worksMap).forEach(function(w){ w._author = aMap[w.author_id] || null; });
           }
         }
-        // Get chapter numbers
         var chapterIds = res.data.map(function(r){ return r.chapter_id; }).filter(Boolean);
         var chapterNums = {};
         if (chapterIds.length) {
@@ -1318,7 +1310,6 @@ async function toggleFollow() {
           container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">Not following any artists yet.</div>';
           return;
         }
-        // Filter to only those who have artworks
         var followedIds = res.data.map(function(r){ return r.following_id; });
         var artRes = await db.from('works').select('author_id').eq('type','artwork').in('author_id', followedIds);
         var artistIds = new Set((artRes.data||[]).map(function(w){ return w.author_id; }));
@@ -1327,11 +1318,9 @@ async function toggleFollow() {
           container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">Not following any artists yet.</div>';
           return;
         }
-        // Fetch profiles for artists separately
         var profRes = await db.from('profiles').select('id, username, display_name, avatar_url').in('id', artistFollowedIds);
         var profMap = {};
         (profRes.data||[]).forEach(function(p){ profMap[p.id] = p; });
-        // Get artwork counts
         var countRes = await db.from('works').select('author_id').eq('type','artwork').in('author_id', artistFollowedIds);
         var counts = {};
         (countRes.data||[]).forEach(function(w){ counts[w.author_id] = (counts[w.author_id]||0) + 1; });
@@ -1382,14 +1371,12 @@ async function toggleFollow() {
     async function loadActivity(profileId) {
       var container = document.getElementById('activity-container');
       try {
-        // Fetch chapter_comments — table only has chapter_id (no work_id column)
         var commentsRes = await db.from('chapter_comments')
           .select('id, content, created_at, chapter_id')
           .eq('user_id', profileId)
           .order('created_at', { ascending: false })
           .limit(10);
         var comments = commentsRes.data || [];
-        // Fetch chapters then works separately
         if (comments.length) {
           var cChIds = [...new Set(comments.map(function(c){ return c.chapter_id; }).filter(Boolean))];
           var chMap = {}, cwMap = {};
@@ -1402,12 +1389,8 @@ async function toggleFollow() {
               (cwRes.data||[]).forEach(function(w){ cwMap[w.id] = w; });
             }
           }
-          comments.forEach(function(c){
-            c._chapter = chMap[c.chapter_id] || null;
-            c._work = c._chapter ? (cwMap[c._chapter.work_id] || null) : null;
-          });
+          comments.forEach(function(c){ c._chapter = chMap[c.chapter_id]||null; c._work = c._chapter?(cwMap[c._chapter.work_id]||null):null; });
         }
-        // Fetch reviews using no-FK-join pattern
         var reviewsRes = await db.from('reviews')
           .select('id, rating, content, created_at, work_id')
           .eq('user_id', profileId)
@@ -1417,11 +1400,8 @@ async function toggleFollow() {
         if (reviews.length) {
           var rWorkIds = [...new Set(reviews.map(function(r){ return r.work_id; }).filter(Boolean))];
           var rwMap = {};
-          if (rWorkIds.length) {
-            var rwRes = await db.from('works').select('id, title, type').in('id', rWorkIds);
-            (rwRes.data||[]).forEach(function(w){ rwMap[w.id] = w; });
-          }
-          reviews.forEach(function(r){ r._work = rwMap[r.work_id] || null; });
+          if (rWorkIds.length) { var rwRes = await db.from('works').select('id, title, type').in('id', rWorkIds); (rwRes.data||[]).forEach(function(w){ rwMap[w.id]=w; }); }
+          reviews.forEach(function(r){ r._work = rwMap[r.work_id]||null; });
         }
         var hasComments = comments.length > 0;
         var hasReviews  = reviews.length > 0;
@@ -1431,53 +1411,40 @@ async function toggleFollow() {
         }
         var layout = document.createElement('div');
         layout.className = 'activity-layout';
-        // Comments column
         var commentsCol = document.createElement('div');
         commentsCol.innerHTML = '<div class="activity-col-title"><i class="ti ti-message-circle"></i> Comments</div>';
         if (hasComments) {
           comments.forEach(function(c) {
-            var work = c._work;
-            var ch = c._chapter;
+            var work = c._work; var ch = c._chapter;
             var chNum = ch ? ch.chapter_number : '?';
             var workTitle = work ? work.title : 'Unknown';
-            var workId = work ? work.id : (ch ? ch.work_id : null);
+            var workId = ch ? ch.work_id : null;
             var timeStr = c.created_at ? new Date(c.created_at).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : '';
-            var item = document.createElement('div');
-            item.className = 'activity-item';
-            item.innerHTML =
-              '<div class="activity-item-on"><span class="act-badge novel">Novel</span> ' + escHtml(workTitle) + ' · Ch. ' + chNum + '</div>' +
-              '<div class="activity-text">"' + escHtml((c.content||'').slice(0,120)) + (c.content && c.content.length > 120 ? '…' : '') + '"</div>' +
+            var item = document.createElement('div'); item.className = 'activity-item';
+            item.innerHTML = '<div class="activity-item-on"><span class="act-badge novel">Novel</span> ' + escHtml(workTitle) + ' · Ch. ' + chNum + '</div>' +
+              '<div class="activity-text">"' + escHtml((c.content||'').slice(0,120)) + (c.content&&c.content.length>120?'...':'') + '"</div>' +
               '<div class="activity-time"><i class="ti ti-clock"></i> ' + timeStr + '</div>';
-            if (workId) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'chapter.html?work=' + workId + '&chapter=' + c.chapter_id; }; }
+            if (workId) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'chapter.html?work='+workId+'&chapter='+c.chapter_id; }; }
             commentsCol.appendChild(item);
           });
-        } else {
-          commentsCol.innerHTML += '<div style="font-size:13px;color:var(--text3);">No comments yet.</div>';
-        }
-        // Reviews column
+        } else { commentsCol.innerHTML += '<div style="font-size:13px;color:var(--text3);">No comments yet.</div>'; }
         var reviewsCol = document.createElement('div');
         reviewsCol.innerHTML = '<div class="activity-col-title"><i class="ti ti-star"></i> Reviews</div>';
         if (hasReviews) {
           reviews.forEach(function(r) {
-            var work = r._work;
-            var workTitle = work ? work.title : 'Unknown';
-            var rating = parseInt(r.rating) || 0;
-            var stars = '';
-            for (var s = 1; s <= 5; s++) { stars += s <= rating ? '★' : '☆'; }
+            var work = r._work; var workTitle = work ? work.title : 'Unknown';
+            var rating = parseInt(r.rating)||0; var stars = '';
+            for (var s=1;s<=5;s++){stars+=s<=rating?'★':'☆';}
             var timeStr = r.created_at ? new Date(r.created_at).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : '';
-            var item = document.createElement('div');
-            item.className = 'activity-item';
-            item.innerHTML =
-              '<div class="activity-item-on"><span class="act-badge novel">Novel</span> ' + escHtml(workTitle) + '</div>' +
-              '<div class="review-stars">' + stars + '</div>' +
-              '<div class="activity-text">"' + escHtml((r.content||'').slice(0,120)) + (r.content && r.content.length > 120 ? '…' : '') + '"</div>' +
+            var item = document.createElement('div'); item.className = 'activity-item';
+            item.innerHTML = '<div class="activity-item-on"><span class="act-badge novel">Novel</span> ' + escHtml(workTitle) + '</div>' +
+              '<div class="review-stars">'+stars+'</div>' +
+              '<div class="activity-text">"' + escHtml((r.content||'').slice(0,120)) + (r.content&&r.content.length>120?'...':'') + '"</div>' +
               '<div class="activity-time"><i class="ti ti-clock"></i> ' + timeStr + '</div>';
-            if (r.work_id) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'story.html?id=' + r.work_id; }; }
+            if (r.work_id) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'story.html?id='+r.work_id; }; }
             reviewsCol.appendChild(item);
           });
-        } else {
-          reviewsCol.innerHTML += '<div style="font-size:13px;color:var(--text3);">No reviews yet.</div>';
-        }
+        } else { reviewsCol.innerHTML += '<div style="font-size:13px;color:var(--text3);">No reviews yet.</div>'; }
         layout.appendChild(commentsCol);
         layout.appendChild(reviewsCol);
         container.innerHTML = '';

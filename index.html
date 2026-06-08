@@ -79,7 +79,8 @@
 
     /* DM */
     .dm-wrap { position: relative; }
-    .dm-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; position: relative; }
+    .dm-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; position: relative; text-decoration: none; }
+    .dm-btn.has-unread { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.08); }
     .dm-btn:hover { border-color: var(--accent); color: var(--accent); }
     .dm-badge { position: absolute; top: -6px; right: -6px; background: var(--accent2); color: white; font-size: 10px; font-weight: 700; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
     .dm-dropdown { display: none; position: absolute; top: calc(100% + 10px); right: 0; width: 300px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; z-index: 200; box-shadow: 0 16px 40px rgba(0,0,0,0.4); animation: fadeDown 0.15s ease; overflow: hidden; }
@@ -254,7 +255,11 @@
     .collab-btn:hover { border-color: var(--accent); color: var(--accent); }
     .comment-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; gap: 10px; transition: border-color 0.2s; cursor: pointer; }
     .comment-item:hover { border-color: rgba(45,212,191,0.3); }
-    .comment-thumb { width: 44px; height: 44px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; flex-shrink: 0; font-size: 22px; }
+    .comment-thumb { width: 44px; height: 44px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; flex-shrink: 0; font-size: 22px; position: relative; }
+    .comment-thumb-cover { width: 44px; height: 44px; border-radius: 6px; overflow: hidden; flex-shrink: 0; position: relative; }
+    .comment-thumb-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .comment-thumb-avatar { position: absolute; bottom: -4px; right: -4px; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--bg3); overflow: hidden; background: var(--bg4); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: var(--text2); font-family: 'Lato', sans-serif; flex-shrink: 0; }
+    .comment-thumb-avatar img { width: 100%; height: 100%; object-fit: cover; }
     .comment-body { flex: 1; min-width: 0; }
     .comment-on { font-size: 11px; color: var(--text2); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .comment-type { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; }
@@ -356,16 +361,11 @@
     </div>
     <div class="nav-right">
       <div class="dm-wrap">
-        <button class="dm-btn" onclick="toggleDm()">
-          <i class="ti ti-message"></i>
-          <span class="dm-badge">3</span>
-        </button>
-        <div class="dm-dropdown" id="dmDropdown">
-          <div class="dm-dropdown-header">Messages <a href="messages.html"><i class="ti ti-external-link"></i> Open inbox</a></div>
-          <div class="dm-preview-list" id="dm-preview-list"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
-          <div class="dm-footer"><a href="messages.html">View all messages <i class="ti ti-arrow-right"></i></a></div>
+          <a class="dm-btn" href="messages.html" id="dm-btn">
+            <i class="ti ti-message"></i>
+            <span class="dm-badge" id="dm-badge" style="display:none;"></span>
+          </a>
         </div>
-      </div>
       <div class="notif-wrap">
         <button class="notif-btn" onclick="toggleNotif()">
           <i class="ti ti-bell"></i>
@@ -699,51 +699,15 @@
     function coverColor(id){ var h=0; for(var i=0;i<(id||'').length;i++) h=(h*31+id.charCodeAt(i))&0xffff; return COVER_COLORS[h%COVER_COLORS.length]; }
     function coverLetter(t){ return (t||'?').charAt(0).toUpperCase(); }
 
-    /* ── DM DROPDOWN (LIVE) ─────────────────────────────────────── */
+    /* ── DM BUTTON (LIVE) ──────────────────────────────────────────── */
     async function loadDmPreview(uid){
-      var list = document.getElementById('dm-preview-list');
-      var res = await db.from('conversations')
-        .select('id,last_message,last_message_at,participant_a,participant_b,profiles_a:participant_a(id,username,display_name,avatar_url),profiles_b:participant_b(id,username,display_name,avatar_url)')
-        .or('participant_a.eq.'+uid+',participant_b.eq.'+uid)
-        .order('last_message_at',{ascending:false})
-        .limit(4);
-      if(!res.data || !res.data.length){
-        list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No messages yet.</div>';
-        document.querySelector('.dm-badge').style.display = 'none';
-        return;
-      }
-      // Count unread
-      var unreadRes = await db.from('messages').select('conversation_id').is('read_at',null).neq('sender_id',uid)
-        .in('conversation_id', res.data.map(function(c){return c.id;}));
-      var unreadMap = {};
-      (unreadRes.data||[]).forEach(function(m){ unreadMap[m.conversation_id]=(unreadMap[m.conversation_id]||0)+1; });
-      var totalUnread = Object.values(unreadMap).reduce(function(a,b){return a+b;},0);
-      var badge = document.querySelector('.dm-badge');
-      if(totalUnread > 0){ badge.textContent = totalUnread; badge.style.display='flex'; }
-      else { badge.style.display='none'; }
-      list.innerHTML = '';
-      res.data.forEach(function(conv){
-        var other = conv.participant_a === uid ? conv.profiles_b : conv.profiles_a;
-        if(!other) return;
-        var name = other.display_name||other.username||'Unknown';
-        var handle = other.username||'';
-        var unread = unreadMap[conv.id]||0;
-        var initials = name.charAt(0).toUpperCase();
-        var avatarHtml = other.avatar_url
-          ? '<img src="'+esc(other.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt=""/>'
-          : initials;
-        var a = document.createElement('a');
-        a.className = 'dm-preview-item'+(unread>0?' unread':'');
-        a.href = 'messages.html';
-        a.innerHTML =
-          '<div class="dm-preview-avatar '+coverColor(other.id||handle)+'" style="overflow:hidden;">'+avatarHtml+'</div>'+
-          '<div class="dm-preview-body">'+
-            '<div class="dm-preview-name">'+esc(name)+' <span class="dm-preview-time">'+timeAgo(conv.last_message_at)+'</span></div>'+
-            '<div class="dm-preview-msg">'+(conv.last_message?esc(conv.last_message.slice(0,55)):'No messages yet')+'</div>'+
-          '</div>'+
-          (unread>0?'<div class="dm-unread-dot"></div>':'');
-        list.appendChild(a);
-      });
+      var unreadRes = await db.from('messages').select('id').is('read_at',null).neq('sender_id',uid);
+      var count = (unreadRes.data||[]).length;
+      var btn = document.getElementById('dm-btn');
+      var badge = document.getElementById('dm-badge');
+      if(!btn || !badge) return;
+      if(count>0){ badge.textContent=Math.min(count,99); badge.style.display='flex'; btn.classList.add('has-unread'); }
+      else { badge.style.display='none'; btn.classList.remove('has-unread'); }
     }
 
     /* ── NOTIFICATIONS (LIVE) ───────────────────────────────────── */
@@ -772,9 +736,7 @@
         novelFeed.innerHTML = '';
         var clearedNovels = getClearedIds('novels');
         var unrenderedNovels = novelNotifs.filter(function(ch){ return !clearedNovels[ch.id]; });
-        if(!unrenderedNovels.length){
-          novelFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new chapters from followed stories.</div>';
-        }
+        if(!unrenderedNovels.length) novelFeed.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new chapters from followed stories.</div>';
         unrenderedNovels.forEach(function(ch){
           var work = ch.works;
           var title = work?work.title:'Unknown';
@@ -822,9 +784,7 @@
         artistFeed.innerHTML = '';
         var clearedArtists = getClearedIds('artists');
         var unrenderedArtists = artistNotifs.filter(function(w){ return !clearedArtists[w.id]; });
-        if(!unrenderedArtists.length){
-          artistFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new art from followed artists.</div>';
-        }
+        if(!unrenderedArtists.length) artistFeed.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new art from followed artists.</div>';
         unrenderedArtists.forEach(function(work){
           var prof = work.profiles;
           var name = prof?(prof.display_name||prof.username||'Unknown'):'Unknown';
@@ -850,109 +810,79 @@
         });
       }
 
-      // Comments on user's own works
-      var myWorks = await db.from('works').select('id').eq('author_id',uid);
-      var myWorkIds = (myWorks.data||[]).map(function(r){return r.id;});
-      var commentNotifs = [];
-      if(myWorkIds.length){
-        var cmtRes = await db.from('chapter_comments')
-          .select('id,content,created_at,work_id,user_id')
-          .in('work_id',myWorkIds).neq('user_id',uid)
-          .order('created_at',{ascending:false}).limit(8);
-        commentNotifs = cmtRes.data||[];
+      // Comments — chapter_comments has no work_id, go via chapters; also artwork_comments
+      var myWorks=await db.from('works').select('id,title,type').eq('author_id',uid);
+      var myWorkRows=myWorks.data||[];
+      var myNovelIds=myWorkRows.filter(function(w){return w.type!=='artwork';}).map(function(w){return w.id;});
+      var myArtworkIds=myWorkRows.filter(function(w){return w.type==='artwork';}).map(function(w){return w.id;});
+      var myWorkTitleMap={};myWorkRows.forEach(function(w){myWorkTitleMap[w.id]=w;});
+      var commentNotifs=[];
+      if(myNovelIds.length){
+        var ownerChapRes=await db.from('chapters').select('id,work_id').in('work_id',myNovelIds);
+        var ownerChapIds=(ownerChapRes.data||[]).map(function(c){return c.id;});
+        var chapWorkMap={};(ownerChapRes.data||[]).forEach(function(c){chapWorkMap[c.id]=c.work_id;});
+        if(ownerChapIds.length){
+          var ncRes=await db.from('chapter_comments').select('id,content,created_at,chapter_id,user_id,parent_id').in('chapter_id',ownerChapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(20);
+          (ncRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){c.work_id=chapWorkMap[c.chapter_id]||null;c._type='novel';commentNotifs.push(c);});
+        }
       }
-      // Fetch profiles + works for comment notifs
+      if(myArtworkIds.length){
+        var acRes=await db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id').in('work_id',myArtworkIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(20);
+        (acRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){c._type='artwork';commentNotifs.push(c);});
+      }
+      commentNotifs.sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
+      commentNotifs=commentNotifs.slice(0,8);
       if(commentNotifs.length){
         var cmtUserIds=[...new Set(commentNotifs.map(function(c){return c.user_id;}))];
-        var cmtWorkIds=[...new Set(commentNotifs.map(function(c){return c.work_id;}))];
-        var [{data:cmtProfs},{data:cmtWorks}]=await Promise.all([
-          db.from('profiles').select('id,username,display_name,avatar_url').in('id',cmtUserIds),
-          db.from('works').select('id,title').in('id',cmtWorkIds)
-        ]);
+        var {data:cmtProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',cmtUserIds);
         var cmtProfMap={};(cmtProfs||[]).forEach(function(p){cmtProfMap[p.id]=p;});
-        var cmtWorkMap={};(cmtWorks||[]).forEach(function(w){cmtWorkMap[w.id]=w;});
-        commentNotifs.forEach(function(cm){cm.profiles=cmtProfMap[cm.user_id]||null;cm.works=cmtWorkMap[cm.work_id]||null;});
+        commentNotifs.forEach(function(cm){cm.profiles=cmtProfMap[cm.user_id]||null;cm.works=myWorkTitleMap[cm.work_id]||null;});
       }
-      var commentFeed = document.getElementById('notif-feed-comments');
-      if(!commentNotifs.length){
-        commentFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new comments on your works.</div>';
+      var commentFeed=document.getElementById('notif-feed-comments');
+      var clearedComments=getClearedIds('comments');
+      var unrenderedComments=commentNotifs.filter(function(cm){return !clearedComments[cm.id];});
+      if(!unrenderedComments.length){
+        commentFeed.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new comments on your works.</div>';
       } else {
-        commentFeed.innerHTML = '';
-        var clearedComments = getClearedIds('comments');
-        var unrenderedComments = commentNotifs.filter(function(cm){ return !clearedComments[cm.id]; });
-        if(!unrenderedComments.length){
-          commentFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new comments on your works.</div>';
-        }
+        commentFeed.innerHTML='';
         unrenderedComments.forEach(function(cm){
-          var prof = cm.profiles;
-          var work = cm.works;
-          var name = prof?(prof.display_name||prof.username||'Someone'):'Someone';
-          var workTitle = work?work.title:'your work';
-          var isUnread = true;
-          var item = document.createElement('div');
-          item.className = 'notif-item unread';
-          item.dataset.id = cm.id;
-          item.style.cursor='pointer';
-          item.onclick = function(){ if(cm.work_id) window.location.href='story.html?id='+cm.work_id; };
-          var avatarHtml = prof&&prof.avatar_url
-            ? '<img src="'+esc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
-            : esc(name.charAt(0).toUpperCase());
-          item.innerHTML =
-            '<div class="notif-cover '+coverColor(cm.user_id||cm.id)+'" style="overflow:hidden;">'+avatarHtml+'</div>'+
-            '<div class="notif-body">'+
-              '<div class="notif-title">'+esc(name)+' commented on '+esc(workTitle)+'</div>'+
-              '<div class="notif-text">"'+esc((cm.content||'').slice(0,70))+(cm.content&&cm.content.length>70?'…':'')+'"</div>'+
-              '<div class="notif-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</div>'+
-            '</div>'+
-            (isUnread?'<div class="notif-dot"></div>':'');
+          var prof=cm.profiles;var work=cm.works;
+          var name=prof?(prof.display_name||prof.username||'Someone'):'Someone';
+          var workTitle=work?work.title:'your work';
+          var item=document.createElement('div');item.className='notif-item unread';item.dataset.id=cm.id;item.style.cursor='pointer';
+          item.onclick=function(){if(!cm.work_id)return;window.location.href=cm._type==='artwork'?'artwork.html?id='+cm.work_id:'story.html?id='+cm.work_id;};
+          var avatarHtml=prof&&prof.avatar_url?'<img src="'+esc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>':esc(name.charAt(0).toUpperCase());
+          item.innerHTML='<div class="notif-cover '+coverColor(cm.user_id||cm.id)+'" style="overflow:hidden;">'+avatarHtml+'</div><div class="notif-body"><div class="notif-title">'+esc(name)+' commented on '+esc(workTitle)+'</div><div class="notif-text">"'+esc((cm.content||'').slice(0,70))+(cm.content&&cm.content.length>70?'...':'')+'"</div><div class="notif-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</div></div><div class="notif-dot"></div>';
           commentFeed.appendChild(item);
         });
       }
-
-      // Update badge — only count items not yet cleared
-      var clearedN = getClearedIds('novels');
-      var clearedA = getClearedIds('artists');
-      var clearedC = getClearedIds('comments');
-      var unreadNovels   = novelNotifs.filter(function(c){ return !clearedN[c.id]; }).length;
-      var unreadArtists  = artistNotifs.filter(function(w){ return !clearedA[w.id]; }).length;
-      var unreadComments = commentNotifs.filter(function(c){ return !clearedC[c.id]; }).length;
-      var unreadCount = unreadNovels + unreadArtists + unreadComments;
-      var notifBadge = document.querySelector('.notif-badge');
-      if(unreadCount>0){ notifBadge.textContent=Math.min(unreadCount,99); notifBadge.style.display='flex'; }
-      else { notifBadge.style.display='none'; }
-
-      function setTabBadge(tabId, count){
-        var btn = document.getElementById(tabId);
-        if(!btn) return;
-        var existing = btn.querySelector('.notif-tab-badge');
-        if(existing) existing.remove();
-        if(count>0){
-          var badge = document.createElement('span');
-          badge.className = 'notif-tab-badge';
-          badge.textContent = Math.min(count,99);
-          btn.appendChild(badge);
-        }
-      }
-      setTabBadge('notif-tab-novels',   unreadNovels);
-      setTabBadge('notif-tab-artists',  unreadArtists);
-      setTabBadge('notif-tab-comments', unreadComments);
+      var clearedN=getClearedIds('novels');var clearedA=getClearedIds('artists');var clearedC=getClearedIds('comments');
+      var unreadNovels=novelNotifs.filter(function(c){return !clearedN[c.id];}).length;
+      var unreadArtists=artistNotifs.filter(function(w){return !clearedA[w.id];}).length;
+      var unreadComments=commentNotifs.filter(function(c){return !clearedC[c.id];}).length;
+      var unreadCount=unreadNovels+unreadArtists+unreadComments;
+      var notifBadge=document.querySelector('.notif-badge');
+      if(unreadCount>0){notifBadge.textContent=Math.min(unreadCount,99);notifBadge.style.display='flex';}
+      else{notifBadge.style.display='none';}
+      function setTabBadge(tabId,count){var btn=document.getElementById(tabId);if(!btn)return;var ex=btn.querySelector('.notif-tab-badge');if(ex)ex.remove();if(count>0){var b=document.createElement('span');b.className='notif-tab-badge';b.textContent=Math.min(count,99);btn.appendChild(b);}}
+      setTabBadge('notif-tab-novels',unreadNovels);
+      setTabBadge('notif-tab-artists',unreadArtists);
+      setTabBadge('notif-tab-comments',unreadComments);
     }
 
     function markAllRead(tab) {
       var feed = document.getElementById('notif-feed-' + tab);
       if (!feed) return;
       var cleared = getClearedIds(tab);
-      feed.querySelectorAll('.notif-item[data-id]').forEach(function(item) {
-        cleared[item.dataset.id] = true;
-      });
+      feed.querySelectorAll('.notif-item[data-id]').forEach(function(item){ cleared[item.dataset.id]=true; });
       localStorage.setItem('ds_notif_cleared_' + tab, JSON.stringify(Object.keys(cleared)));
       feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-checks"></i> All caught up!</div>';
       var tabBtn = document.getElementById('notif-tab-' + tab);
-      if(tabBtn){ var b = tabBtn.querySelector('.notif-tab-badge'); if(b) b.remove(); }
+      if(tabBtn){ var b=tabBtn.querySelector('.notif-tab-badge'); if(b) b.remove(); }
       var total = document.querySelectorAll('.notif-item.unread').length;
       var badge = document.querySelector('.notif-badge');
-      if(total === 0) badge.style.display = 'none';
-      else { badge.textContent = Math.min(total, 99); badge.style.display = 'flex'; }
+      if(total===0) badge.style.display='none';
+      else{ badge.textContent=Math.min(total,99); badge.style.display='flex'; }
     }
 
     function getClearedIds(tab) {
@@ -980,14 +910,14 @@
       var collabWorkIds=[...new Set(res.data.map(function(r){return r.work_id;}))];
       var collabUserIds=[...new Set(res.data.map(function(r){return r.user_id;}))];
       var [{data:collabWorks},{data:collabProfs}]=await Promise.all([
-        db.from('works').select('id,title,updated_at,author_id').in('id',collabWorkIds),
-        db.from('profiles').select('id,username,display_name').in('id',collabUserIds)
+        db.from('works').select('id,title,cover_url,updated_at,author_id').in('id',collabWorkIds),
+        db.from('profiles').select('id,username,display_name,avatar_url').in('id',collabUserIds)
       ]);
       var collabWorkMap={};(collabWorks||[]).forEach(function(w){collabWorkMap[w.id]=w;});
       var collabProfMap={};(collabProfs||[]).forEach(function(p){collabProfMap[p.id]=p;});
       // Also fetch authors of those works
       var authorIds=[...new Set((collabWorks||[]).map(function(w){return w.author_id;}))];
-      var {data:authorProfs}=await db.from('profiles').select('id,username,display_name').in('id',authorIds);
+      var {data:authorProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',authorIds);
       var authorProfMap={};(authorProfs||[]).forEach(function(p){authorProfMap[p.id]=p;});
       feed.innerHTML='';
       res.data.forEach(function(row){
@@ -1001,7 +931,9 @@
         var el=document.createElement('div');
         el.className='collab-item';
         el.innerHTML=
-          '<div class="collab-cover '+coverColor(work.id)+'">'+esc(coverLetter(work.title))+'</div>'+
+          (work.cover_url
+            ? '<div class="collab-cover" style="padding:0;overflow:hidden;"><img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" alt=""/></div>'
+            : '<div class="collab-cover '+coverColor(work.id)+'">'+esc(coverLetter(work.title))+'</div>')+
           '<div class="collab-body">'+
             '<div class="collab-title">'+esc(work.title)+'</div>'+
             '<div class="collab-names"><i class="ti ti-feather"></i> '+esc(authorName)+' &nbsp;×&nbsp; <i class="ti ti-palette"></i> '+esc(coName)+'</div>'+
@@ -1017,38 +949,89 @@
 
     async function loadSidebarComments(){
       var feed = document.getElementById('sidebar-feed-comments');
-      var res = await db.from('chapter_comments')
-        .select('id,content,created_at,work_id,user_id')
-        .order('created_at',{ascending:false}).limit(6);
-      if(!res.data||!res.data.length){
+      // chapter_comments has no work_id — go via chapters; merge artwork_comments
+      var [chapCmtRes, artCmtRes] = await Promise.all([
+        db.from('chapter_comments').select('id,content,created_at,chapter_id,user_id,parent_id').order('created_at',{ascending:false}).limit(20),
+        db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id').order('created_at',{ascending:false}).limit(20)
+      ]);
+      var chapCmts = (chapCmtRes.data||[]).filter(function(c){ return !c.parent_id; }).map(function(c){ c._src='chapter'; return c; });
+      var artCmts  = (artCmtRes.data||[]).filter(function(c){ return !c.parent_id; }).map(function(c){ c._src='artwork'; return c; });
+
+      // Resolve chapter → work
+      if(chapCmts.length){
+        var chIds=[...new Set(chapCmts.map(function(c){return c.chapter_id;}).filter(Boolean))];
+        var chMap={}, cwMap={};
+        if(chIds.length){
+          var chRes=await db.from('chapters').select('id,work_id').in('id',chIds);
+          (chRes.data||[]).forEach(function(c){chMap[c.id]=c;});
+          var cwIds=[...new Set((chRes.data||[]).map(function(c){return c.work_id;}).filter(Boolean))];
+          if(cwIds.length){
+            var cwRes=await db.from('works').select('id,title,type,cover_url').in('id',cwIds);
+            (cwRes.data||[]).forEach(function(w){cwMap[w.id]=w;});
+          }
+        }
+        chapCmts.forEach(function(c){ var ch=chMap[c.chapter_id]||null; c.work_id=ch?ch.work_id:null; c._work=c.work_id?(cwMap[c.work_id]||null):null; });
+      }
+
+      // Resolve artwork works
+      var awMap={};
+      if(artCmts.length){
+        var awIds=[...new Set(artCmts.map(function(c){return c.work_id;}).filter(Boolean))];
+        if(awIds.length){
+          var awRes=await db.from('works').select('id,title,type,cover_url').in('id',awIds);
+          (awRes.data||[]).forEach(function(w){awMap[w.id]=w;});
+        }
+        artCmts.forEach(function(c){ c._work=awMap[c.work_id]||null; });
+      }
+
+      var all = chapCmts.concat(artCmts);
+      all.sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); });
+      all = all.slice(0,6);
+
+      if(!all.length){
         feed.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No comments yet.</div>';
         return;
       }
-      // Fetch profiles + works separately
-      var scUserIds=[...new Set(res.data.map(function(c){return c.user_id;}))];
-      var scWorkIds=[...new Set(res.data.map(function(c){return c.work_id;}))];
-      var [{data:scProfs},{data:scWorks}]=await Promise.all([
-        db.from('profiles').select('id,username,display_name').in('id',scUserIds),
-        db.from('works').select('id,title,type').in('id',scWorkIds)
-      ]);
-      var scProfMap={};(scProfs||[]).forEach(function(p){scProfMap[p.id]=p;});
-      var scWorkMap={};(scWorks||[]).forEach(function(w){scWorkMap[w.id]=w;});
-      res.data.forEach(function(cm){cm.profiles=scProfMap[cm.user_id]||null;cm.works=scWorkMap[cm.work_id]||null;});
+
+      // Fetch user profiles with avatars
+      var uIds=[...new Set(all.map(function(c){return c.user_id;}).filter(Boolean))];
+      var uMap={};
+      if(uIds.length){
+        var uRes=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',uIds);
+        (uRes.data||[]).forEach(function(p){uMap[p.id]=p;});
+      }
+
       feed.innerHTML='';
-      res.data.forEach(function(cm){
-        var user=cm.profiles; var work=cm.works;
+      all.forEach(function(cm){
+        var user=uMap[cm.user_id]||null;
+        var work=cm._work||null;
         var userName=user?(user.display_name||user.username||'Unknown'):'Unknown';
         var userHandle=user?(user.username||''):'';
         var workTitle=work?work.title:'Unknown';
-        var workType=work&&work.type==='artwork'?'art':'novel';
+        var workType=cm._src==='artwork'?'art':'novel';
+        var destUrl=cm._src==='artwork'?'artwork.html?id='+cm.work_id:'story.html?id='+cm.work_id;
+
+        // Work cover or color block
+        var coverHtml = work && work.cover_url
+          ? '<img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;" alt=""/>'
+          : esc(coverLetter(workTitle));
+        var coverClass = work && work.cover_url ? '' : ' '+coverColor(cm.work_id||cm.id);
+
+        // User avatar overlay
+        var avatarInner = user && user.avatar_url
+          ? '<img src="'+esc(user.avatar_url)+'" alt=""/>'
+          : esc((userName.charAt(0)||'?').toUpperCase());
+
         var el=document.createElement('div');
         el.className='comment-item';
-        el.onclick=function(){ if(work) window.location.href='story.html?id='+work.id; };
+        el.onclick=function(){ if(cm.work_id) window.location.href=destUrl; };
         el.innerHTML=
-          '<div class="comment-thumb '+coverColor(cm.work_id||cm.id)+'">'+esc(coverLetter(workTitle))+'</div>'+
+          '<div class="comment-thumb-cover'+coverClass+'">'+coverHtml+
+            '<div class="comment-thumb-avatar">'+avatarInner+'</div>'+
+          '</div>'+
           '<div class="comment-body">'+
             '<div class="comment-on"><span class="comment-type '+workType+'">'+workType.charAt(0).toUpperCase()+workType.slice(1)+'</span> '+esc(workTitle)+'</div>'+
-            '<div class="comment-text">"'+esc((cm.content||'').slice(0,90))+(cm.content&&cm.content.length>90?'…':'')+'"</div>'+
+            '<div class="comment-text">"'+esc((cm.content||'').slice(0,90))+(cm.content&&cm.content.length>90?'...':'')+'"</div>'+
             '<div class="comment-meta"><span class="comment-user">'+esc(userName)+'</span><span class="comment-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</span></div>'+
           '</div>';
         feed.appendChild(el);
@@ -1066,10 +1049,10 @@
       }
       // Fetch works + authors separately
       var suWorkIds=[...new Set(res.data.map(function(c){return c.work_id;}))];
-      var {data:suWorks}=await db.from('works').select('id,title,type,author_id').in('id',suWorkIds);
+      var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id').in('id',suWorkIds);
       var suWorkMap={};(suWorks||[]).forEach(function(w){suWorkMap[w.id]=w;});
       var suAuthorIds=[...new Set((suWorks||[]).map(function(w){return w.author_id;}))];
-      var {data:suProfs}=await db.from('profiles').select('id,username,display_name').in('id',suAuthorIds);
+      var {data:suProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',suAuthorIds);
       var suProfMap={};(suProfs||[]).forEach(function(p){suProfMap[p.id]=p;});
       res.data.forEach(function(ch){
         var w=suWorkMap[ch.work_id]||null;
@@ -1084,9 +1067,16 @@
         var chLabel=ch.title?'Chapter '+ch.chapter_number+' — "'+ch.title+'"':'Chapter '+ch.chapter_number;
         var el=document.createElement('div');
         el.className='update-item';
-        el.onclick=function(){ if(work) window.location.href='chapter.html?work='+work.id+'&chapter='+ch.id; };
+        el.onclick=function(){ if(work) window.location.href='story.html?id='+work.id; };
         el.innerHTML=
-          '<div class="update-cover '+coverColor(ch.work_id)+'">'+esc(coverLetter(title))+'</div>'+
+          (work && work.cover_url
+            ? '<div class="update-cover" style="padding:0;overflow:hidden;position:relative;">'+
+                '<img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" alt=""/>'+
+                (prof && prof.avatar_url ? '<div class="comment-thumb-avatar"><img src="'+esc(prof.avatar_url)+'" alt=""/></div>' : '')+
+              '</div>'
+            : '<div class="update-cover '+coverColor(ch.work_id)+'" style="position:relative;">'+esc(coverLetter(title))+
+                (prof && prof.avatar_url ? '<div class="comment-thumb-avatar"><img src="'+esc(prof.avatar_url)+'" alt=""/></div>' : '')+
+              '</div>')+
           '<div class="update-body">'+
             '<div class="update-title">'+esc(title)+'</div>'+
             '<div class="update-chapter">'+esc(chLabel)+'</div>'+
@@ -1306,6 +1296,7 @@
 
       // Load auth-dependent data
       if(uid){
+        window._dmUid = uid;
         loadDmPreview(uid);
         loadNotifications(uid);
       } else {
@@ -1657,7 +1648,6 @@
       var notifWrap = document.querySelector('.notif-wrap');
       if (notifWrap && !notifWrap.contains(e.target)) { document.getElementById('notifDropdown').classList.remove('open'); }
       var dmWrap = document.querySelector('.dm-wrap');
-      if (dmWrap && !dmWrap.contains(e.target)) { document.getElementById('dmDropdown').classList.remove('open'); }
       var userNavWrap = document.querySelector('.user-nav-wrap');
       if (userNavWrap && !userNavWrap.contains(e.target)) { document.getElementById('user-dropdown').classList.remove('open'); }
     });
@@ -1708,15 +1698,9 @@
     })();
 
     /* ── DM / NOTIF / SIDEBAR ───────────────────────────────────── */
-    function toggleDm() {
-      document.getElementById('dmDropdown').classList.toggle('open');
-      document.getElementById('notifDropdown').classList.remove('open');
-      document.getElementById('searchDropdown').classList.remove('open');
-      document.getElementById('user-dropdown').classList.remove('open');
-    }
+
     function toggleNotif() {
       document.getElementById('notifDropdown').classList.toggle('open');
-      document.getElementById('dmDropdown').classList.remove('open');
       document.getElementById('searchDropdown').classList.remove('open');
       document.getElementById('user-dropdown').classList.remove('open');
     }
@@ -1808,7 +1792,6 @@
       var dd = document.getElementById('user-dropdown');
       dd.classList.toggle('open');
       document.getElementById('notifDropdown').classList.remove('open');
-      document.getElementById('dmDropdown').classList.remove('open');
       document.getElementById('searchDropdown').classList.remove('open');
     }
 

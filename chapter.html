@@ -120,6 +120,21 @@
     .login-prompt{font-size:13px;color:var(--text3);padding:12px 0;}
     .login-prompt a{color:var(--accent);}
     .empty-comments{text-align:center;padding:24px;color:var(--text3);font-size:13px;}
+    .comment-reply-btn{background:transparent;border:none;color:var(--text3);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.2s;display:inline-flex;align-items:center;gap:3px;margin-top:6px;}
+    .comment-reply-btn:hover{color:var(--accent);}
+    .comment-delete-btn{background:transparent;border:none;color:var(--text3);font-size:12px;cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.2s;display:inline-flex;align-items:center;gap:3px;margin-top:6px;margin-left:auto;}
+    .comment-delete-btn:hover{color:var(--red);}
+    .comment-actions{display:flex;align-items:center;gap:4px;margin-top:4px;}
+    .replies-list{margin-top:8px;padding-left:16px;border-left:2px solid var(--border);display:flex;flex-direction:column;gap:8px;}
+    .reply-card{background:var(--bg3);border-radius:8px;padding:10px 12px;}
+    .reply-input-wrap{margin-top:8px;padding-left:16px;display:flex;flex-direction:column;gap:6px;}
+    .reply-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:12px;font-family:'Lato',sans-serif;outline:none;width:100%;resize:none;min-height:56px;transition:border-color 0.2s;}
+    .reply-textarea:focus{border-color:var(--accent);}
+    .reply-actions{display:flex;gap:8px;justify-content:flex-end;}
+    .reply-cancel-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:5px 14px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .reply-cancel-btn:hover{border-color:var(--text3);}
+    .reply-submit-btn{background:var(--accent2);border:none;border-radius:7px;padding:5px 14px;color:white;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:5px;}
+    .reply-submit-btn:hover{background:var(--accent);color:var(--bg);}
 
     /* PARA COMMENT PANEL */
     .para-panel-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.2s;}
@@ -759,47 +774,182 @@
       loadParaComments(activeParaIndex);
     }
 
-    // ── CHAPTER COMMENTS ─────────────────────────────────────────
+    // ── CHAPTER COMMENTS (THREADED) ────────────────────────────────
+    function buildChapterCommentCard(c, profileMap, isOwner, isReply){
+      var p = profileMap[c.user_id] || {};
+      var name = escHtml(p.display_name || p.username || 'User');
+      var avatarHtml = p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>';
+      var canDelete = currentSession && (currentSession.user.id === c.user_id || isOwner);
+      var card = document.createElement('div');
+      card.className = isReply ? 'reply-card' : 'comment-card';
+      card.dataset.commentId = c.id;
+      card.innerHTML =
+        '<div class="comment-header">'
+          + '<div class="comment-avatar" style="'+(isReply?'width:24px;height:24px;font-size:11px;':'')+'">' + avatarHtml + '</div>'
+          + '<div class="comment-name">' + name + '</div>'
+          + '<div class="comment-time">' + timeAgo(c.created_at) + '</div>'
+        + '</div>'
+        + '<div class="comment-body">' + escHtml(c.content) + '</div>'
+        + (c.gif_url ? '<img class="comment-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '')
+        + '<div class="comment-actions">'
+          + (currentSession ? '<button class="comment-reply-btn"><i class="ti ti-corner-down-right"></i> Reply</button>' : '')
+          + (canDelete ? '<button class="comment-delete-btn"><i class="ti ti-trash"></i></button>' : '')
+        + '</div>';
+
+      if(currentSession){
+        card.querySelector('.comment-reply-btn').addEventListener('click', function(){
+          toggleChapterReplyBox(c.id, card, p.display_name || p.username || 'User');
+        });
+      }
+      if(canDelete){
+        card.querySelector('.comment-delete-btn').addEventListener('click', function(){
+          deleteChapterComment(c.id, card);
+        });
+      }
+      return card;
+    }
+
+    function toggleChapterReplyBox(parentId, parentCard, parentName){
+      document.querySelectorAll('.reply-input-wrap').forEach(function(el){ el.remove(); });
+      if(parentCard.dataset.replyOpen === '1'){ parentCard.dataset.replyOpen = '0'; return; }
+      parentCard.dataset.replyOpen = '1';
+      var wrap = document.createElement('div');
+      wrap.className = 'reply-input-wrap';
+      wrap.innerHTML =
+        '<textarea class="reply-textarea" placeholder="Replying to ' + escHtml(parentName) + '…" maxlength="1000"></textarea>'
+        + '<div class="reply-actions">'
+          + '<button class="reply-cancel-btn">Cancel</button>'
+          + '<button class="reply-submit-btn"><i class="ti ti-send"></i> Post Reply</button>'
+        + '</div>';
+      parentCard.appendChild(wrap);
+      wrap.querySelector('.reply-textarea').focus();
+      wrap.querySelector('.reply-cancel-btn').addEventListener('click', function(){
+        wrap.remove(); parentCard.dataset.replyOpen = '0';
+      });
+      wrap.querySelector('.reply-submit-btn').addEventListener('click', function(){
+        submitChapterReply(parentId, wrap, parentCard);
+      });
+    }
+
+    async function submitChapterReply(parentId, wrap, parentCard){
+      var ta = wrap.querySelector('.reply-textarea');
+      var text = ta.value.trim();
+      if(!text) return;
+      var btn = wrap.querySelector('.reply-submit-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';
+
+      var { data: inserted, error } = await db.from('chapter_comments').insert({
+        chapter_id: chapterData.id,
+        user_id: currentSession.user.id,
+        content: text,
+        parent_id: parentId
+      }).select().single();
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-send"></i> Post Reply';
+      if(error){ showToast('Failed to post reply: ' + error.message, 'ti-x'); return; }
+
+      wrap.remove(); parentCard.dataset.replyOpen = '0';
+
+      // Notify original commenter
+      var { data: parentCmt } = await db.from('chapter_comments')
+        .select('user_id').eq('id', parentId).maybeSingle();
+      if(parentCmt && parentCmt.user_id !== currentSession.user.id){
+        var { data: myProf } = await db.from('profiles')
+          .select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
+        var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
+        try { await db.from('notifications').insert({
+          user_id: parentCmt.user_id,
+          type: 'chapter_reply',
+          from_user_id: currentSession.user.id,
+          work_id: workData ? workData.id : null,
+          message: myName + ' replied to your comment on "' + (workData ? workData.title : 'a chapter') + '"'
+        }); } catch(e){}
+      }
+
+      // Append reply card
+      var repliesList = parentCard.querySelector('.replies-list');
+      if(!repliesList){
+        repliesList = document.createElement('div');
+        repliesList.className = 'replies-list';
+        parentCard.appendChild(repliesList);
+      }
+      var profMap = {};
+      var { data: myProfile } = await db.from('profiles')
+        .select('id,username,display_name,avatar_url').eq('id', currentSession.user.id).maybeSingle();
+      if(myProfile) profMap[myProfile.id] = myProfile;
+      var isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
+      repliesList.appendChild(buildChapterCommentCard(inserted, profMap, isOwner, true));
+      showToast('Reply posted!', 'ti-check');
+    }
+
+    async function deleteChapterComment(commentId, cardEl){
+      if(!currentSession) return;
+      cardEl.style.opacity = '0.4';
+      var { error } = await db.from('chapter_comments').delete()
+        .eq('id', commentId).eq('user_id', currentSession.user.id);
+      if(error){
+        var { error: err2 } = await db.from('chapter_comments').delete().eq('id', commentId);
+        if(err2){ cardEl.style.opacity = '1'; showToast('Could not delete.', 'ti-x'); return; }
+      }
+      cardEl.remove();
+      showToast('Comment deleted.', 'ti-trash');
+    }
+
     async function loadChapterComments() {
+      // Fetch all comments for this chapter (top-level + replies)
       var result = await db.from('chapter_comments')
-        .select('*, profiles(username, display_name, avatar_url)')
+        .select('id, content, created_at, user_id, parent_id, gif_url')
         .eq('chapter_id', chapterData.id)
-        .is('parent_id', null)
-        .order('created_at', { ascending: false })
-        .limit(20);
+        .order('created_at', { ascending: true });
 
       var comments = result.data || [];
       var listEl = document.getElementById('chapter-comments-list');
       listEl.innerHTML = '';
 
-      if (!comments.length) {
+      if(!comments.length){
         listEl.innerHTML = '<div class="empty-comments"><i class="ti ti-message-off" style="font-size:22px;display:block;margin-bottom:6px;opacity:0.4;"></i>No comments yet — be the first!</div>';
       } else {
-        comments.forEach(function(c) {
-          var p = c.profiles || {};
-          var card = document.createElement('div');
-          card.className = 'comment-card';
-          card.innerHTML =
-            '<div class="comment-header">' +
-              '<div class="comment-avatar">' + (p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
-              '<div class="comment-name">' + escHtml(p.display_name||p.username||'User') + '</div>' +
-              '<div class="comment-time">' + timeAgo(c.created_at) + '</div>' +
-            '</div>' +
-            '<div class="comment-body">' + escHtml(c.content) + '</div>' +
-            (c.gif_url ? '<img class="comment-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '');
+        // Fetch profiles
+        var allIds = [...new Set(comments.map(function(c){ return c.user_id; }).filter(Boolean))];
+        var profileMap = {};
+        if(allIds.length){
+          var profRes = await db.from('profiles').select('id,username,display_name,avatar_url').in('id', allIds);
+          (profRes.data||[]).forEach(function(p){ profileMap[p.id] = p; });
+        }
+        var isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
+        var topLevel = comments.filter(function(c){ return !c.parent_id; });
+        var replies   = comments.filter(function(c){ return !!c.parent_id; });
+        var replyMap  = {};
+        replies.forEach(function(r){
+          if(!replyMap[r.parent_id]) replyMap[r.parent_id] = [];
+          replyMap[r.parent_id].push(r);
+        });
+        topLevel.forEach(function(c){
+          var card = buildChapterCommentCard(c, profileMap, isOwner, false);
+          var childReplies = replyMap[c.id] || [];
+          if(childReplies.length){
+            var repliesList = document.createElement('div');
+            repliesList.className = 'replies-list';
+            childReplies.forEach(function(r){
+              repliesList.appendChild(buildChapterCommentCard(r, profileMap, isOwner, true));
+            });
+            card.appendChild(repliesList);
+          }
           listEl.appendChild(card);
         });
       }
 
       var formEl = document.getElementById('chapter-comment-form');
-      if (currentSession) {
+      if(currentSession){
         formEl.innerHTML =
-          '<div class="comment-input-area">' +
-            '<textarea class="comment-textarea" id="chapter-comment-input" placeholder="Leave a comment on this chapter…" maxlength="1000"></textarea>' +
-            '<div class="comment-actions-row">' +
-              '<button class="comment-submit" onclick="submitChapterComment()"><i class="ti ti-send"></i> Post Comment</button>' +
-            '</div>' +
-          '</div>';
+          '<div class="comment-input-area">'
+          + '<textarea class="comment-textarea" id="chapter-comment-input" placeholder="Leave a comment on this chapter…" maxlength="1000"></textarea>'
+          + '<div class="comment-actions-row">'
+            + '<button class="comment-submit" onclick="submitChapterComment()"><i class="ti ti-send"></i> Post Comment</button>'
+          + '</div>'
+          + '</div>';
       } else {
         formEl.innerHTML = '<div class="login-prompt"><a href="auth.html">Sign in</a> to leave a comment.</div>';
       }
@@ -808,16 +958,30 @@
     async function submitChapterComment() {
       var input = document.getElementById('chapter-comment-input');
       var val = input ? input.value.trim() : '';
-      if (!val) return;
-      var result = await db.from('chapter_comments').insert({
+      if(!val) return;
+      var btn = document.querySelector('.comment-submit');
+      if(btn){ btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>'; }
+
+      var { data: inserted, error } = await db.from('chapter_comments').insert({
         chapter_id: chapterData.id,
         user_id: currentSession.user.id,
         content: val
-      });
-      if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
+      }).select().single();
+
+      if(btn){ btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Post Comment'; }
+      if(error){ showToast('Error: ' + error.message, 'ti-x'); return; }
       input.value = '';
       showToast('Comment posted!');
-      loadChapterComments();
+
+      // Append immediately to the list
+      var listEl = document.getElementById('chapter-comments-list');
+      var emptyMsg = listEl ? listEl.querySelector('.empty-comments') : null;
+      if(emptyMsg) emptyMsg.remove();
+      var { data: myProfile } = await db.from('profiles')
+        .select('id,username,display_name,avatar_url').eq('id', currentSession.user.id).maybeSingle();
+      var profMap = {}; if(myProfile) profMap[myProfile.id] = myProfile;
+      var isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
+      if(listEl) listEl.appendChild(buildChapterCommentCard(inserted, profMap, isOwner, false));
     }
 
     // ── INIT ─────────────────────────────────────────────────────
