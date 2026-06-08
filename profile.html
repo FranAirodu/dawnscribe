@@ -495,6 +495,7 @@
       try {
         var urlParams = new URLSearchParams(window.location.search);
         var viewingUser = urlParams.get('user');
+        var viewingId   = urlParams.get('id');
         var sessionRes = await db.auth.getSession();
         var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
         if (!session) {
@@ -505,9 +506,26 @@
         var profileData = null;
         var resolvedUsername = viewingUser;
         if (viewingUser) {
+          // Viewing someone else's profile by username
           var res = await db.from('profiles').select('*').eq('username', viewingUser).maybeSingle();
-          if (res && !res.error && res.data) { profileData = res.data; }
+          if (res && !res.error && res.data) {
+            profileData = res.data;
+            resolvedUsername = profileData.username;
+          } else {
+            // Show not-found message
+            var ph = document.querySelector('.profile-header');
+            if(ph) ph.innerHTML = '<div style="padding:48px;text-align:center;color:var(--text3);"><i class="ti ti-user-off" style="font-size:40px;display:block;margin-bottom:12px;"></i><div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px;">Profile not found</div><div style="font-size:13px;">The user <strong>@' + viewingUser + '</strong> does not exist or their profile is unavailable.</div><a href="index.html" style="display:inline-block;margin-top:16px;color:var(--accent);">← Back to home</a></div>';
+            return;
+          }
+        } else if (viewingId) {
+          // Fallback: lookup by UUID (for users with no username set)
+          var res = await db.from('profiles').select('*').eq('id', viewingId).maybeSingle();
+          if (res && !res.error && res.data) {
+            profileData = res.data;
+            resolvedUsername = profileData.username || viewingId;
+          }
         } else if (session) {
+          // No ?user= param — load own profile
           var res = await db.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
           if (res && !res.error && res.data) {
             profileData = res.data;
@@ -516,7 +534,7 @@
         }
         if (profileData) { applyProfileData(profileData, resolvedUsername); }
         if (profileData && profileData.id) { loadStats(profileData.id); }
-        var isOwner = !!(session && profileData && session.user.id === profileData.id);
+        var isOwner = !!(session && profileData && session.user.id === profileData.id && !viewingUser && !viewingId);
         if (isOwner) {
           setOwner(true);
           renderAnnouncements(true);

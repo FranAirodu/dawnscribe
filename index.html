@@ -212,7 +212,16 @@
     .scroll-nav-left { left: 8px; }
     .scroll-nav-right { right: 8px; }
     .scroll-track { display: flex; gap: 14px; width: max-content; padding: 8px 48px; }
-    .mini-cover { width: 110px; height: 155px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 28px; font-weight: 700; flex-shrink: 0; border: 1px solid var(--border); transition: transform 0.2s; cursor: pointer; }
+    .mini-cover { width: 110px; height: 155px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 28px; font-weight: 700; flex-shrink: 0; border: 1px solid var(--border); transition: transform 0.2s; cursor: pointer; position: relative; overflow: hidden; }
+    .cover-card { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; width: 110px; text-decoration: none; }
+    .cover-card:hover .mini-cover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    .cover-card-title { font-size: 11px; font-weight: 700; color: var(--text2); line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-family: 'Lato', sans-serif; }
+    .cover-card-stars { display: flex; align-items: center; gap: 1px; font-size: 10px; color: #f59e0b; }
+    .cover-card-stars span { color: var(--text3); font-size: 10px; margin-left: 2px; }
+    .cover-card-chapter-badge { position: absolute; bottom: 7px; left: 7px; background: rgba(10,10,15,0.82); border: 1px solid rgba(45,212,191,0.5); border-radius: 6px; padding: 3px 7px; font-size: 10px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 4px; backdrop-filter: blur(4px); font-family: 'Lato', sans-serif; pointer-events: none; }
+    .cover-card-chapter-badge i { color: var(--accent); font-size: 11px; }
+    .cover-card-sub { font-size: 10px; color: var(--text3); display: flex; justify-content: space-between; align-items: center; font-family: 'Lato', sans-serif; }
+    .cover-card-sub-chapter { font-weight: 700; color: var(--text2); }
     .mini-cover:hover { transform: scale(1.05); border-color: var(--accent); box-shadow: 0 8px 30px rgba(45,212,191,0.2), 0 4px 12px rgba(0,0,0,0.5); }
     .cover-purple { background: linear-gradient(160deg, #1e0040, #6b21a8); color: #c084fc; }
     .cover-blue   { background: linear-gradient(160deg, #001030, #1d4ed8); color: #60a5fa; }
@@ -1096,18 +1105,18 @@
         var fwIds = (fwRes.data||[]).map(function(r){return r.work_id;});
         if(fwIds.length){
           var chapRes = await db.from('chapters')
-            .select('id,work_id')
+            .select('id,work_id,chapter_number,title,created_at')
             .in('work_id',fwIds).order('created_at',{ascending:false}).limit(30);
           var chapData=chapRes.data||[];
           if(chapData.length){
             var r0WorkIds=[...new Set(chapData.map(function(c){return c.work_id;}))];
-            var {data:r0Works}=await db.from('works').select('id,title,cover_url').in('id',r0WorkIds);
+            var {data:r0Works}=await db.from('works').select('id,title,cover_url,rating').in('id',r0WorkIds);
             var r0Map={};(r0Works||[]).forEach(function(w){r0Map[w.id]=w;});
             chapData.forEach(function(ch){ch.works=r0Map[ch.work_id]||null;});
           }
           renderCoverRow(row0track, chapData, function(ch){
             var w=ch.works;
-            return { id:ch.work_id, title:w?w.title:'?', cover:w?w.cover_url:null, href:'chapter.html?work='+(w?w.id:'')+' &chapter='+ch.id };
+            return { id:ch.work_id, title:w?w.title:'?', cover:w?w.cover_url:null, href:'story.html?id='+(w?w.id:''), rating:w?parseFloat(w.rating)||0:0, chapterNumber:ch.chapter_number, chapterTitle:ch.title, chapterTime:ch.created_at };
           });
         } else {
           row0track.innerHTML='<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Follow some stories to see new chapters here.</div>';
@@ -1137,10 +1146,10 @@
 
       // Row 2: Featured novels (admin-marked or highest rated)
       var row2track = document.getElementById('track-2');
-      var featRes = await db.from('works').select('id,title,cover_url')
+      var featRes = await db.from('works').select('id,title,cover_url,rating')
         .eq('type','novel').order('rating',{ascending:false}).limit(30);
       renderCoverRow(row2track, featRes.data||[], function(w){
-        return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id };
+        return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0 };
       });
 
       // Row 3: Featured artwork
@@ -1153,10 +1162,10 @@
 
       // Row 4: Newest novels
       var row4track = document.getElementById('track-4');
-      var newNovRes = await db.from('works').select('id,title,cover_url')
+      var newNovRes = await db.from('works').select('id,title,cover_url,rating')
         .eq('type','novel').order('created_at',{ascending:false}).limit(30);
       renderCoverRow(row4track, newNovRes.data||[], function(w){
-        return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id };
+        return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0 };
       });
 
       // Row 5: Newest artwork
@@ -1176,20 +1185,68 @@
       track.innerHTML='';
       items.forEach(function(item){
         var mapped = mapper(item);
-        var div = document.createElement('a');
-        div.className='mini-cover '+coverColor(mapped.id);
-        div.href = mapped.href;
-        div.title = mapped.title||'';
+
+        // Outer card link
+        var card = document.createElement('a');
+        card.className = 'cover-card';
+        card.href = mapped.href;
+
+        // Cover image
+        var cover = document.createElement('div');
+        cover.className = 'mini-cover ' + coverColor(mapped.id);
         if(mapped.cover){
-          div.style.backgroundImage='url('+esc(mapped.cover)+')';
-          div.style.backgroundSize='cover';
-          div.style.backgroundPosition='center';
-          div.style.color='transparent';
-          div.textContent='';
+          cover.style.backgroundImage = 'url('+esc(mapped.cover)+')';
+          cover.style.backgroundSize = 'cover';
+          cover.style.backgroundPosition = 'center';
+          cover.style.color = 'transparent';
         } else {
-          div.textContent = coverLetter(mapped.title);
+          cover.textContent = coverLetter(mapped.title);
         }
-        track.appendChild(div);
+        card.appendChild(cover);
+
+        // Chapter badge overlay (row 0 only)
+        if(mapped.chapterNumber){
+          var badge = document.createElement('div');
+          badge.className = 'cover-card-chapter-badge';
+          badge.innerHTML = '<i class="ti ti-bookmark"></i> Ch.' + mapped.chapterNumber;
+          cover.style.position = 'relative';
+          cover.appendChild(badge);
+        }
+
+        // Title
+        var titleEl = document.createElement('div');
+        titleEl.className = 'cover-card-title';
+        titleEl.textContent = mapped.title || '';
+        card.appendChild(titleEl);
+
+        // Chapter sub-info (row 0) OR stars (other novel rows)
+        if(mapped.chapterNumber){
+          var subEl = document.createElement('div');
+          subEl.className = 'cover-card-sub';
+          var chLabel = mapped.chapterTitle
+            ? 'Ch.' + mapped.chapterNumber + ' — ' + mapped.chapterTitle
+            : 'Ch.' + mapped.chapterNumber;
+          subEl.innerHTML =
+            '<span class="cover-card-sub-chapter">' + esc(chLabel.length > 22 ? chLabel.slice(0,22)+'…' : chLabel) + '</span>' +
+            '<span>' + (mapped.chapterTime ? timeAgo(mapped.chapterTime) : '') + '</span>';
+          card.appendChild(subEl);
+        } else if(mapped.rating && mapped.rating > 0){
+          var starsEl = document.createElement('div');
+          starsEl.className = 'cover-card-stars';
+          var fullStars = Math.floor(mapped.rating);
+          var halfStar  = mapped.rating - fullStars >= 0.5;
+          var html = '';
+          for(var s = 1; s <= 5; s++){
+            if(s <= fullStars) html += '<i class="ti ti-star-filled"></i>';
+            else if(s === fullStars + 1 && halfStar) html += '<i class="ti ti-star-half-filled"></i>';
+            else html += '<i class="ti ti-star" style="color:var(--text3);opacity:0.4;"></i>';
+          }
+          html += '<span>' + mapped.rating.toFixed(1) + '</span>';
+          starsEl.innerHTML = html;
+          card.appendChild(starsEl);
+        }
+
+        track.appendChild(card);
       });
     }
 
