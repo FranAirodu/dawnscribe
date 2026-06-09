@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Collab Approved!</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;--gold2:#fbbf24;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;}
+
+    /* ── ANIMATIONS ── */
+    @keyframes spin{to{transform:rotate(360deg);}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(24px);}to{opacity:1;transform:translateY(0);}}
+    @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+    @keyframes shimmer{0%{background-position:200% center;}100%{background-position:-200% center;}}
+    @keyframes glow-pulse{0%,100%{box-shadow:0 0 20px rgba(245,158,11,0.3),0 0 60px rgba(245,158,11,0.1);}50%{box-shadow:0 0 40px rgba(245,158,11,0.6),0 0 100px rgba(245,158,11,0.25);}}
+    @keyframes float{0%,100%{transform:translateY(0);}50%{transform:translateY(-8px);}}
+    @keyframes particle-fall{0%{transform:translateY(-20px) rotate(0deg);opacity:1;}100%{transform:translateY(100vh) rotate(720deg);opacity:0;}}
+    @keyframes badge-pop{0%{transform:scale(0) rotate(-15deg);opacity:0;}70%{transform:scale(1.15) rotate(3deg);}100%{transform:scale(1) rotate(0deg);opacity:1;}}
+    @keyframes connector-grow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+
+    /* ── NAV ── */
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;}
+    .logo span{color:var(--text);}
+
+    /* ── PARTICLE CANVAS ── */
+    #particle-canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;}
+
+    /* ── PAGE ── */
+    .page{position:relative;z-index:1;max-width:700px;margin:0 auto;padding:60px 24px 80px;flex:1;display:flex;flex-direction:column;align-items:center;}
+
+    /* ── ACHIEVEMENT BADGE ── */
+    .achievement-wrap{text-align:center;margin-bottom:48px;animation:fadeUp 0.6s ease both;}
+    .achievement-badge{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:100px;height:100px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fbbf24,#f59e0b,#d97706);box-shadow:0 0 0 8px rgba(245,158,11,0.15),0 0 0 16px rgba(245,158,11,0.07);animation:badge-pop 0.7s cubic-bezier(0.34,1.56,0.64,1) 0.3s both, float 3s ease-in-out 1.2s infinite;margin-bottom:20px;}
+    .achievement-badge i{font-size:42px;color:#0a0a0f;}
+    .achievement-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2.5px;background:linear-gradient(90deg,#f59e0b,#fbbf24,#f59e0b,#fbbf24);background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:shimmer 3s linear infinite;margin-bottom:10px;}
+    .achievement-title{font-family:'Cinzel',serif;font-size:32px;font-weight:700;line-height:1.2;background:linear-gradient(135deg,#fbbf24 0%,#f59e0b 40%,#fbbf24 100%);background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:shimmer 4s linear infinite;}
+    .achievement-sub{font-size:15px;color:var(--text2);margin-top:10px;line-height:1.6;}
+    .achievement-sub strong{color:var(--text);}
+
+    /* ── COLLAB BOND ── */
+    .bond-wrap{width:100%;animation:fadeUp 0.6s ease 0.25s both;margin-bottom:48px;}
+    .bond-card{background:var(--bg2);border:1px solid rgba(245,158,11,0.2);border-radius:20px;padding:28px 32px;position:relative;overflow:hidden;}
+    .bond-card::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(245,158,11,0.06) 0%,transparent 70%);pointer-events:none;}
+    .bond-card-label{text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin-bottom:20px;}
+    .bond-covers{display:flex;align-items:center;justify-content:center;gap:0;}
+    .bond-cover-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1;max-width:160px;}
+    .bond-cover{width:110px;height:156px;border-radius:12px;object-fit:cover;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:32px;color:var(--text3);overflow:hidden;animation:glow-pulse 3s ease-in-out infinite;}
+    .bond-cover img{width:100%;height:100%;object-fit:cover;display:block;border-radius:12px;}
+    .bond-cover.artwork-cover{animation-delay:0.5s;}
+    .bond-cover-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--text3);}
+    .bond-cover-title{font-size:13px;font-weight:700;color:var(--text);text-align:center;line-height:1.3;max-width:120px;}
+    .bond-connector{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 8px;flex-shrink:0;gap:6px;}
+    .bond-line{width:48px;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);animation:connector-grow 0.8s ease 0.8s both;transform-origin:left;}
+    .bond-icon{width:36px;height:36px;border-radius:50%;background:rgba(245,158,11,0.12);border:1.5px solid rgba(245,158,11,0.4);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--gold);}
+    .bond-artist{text-align:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text3);}
+    .bond-artist strong{color:var(--gold);}
+
+    /* ── ACTIONS ── */
+    .actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;animation:fadeUp 0.6s ease 0.45s both;margin-bottom:32px;}
+    .btn-primary{background:var(--gold);border:none;border-radius:12px;padding:13px 28px;color:#0a0a0f;font-family:'Lato',sans-serif;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:8px;transition:all 0.2s;}
+    .btn-primary:hover{background:var(--gold2);transform:translateY(-2px);box-shadow:0 8px 24px rgba(245,158,11,0.3);}
+    .btn-secondary{background:transparent;border:1.5px solid var(--border);border-radius:12px;padding:13px 24px;color:var(--text2);font-family:'Lato',sans-serif;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:8px;transition:all 0.2s;}
+    .btn-secondary:hover{border-color:var(--accent);color:var(--accent);}
+    .btn-secondary.copied{border-color:var(--green);color:var(--green);}
+
+    /* ── FOOTER NOTE ── */
+    .footer-note{font-size:13px;color:var(--text3);text-align:center;animation:fadeIn 0.6s ease 0.7s both;line-height:1.7;}
+    .footer-note a{color:var(--accent);text-decoration:none;}
+    .footer-note a:hover{text-decoration:underline;}
+
+    /* ── LOADING / ERROR ── */
+    .state{text-align:center;padding:80px 24px;}
+    .state i{font-size:40px;display:block;margin-bottom:16px;color:var(--text3);}
+    .state h2{font-family:'Cinzel',serif;font-size:20px;color:var(--text);margin-bottom:8px;}
+    .state p{font-size:14px;color:var(--text3);}
+
+    /* ── TOAST ── */
+    .toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 22px;font-size:13px;font-weight:700;color:var(--text);z-index:600;transition:transform 0.3s;display:flex;align-items:center;gap:8px;white-space:nowrap;}
+    .toast.show{transform:translateX(-50%) translateY(0);}
+
+    @media(max-width:540px){
+      .bond-cover{width:80px;height:114px;}
+      .bond-line{width:24px;}
+      .achievement-title{font-size:24px;}
+      .actions{flex-direction:column;align-items:stretch;}
+      .btn-primary,.btn-secondary{justify-content:center;}
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+</nav>
+
+<canvas id="particle-canvas"></canvas>
+
+<div class="page" id="page">
+  <div class="state">
+    <i class="ti ti-loader-2" style="animation:spin 1s linear infinite;color:var(--gold);"></i>
+    <h2>Loading…</h2>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+  const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function showToast(msg, icon){ var t=document.getElementById('toast'); t.innerHTML='<i class="ti '+(icon||'ti-check')+'"></i> '+msg; t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); },3000); }
+  function showError(msg){
+    document.getElementById('page').innerHTML = '<div class="state"><i class="ti ti-alert-circle"></i><h2>Oops</h2><p>'+msg+'</p><br><a href="collab-outbox.html" style="color:var(--accent);text-decoration:none;font-weight:700;">← View my submissions</a></div>';
+  }
+
+  // ── PARTICLE SYSTEM ─────────────────────────────────────────────
+  function launchParticles(){
+    var canvas = document.getElementById('particle-canvas');
+    var ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    var colors = ['#f59e0b','#fbbf24','#fde68a','#2dd4bf','#ffffff','#f97316'];
+    var shapes = ['circle','rect','triangle'];
+    var particles = [];
+
+    for(var i = 0; i < 90; i++){
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: -20 - Math.random() * 200,
+        size: 4 + Math.random() * 8,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        shape: shapes[Math.floor(Math.random() * shapes.length)],
+        speedX: (Math.random() - 0.5) * 3,
+        speedY: 2 + Math.random() * 4,
+        rotation: Math.random() * 360,
+        rotationSpeed: (Math.random() - 0.5) * 8,
+        opacity: 1,
+        delay: Math.random() * 60
+      });
+    }
+
+    var frame = 0;
+    function animate(){
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      var alive = false;
+      particles.forEach(function(p){
+        if(frame < p.delay) return;
+        p.y += p.speedY;
+        p.x += p.speedX;
+        p.rotation += p.rotationSpeed;
+        if(p.y > canvas.height * 0.7) p.opacity -= 0.02;
+        if(p.opacity <= 0) return;
+        alive = true;
+        ctx.save();
+        ctx.globalAlpha = p.opacity;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation * Math.PI / 180);
+        ctx.fillStyle = p.color;
+        if(p.shape === 'circle'){
+          ctx.beginPath(); ctx.arc(0,0,p.size/2,0,Math.PI*2); ctx.fill();
+        } else if(p.shape === 'rect'){
+          ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size*0.6);
+        } else {
+          ctx.beginPath(); ctx.moveTo(0,-p.size/2); ctx.lineTo(p.size/2,p.size/2); ctx.lineTo(-p.size/2,p.size/2); ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+      });
+      frame++;
+      if(alive || frame < 120) requestAnimationFrame(animate);
+      else { ctx.clearRect(0,0,canvas.width,canvas.height); }
+    }
+    animate();
+  }
+
+  // ── INIT ─────────────────────────────────────────────────────────
+  async function init(){
+    var params = new URLSearchParams(window.location.search);
+    var collabId = params.get('collab');
+    if(!collabId){ showError('No collab ID provided.'); return; }
+
+    var { data: { session } } = await db.auth.getSession();
+    if(!session){ showError('Please <a href="auth.html">log in</a> to view this page.'); return; }
+
+    // Load the collab row
+    var { data: collab } = await db.from('artwork_collabs')
+      .select('id, artwork_id, work_id, author_id, status, novel_title, novel_cover_url')
+      .eq('id', collabId)
+      .maybeSingle();
+
+    if(!collab){ showError('Collab not found.'); return; }
+    if(collab.status !== 'approved'){ showError('This collab hasn\'t been approved yet.'); return; }
+    if(collab.author_id !== session.user.id){ showError('This isn\'t your collab.'); return; }
+
+    // Load artwork data
+    var { data: artwork } = await db.from('works')
+      .select('id, title, cover_url, author_id')
+      .eq('id', collab.artwork_id)
+      .maybeSingle();
+
+    // Load artist profile
+    var artistName = 'the artist';
+    if(artwork && artwork.author_id){
+      var { data: artistProf } = await db.from('profiles')
+        .select('display_name, username')
+        .eq('id', artwork.author_id)
+        .maybeSingle();
+      if(artistProf) artistName = artistProf.display_name || artistProf.username || 'the artist';
+    }
+
+    // Load novel cover (try live works table first, fall back to stored cover)
+    var novelCover = collab.novel_cover_url || '';
+    var novelTitle = collab.novel_title || 'Your Story';
+    if(collab.work_id){
+      var { data: novel } = await db.from('works').select('title, cover_url').eq('id', collab.work_id).maybeSingle();
+      if(novel){
+        novelTitle = novel.title || novelTitle;
+        novelCover = novel.cover_url || novelCover;
+      }
+    }
+
+    render({
+      collab, artwork, novelTitle, novelCover,
+      artworkTitle: artwork ? (artwork.title || 'Untitled Artwork') : 'Untitled Artwork',
+      artworkCover: artwork ? (artwork.cover_url || '') : '',
+      artistName,
+      storyUrl: 'story.html?id=' + collab.work_id,
+      artworkUrl: 'artwork.html?id=' + collab.artwork_id
+    });
+
+    // Launch celebration after a short delay
+    setTimeout(launchParticles, 400);
+  }
+
+  function render(d){
+    var page = document.getElementById('page');
+    page.innerHTML =
+
+      // Achievement badge + title
+      '<div class="achievement-wrap">'
+        + '<div class="achievement-badge"><i class="ti ti-star-filled"></i></div>'
+        + '<div class="achievement-label">✦ Collab Achievement Unlocked ✦</div>'
+        + '<h1 class="achievement-title">Your Collab Was Approved!</h1>'
+        + '<p class="achievement-sub"><strong>' + esc(d.artistName) + '</strong> loved your story and gave it the green light.<br>It\'s now live on their artwork page for the whole community to read.</p>'
+      + '</div>'
+
+      // Collab bond visual
+      + '<div class="bond-wrap">'
+        + '<div class="bond-card">'
+          + '<div class="bond-card-label">✦ The Collab Bond ✦</div>'
+          + '<div class="bond-covers">'
+
+            // Novel cover
+            + '<div class="bond-cover-wrap">'
+              + '<div class="bond-cover">'
+                + (d.novelCover ? '<img src="' + esc(d.novelCover) + '" alt=""/>' : '<i class="ti ti-book"></i>')
+              + '</div>'
+              + '<div class="bond-cover-label">Your Story</div>'
+              + '<div class="bond-cover-title">' + esc(d.novelTitle) + '</div>'
+            + '</div>'
+
+            // Connector
+            + '<div class="bond-connector">'
+              + '<div class="bond-line"></div>'
+              + '<div class="bond-icon"><i class="ti ti-writing"></i></div>'
+              + '<div class="bond-line"></div>'
+            + '</div>'
+
+            // Artwork cover
+            + '<div class="bond-cover-wrap">'
+              + '<div class="bond-cover artwork-cover">'
+                + (d.artworkCover ? '<img src="' + esc(d.artworkCover) + '" alt=""/>' : '<i class="ti ti-palette"></i>')
+              + '</div>'
+              + '<div class="bond-cover-label">Inspired by</div>'
+              + '<div class="bond-cover-title">' + esc(d.artworkTitle) + '</div>'
+            + '</div>'
+
+          + '</div>'
+          + '<div class="bond-artist">Approved by <strong>' + esc(d.artistName) + '</strong> — your story is now part of their artwork\'s world.</div>'
+        + '</div>'
+      + '</div>'
+
+      // Action buttons
+      + '<div class="actions">'
+        + '<a class="btn-primary" href="' + esc(d.storyUrl) + '"><i class="ti ti-book-open"></i> Read Your Story</a>'
+        + '<button class="btn-secondary" onclick="copyLink(\'' + esc(d.storyUrl) + '\')"><i class="ti ti-share"></i> Share</button>'
+        + '<a class="btn-secondary" href="' + esc(d.artworkUrl) + '"><i class="ti ti-palette"></i> View Artwork</a>'
+      + '</div>'
+
+      // Footer note
+      + '<p class="footer-note">'
+        + 'Your story appears in the <strong>Collab Stories</strong> section on the artwork page.<br>'
+        + '<a href="collab-outbox.html">View all your collab submissions →</a>'
+      + '</p>';
+  }
+
+  function copyLink(url){
+    var full = window.location.origin + '/' + url;
+    navigator.clipboard.writeText(full).then(function(){
+      showToast('Link copied!', 'ti-check');
+      var btn = document.querySelector('.btn-secondary');
+      if(btn){ btn.classList.add('copied'); btn.innerHTML = '<i class="ti ti-check"></i> Copied!'; setTimeout(function(){ btn.classList.remove('copied'); btn.innerHTML = '<i class="ti ti-share"></i> Share'; }, 2000); }
+    }).catch(function(){
+      showToast('Could not copy link.', 'ti-alert-circle');
+    });
+  }
+
+  init();
+</script>
+</body>
+</html>

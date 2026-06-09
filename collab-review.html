@@ -184,54 +184,57 @@
       var params = new URLSearchParams(window.location.search);
       collabId = params.get('collab');
       artworkId = params.get('artwork');
+      var workIdParam = params.get('work');
 
-      if(!collabId){ showError('No collab specified.'); return; }
+      if(!collabId && !workIdParam){ showError('No collab specified.'); return; }
 
       var { data: { session: s } } = await db.auth.getSession();
       if(!s){ showError('You need to be logged in to review collab requests.'); return; }
       session = s;
 
-      // Load collab row
-      var { data: cd } = await db.from('artwork_collabs').select('*').eq('id', collabId).maybeSingle();
-      if(!cd){ showError('Collab request not found.'); return; }
+      // Try to load collab row — may fail due to RLS, so fall back to work+artwork params
+      var cd = null;
+      if(collabId){
+        var cdRes = await db.from('artwork_collabs').select('*').eq('id', collabId).maybeSingle();
+        cd = cdRes.data || null;
+      }
+      // If RLS blocked the direct lookup, reconstruct from work_id + artwork_id
+      if(!cd && workIdParam && artworkId){
+        var cdRes2 = await db.from('artwork_collabs').select('*')
+          .eq('work_id', workIdParam).eq('artwork_id', artworkId).maybeSingle();
+        cd = cdRes2.data || null;
+      }
+      if(!cd){ showError('Collab request not found. It may have already been reviewed or you may not have permission.'); return; }
       collabData = cd;
+      collabId = cd.id;
 
-      // Verify this user is the artwork owner
+      // Load artwork
       var { data: art } = await db.from('works').select('*').eq('id', cd.artwork_id).maybeSingle();
       if(!art){ showError('Artwork not found.'); return; }
       artworkData = art;
 
       if(art.author_id !== s.user.id){ showError('You don\'t have permission to review this request.'); return; }
 
-      // If already decided, show a read-only state
-      if(cd.status !== 'pending'){
-        renderAlreadyDecided(cd.status);
-        return;
-      }
+      if(cd.status !== 'pending'){ renderAlreadyDecided(cd.status); return; }
 
       // Load novel
       var { data: novel } = await db.from('works').select('*').eq('id', cd.work_id).maybeSingle();
       if(!novel){ showError('The submitted story could not be found.'); return; }
       novelData = novel;
 
-      // Load author profile
       var { data: prof } = await db.from('profiles').select('id,username,display_name,avatar_url').eq('id', cd.author_id).maybeSingle();
       authorProfile = prof || {};
 
-      // Load artwork artist profile
       var { data: artistProf } = await db.from('profiles').select('username,display_name').eq('id', art.author_id).maybeSingle();
       var artistName = artistProf ? (artistProf.display_name || artistProf.username || 'Artist') : 'Artist';
 
-      // Load chapters
       var { data: chaps } = await db.from('chapters')
         .select('id, title, content, chapter_number')
         .eq('work_id', cd.work_id)
         .order('chapter_number', { ascending: true });
       chapters = chaps || [];
 
-      // Update back button
       document.getElementById('back-btn').href = 'artwork.html?id=' + art.id;
-
       renderPage(artistName);
     }
 
@@ -353,14 +356,15 @@
       // Publish the novel
       await db.from('works').update({ is_published: true }).eq('id', collabData.work_id);
 
-      // Notify author via DM
+      // Notify author via DM with celebration link
       if(collabData.author_id && collabData.author_id !== session.user.id){
         var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
         var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
         try {
           var rpc = await db.rpc('get_or_create_conversation', { user_a: session.user.id, user_b: collabData.author_id });
           if(!rpc.error && rpc.data){
-            var msg = myName + ' approved your collab story for "' + (artworkData.title||'Untitled') + '"! Your story is now live on the artwork page.';
+            var celebUrl = 'collab-approved.html?collab=' + collabId;
+            var msg = '🌟 ' + myName + ' approved your collab story for "' + (artworkData.title||'Untitled') + '"! Your story is now live.';
             await db.from('messages').insert({ conversation_id: rpc.data, sender_id: session.user.id, content: msg });
             await db.from('conversations').update({ last_message: msg, last_message_at: new Date().toISOString() }).eq('id', rpc.data);
           }

@@ -271,68 +271,132 @@
       btn.classList.add('active');
     }
 
-    // ── LOAD COLLABS (works with co-authors) ─────────────────────
+    // ── LOAD COLLABS ─────────────────────────────────────────────
     async function loadCollabs(){
-      var res = await db.from('work_coauthors')
-        .select('work_id, user_id, role, created_at')
-        .order('created_at', {ascending:false})
-        .limit(40);
-      var rows = res.data || [];
+      var grid = document.getElementById('collab-grid');
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:24px;color:var(--text3);font-size:13px;"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div>';
 
-      if (!rows.length) {
-        document.getElementById('collab-grid').innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text3);font-size:13px;"><i class="ti ti-users-off" style="font-size:28px;display:block;margin-bottom:8px;opacity:0.3;"></i>No active collabs yet.</div>';
+      // Fetch approved story collabs (novel for artwork)
+      var { data: storyCollabs } = await db.from('artwork_collabs')
+        .select('id, artwork_id, work_id, author_id, created_at')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      // Fetch approved artwork collabs (art for novel)
+      var { data: artCollabs } = await db.from('story_collabs')
+        .select('id, work_id, artist_id, image_url, description, created_at')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      // Merge and sort by created_at
+      var combined = [];
+      (storyCollabs||[]).forEach(function(c){ combined.push({ type: 'story', data: c, created_at: c.created_at }); });
+      (artCollabs||[]).forEach(function(c){ combined.push({ type: 'art', data: c, created_at: c.created_at }); });
+      combined.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
+
+      if (!combined.length) {
+        grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text3);font-size:13px;"><i class="ti ti-users-off" style="font-size:28px;display:block;margin-bottom:8px;opacity:0.3;"></i>No active collabs yet.</div>';
+        document.getElementById('section-collab-count').textContent = '0 active';
         return;
       }
 
-      // Fetch works
-      var workIds = rows.map(function(r){ return r.work_id; });
-      var userIds = rows.map(function(r){ return r.user_id; });
-      var worksRes = await db.from('works').select('id,title,cover_url,author_id,updated_at').in('id', workIds);
-      var worksMap = {};
-      (worksRes.data||[]).forEach(function(w){ worksMap[w.id] = w; });
+      // Batch-fetch all works
+      var workIds = [...new Set([
+        ...(storyCollabs||[]).map(function(c){ return c.work_id; }),
+        ...(storyCollabs||[]).map(function(c){ return c.artwork_id; }),
+        ...(artCollabs||[]).map(function(c){ return c.work_id; })
+      ].filter(Boolean))];
+      var workMap = {};
+      if (workIds.length) {
+        var { data: works } = await db.from('works').select('id, title, cover_url, author_id, type').in('id', workIds);
+        (works||[]).forEach(function(w){ workMap[w.id] = w; });
+      }
 
-      // Fetch all relevant profiles (coauthors + work authors)
-      var authorIds = (worksRes.data||[]).map(function(w){ return w.author_id; });
-      var allUserIds = userIds.concat(authorIds).filter(function(id,i,a){ return a.indexOf(id)===i; });
-      var profsRes = await db.from('profiles').select('id,username,display_name,avatar_url').in('id', allUserIds);
-      var profsMap = {};
-      (profsRes.data||[]).forEach(function(p){ profsMap[p.id] = p; });
+      // Batch-fetch all profiles
+      var userIds = [...new Set([
+        ...(storyCollabs||[]).map(function(c){ return c.author_id; }),
+        ...(artCollabs||[]).map(function(c){ return c.artist_id; }),
+        ...Object.values(workMap).map(function(w){ return w.author_id; })
+      ].filter(Boolean))];
+      var profMap = {};
+      if (userIds.length) {
+        var { data: profs } = await db.from('profiles').select('id, username, display_name, avatar_url').in('id', userIds);
+        (profs||[]).forEach(function(p){ profMap[p.id] = p; });
+      }
 
-      allCollabs = rows.map(function(r){ return { row: r, work: worksMap[r.work_id], coauthor: profsMap[r.user_id] }; })
-                       .filter(function(c){ return c.work; });
+      allCollabs = combined;
+      collabWorkMap = workMap;
+      collabProfMap = profMap;
 
-      document.getElementById('collab-grid').innerHTML = '';
+      grid.innerHTML = '';
       shownCollabs = 0;
-      renderMoreCollabs(profsMap);
-      document.getElementById('section-collab-count').textContent = allCollabs.length + ' active';
+      renderMoreCollabs();
+      document.getElementById('section-collab-count').textContent = combined.length + ' active';
     }
 
-    function renderMoreCollabs(profsMap){
+    var collabWorkMap = {};
+    var collabProfMap = {};
+
+    function renderMoreCollabs(){
       var grid = document.getElementById('collab-grid');
-      var batch = allCollabs.slice(shownCollabs, shownCollabs+PAGE);
-      batch.forEach(function(c){
-        var work = c.work;
-        var coauthor = c.coauthor || {};
-        var author = profsMap ? (profsMap[work.author_id] || {}) : {};
-        var authorName = author.display_name || author.username || 'Unknown';
-        var coName = coauthor.display_name || coauthor.username || 'Unknown';
-        var coHandle = coauthor.username || '';
-        var authorHandle = author.username || '';
+      var batch = allCollabs.slice(shownCollabs, shownCollabs + PAGE);
+
+      batch.forEach(function(item){
         var card = document.createElement('div');
         card.className = 'collab-card';
-        card.innerHTML =
-          '<div class="collab-cover '+coverColor(work.id)+'">'+esc(coverLetter(work.title))+'</div>'+
-          '<div class="collab-body">'+
-            '<div class="collab-title">'+esc(work.title)+'</div>'+
-            '<div class="collab-names"><i class="ti ti-feather"></i> <a href="profile.html?user='+esc(authorHandle)+'">'+esc(authorName)+'</a> &nbsp;×&nbsp; <i class="ti ti-palette"></i> <a href="profile.html?user='+esc(coHandle)+'">'+esc(coName)+'</a></div>'+
-            '<div class="collab-time"><i class="ti ti-clock"></i> '+timeAgo(work.updated_at)+'</div>'+
-            '<div class="collab-btns">'+
-              '<a class="collab-btn" href="profile.html?user='+esc(authorHandle)+'"><i class="ti ti-feather"></i> Author</a>'+
-              '<a class="collab-btn" href="story.html?id='+esc(work.id)+'"><i class="ti ti-book"></i> Story</a>'+
-            '</div>'+
-          '</div>';
+
+        if (item.type === 'story') {
+          var c = item.data;
+          var novel = collabWorkMap[c.work_id] || {};
+          var artwork = collabWorkMap[c.artwork_id] || {};
+          var author = collabProfMap[c.author_id] || {};
+          var artist = collabProfMap[artwork.author_id] || {};
+          var authorName = author.display_name || author.username || 'Author';
+          var artistName = artist.display_name || artist.username || 'Artist';
+          card.style.borderColor = 'rgba(245,158,11,0.15)';
+          card.innerHTML =
+            (novel.cover_url
+              ? '<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid rgba(245,158,11,0.3);"><img src="'+esc(novel.cover_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt=""/></div>'
+              : '<div class="collab-cover" style="background:rgba(245,158,11,0.1);color:#f59e0b;">✍</div>')
+            + '<div class="collab-body">'
+              + '<div style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#f59e0b;margin-bottom:5px;"><i class="ti ti-writing"></i> Collab Story</div>'
+              + '<div class="collab-title">'+esc(novel.title||'Untitled Story')+'</div>'
+              + '<div class="collab-names"><i class="ti ti-feather"></i> <a href="profile.html?user='+esc(author.username||'')+'">'+esc(authorName)+'</a> &nbsp;×&nbsp; <i class="ti ti-palette"></i> <a href="profile.html?user='+esc(artist.username||'')+'">'+esc(artistName)+'</a></div>'
+              + '<div class="collab-time"><i class="ti ti-clock"></i> '+timeAgo(c.created_at)+'</div>'
+              + '<div class="collab-btns">'
+                + '<a class="collab-btn" href="story.html?id='+esc(c.work_id||'')+'"><i class="ti ti-book"></i> Story</a>'
+                + '<a class="collab-btn" href="artwork.html?id='+esc(c.artwork_id||'')+'"><i class="ti ti-palette"></i> Artwork</a>'
+              + '</div>'
+            + '</div>';
+
+        } else {
+          var c2 = item.data;
+          var novel2 = collabWorkMap[c2.work_id] || {};
+          var novelOwner = collabProfMap[novel2.author_id] || {};
+          var artist2 = collabProfMap[c2.artist_id] || {};
+          var novelOwnerName = novelOwner.display_name || novelOwner.username || 'Author';
+          var artistName2 = artist2.display_name || artist2.username || 'Artist';
+          card.style.borderColor = 'rgba(45,212,191,0.15)';
+          card.innerHTML =
+            (c2.image_url
+              ? '<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid rgba(45,212,191,0.3);"><img src="'+esc(c2.image_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt=""/></div>'
+              : '<div class="collab-cover" style="background:rgba(45,212,191,0.08);color:var(--accent);">🎨</div>')
+            + '<div class="collab-body">'
+              + '<div style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:5px;"><i class="ti ti-palette"></i> Collab Art</div>'
+              + '<div class="collab-title">'+esc(c2.description||'Untitled Artwork')+'</div>'
+              + '<div class="collab-names"><i class="ti ti-palette"></i> <a href="profile.html?user='+esc(artist2.username||'')+'">'+esc(artistName2)+'</a> &nbsp;×&nbsp; <i class="ti ti-book"></i> <a href="profile.html?user='+esc(novelOwner.username||'')+'">'+esc(novelOwnerName)+'</a></div>'
+              + '<div class="collab-time"><i class="ti ti-clock"></i> '+timeAgo(c2.created_at)+'</div>'
+              + '<div class="collab-btns">'
+                + '<a class="collab-btn" href="story.html?id='+esc(c2.work_id||'')+'"><i class="ti ti-book"></i> Novel</a>'
+              + '</div>'
+            + '</div>';
+        }
+
         grid.appendChild(card);
       });
+
       shownCollabs += batch.length;
       document.getElementById('collab-load-more').classList.toggle('hidden', shownCollabs >= allCollabs.length);
     }

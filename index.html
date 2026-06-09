@@ -424,6 +424,7 @@
           </div>
           <div class="user-dropdown-menu">
             <a class="user-dropdown-item" id="dd-profile-link" href="profile.html"><i class="ti ti-user"></i> My Profile</a>
+            <a class="user-dropdown-item" href="friends.html"><i class="ti ti-users"></i> Friends</a>
             <a class="user-dropdown-item" href="following.html#titles"><i class="ti ti-bookmark"></i> Following Titles</a>
             <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>
             <a class="user-dropdown-item" href="following.html#artists"><i class="ti ti-palette"></i> Following Artists</a>
@@ -911,50 +912,104 @@
     /* ── SIDEBAR PANELS (LIVE) ──────────────────────────────────── */
     async function loadSidebarCollabs(){
       var feed = document.getElementById('sidebar-feed-collabs');
-      var res = await db.from('work_coauthors')
-        .select('work_id,user_id')
-        .order('created_at',{ascending:false}).limit(6);
-      if(!res.data||!res.data.length){
-        feed.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No active collabs yet.</div>';
+      feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div>';
+
+      // Fetch recently approved story collabs (novel written for artwork)
+      var { data: storyCollabs } = await db.from('artwork_collabs')
+        .select('id, artwork_id, work_id, author_id')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(4);
+
+      // Fetch recently approved artwork collabs (art submitted for novel)
+      var { data: artCollabs } = await db.from('story_collabs')
+        .select('id, work_id, artist_id, image_url, description')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(4);
+
+      var allEmpty = (!storyCollabs || !storyCollabs.length) && (!artCollabs || !artCollabs.length);
+      if (allEmpty) {
+        feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No active collabs yet.</div>';
         return;
       }
-      // Fetch works and profiles separately
-      var collabWorkIds=[...new Set(res.data.map(function(r){return r.work_id;}))];
-      var collabUserIds=[...new Set(res.data.map(function(r){return r.user_id;}))];
-      var [{data:collabWorks},{data:collabProfs}]=await Promise.all([
-        db.from('works').select('id,title,cover_url,updated_at,author_id').in('id',collabWorkIds),
-        db.from('profiles').select('id,username,display_name,avatar_url').in('id',collabUserIds)
-      ]);
-      var collabWorkMap={};(collabWorks||[]).forEach(function(w){collabWorkMap[w.id]=w;});
-      var collabProfMap={};(collabProfs||[]).forEach(function(p){collabProfMap[p.id]=p;});
-      // Also fetch authors of those works
-      var authorIds=[...new Set((collabWorks||[]).map(function(w){return w.author_id;}))];
-      var {data:authorProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',authorIds);
-      var authorProfMap={};(authorProfs||[]).forEach(function(p){authorProfMap[p.id]=p;});
-      feed.innerHTML='';
-      res.data.forEach(function(row){
-        var work=collabWorkMap[row.work_id]; if(!work)return;
-        var author=authorProfMap[work.author_id]||{};
-        var coauthor=collabProfMap[row.user_id]||{};
-        var authorName=author.display_name||author.username||'Unknown';
-        var authorHandle=author.username||'';
-        var coName=coauthor.display_name||coauthor.username||'Unknown';
-        var coHandle=coauthor.username||'';
-        var el=document.createElement('div');
-        el.className='collab-item';
-        el.innerHTML=
-          (work.cover_url
-            ? '<div class="collab-cover" style="padding:0;overflow:hidden;"><img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" alt=""/></div>'
-            : '<div class="collab-cover '+coverColor(work.id)+'">'+esc(coverLetter(work.title))+'</div>')+
-          '<div class="collab-body">'+
-            '<div class="collab-title">'+esc(work.title)+'</div>'+
-            '<div class="collab-names"><i class="ti ti-feather"></i> '+esc(authorName)+' &nbsp;×&nbsp; <i class="ti ti-palette"></i> '+esc(coName)+'</div>'+
-            '<div class="collab-time"><i class="ti ti-clock"></i> '+timeAgo(work.updated_at)+'</div>'+
-            '<div class="collab-btns">'+
-              '<a class="collab-btn" href="profile.html?user='+esc(authorHandle)+'"><i class="ti ti-feather"></i> Author</a>'+
-              '<a class="collab-btn" href="story.html?id='+esc(work.id)+'"><i class="ti ti-book"></i> Story</a>'+
-            '</div>'+
-          '</div>';
+
+      // Collect all work IDs and user IDs to batch-fetch
+      var workIds = [
+        ...(storyCollabs||[]).map(function(c){ return c.work_id; }),
+        ...(storyCollabs||[]).map(function(c){ return c.artwork_id; }),
+        ...(artCollabs||[]).map(function(c){ return c.work_id; })
+      ].filter(Boolean);
+      var userIds = [
+        ...(storyCollabs||[]).map(function(c){ return c.author_id; }),
+        ...(artCollabs||[]).map(function(c){ return c.artist_id; })
+      ].filter(Boolean);
+
+      var workMap = {};
+      if (workIds.length) {
+        var { data: works } = await db.from('works').select('id, title, cover_url, author_id, type').in('id', [...new Set(workIds)]);
+        (works||[]).forEach(function(w){ workMap[w.id] = w; });
+      }
+      // Also fetch artwork/novel owner profiles
+      var ownerIds = Object.values(workMap).map(function(w){ return w.author_id; }).filter(Boolean);
+      var allUserIds = [...new Set([...userIds, ...ownerIds])];
+      var profMap = {};
+      if (allUserIds.length) {
+        var { data: profs } = await db.from('profiles').select('id, username, display_name, avatar_url').in('id', allUserIds);
+        (profs||[]).forEach(function(p){ profMap[p.id] = p; });
+      }
+
+      feed.innerHTML = '';
+
+      // Render story collabs (novel × artwork)
+      (storyCollabs||[]).forEach(function(collab){
+        var novel = workMap[collab.work_id] || {};
+        var artwork = workMap[collab.artwork_id] || {};
+        var author = profMap[collab.author_id] || {};
+        var artist = profMap[artwork.author_id] || {};
+        var authorName = author.display_name || author.username || 'Author';
+        var artistName = artist.display_name || artist.username || 'Artist';
+        var el = document.createElement('div');
+        el.className = 'collab-item';
+        el.style.borderColor = 'rgba(245,158,11,0.2)';
+        el.innerHTML =
+          (novel.cover_url
+            ? '<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid rgba(245,158,11,0.3);"><img src="'+esc(novel.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" alt=""/></div>'
+            : '<div class="collab-cover" style="background:rgba(245,158,11,0.1);color:#f59e0b;font-size:20px;">✍</div>')
+          + '<div class="collab-body">'
+            + '<div style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#f59e0b;margin-bottom:4px;"><i class="ti ti-writing"></i> Collab Story</div>'
+            + '<div class="collab-title">'+esc(novel.title||'Untitled Story')+'</div>'
+            + '<div class="collab-names"><i class="ti ti-feather"></i> <a href="profile.html?user='+esc(author.username||'')+'" style="color:var(--accent);text-decoration:none;">'+esc(authorName)+'</a> &nbsp;×&nbsp; <i class="ti ti-palette"></i> <a href="profile.html?user='+esc(artist.username||'')+'" style="color:var(--accent);text-decoration:none;">'+esc(artistName)+'</a></div>'
+            + '<div class="collab-btns">'
+              + '<a class="collab-btn" href="story.html?id='+esc(novel.id||'')+'"><i class="ti ti-book"></i> Story</a>'
+              + '<a class="collab-btn" href="artwork.html?id='+esc(collab.artwork_id||'')+'"><i class="ti ti-palette"></i> Artwork</a>'
+            + '</div>'
+          + '</div>';
+        feed.appendChild(el);
+      });
+
+      // Render artwork collabs (art × novel)
+      (artCollabs||[]).forEach(function(collab){
+        var novel = workMap[collab.work_id] || {};
+        var novelOwner = profMap[novel.author_id] || {};
+        var artist = profMap[collab.artist_id] || {};
+        var novelOwnerName = novelOwner.display_name || novelOwner.username || 'Author';
+        var artistName = artist.display_name || artist.username || 'Artist';
+        var el = document.createElement('div');
+        el.className = 'collab-item';
+        el.style.borderColor = 'rgba(45,212,191,0.2)';
+        el.innerHTML =
+          (collab.image_url
+            ? '<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid rgba(45,212,191,0.3);"><img src="'+esc(collab.image_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" alt=""/></div>'
+            : '<div class="collab-cover" style="background:rgba(45,212,191,0.08);color:var(--accent);font-size:20px;">🎨</div>')
+          + '<div class="collab-body">'
+            + '<div style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:4px;"><i class="ti ti-palette"></i> Collab Art</div>'
+            + '<div class="collab-title">'+esc(collab.description||'Untitled Artwork')+'</div>'
+            + '<div class="collab-names"><i class="ti ti-palette"></i> <a href="profile.html?user='+esc(artist.username||'')+'" style="color:var(--accent);text-decoration:none;">'+esc(artistName)+'</a> &nbsp;×&nbsp; <i class="ti ti-book"></i> <a href="profile.html?user='+esc(novelOwner.username||'')+'" style="color:var(--accent);text-decoration:none;">'+esc(novelOwnerName)+'</a></div>'
+            + '<div class="collab-btns">'
+              + '<a class="collab-btn" href="story.html?id='+esc(collab.work_id||'')+'"><i class="ti ti-book"></i> Novel</a>'
+            + '</div>'
+          + '</div>';
         feed.appendChild(el);
       });
     }
@@ -1150,7 +1205,7 @@
       // Row 2: Featured novels (admin-marked or highest rated)
       var row2track = document.getElementById('track-2');
       var featRes = await db.from('works').select('id,title,cover_url,rating')
-        .eq('type','novel').order('rating',{ascending:false}).limit(30);
+        .eq('type','novel').eq('is_published',true).order('rating',{ascending:false}).limit(30);
       renderCoverRow(row2track, featRes.data||[], function(w){
         return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0 };
       });
@@ -1158,7 +1213,7 @@
       // Row 3: Featured artwork
       var row3track = document.getElementById('track-3');
       var featArtRes = await db.from('works').select('id,title,cover_url')
-        .eq('type','artwork').order('rating',{ascending:false}).limit(30);
+        .eq('type','artwork').eq('is_published',true).order('rating',{ascending:false}).limit(30);
       renderCoverRow(row3track, featArtRes.data||[], function(w){
         return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id };
       });
@@ -1166,7 +1221,7 @@
       // Row 4: Newest novels
       var row4track = document.getElementById('track-4');
       var newNovRes = await db.from('works').select('id,title,cover_url,rating')
-        .eq('type','novel').order('created_at',{ascending:false}).limit(30);
+        .eq('type','novel').eq('is_published',true).order('created_at',{ascending:false}).limit(30);
       renderCoverRow(row4track, newNovRes.data||[], function(w){
         return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0 };
       });
@@ -1174,7 +1229,7 @@
       // Row 5: Newest artwork
       var row5track = document.getElementById('track-5');
       var newArtRes = await db.from('works').select('id,title,cover_url')
-        .eq('type','artwork').order('created_at',{ascending:false}).limit(30);
+        .eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(30);
       renderCoverRow(row5track, newArtRes.data||[], function(w){
         return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id };
       });
@@ -1340,16 +1395,16 @@
 
       // Collab approvals → flip pending artwork to live on row 5
       db.channel('realtime-collab-approvals')
-        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'works',filter:'collab_status=eq.approved'},
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'artwork_collabs' },
           function(payload){
-            var w = payload.new;
-            if(!w||w.type!=='artwork') return;
-            prependCover('track-5', w, 'story.html?id='+w.id);
-            if(uid){
-              // If logged-in user follows the artist, add to row 1 too
-              db.from('follows').select('id').eq('follower_id',uid).eq('following_id',w.author_id).maybeSingle().then(function(r){
-                if(r.data) prependCover('track-1', w, 'story.html?id='+w.id);
-              });
+            if(payload.new && payload.new.status === 'approved' && payload.old && payload.old.status !== 'approved'){
+              loadSidebarCollabs();
+            }
+          })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'story_collabs' },
+          function(payload){
+            if(payload.new && payload.new.status === 'approved'){
+              loadSidebarCollabs();
             }
           })
         .subscribe();
