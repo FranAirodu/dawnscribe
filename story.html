@@ -1456,9 +1456,21 @@
         var { error: upErr }=await db.storage.from('collab-art').upload(path,collabFileData,{upsert:false});
         if(upErr) throw upErr;
         var { data: urlData }=db.storage.from('collab-art').getPublicUrl(path);
-        var { error: dbErr }=await db.from('story_collabs').insert({work_id:workData.id,artist_id:currentSession.user.id,image_url:urlData.publicUrl,status:'approved',description:desc,inspiration:inspo||null});
+        var { data: insertedCollab, error: dbErr }=await db.from('story_collabs').insert({work_id:workData.id,artist_id:currentSession.user.id,image_url:urlData.publicUrl,status:'pending',description:desc,inspiration:inspo||null}).select().single();
         if(dbErr) throw dbErr;
-        closeCollabModal(); showToast('Fan art is now live on the story page!','ti-check'); loadCollabs();
+        // Notify the novel author
+        if(workData.author_id && workData.author_id !== currentSession.user.id){
+          var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id',currentSession.user.id).maybeSingle();
+          var myName = myProf ? (myProf.display_name||myProf.username||'Someone') : 'Someone';
+          try { await db.from('notifications').insert({
+            user_id: workData.author_id,
+            type: 'collab_request',
+            from_user_id: currentSession.user.id,
+            work_id: workData.id,
+            message: myName + ' submitted fan art for "' + workData.title + '". Tap to review.'
+          }); } catch(e) {}
+        }
+        closeCollabModal(); showToast('Fan art submitted! Waiting for the author to approve.','ti-clock'); loadCollabs();
       } catch(e){ showToast('Upload failed: '+(e.message||'Unknown error'),'ti-x'); }
       btn.disabled=false; btn.innerHTML='<i class="ti ti-upload"></i> Submit';
     }

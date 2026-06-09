@@ -218,12 +218,14 @@
     .mini-cover { width: 110px; height: 155px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 28px; font-weight: 700; flex-shrink: 0; border: 1px solid var(--border); transition: transform 0.2s; cursor: pointer; position: relative; overflow: hidden; }
     .cover-card { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; width: 110px; text-decoration: none; }
     .cover-card:hover .mini-cover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
-    .cover-card-title { font-size: 11px; font-weight: 700; color: var(--text2); line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-family: 'Lato', sans-serif; }
+    .cover-card-title { font-size: 11px; font-weight: 700; color: var(--accent); line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-family: 'Lato', sans-serif; }
     .cover-card-stars { display: flex; align-items: center; gap: 1px; font-size: 10px; color: #f59e0b; }
     .cover-card-stars span { color: var(--text3); font-size: 10px; margin-left: 2px; }
     .cover-card-chapter-badge { position: absolute; bottom: 7px; left: 7px; background: rgba(10,10,15,0.82); border: 1px solid rgba(45,212,191,0.5); border-radius: 6px; padding: 3px 7px; font-size: 10px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 4px; backdrop-filter: blur(4px); font-family: 'Lato', sans-serif; pointer-events: none; }
     .cover-card-chapter-badge i { color: var(--accent); font-size: 11px; }
     .cover-card-sub { font-size: 10px; color: var(--text3); display: flex; justify-content: space-between; align-items: center; font-family: 'Lato', sans-serif; }
+    .cover-card-author { font-size: 10px; color: var(--text3); font-family: 'Lato', sans-serif; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; transition: color 0.15s; }
+    .cover-card-author:hover { color: var(--accent); }
     .cover-card-sub-chapter { font-weight: 700; color: var(--text2); }
     .mini-cover:hover { transform: scale(1.05); border-color: var(--accent); box-shadow: 0 8px 30px rgba(45,212,191,0.2), 0 4px 12px rgba(0,0,0,0.5); }
     .cover-purple { background: linear-gradient(160deg, #1e0040, #6b21a8); color: #c084fc; }
@@ -1168,13 +1170,21 @@
           var chapData=chapRes.data||[];
           if(chapData.length){
             var r0WorkIds=[...new Set(chapData.map(function(c){return c.work_id;}))];
-            var {data:r0Works}=await db.from('works').select('id,title,cover_url,rating').in('id',r0WorkIds);
+            var {data:r0Works}=await db.from('works').select('id,title,cover_url,rating,author_id').in('id',r0WorkIds);
             var r0Map={};(r0Works||[]).forEach(function(w){r0Map[w.id]=w;});
-            chapData.forEach(function(ch){ch.works=r0Map[ch.work_id]||null;});
+            var r0AuthorIds=[...new Set((r0Works||[]).map(function(w){return w.author_id;}).filter(Boolean))];
+            var r0ProfMap={};
+            if(r0AuthorIds.length){var {data:r0Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r0AuthorIds);(r0Profs||[]).forEach(function(p){r0ProfMap[p.id]=p;});}
+            // Fetch reading progress for this user across these works
+            var {data:r0Progress}=await db.from('reading_progress').select('work_id,chapter_number').eq('user_id',uid).in('work_id',r0WorkIds);
+            var r0ProgMap={};(r0Progress||[]).forEach(function(p){
+              if(!r0ProgMap[p.work_id]||p.chapter_number>r0ProgMap[p.work_id]) r0ProgMap[p.work_id]=p.chapter_number;
+            });
+            chapData.forEach(function(ch){ch.works=r0Map[ch.work_id]||null; ch.readerChapter=r0ProgMap[ch.work_id]||null; var w=r0Map[ch.work_id]; ch.authorProf=w?r0ProfMap[w.author_id]||null:null;});
           }
           renderCoverRow(row0track, chapData, function(ch){
             var w=ch.works;
-            return { id:ch.work_id, title:w?w.title:'?', cover:w?w.cover_url:null, href:'story.html?id='+(w?w.id:''), rating:w?parseFloat(w.rating)||0:0, chapterNumber:ch.chapter_number, chapterTitle:ch.title, chapterTime:ch.created_at };
+            var p0=ch.authorProf; return { id:ch.work_id, title:w?w.title:'?', cover:w?w.cover_url:null, href:'chapter.html?id='+ch.id, rating:w?parseFloat(w.rating)||0:0, chapterNumber:ch.chapter_number, chapterTitle:ch.title, chapterTime:ch.created_at, readerChapter:ch.readerChapter, authorName:p0?(p0.display_name||p0.username||null):null, authorUsername:p0?p0.username:null };
           });
         } else {
           row0track.innerHTML='<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Follow some stories to see new chapters here.</div>';
@@ -1190,10 +1200,12 @@
         var fuIds = (fuRes.data||[]).map(function(r){return r.following_id;});
         if(fuIds.length){
           var artRes = await db.from('works')
-            .select('id,title,cover_url').eq('type','artwork').in('author_id',fuIds)
+            .select('id,title,cover_url,author_id').eq('type','artwork').in('author_id',fuIds)
             .order('created_at',{ascending:false}).limit(30);
+          var r1ProfMap={};
+          if((artRes.data||[]).length){var r1AIds=[...new Set((artRes.data).map(function(w){return w.author_id;}).filter(Boolean))];if(r1AIds.length){var {data:r1Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r1AIds);(r1Profs||[]).forEach(function(p){r1ProfMap[p.id]=p;});}}
           renderCoverRow(row1track, artRes.data||[], function(w){
-            return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id };
+            var p1=r1ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p1?(p1.display_name||p1.username||null):null, authorUsername:p1?p1.username:null };
           });
         } else {
           row1track.innerHTML='<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Follow some artists to see their work here.</div>';
@@ -1204,34 +1216,38 @@
 
       // Row 2: Featured novels (admin-marked or highest rated)
       var row2track = document.getElementById('track-2');
-      var featRes = await db.from('works').select('id,title,cover_url,rating')
+      var featRes = await db.from('works').select('id,title,cover_url,rating,chapters_count,author_id')
         .eq('type','novel').eq('is_published',true).order('rating',{ascending:false}).limit(30);
+      var r2ProfMap={};if((featRes.data||[]).length){var r2AIds=[...new Set(featRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r2AIds.length){var {data:r2Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r2AIds);(r2Profs||[]).forEach(function(p){r2ProfMap[p.id]=p;});}}
       renderCoverRow(row2track, featRes.data||[], function(w){
-        return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0 };
+        var p2=r2ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p2?(p2.display_name||p2.username||null):null, authorUsername:p2?p2.username:null };
       });
 
       // Row 3: Featured artwork
       var row3track = document.getElementById('track-3');
-      var featArtRes = await db.from('works').select('id,title,cover_url')
+      var featArtRes = await db.from('works').select('id,title,cover_url,author_id')
         .eq('type','artwork').eq('is_published',true).order('rating',{ascending:false}).limit(30);
+      var r3ProfMap={};if((featArtRes.data||[]).length){var r3AIds=[...new Set(featArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r3AIds.length){var {data:r3Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r3AIds);(r3Profs||[]).forEach(function(p){r3ProfMap[p.id]=p;});}}
       renderCoverRow(row3track, featArtRes.data||[], function(w){
-        return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id };
+        var p3=r3ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p3?(p3.display_name||p3.username||null):null, authorUsername:p3?p3.username:null };
       });
 
       // Row 4: Newest novels
       var row4track = document.getElementById('track-4');
-      var newNovRes = await db.from('works').select('id,title,cover_url,rating')
+      var newNovRes = await db.from('works').select('id,title,cover_url,rating,chapters_count,author_id')
         .eq('type','novel').eq('is_published',true).order('created_at',{ascending:false}).limit(30);
+      var r4ProfMap={};if((newNovRes.data||[]).length){var r4AIds=[...new Set(newNovRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r4AIds.length){var {data:r4Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r4AIds);(r4Profs||[]).forEach(function(p){r4ProfMap[p.id]=p;});}}
       renderCoverRow(row4track, newNovRes.data||[], function(w){
-        return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0 };
+        var p4=r4ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p4?(p4.display_name||p4.username||null):null, authorUsername:p4?p4.username:null };
       });
 
       // Row 5: Newest artwork
       var row5track = document.getElementById('track-5');
-      var newArtRes = await db.from('works').select('id,title,cover_url')
+      var newArtRes = await db.from('works').select('id,title,cover_url,author_id')
         .eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(30);
+      var r5ProfMap={};if((newArtRes.data||[]).length){var r5AIds=[...new Set(newArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r5AIds.length){var {data:r5Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r5AIds);(r5Profs||[]).forEach(function(p){r5ProfMap[p.id]=p;});}}
       renderCoverRow(row5track, newArtRes.data||[], function(w){
-        return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id };
+        var p5=r5ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p5?(p5.display_name||p5.username||null):null, authorUsername:p5?p5.username:null };
       });
     }
 
@@ -1271,22 +1287,29 @@
           cover.appendChild(badge);
         }
 
+        // Chapters count badge (Featured & New Novels rows)
+        if(!mapped.chapterNumber && mapped.chaptersCount > 0){
+          var cntBadge = document.createElement('div');
+          cntBadge.className = 'cover-card-chapter-badge';
+          cntBadge.innerHTML = '<i class="ti ti-books"></i> Ch.' + mapped.chaptersCount;
+          cover.style.position = 'relative';
+          cover.appendChild(cntBadge);
+        }
+
         // Title
         var titleEl = document.createElement('div');
         titleEl.className = 'cover-card-title';
         titleEl.textContent = mapped.title || '';
         card.appendChild(titleEl);
 
-        // Chapter sub-info (row 0) OR stars (other novel rows)
+        // Chapter sub-info (row 0 only) OR stars (other novel rows)
         if(mapped.chapterNumber){
           var subEl = document.createElement('div');
           subEl.className = 'cover-card-sub';
-          var chLabel = mapped.chapterTitle
-            ? 'Ch.' + mapped.chapterNumber + ' — ' + mapped.chapterTitle
-            : 'Ch.' + mapped.chapterNumber;
-          subEl.innerHTML =
-            '<span class="cover-card-sub-chapter">' + esc(chLabel.length > 22 ? chLabel.slice(0,22)+'…' : chLabel) + '</span>' +
-            '<span>' + (mapped.chapterTime ? timeAgo(mapped.chapterTime) : '') + '</span>';
+          var progressHtml = mapped.readerChapter
+            ? '<span class="cover-card-sub-chapter" style="color:var(--accent);"><i class="ti ti-bookmark" style="font-size:9px;"></i> Ch.' + mapped.readerChapter + '</span>'
+            : '<span class="cover-card-sub-chapter" style="color:var(--text3);">Not started</span>';
+          subEl.innerHTML = progressHtml + '<span>' + (mapped.chapterTime ? timeAgo(mapped.chapterTime) : '') + '</span>';
           card.appendChild(subEl);
         } else if(mapped.rating && mapped.rating > 0){
           var starsEl = document.createElement('div');
@@ -1302,6 +1325,16 @@
           html += '<span>' + mapped.rating.toFixed(1) + '</span>';
           starsEl.innerHTML = html;
           card.appendChild(starsEl);
+        }
+
+        // Author name
+        if(mapped.authorName){
+          var authorEl = document.createElement('a');
+          authorEl.className = 'cover-card-author';
+          authorEl.textContent = mapped.authorName;
+          authorEl.href = mapped.authorUsername ? 'profile.html?user=' + mapped.authorUsername : '#';
+          authorEl.onclick = function(e){ e.stopPropagation(); };
+          card.appendChild(authorEl);
         }
 
         track.appendChild(card);
