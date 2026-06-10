@@ -11,6 +11,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DawnScribe — Profile</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="blockUtils.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <style>
@@ -76,7 +77,6 @@
     .bio-edit-btn:hover{color:#2dd4bf;}
     .bio-editor{display:none;max-width:560px;}
     .bio-editor.open{display:block;}
-    /* ── BLOCK SYSTEM ── */
     .block-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text3);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px;}
     .block-btn:hover{border-color:var(--red,#f87171);color:var(--red,#f87171);}
     .block-btn.blocked{border-color:var(--red,#f87171);color:var(--red,#f87171);background:rgba(248,113,113,0.07);}
@@ -84,7 +84,6 @@
     .blocked-profile-wall{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;text-align:center;color:var(--text3);}
     .blocked-profile-wall i{font-size:48px;margin-bottom:16px;color:var(--red,#f87171);opacity:0.7;}
     .blocked-profile-wall h3{font-family:'Cinzel',serif;font-size:18px;color:var(--text2);margin-bottom:8px;}
-
     .bio-textarea{width:100%;background:var(--bg3);border:1px solid rgba(45,212,191,0.4);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;resize:none;line-height:1.6;}
     .bio-editor-btns{display:flex;gap:8px;margin-top:8px;}
     .bio-save-btn{background:#0d9488;border:none;border-radius:7px;padding:7px 16px;color:white;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
@@ -568,65 +567,36 @@
     /* ── OWNER VISIBILITY ───────────────────────────────────────── */
     function setOwner(isOwner) {
       document.body.classList.toggle('is-owner', isOwner);
-      
+
       // ── BLOCK SYSTEM ──────────────────────────────────────
       var blockBtn = document.getElementById('block-btn');
-      var blockIcon = document.getElementById('block-icon');
-      var blockLabel = document.getElementById('block-label');
-
       if (!isOwner && session) {
         await dsBlock.load(session.user.id);
-        var theyBlockedMe = dsBlock.isBlockingMe(profileData.id);
-        var iBlockedThem  = dsBlock.isBlockedByMe(profileData.id);
-
-        if (theyBlockedMe) {
-          // Replace main content with wall
-          var main = document.querySelector('.profile-main') || document.querySelector('main') || document.getElementById('profile-tabs');
-          if (main) {
-            main.innerHTML = '<div class="blocked-profile-wall"><i class="ti ti-ban"></i><h3>Content Unavailable</h3><p>You cannot view this profile.</p></div>';
-          }
+        if (dsBlock.isBlockingMe(profileData.id)) {
+          var main = document.getElementById('profile-tabs') || document.querySelector('.profile-main');
+          if (main) main.innerHTML = '<div class="blocked-profile-wall"><i class="ti ti-ban"></i><h3>Content Unavailable</h3><p>You cannot view this profile.</p></div>';
         }
-
-        if (blockBtn) {
-          blockBtn.style.display = 'inline-flex';
-          setBlockUI(iBlockedThem);
-        }
+        if (blockBtn) { blockBtn.style.display = 'inline-flex'; setBlockUI(dsBlock.isBlockedByMe(profileData.id)); }
       }
-
       function setBlockUI(blocked) {
         if (!blockBtn) return;
-        if (blocked) {
-          blockBtn.classList.add('blocked');
-          blockIcon.className = 'ti ti-ban';
-          blockLabel.textContent = 'Unblock';
-        } else {
-          blockBtn.classList.remove('blocked');
-          blockIcon.className = 'ti ti-ban';
-          blockLabel.textContent = 'Block';
-        }
+        blockBtn.classList.toggle('blocked', blocked);
+        document.getElementById('block-label').textContent = blocked ? 'Unblock' : 'Block';
       }
-
       window.toggleBlock = async function() {
         if (!session || !profileData) return;
         var isBlocked = dsBlock.isBlockedByMe(profileData.id);
         if (isBlocked) {
-          // Unblock immediately — no confirm needed
-          await dsBlock.unblock(profileData.id);
-          setBlockUI(false);
-          showToast('User unblocked.', 'ti-check');
+          await dsBlock.unblock(profileData.id); setBlockUI(false); showToast('User unblocked.','ti-check');
         } else {
-          // Show confirm modal
-          var modal = document.getElementById('block-modal');
-          modal.style.display = 'flex';
+          var modal = document.getElementById('block-modal'); modal.style.display = 'flex';
           document.getElementById('block-modal-confirm').onclick = async function() {
             modal.style.display = 'none';
-            await dsBlock.block(profileData.id);
-            setBlockUI(true);
-            showToast('User blocked.', 'ti-ban');
+            await dsBlock.block(profileData.id); setBlockUI(true); showToast('User blocked.','ti-ban');
           };
         }
       };
-      // ── END BLOCK SYSTEM ───────────────────────────────────
+      // ── END BLOCK SYSTEM ──────────────────────────────────
       var ownerEls = document.querySelectorAll('.owner-only');
       var visitorEls = document.querySelectorAll('.visitor-only');
       for (var i = 0; i < ownerEls.length; i++) {
@@ -2111,21 +2081,19 @@ async function handleFriendBtn() {
     </div>
   </div>
 
-
-<!-- BLOCK CONFIRM MODAL -->
-<div class="modal-backdrop" id="block-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:600;display:none;align-items:center;justify-content:center;">
+<!-- BLOCK MODAL -->
+<div id="block-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:600;align-items:center;justify-content:center;">
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:380px;width:90%;text-align:center;">
     <i class="ti ti-ban" style="font-size:36px;color:var(--red,#f87171);margin-bottom:12px;display:block;"></i>
-    <div style="font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;" id="block-modal-title">Block this user?</div>
-    <div style="font-size:13px;color:var(--text3);margin-bottom:24px;line-height:1.6;" id="block-modal-body">They won't be able to DM you, comment on your works, or appear in your feed. They won't know they've been blocked.</div>
+    <div style="font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">Block this user?</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:24px;line-height:1.6;">They won't be able to DM you, comment on your works, or appear in your feed. They won't know they've been blocked.</div>
     <div style="display:flex;gap:10px;justify-content:center;">
       <button onclick="document.getElementById('block-modal').style.display='none';" style="flex:1;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;">Cancel</button>
       <button id="block-modal-confirm" style="flex:1;padding:10px;background:rgba(248,113,113,0.15);border:1px solid var(--red,#f87171);border-radius:8px;color:var(--red,#f87171);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;">Block</button>
     </div>
   </div>
 </div>
-<script src="blockUtils.js"></script>
-<script src="nav.js"></script>
 <script src="footer.js"></script>
+<script src="nav.js"></script>
 </body>
 </html>

@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DawnScribe — Messages</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="blockUtils.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <style>
@@ -328,30 +329,25 @@
   }
 
   // ── LOAD CONVERSATIONS ─────────────────────────────────────
-  // ── BLOCK SYSTEM ──────────────────────────────────────
+  // ── BLOCK SYSTEM ──────────────────────────────────────────────
   async function loadBlockState(){
     if(currentSession){ await dsBlock.load(currentSession.user.id); }
   }
-
   async function updateBlockButton(otherUid){
     var btn = document.getElementById('block-convo-btn');
-    if(!btn || !otherUid) return;
+    if(!btn||!otherUid) return;
     var blocked = dsBlock.isBlockedByMe(otherUid);
     btn.title = blocked ? 'Unblock user' : 'Block user';
     btn.style.color = blocked ? 'var(--red,#f87171)' : 'var(--text3)';
     btn.onclick = async function(){
       if(blocked){
-        await dsBlock.unblock(otherUid);
-        blocked = false;
-        updateBlockButton(otherUid);
+        await dsBlock.unblock(otherUid); blocked=false; updateBlockButton(otherUid);
         document.getElementById('blocked-bar').style.display='none';
         document.getElementById('compose-bar').style.display='flex';
         showToast('User unblocked.','ti-check');
       } else {
-        if(!confirm('Block this user? They can still send messages but you won\'t see them.')) return;
-        await dsBlock.block(otherUid);
-        blocked = true;
-        updateBlockButton(otherUid);
+        if(!confirm('Block this user? Their new messages won\'t appear in your inbox.')) return;
+        await dsBlock.block(otherUid); blocked=true; updateBlockButton(otherUid);
         document.getElementById('blocked-bar').style.display='flex';
         document.getElementById('blocked-bar-text').textContent='You have blocked this user. Unblock to resume the conversation.';
         document.getElementById('compose-bar').style.display='none';
@@ -359,7 +355,7 @@
       }
     };
   }
-  // ── END BLOCK SYSTEM ──────────────────────────────────
+  // ── END BLOCK SYSTEM ───────────────────────────────────────────
 
   async function loadConversations(){
     var uid = currentSession.user.id;
@@ -473,12 +469,10 @@
     var privRes = await db.from('profiles').select('id').eq('id', activeOtherUser.id).maybeSingle();
     var recipientSettings = null;
     try { recipientSettings = JSON.parse(localStorage.getItem('ds_settings_misc_'+activeOtherUser.id)); } catch(e){}
-    // Check block state
     var iBlockThem = dsBlock.isBlockedByMe(activeOtherUser.id);
-    var theyBlockMe = dsBlock.isBlockingMe(activeOtherUser.id);
     if(iBlockThem){
       document.getElementById('blocked-bar').style.display='flex';
-      document.getElementById('blocked-bar-text').textContent='You have blocked this user. Unblock to see new messages.';
+      document.getElementById('blocked-bar-text').textContent='You have blocked this user. Unblock to resume the conversation.';
       document.getElementById('compose-bar').style.display='none';
     } else {
       document.getElementById('blocked-bar').style.display='none';
@@ -519,9 +513,8 @@
       .order('created_at', { ascending: true })
       .limit(100);
     if(res.error){ feed.innerHTML = '<div class="feed-empty"><i class="ti ti-alert-circle"></i><p>Could not load messages.</p></div>'; return; }
-    // Soft-block: hide messages from people you've blocked or who've blocked you
     var msgs = (res.data||[]).filter(function(m){
-      if(dsBlock.either(m.sender_id) && m.sender_id !== currentSession.user.id) return false;
+      if(m.sender_id !== currentSession.user.id && dsBlock.either(m.sender_id)) return false;
       var isMe = m.sender_id === currentSession.user.id;
       return !(isMe && m.deleted_by_sender) && !(!isMe && m.deleted_by_recipient);
     });
@@ -839,8 +832,7 @@
   styleEl.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
   document.head.appendChild(styleEl);
 </script>
-<script src="blockUtils.js"></script>
-<script src="nav.js"></script>
 <script src="footer.js"></script>
+<script src="nav.js"></script>
 </body>
 </html>
