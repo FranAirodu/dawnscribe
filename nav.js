@@ -482,6 +482,14 @@
   }
 
   /* ── AUTH INIT ───────────────────────────────────────────────── */
+  function dsWaitForDb(cb, tries) {
+    tries = tries || 0;
+    if (typeof db !== 'undefined') { cb(); return; }
+    if (tries > 40) { console.warn('DS nav: db not found'); return; }
+    setTimeout(function(){ dsWaitForDb(cb, tries + 1); }, 75);
+  }
+
+  dsWaitForDb(function(){
   (async function dsInitUserNav() {
     try {
       var session = (await db.auth.getSession()).data.session;
@@ -526,10 +534,17 @@
           }
           var frRes3=await db.from('friendships').select('id').eq('recipient_id',uid2).eq('status','pending');
           var frCount=(frRes3.data||[]).length; if(frCount>0) pendingParts.push(frCount+' friend request'+(frCount>1?'s':''));
-          if(pendingParts.length>0){
-            avatarBtn.classList.add('has-pending');
+          // Collab pending → My Profile pill
+          var collabParts = pendingParts.filter(function(p){ return p.indexOf('friend') === -1; });
+          var friendParts = pendingParts.filter(function(p){ return p.indexOf('friend') !== -1; });
+          if(pendingParts.length>0) avatarBtn.classList.add('has-pending');
+          if(collabParts.length>0){
+            var pl=document.getElementById('dd-profile-link');
+            if(pl) pl.innerHTML='<i class="ti ti-user"></i> My Profile <span class="collab-pending-pill">'+collabParts.join(' · ')+'</span>';
+          }
+          if(friendParts.length>0){
             var fl=document.getElementById('dd-friends-link');
-            if(fl) fl.innerHTML='<i class="ti ti-users"></i> Friends <span class="collab-pending-pill">'+pendingParts.join(' · ')+'</span>';
+            if(fl) fl.innerHTML='<i class="ti ti-users"></i> Friends <span class="collab-pending-pill">'+friendParts.join(' · ')+'</span>';
           }
           await dsLoadNotifications(uid2);
           await dsLoadDmBadge(uid2);
@@ -548,5 +563,6 @@
       }
     } catch(err){ console.warn('DS nav:', err); }
   })();
+  }); // dsWaitForDb
 
 })();

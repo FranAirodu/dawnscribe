@@ -180,17 +180,38 @@
     function showToast(msg, icon){ var t=document.getElementById('toast'); t.innerHTML='<i class="ti '+(icon||'ti-check')+'"></i> '+msg; t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); },3000); }
     function showError(msg){ document.getElementById('page-wrap').innerHTML='<div class="state-wrap"><div class="state-icon"><i class="ti ti-alert-circle"></i></div><div class="state-title">Oops</div><div class="state-body">'+msg+'</div></div>'; }
 
+    var isFanArtFlow = false;
+
     async function init(){
       var params = new URLSearchParams(window.location.search);
+      var fanartId = params.get('fanart');
       collabId = params.get('collab');
       artworkId = params.get('artwork');
       var workIdParam = params.get('work');
 
-      if(!collabId && !workIdParam){ showError('No collab specified.'); return; }
-
       var { data: { session: s } } = await db.auth.getSession();
       if(!s){ showError('You need to be logged in to review collab requests.'); return; }
       session = s;
+
+      // ── FAN ART ON NOVEL flow
+      if(fanartId){
+        isFanArtFlow = true;
+        var { data: fa } = await db.from('story_collabs').select('*').eq('id', fanartId).maybeSingle();
+        if(!fa){ showError('Fan art submission not found.'); return; }
+        collabData = fa; collabId = fa.id;
+        var { data: nov } = await db.from('works').select('*').eq('id', fa.work_id).maybeSingle();
+        if(!nov){ showError('Novel not found.'); return; }
+        novelData = nov;
+        if(nov.author_id !== s.user.id){ showError("You don't have permission to review this request."); return; }
+        if(fa.status !== 'pending'){ renderAlreadyDecidedFanArt(fa.status, nov.id); return; }
+        var { data: artistProf } = await db.from('profiles').select('id,username,display_name,avatar_url').eq('id', fa.artist_id).maybeSingle();
+        authorProfile = artistProf || {};
+        document.getElementById('back-btn').href = 'story.html?id=' + nov.id;
+        renderFanArtPage(nov);
+        return;
+      }
+
+      if(!collabId && !workIdParam){ showError('No collab specified.'); return; }
 
       // Try to load collab row — may fail due to RLS, so fall back to work+artwork params
       var cd = null;
@@ -236,6 +257,48 @@
 
       document.getElementById('back-btn').href = 'artwork.html?id=' + art.id;
       renderPage(artistName);
+    }
+
+    function renderFanArtPage(novel){
+      var artistName = authorProfile.display_name || authorProfile.username || 'Artist';
+      var avHtml = authorProfile.avatar_url ? '<img src="' + esc(authorProfile.avatar_url) + '" alt=""/>' : (artistName[0]||'?').toUpperCase();
+      var wrap = document.getElementById('page-wrap');
+      wrap.innerHTML =
+        '<div class="review-banner">'
+          + '<div class="review-banner-icon"><i class="ti ti-palette"></i></div>'
+          + '<div class="review-banner-text"><h2>Fan Art Review</h2>'
+          + '<p>Review the fan artwork submitted for your novel. Approve to publish it on your story page, or deny with a reason.</p>'
+          + '</div></div>'
+        + '<div class="artwork-strip">'
+          + '<div class="artwork-strip-img">'
+            + (collabData.image_url ? '<img src="' + esc(collabData.image_url) + '" alt="Fan art"/>' : '<i class="ti ti-photo"></i>')
+          + '</div>'
+          + '<div style="flex:1;">'
+            + '<div class="artwork-strip-label">Fan Art Submission</div>'
+            + '<div class="artwork-strip-title">' + esc(collabData.description || 'Untitled Artwork') + '</div>'
+            + '<div class="artwork-strip-artist">by <strong>' + esc(artistName) + '</strong> &middot; for <strong>' + esc(novel.title) + '</strong></div>'
+            + (collabData.inspiration ? '<div style="margin-top:6px;font-size:12px;color:var(--text3);font-style:italic;">&ldquo;' + esc(collabData.inspiration) + '&rdquo;</div>' : '')
+          + '</div>'
+          + '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">'
+            + '<div style="width:36px;height:36px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--text2);overflow:hidden;">' + avHtml + '</div>'
+            + '<span style="font-size:13px;font-weight:700;color:var(--text);">' + esc(artistName) + '</span>'
+          + '</div>'
+        + '</div>'
+        + '<div style="display:flex;justify-content:center;gap:14px;margin-top:32px;">'
+          + '<button class="approve-btn" id="approve-btn" onclick="confirmApprove()"><i class="ti ti-check"></i> Approve</button>'
+          + '<button class="deny-btn" id="deny-btn" onclick="openDenyModal()"><i class="ti ti-x"></i> Deny</button>'
+        + '</div>';
+    }
+
+    function renderAlreadyDecidedFanArt(status, novelId){
+      var color = status === 'approved' ? 'var(--green)' : 'var(--red)';
+      var icon = status === 'approved' ? 'ti-circle-check' : 'ti-circle-x';
+      var label = status === 'approved' ? 'Already Approved' : 'Already Denied';
+      document.getElementById('page-wrap').innerHTML =
+        '<div class="state-wrap"><div class="state-icon" style="color:' + color + '"><i class="ti ' + icon + '"></i></div>'
+        + '<div class="state-title">' + label + '</div>'
+        + '<a href="story.html?id=' + esc(novelId) + '" style="display:inline-flex;align-items:center;gap:6px;margin-top:24px;color:var(--accent);text-decoration:none;font-size:14px;font-weight:700;"><i class="ti ti-arrow-left"></i> Back to novel</a>'
+        + '</div>';
     }
 
     function renderPage(artistName){
@@ -347,30 +410,45 @@
     async function confirmApprove(){
       var btn = document.getElementById('approve-btn');
       var denyBtn = document.getElementById('deny-btn');
-      btn.disabled = true; denyBtn.disabled = true;
+      btn.disabled = true; if(denyBtn) denyBtn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Approving…';
 
+      if(isFanArtFlow){
+        var { error } = await db.from('story_collabs').update({ status: 'approved' }).eq('id', collabId);
+        if(error){ showToast('Failed to approve: ' + error.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
+        if(collabData.artist_id && collabData.artist_id !== session.user.id){
+          var { data: myProf2 } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
+          var myName2 = myProf2 ? (myProf2.display_name || myProf2.username || 'Someone') : 'Someone';
+          try {
+            var rpc2 = await db.rpc('get_or_create_conversation', { user_a: session.user.id, user_b: collabData.artist_id });
+            if(!rpc2.error && rpc2.data){
+              var msg2 = '🎨 ' + myName2 + ' approved your fan art for "' + (novelData.title||'Untitled') + '"! It is now live on the novel page.';
+              await db.from('messages').insert({ conversation_id: rpc2.data, sender_id: session.user.id, content: msg2 });
+              await db.from('conversations').update({ last_message: msg2, last_message_at: new Date().toISOString() }).eq('id', rpc2.data);
+            }
+          } catch(e){}
+        }
+        showToast('Fan art approved!', 'ti-check');
+        setTimeout(function(){ window.location.href = 'story.html?id=' + novelData.id; }, 1500);
+        return;
+      }
+
       var { error } = await db.from('artwork_collabs').update({ status: 'approved' }).eq('id', collabId);
-      if(error){ showToast('Failed to approve: ' + error.message, 'ti-alert-circle'); btn.disabled=false; denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
-
-      // Publish the artwork
+      if(error){ showToast('Failed to approve: ' + error.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
       await db.from('works').update({ is_published: true }).eq('id', collabData.artwork_id);
-
-      // Notify author via DM with celebration link
-      if(collabData.author_id && collabData.author_id !== session.user.id){
+      var denyTarget = isFanArtFlow ? collabData.artist_id : collabData.author_id;
+      if(denyTarget && denyTarget !== session.user.id){
         var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
         var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
         try {
-          var rpc = await db.rpc('get_or_create_conversation', { user_a: session.user.id, user_b: collabData.author_id });
+          var rpc = await db.rpc('get_or_create_conversation', { user_a: session.user.id, user_b: denyTarget });
           if(!rpc.error && rpc.data){
-            var celebUrl = 'collab-approved.html?collab=' + collabId;
             var msg = '🌟 ' + myName + ' approved your collab story for "' + (artworkData.title||'Untitled') + '"! Your story is now live.';
             await db.from('messages').insert({ conversation_id: rpc.data, sender_id: session.user.id, content: msg });
             await db.from('conversations').update({ last_message: msg, last_message_at: new Date().toISOString() }).eq('id', rpc.data);
           }
         } catch(e){}
       }
-
       showToast('Story approved and published!', 'ti-check');
       setTimeout(function(){ window.location.href = 'artwork.html?id=' + artworkData.id; }, 1500);
     }
@@ -396,17 +474,18 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Sending…';
 
-      var { error } = await db.from('artwork_collabs').update({ status: 'rejected' }).eq('id', collabId);
+      var { error } = isFanArtFlow ? await db.from('story_collabs').update({ status: 'rejected' }).eq('id', collabId) : await db.from('artwork_collabs').update({ status: 'rejected' }).eq('id', collabId);
       if(error){ showToast('Failed: ' + error.message, 'ti-alert-circle'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Send & Deny'; return; }
 
       // Send reason as DM to author
-      if(collabData.author_id && collabData.author_id !== session.user.id){
+      var denyTarget = isFanArtFlow ? collabData.artist_id : collabData.author_id;
+      if(denyTarget && denyTarget !== session.user.id){
         var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
         var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
         try {
-          var rpc = await db.rpc('get_or_create_conversation', { user_a: session.user.id, user_b: collabData.author_id });
+          var rpc = await db.rpc('get_or_create_conversation', { user_a: session.user.id, user_b: denyTarget });
           if(!rpc.error && rpc.data){
-            var dmMsg = myName + ' declined your collab story for "' + (artworkData.title||'Untitled') + '".\n\nReason: ' + reason;
+            var dmMsg = isFanArtFlow ? myName + ' declined your fan art for "' + (novelData.title||'Untitled') + '".\n\nReason: ' + reason : myName + ' declined your collab story for "' + (artworkData.title||'Untitled') + '".\n\nReason: ' + reason;
             await db.from('messages').insert({ conversation_id: rpc.data, sender_id: session.user.id, content: dmMsg });
             await db.from('conversations').update({ last_message: dmMsg, last_message_at: new Date().toISOString() }).eq('id', rpc.data);
           }
@@ -415,7 +494,7 @@
 
       closeDenyModal();
       showToast('Request denied. Reason sent to author.', 'ti-x');
-      setTimeout(function(){ window.location.href = 'artwork.html?id=' + artworkData.id; }, 1800);
+      setTimeout(function(){ window.location.href = isFanArtFlow ? 'story.html?id=' + novelData.id : 'artwork.html?id=' + artworkData.id; }, 1800);
     }
 
     init();

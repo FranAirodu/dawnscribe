@@ -422,7 +422,7 @@
   <!-- COLLAB SHORTCUTS (owner only, shown by JS) -->
   <div id="collab-shortcuts" style="display:none; max-width:960px; margin:0 auto; padding:20px 24px 0;">
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <a id="collab-inbox-btn" href="collab-inbox.html" style="display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,0.08);border:1.5px solid rgba(245,158,11,0.35);border-radius:10px;padding:10px 18px;color:#f59e0b;font-size:13px;font-weight:700;text-decoration:none;transition:all 0.2s;">
+      <a id="collab-inbox-btn" href="collab-inbox.html" style="display:inline-flex;align-items:center;gap:8px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;padding:10px 18px;color:var(--text3);font-size:13px;font-weight:700;text-decoration:none;transition:all 0.2s;">
         <i class="ti ti-inbox"></i> Review Collab Requests <span id="inbox-count" style="background:#f59e0b;color:#0a0a0f;border-radius:8px;padding:1px 7px;font-size:11px;display:none;"></span>
       </a>
       <a href="collab-outbox.html" style="display:inline-flex;align-items:center;gap:8px;background:rgba(45,212,191,0.06);border:1.5px solid rgba(45,212,191,0.25);border-radius:10px;padding:10px 18px;color:var(--accent);font-size:13px;font-weight:700;text-decoration:none;transition:all 0.2s;">
@@ -435,8 +435,8 @@
   <div class="profile-tabs-wrap">
     <div class="profile-tabs">
       <button class="profile-tab active" data-tab="works" onclick="switchTab(this)"><i class="ti ti-layout-grid"></i> Works</button>
-      <button class="profile-tab" data-tab="info" onclick="switchTab(this)"><i class="ti ti-id-badge"></i> Info</button>
       <button class="profile-tab" data-tab="collabs" onclick="switchTab(this)"><i class="ti ti-writing" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Collabs</span></button>
+      <button class="profile-tab" data-tab="info" onclick="switchTab(this)"><i class="ti ti-id-badge"></i> Info</button>
       <button class="profile-tab" data-tab="reading" onclick="switchTab(this)"><i class="ti ti-books"></i> Reading List</button>
       <button class="profile-tab" data-tab="artists" onclick="switchTab(this)"><i class="ti ti-brush"></i> Artist List</button>
       <button class="profile-tab" data-tab="activity" onclick="switchTab(this)"><i class="ti ti-message-circle"></i> Activity</button>
@@ -715,18 +715,42 @@
       var novRes = await db.from('works').select('id, title').eq('author_id', profileId).eq('type', 'novel').eq('is_published', true);
       var myNovelIds = (novRes.data || []).map(function(n){ return n.id; });
 
-      // ── Fetch approved collab stories on this user's artworks
+      // ── Fetch approved collab stories on this user's artworks (as artwork owner)
       var approvedStories = [];
       if (artIds.length) {
         var sr = await db.from('artwork_collabs').select('id, artwork_id, work_id, author_id').in('artwork_id', artIds).eq('status', 'approved').order('created_at', { ascending: false });
         approvedStories = sr.data || [];
       }
+      // ── Also fetch collab stories WRITTEN BY this user (as novel author)
+      var myWrittenCollabs = await db.from('artwork_collabs').select('id, artwork_id, work_id, author_id').eq('author_id', profileId).eq('status', 'approved').order('created_at', { ascending: false });
+      (myWrittenCollabs.data || []).forEach(function(row){
+        if (!approvedStories.find(function(r){ return r.id === row.id; })) {
+          approvedStories.push(row);
+        }
+      });
+      // Collect all artwork IDs needed (including ones not owned by this user)
+      var allArtworkIds = [...new Set(approvedStories.map(function(r){ return r.artwork_id; }).filter(Boolean))];
 
-      // ── Fetch approved collab artwork on this user's novels
+      // ── Fetch approved collab artwork on this user's novels (as novel author)
       var approvedArtwork = [];
       if (myNovelIds.length) {
         var ar = await db.from('story_collabs').select('id, work_id, artist_id, image_url, description').in('work_id', myNovelIds).eq('status', 'approved').order('created_at', { ascending: false });
         approvedArtwork = ar.data || [];
+      }
+      // ── Also fetch collab artwork submitted BY this user (as artist)
+      var mySubmittedArt = await db.from('story_collabs').select('id, work_id, artist_id, image_url, description').eq('artist_id', profileId).eq('status', 'approved').order('created_at', { ascending: false });
+      (mySubmittedArt.data || []).forEach(function(row){
+        if (!approvedArtwork.find(function(r){ return r.id === row.id; })) {
+          approvedArtwork.push(row);
+        }
+      });
+      // Collect all novel IDs needed (including ones not owned by this user)
+      var allNovelIds = [...new Set(approvedArtwork.map(function(r){ return r.work_id; }).filter(Boolean))];
+
+      // ── Fetch artwork data for all collab stories (including other users' artworks)
+      if (allArtworkIds.length) {
+        var extraArts = await db.from('works').select('id, title, cover_url').in('id', allArtworkIds);
+        (extraArts.data || []).forEach(function(a){ if(!artworkMap[a.id]) artworkMap[a.id] = a; });
       }
 
       // ── Fetch novel data for collab stories
@@ -752,10 +776,10 @@
         (artists.data || []).forEach(function(p){ artistMap[p.id] = p; });
       }
 
-      // Fetch novel titles for collab artwork
+      // Fetch novel titles for collab artwork (all novels, including ones by other users)
       var novelTitleMap = {};
-      if (myNovelIds.length) {
-        var novelTitles = await db.from('works').select('id, title').in('id', myNovelIds);
+      if (allNovelIds.length) {
+        var novelTitles = await db.from('works').select('id, title').in('id', allNovelIds);
         (novelTitles.data || []).forEach(function(n){ novelTitleMap[n.id] = n.title; });
       }
 
@@ -841,7 +865,7 @@
               : '<div class="work-cover" style="width:120px;height:170px;background:rgba(45,212,191,0.08);color:var(--accent);font-size:28px;flex-shrink:0;">🎨</div>')
             + '<div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;">'
               + '<div>'
-                + '<div style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:8px;background:rgba(45,212,191,0.08);border:1px solid rgba(45,212,191,0.25);color:var(--accent);margin-bottom:8px;"><i class="ti ti-palette"></i> Collab Art</div>'
+                + '<div style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;margin-bottom:8px;"><i class="ti ti-palette"></i> Collab Art</div>'
                 + '<div class="work-title" style="font-size:15px;font-weight:700;margin-bottom:6px;color:var(--text);">' + escHtml(row.description || 'Untitled Artwork') + '</div>'
                 + '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;"><i class="ti ti-book" style="margin-right:3px;"></i> For: <em style="color:var(--text2);">' + escHtml(novelTitle) + '</em></div>'
               + '</div>'
@@ -862,25 +886,32 @@
       if(!shortcuts) return;
       shortcuts.style.display = 'block';
 
-      // Count pending story submissions on user's artworks
+      var totalPending = 0;
+
+      // Count pending story submissions on user's artworks (artwork_collabs)
       var { data: myArt } = await db.from('works').select('id').eq('author_id', profileId).eq('type', 'artwork');
       var artIds = (myArt||[]).map(function(a){ return a.id; });
       if(artIds.length){
-        var { data: pending } = await db.from('artwork_collabs').select('id').in('artwork_id', artIds).eq('status', 'pending');
-        var count = (pending||[]).length;
-        if(count > 0){
-          var countEl = document.getElementById('inbox-count');
-          if(countEl){ countEl.textContent = count; countEl.style.display = 'inline'; }
-          // Also badge the Collabs tab
-          var tabBtn = document.querySelector('[data-tab="collabs"]');
-          if(tabBtn && !tabBtn.querySelector('.collab-tab-badge')){
-            var b = document.createElement('span');
-            b.className = 'collab-tab-badge';
-            b.style.cssText = 'margin-left:5px;background:#f59e0b;color:#0a0a0f;font-size:10px;font-weight:700;border-radius:8px;padding:1px 6px;';
-            b.textContent = count;
-            tabBtn.appendChild(b);
-          }
-        }
+        var { data: pendingStories } = await db.from('artwork_collabs').select('id').in('artwork_id', artIds).eq('status', 'pending');
+        totalPending += (pendingStories||[]).length;
+      }
+
+      // Count pending fan art submissions on user's novels (story_collabs)
+      var { data: myNov } = await db.from('works').select('id').eq('author_id', profileId).eq('type', 'novel');
+      var novIds = (myNov||[]).map(function(n){ return n.id; });
+      if(novIds.length){
+        var { data: pendingArt } = await db.from('story_collabs').select('id').in('work_id', novIds).eq('status', 'pending');
+        totalPending += (pendingArt||[]).length;
+      }
+
+      if(totalPending > 0){
+        // Turn button gold
+        var btn = document.getElementById('collab-inbox-btn');
+        if(btn){ btn.style.background='rgba(245,158,11,0.08)'; btn.style.borderColor='rgba(245,158,11,0.35)'; btn.style.color='#f59e0b'; }
+        // Show count badge
+        var countEl = document.getElementById('inbox-count');
+        if(countEl){ countEl.textContent = totalPending; countEl.style.display = 'inline'; }
+
       }
     }
 
@@ -890,7 +921,19 @@
       var result = await db.from('works').select('id,title,cover_url,status,tags_main,type,synopsis,views,chapters_count,word_count,total_readers,updated_at,avg_chapter_days').eq('author_id', profileId).order('created_at', { ascending: false });
       layout.innerHTML = '';
       var isOwner = document.body.classList.contains('is-owner');
-      var novels   = (result.data||[]).filter(function(w){ return w.type !== 'artwork'; });
+
+      // Fetch collab IDs to exclude from Works tab
+      var collabWorkIds = new Set();
+      try {
+        // Novels written as collab stories (artwork_collabs)
+        var cwRes = await db.from('artwork_collabs').select('work_id').eq('author_id', profileId).eq('status', 'approved');
+        (cwRes.data||[]).forEach(function(r){ if(r.work_id) collabWorkIds.add(r.work_id); });
+        // Artworks submitted as fan art (story_collabs)
+        var caRes = await db.from('story_collabs').select('id').eq('artist_id', profileId).eq('status', 'approved');
+        // story_collabs rows aren't works — they're separate rows, so no work_id to exclude from works table
+      } catch(e){}
+
+      var novels   = (result.data||[]).filter(function(w){ return w.type !== 'artwork' && !collabWorkIds.has(w.id); });
       var artworks = (result.data||[]).filter(function(w){ return w.type === 'artwork'; });
 
       // Fetch real comment counts for artworks from artwork_comments table

@@ -1252,14 +1252,28 @@
         var p4=r4ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p4?(p4.display_name||p4.username||null):null, authorUsername:p4?p4.username:null, isCollab:!!collabWorkIds.has(w.id) };
       });
 
-      // Row 5: Newest artwork
+      // Row 5: Newest artwork (works + approved story_collabs fan art)
       var row5track = document.getElementById('track-5');
       var newArtRes = await db.from('works').select('id,title,cover_url,author_id')
         .eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(30);
       var r5ProfMap={};if((newArtRes.data||[]).length){var r5AIds=[...new Set(newArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r5AIds.length){var {data:r5Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r5AIds);(r5Profs||[]).forEach(function(p){r5ProfMap[p.id]=p;});}}
-      renderCoverRow(row5track, newArtRes.data||[], function(w){
+      // Also fetch approved fan art from story_collabs
+      var r5Items = (newArtRes.data||[]).map(function(w){
         var p5=r5ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p5?(p5.display_name||p5.username||null):null, authorUsername:p5?p5.username:null, isCollab:!!collabWorkIds.has(w.id) };
       });
+      try {
+        var scArtRes = await db.from('story_collabs').select('id,image_url,description,artist_id,work_id,created_at').eq('status','approved').order('created_at',{ascending:false}).limit(20);
+        if((scArtRes.data||[]).length){
+          var scArtistIds=[...new Set(scArtRes.data.map(function(r){return r.artist_id;}).filter(Boolean))];
+          var scArtistMap={};
+          if(scArtistIds.length){var {data:scArtProfs}=await db.from('profiles').select('id,username,display_name').in('id',scArtistIds);(scArtProfs||[]).forEach(function(p){scArtistMap[p.id]=p;});}
+          (scArtRes.data||[]).forEach(function(r){
+            var pa=scArtistMap[r.artist_id]||null;
+            r5Items.push({ id:'sc-'+r.id, title:r.description||'Fan Art', cover:r.image_url, href:'story.html?id='+r.work_id, authorName:pa?(pa.display_name||pa.username||null):null, authorUsername:pa?pa.username:null, isCollab:true });
+          });
+        }
+      } catch(e){}
+      renderCoverRow(row5track, r5Items, function(w){ return w; });
     }
 
     function renderCoverRow(track, items, mapper){
@@ -1967,8 +1981,16 @@
 
                 if (pendingParts.length > 0) {
                   avatarBtn.classList.add('has-pending');
-                  var friendsLink = document.getElementById('dd-friends-link');
-                  if (friendsLink) friendsLink.innerHTML = '<i class="ti ti-users"></i> Friends <span class="collab-pending-pill">' + pendingParts.join(' · ') + '</span>';
+                  var collabParts = pendingParts.filter(function(p){ return p.indexOf('friend') === -1; });
+                  var friendParts = pendingParts.filter(function(p){ return p.indexOf('friend') !== -1; });
+                  if(collabParts.length > 0){
+                    var profileLink = document.getElementById('dd-profile-link');
+                    if(profileLink) profileLink.innerHTML = '<i class="ti ti-user"></i> My Profile <span class="collab-pending-pill">' + collabParts.join(' · ') + '</span>';
+                  }
+                  if(friendParts.length > 0){
+                    var friendsLink = document.getElementById('dd-friends-link');
+                    if(friendsLink) friendsLink.innerHTML = '<i class="ti ti-users"></i> Friends <span class="collab-pending-pill">' + friendParts.join(' · ') + '</span>';
+                  }
                 }
 
                 // Inject friend requests into the Artists notification tab
