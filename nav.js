@@ -116,21 +116,21 @@
           <div class="notif-feed" id="notif-feed-novels"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
           <div class="notif-footer">
             <button class="mark-read-btn" onclick="dsMarkAllRead('novels')"><i class="ti ti-checks"></i> Mark all as read</button>
-            <a class="view-all-notif" href="activity.html">View all <i class="ti ti-arrow-right"></i></a>
+            <a class="view-all-notif" href="notifications.html#novels">View all <i class="ti ti-arrow-right"></i></a>
           </div>
         </div>
         <div class="notif-panel" id="notif-artists">
           <div class="notif-feed" id="notif-feed-artists"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
           <div class="notif-footer">
             <button class="mark-read-btn" onclick="dsMarkAllRead('artists')"><i class="ti ti-checks"></i> Mark all as read</button>
-            <a class="view-all-notif" href="activity.html">View all <i class="ti ti-arrow-right"></i></a>
+            <a class="view-all-notif" href="notifications.html#artists">View all <i class="ti ti-arrow-right"></i></a>
           </div>
         </div>
         <div class="notif-panel" id="notif-comments">
           <div class="notif-feed" id="notif-feed-comments"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
           <div class="notif-footer">
             <button class="mark-read-btn" onclick="dsMarkAllRead('comments')"><i class="ti ti-checks"></i> Mark all as read</button>
-            <a class="view-all-notif" href="activity.html">View all <i class="ti ti-arrow-right"></i></a>
+            <a class="view-all-notif" href="notifications.html#comments">View all <i class="ti ti-arrow-right"></i></a>
           </div>
         </div>
       </div>
@@ -361,7 +361,7 @@
         var work=ch.works; var title=work?work.title:'Unknown';
         var chLabel=ch.title?'Chapter '+ch.chapter_number+' — "'+ch.title+'"':'Chapter '+ch.chapter_number;
         var item=document.createElement('div'); item.className='notif-item unread'; item.dataset.id=ch.id; item.style.cursor='pointer';
-        item.onclick=function(){if(work) window.location.href='chapter.html?work='+work.id+'&chapter='+ch.id;};
+        item.onclick=function(){if(work) window.location.href='story.html?id='+work.id;};
         item.innerHTML='<div class="notif-cover '+dsCoverColor(ch.work_id)+'">'+dsEsc(dsCoverLetter(title))+'</div>'
           +'<div class="notif-body"><div class="notif-title">'+dsEsc(title)+'</div><div class="notif-text">'+dsEsc(chLabel)+' is now available</div>'
           +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(ch.created_at)+'</div></div><div class="notif-dot"></div>';

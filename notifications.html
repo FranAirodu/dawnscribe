@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Notifications — DawnScribe</title>
+  <script>
+    (function(){
+      var t=localStorage.getItem('ds_theme');
+      if(t==='light'){document.documentElement.setAttribute('data-theme','light');}
+    })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
+      --border:#2a3347; --text:#e8eaf0; --text2:#9ba3b8; --text3:#5c6480;
+      --accent:#2dd4bf; --gold:#f59e0b; --red:#f87171;
+    }
+    [data-theme="light"] {
+      --bg:#f4f5f8; --bg2:#ffffff; --bg3:#eef0f5; --bg4:#e4e7ef;
+      --border:#d0d5e8; --text:#1a1f2e; --text2:#4a5270; --text3:#8890a8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Lato', sans-serif; min-height: 100vh; }
+
+    /* NAV */
+    nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .nav-left { display: flex; align-items: center; gap: 16px; }
+    .logo { font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700; color: var(--text); text-decoration: none; }
+    .logo span { color: var(--accent); }
+    .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; font-weight: 700; text-decoration: none; transition: color 0.2s; }
+    .back-btn:hover { color: var(--accent); }
+
+    /* PAGE LAYOUT */
+    .page-wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 80px; }
+    .page-header { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
+    .page-icon { width: 48px; height: 48px; border-radius: 12px; background: rgba(45,212,191,0.1); border: 1px solid rgba(45,212,191,0.2); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 22px; }
+    .page-title { font-family: 'Cinzel', serif; font-size: 26px; font-weight: 700; }
+    .page-subtitle { color: var(--text3); font-size: 13px; margin-top: 3px; }
+
+    /* TABS */
+    .tabs-bar { display: flex; gap: 4px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 4px; margin-bottom: 24px; }
+    .tab-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 8px; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text3); }
+    .tab-btn:hover { color: var(--text2); }
+    .tab-btn.active { background: var(--bg3); color: var(--accent); }
+    .tab-badge { background: var(--red); color: white; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; }
+
+    /* PANELS */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* SECTION HEADER */
+    .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .section-title { font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .mark-read-btn { background: none; border: 1px solid var(--border); border-radius: 7px; color: var(--text3); font-size: 11px; font-weight: 700; font-family: 'Lato', sans-serif; padding: 5px 10px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 5px; }
+    .mark-read-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* CARDS */
+    .notif-list { display: flex; flex-direction: column; gap: 8px; }
+    .notif-card { display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; transition: all 0.15s; position: relative; }
+    .notif-card:hover { border-color: rgba(45,212,191,0.3); background: var(--bg3); }
+    .notif-card.unread { border-color: rgba(45,212,191,0.15); background: rgba(45,212,191,0.03); }
+    .notif-card.unread::before { content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 60%; background: var(--accent); border-radius: 0 3px 3px 0; }
+    .notif-cover { width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; color: white; overflow: hidden; font-family: 'Cinzel', serif; }
+    .notif-cover img { width: 100%; height: 100%; object-fit: cover; }
+    .notif-body { flex: 1; min-width: 0; }
+    .notif-card-title { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .notif-card-text { font-size: 12px; color: var(--text2); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .notif-card-time { font-size: 11px; color: var(--text3); margin-top: 5px; display: flex; align-items: center; gap: 4px; }
+    .notif-unread-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 5px; }
+
+    /* CONTINUE BUTTON */
+    .continue-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; background: var(--accent); color: #0f1117; border-radius: 7px; font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; text-decoration: none; transition: all 0.2s; white-space: nowrap; }
+    .continue-btn:hover { background: #14b8a6; }
+
+    /* FRIEND REQUEST CARD */
+    .fr-card { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.2); border-radius: 12px; margin-bottom: 8px; }
+    .fr-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--bg4); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: var(--text2); overflow: hidden; }
+    .fr-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .fr-name { font-size: 13px; font-weight: 700; color: var(--gold); }
+    .fr-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .fr-btn { margin-left: auto; flex-shrink: 0; background: none; border: 1px solid rgba(245,158,11,0.35); border-radius: 7px; color: var(--gold); font-size: 11px; font-weight: 700; font-family: 'Lato', sans-serif; padding: 5px 12px; cursor: pointer; text-decoration: none; transition: all 0.2s; }
+    .fr-btn:hover { background: rgba(245,158,11,0.1); }
+
+    /* EMPTY */
+    .empty-state { padding: 48px 24px; text-align: center; color: var(--text3); }
+    .empty-state i { font-size: 36px; display: block; margin-bottom: 12px; opacity: 0.4; }
+    .empty-state p { font-size: 14px; }
+
+    /* LOAD MORE */
+    .load-more-btn { width: 100%; margin-top: 16px; padding: 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; color: var(--text2); font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .load-more-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .load-more-btn.hidden { display: none; }
+
+    /* COVER COLORS */
+    .cc0{background:#6366f1;} .cc1{background:#ec4899;} .cc2{background:#f59e0b;}
+    .cc3{background:#10b981;} .cc4{background:#3b82f6;} .cc5{background:#8b5cf6;}
+    .cc6{background:#ef4444;} .cc7{background:#06b6d4;}
+
+    /* SPINNER */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-row { padding: 32px; text-align: center; color: var(--text3); font-size: 13px; }
+    .loading-row i { animation: spin 1s linear infinite; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-left">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </div>
+</nav>
+
+<div class="page-wrap">
+  <div class="page-header">
+    <div class="page-icon"><i class="ti ti-bell"></i></div>
+    <div>
+      <div class="page-title">My Notifications</div>
+      <div class="page-subtitle">New chapters, art, and comments on your works</div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs-bar">
+    <button class="tab-btn active" id="tab-btn-novels" onclick="switchTab('novels')">
+      <i class="ti ti-book"></i> Novels
+    </button>
+    <button class="tab-btn" id="tab-btn-artists" onclick="switchTab('artists')">
+      <i class="ti ti-palette"></i> Artists
+    </button>
+    <button class="tab-btn" id="tab-btn-comments" onclick="switchTab('comments')">
+      <i class="ti ti-message-circle"></i> Comments
+    </button>
+  </div>
+
+  <!-- NOVELS PANEL -->
+  <div class="tab-panel active" id="panel-novels">
+    <div class="section-head">
+      <div class="section-title"><i class="ti ti-book" style="color:var(--accent);"></i> New Chapters</div>
+    </div>
+    <div class="notif-list" id="feed-novels">
+      <div class="loading-row"><i class="ti ti-loader"></i></div>
+    </div>
+    <button class="load-more-btn hidden" id="load-more-novels" onclick="loadMore('novels')">
+      <i class="ti ti-chevron-down"></i> Load more
+    </button>
+  </div>
+
+  <!-- ARTISTS PANEL -->
+  <div class="tab-panel" id="panel-artists">
+    <div class="section-head">
+      <div class="section-title"><i class="ti ti-palette" style="color:var(--accent);"></i> New Artwork</div>
+    </div>
+    <div id="feed-friends"></div>
+    <div class="notif-list" id="feed-artists">
+      <div class="loading-row"><i class="ti ti-loader"></i></div>
+    </div>
+    <button class="load-more-btn hidden" id="load-more-artists" onclick="loadMore('artists')">
+      <i class="ti ti-chevron-down"></i> Load more
+    </button>
+  </div>
+
+  <!-- COMMENTS PANEL -->
+  <div class="tab-panel" id="panel-comments">
+    <div class="section-head">
+      <div class="section-title"><i class="ti ti-message-circle" style="color:var(--accent);"></i> Comments on Your Works</div>
+    </div>
+    <div class="notif-list" id="feed-comments">
+      <div class="loading-row"><i class="ti ti-loader"></i></div>
+    </div>
+    <button class="load-more-btn hidden" id="load-more-comments" onclick="loadMore('comments')">
+      <i class="ti ti-chevron-down"></i> Load more
+    </button>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+  var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // Per-tab data stores for load-more
+  var allData = { novels: [], artists: [], comments: [] };
+  var shown   = { novels: 0, artists: 0, comments: 0 };
+  var BATCH   = 30;
+
+  // ── UTILS ────────────────────────────────────────────────────────
+  function esc(s){ var d=document.createElement('div');d.textContent=s||'';return d.innerHTML; }
+  function coverColor(id){ var h=0;var s=(id||'').toString();for(var i=0;i<s.length;i++){h=(h<<5)-h+s.charCodeAt(i);h|=0;}return 'cc'+(Math.abs(h)%8); }
+  function coverLetter(t){ return (t||'?').charAt(0).toUpperCase(); }
+  function timeAgo(ts){
+    if(!ts) return '';
+    var d=new Date(ts), n=new Date(), diff=Math.floor((n-d)/1000);
+    if(diff<60) return diff+'s ago';
+    if(diff<3600) return Math.floor(diff/60)+'m ago';
+    if(diff<86400) return Math.floor(diff/3600)+'h ago';
+    if(diff<604800) return Math.floor(diff/86400)+'d ago';
+    return d.toLocaleDateString();
+  }
+  function getClearedIds(tab){
+    try{ var s=localStorage.getItem('ds_notif_cleared_'+tab); if(!s) return {}; var a=JSON.parse(s); var m={};a.forEach(function(id){m[id]=true;});return m; }
+    catch(e){ return {}; }
+  }
+  function setClearedIds(tab, map){
+    localStorage.setItem('ds_notif_cleared_'+tab, JSON.stringify(Object.keys(map)));
+  }
+
+  // ── TABS ─────────────────────────────────────────────────────────
+  function switchTab(tab){
+    document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+    document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
+    document.getElementById('tab-btn-'+tab).classList.add('active');
+    document.getElementById('panel-'+tab).classList.add('active');
+  }
+
+  // Open to the right tab if hash present
+  (function(){
+    var hash = window.location.hash.replace('#','');
+    if(['novels','artists','comments'].indexOf(hash) !== -1) switchTab(hash);
+  })();
+
+  // ── RENDER HELPERS ───────────────────────────────────────────────
+  function renderNovelCard(ch, cleared){
+    var work = ch.works;
+    var title = work ? work.title : 'Unknown';
+    var workId = ch.work_id;
+    var totalChaps = ch.totalChapters || ch.chapter_number || '?';
+    var prog = ch.progress; // {chapter_id, chapter_number}
+    var isUnread = !cleared[ch.id];
+
+    var card = document.createElement('div');
+    card.className = 'notif-card novel-card' + (isUnread ? ' unread' : '');
+    card.dataset.id = ch.id;
+    // Clicking the card body → story.html
+    card.onclick = function(e){
+      if(e.target.closest('.continue-btn')) return; // let button handle itself
+      window.location.href = 'story.html?id=' + workId;
+    };
+    card.style.cursor = 'pointer';
+
+    // Cover
+    var coverHtml = work && work.cover_url
+      ? '<img src="'+esc(work.cover_url)+'" style="width:48px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;" alt=""/>'
+      : '<div class="notif-cover '+coverColor(workId)+'">'+esc(coverLetter(title))+'</div>';
+
+    // Chapter info line
+    var latestLabel = 'Ch. '+ch.chapter_number+(ch.title ? ' — "'+ch.title+'"' : '');
+    var progressLabel = prog
+      ? 'Your progress: Ch. '+prog.chapter_number+' / '+totalChaps
+      : 'Total chapters: '+totalChaps;
+
+    // Continue button — goes to last read chapter, or latest chapter if no progress
+    var continueHref = prog
+      ? 'chapter.html?id='+prog.chapter_id
+      : 'chapter.html?id='+ch.id;
+
+    card.innerHTML =
+      coverHtml +
+      '<div class="notif-body">'+
+        '<div class="notif-card-title">'+esc(title)+'</div>'+
+        '<div class="notif-card-text" style="color:var(--accent);">'+esc(latestLabel)+' is now available</div>'+
+        '<div class="notif-card-text" style="margin-top:3px;">'+esc(progressLabel)+'</div>'+
+        '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(ch.created_at)+'</div>'+
+      '</div>'+
+      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0;">'+
+        (isUnread ? '<div class="notif-unread-dot"></div>' : '<div style="width:9px;"></div>')+
+        '<a class="continue-btn" href="'+continueHref+'" onclick="event.stopPropagation();">'+
+          '<i class="ti ti-player-play"></i> Continue'+
+        '</a>'+
+      '</div>';
+    return card;
+  }
+
+  function renderArtistCard(work, cleared){
+    var prof = work.profiles;
+    var name = prof ? (prof.display_name||prof.username||'Unknown') : 'Unknown';
+    var isUnread = !cleared[work.id];
+    var card = document.createElement('div');
+    card.className = 'notif-card' + (isUnread ? ' unread' : '');
+    card.dataset.id = work.id;
+    card.onclick = function(){ window.location.href='artwork.html?id='+work.id; };
+    var avHtml = prof&&prof.avatar_url
+      ? '<img src="'+esc(prof.avatar_url)+'" alt=""/>'
+      : esc(name.charAt(0).toUpperCase());
+    card.innerHTML =
+      '<div class="notif-cover '+coverColor(work.author_id)+'" style="overflow:hidden;">'+avHtml+'</div>'+
+      '<div class="notif-body">'+
+        '<div class="notif-card-title">'+esc(name)+'</div>'+
+        '<div class="notif-card-text">Posted — "'+esc(work.title)+'"</div>'+
+        '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(work.created_at)+'</div>'+
+      '</div>'+
+      (isUnread ? '<div class="notif-unread-dot"></div>' : '');
+    return card;
+  }
+
+  function renderCommentCard(cm, cleared){
+    var prof = cm.profiles; var work = cm.works;
+    var name = prof ? (prof.display_name||prof.username||'Someone') : 'Someone';
+    var workTitle = work ? work.title : 'your work';
+    var snippet = (cm.content||'').slice(0,90)+(cm.content&&cm.content.length>90?'…':'');
+    var isUnread = !cleared[cm.id];
+    var card = document.createElement('div');
+    card.className = 'notif-card' + (isUnread ? ' unread' : '');
+    card.dataset.id = cm.id;
+    card.onclick = function(){
+      if(!cm.work_id) return;
+      window.location.href = cm._type==='artwork' ? 'artwork.html?id='+cm.work_id : 'story.html?id='+cm.work_id;
+    };
+    var avHtml = prof&&prof.avatar_url
+      ? '<img src="'+esc(prof.avatar_url)+'" alt=""/>'
+      : esc(name.charAt(0).toUpperCase());
+    card.innerHTML =
+      '<div class="notif-cover '+coverColor(cm.user_id||cm.id)+'" style="overflow:hidden;">'+avHtml+'</div>'+
+      '<div class="notif-body">'+
+        '<div class="notif-card-title">'+esc(name)+' commented on <em>'+esc(workTitle)+'</em></div>'+
+        '<div class="notif-card-text">"'+esc(snippet)+'"</div>'+
+        '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</div>'+
+      '</div>'+
+      (isUnread ? '<div class="notif-unread-dot"></div>' : '');
+    return card;
+  }
+
+  // ── RENDER BATCH ─────────────────────────────────────────────────
+  function renderBatch(tab, append){
+    var feed = document.getElementById('feed-'+tab);
+    var data = allData[tab];
+    var cleared = getClearedIds(tab);
+    var start = append ? shown[tab] : 0;
+    var end = Math.min(start + BATCH, data.length);
+    if(!append) feed.innerHTML = '';
+    for(var i=start; i<end; i++){
+      var card;
+      if(tab==='novels')   card = renderNovelCard(data[i], cleared);
+      if(tab==='artists')  card = renderArtistCard(data[i], cleared);
+      if(tab==='comments') card = renderCommentCard(data[i], cleared);
+      if(card) feed.appendChild(card);
+    }
+    shown[tab] = end;
+    var btn = document.getElementById('load-more-'+tab);
+    if(end < data.length) btn.classList.remove('hidden');
+    else btn.classList.add('hidden');
+    if(!data.length || feed.children.length === 0){
+      var labels = {novels:'No new chapters from followed stories.', artists:'No new art from followed artists.', comments:'No new comments on your works.'};
+      feed.innerHTML = '<div class="empty-state"><i class="ti ti-bell-off"></i><p>'+labels[tab]+'</p></div>';
+    }
+  }
+
+  function loadMore(tab){ renderBatch(tab, true); }
+
+  // ── MARK ALL READ ────────────────────────────────────────────────
+  function markAllRead(tab){
+    var cleared = getClearedIds(tab);
+    allData[tab].forEach(function(item){ cleared[item.id] = true; });
+    setClearedIds(tab, cleared);
+    // Re-render — remove unread styling
+    shown[tab] = 0;
+    renderBatch(tab, false);
+    // Remove tab badge
+    var btn = document.getElementById('tab-btn-'+tab);
+    if(btn){ var b=btn.querySelector('.tab-badge'); if(b) b.remove(); }
+  }
+
+  // ── LOAD DATA ────────────────────────────────────────────────────
+  async function loadAll(uid){
+    await Promise.all([
+      loadNovels(uid),
+      loadArtists(uid),
+      loadComments(uid)
+    ]);
+  }
+
+  async function loadNovels(uid){
+    var feed = document.getElementById('feed-novels');
+    try {
+      var fwRes = await db.from('work_follows').select('work_id').eq('user_id',uid);
+      var workIds = (fwRes.data||[]).map(function(r){return r.work_id;});
+      if(!workIds.length){ allData.novels=[]; renderBatch('novels',false); return; }
+
+      // Get latest chapter per followed work (one row per work_id, newest)
+      var chapRes = await db.from('chapters').select('id,chapter_number,title,created_at,work_id')
+        .in('work_id',workIds).eq('status','published').order('created_at',{ascending:false}).limit(30);
+      var rows = chapRes.data||[];
+
+      // Deduplicate: keep only the latest chapter per work
+      var seenWork = {};
+      rows = rows.filter(function(c){
+        if(seenWork[c.work_id]) return false;
+        seenWork[c.work_id] = true;
+        return true;
+      });
+
+      if(!rows.length){ allData.novels=[]; renderBatch('novels',false); return; }
+
+      var wIds = [...new Set(rows.map(function(c){return c.work_id;}))];
+
+      // Fetch works (title + cover)
+      var {data:wData} = await db.from('works').select('id,title,cover_url').in('id',wIds);
+      var wMap={}; (wData||[]).forEach(function(w){wMap[w.id]=w;});
+      rows.forEach(function(c){c.works=wMap[c.work_id]||null;});
+
+      // Fetch total published chapter count per work
+      var {data:allChaps} = await db.from('chapters').select('id,work_id,chapter_number')
+        .in('work_id',wIds).eq('status','published');
+      var totalMap={};
+      (allChaps||[]).forEach(function(c){
+        if(!totalMap[c.work_id]) totalMap[c.work_id]=0;
+        totalMap[c.work_id]++;
+      });
+      rows.forEach(function(c){c.totalChapters=totalMap[c.work_id]||0;});
+
+      // Fetch user's latest reading progress per work
+      var {data:progData} = await db.from('reading_progress')
+        .select('work_id,chapter_id,chapter_number')
+        .eq('user_id',uid).in('work_id',wIds)
+        .order('chapter_number',{ascending:false});
+      // Keep only highest chapter_number per work
+      var progMap={};
+      (progData||[]).forEach(function(p){
+        if(!progMap[p.work_id] || p.chapter_number > progMap[p.work_id].chapter_number)
+          progMap[p.work_id]=p;
+      });
+      rows.forEach(function(c){c.progress=progMap[c.work_id]||null;});
+
+      var cleared = getClearedIds('novels');
+      rows.sort(function(a,b){
+        var aU=!cleared[a.id], bU=!cleared[b.id];
+        if(aU!==bU) return aU?-1:1;
+        return new Date(b.created_at)-new Date(a.created_at);
+      });
+      allData.novels = rows;
+      renderBatch('novels', false);
+      setTabBadge('novels', rows.filter(function(c){return !cleared[c.id];}).length);
+    } catch(e){ feed.innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>'; }
+  }
+
+  async function loadArtists(uid){
+    var feed = document.getElementById('feed-artists');
+    var friendsFeed = document.getElementById('feed-friends');
+    try {
+      // Friend requests first
+      var frRes = await db.from('friendships').select('id,requester_id,created_at').eq('recipient_id',uid).eq('status','pending').order('created_at',{ascending:false});
+      var frRows = frRes.data||[];
+      friendsFeed.innerHTML = '';
+      if(frRows.length){
+        var frIds = frRows.map(function(r){return r.requester_id;});
+        var {data:frProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',frIds);
+        var frMap={};(frProfs||[]).forEach(function(p){frMap[p.id]=p;});
+        frRows.forEach(function(fr){
+          var p=frMap[fr.requester_id]||{}; var name=p.display_name||p.username||'Someone';
+          var avH=p.avatar_url?'<img src="'+esc(p.avatar_url)+'"/>':esc(name.charAt(0).toUpperCase());
+          var el=document.createElement('div'); el.className='fr-card';
+          el.innerHTML='<div class="fr-avatar">'+avH+'</div>'
+            +'<div><div class="fr-name">'+esc(name)+'</div><div class="fr-sub">Sent you a friend request · '+timeAgo(fr.created_at)+'</div></div>'
+            +'<a class="fr-btn" href="friends.html">View</a>';
+          friendsFeed.appendChild(el);
+        });
+      }
+      // Followed artists' new artwork
+      var fuRes = await db.from('follows').select('following_id').eq('follower_id',uid);
+      var followedIds = (fuRes.data||[]).map(function(r){return r.following_id;});
+      if(!followedIds.length){ allData.artists=[]; renderBatch('artists',false); return; }
+      var artRes = await db.from('works').select('id,title,type,created_at,author_id')
+        .eq('type','artwork').in('author_id',followedIds).order('created_at',{ascending:false}).limit(30);
+      var rows = artRes.data||[];
+      if(rows.length){
+        var aIds=[...new Set(rows.map(function(w){return w.author_id;}))];
+        var {data:aProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',aIds);
+        var aMap={};(aProfs||[]).forEach(function(p){aMap[p.id]=p;});
+        rows.forEach(function(w){w.profiles=aMap[w.author_id]||null;});
+      }
+      var cleared = getClearedIds('artists');
+      rows.sort(function(a,b){
+        var aU=!cleared[a.id], bU=!cleared[b.id];
+        if(aU!==bU) return aU?-1:1;
+        return new Date(b.created_at)-new Date(a.created_at);
+      });
+      allData.artists = rows;
+      renderBatch('artists', false);
+      setTabBadge('artists', rows.filter(function(w){return !cleared[w.id];}).length + frRows.length);
+    } catch(e){ feed.innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>'; }
+  }
+
+  async function loadComments(uid){
+    var feed = document.getElementById('feed-comments');
+    try {
+      var myWorks = await db.from('works').select('id,title,type').eq('author_id',uid);
+      var myRows = myWorks.data||[];
+      var myNovelIds = myRows.filter(function(w){return w.type!=='artwork';}).map(function(w){return w.id;});
+      var myArtIds   = myRows.filter(function(w){return w.type==='artwork';}).map(function(w){return w.id;});
+      var titleMap={}; myRows.forEach(function(w){titleMap[w.id]=w;});
+      var commentNotifs = [];
+      if(myNovelIds.length){
+        var chapRes = await db.from('chapters').select('id,work_id').in('work_id',myNovelIds);
+        var chapIds = (chapRes.data||[]).map(function(c){return c.id;});
+        var chapWMap={}; (chapRes.data||[]).forEach(function(c){chapWMap[c.id]=c.work_id;});
+        if(chapIds.length){
+          var ncRes = await db.from('chapter_comments').select('id,content,created_at,chapter_id,user_id,parent_id')
+            .in('chapter_id',chapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
+          (ncRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){
+            c.work_id=chapWMap[c.chapter_id]||null; c._type='novel'; commentNotifs.push(c);
+          });
+        }
+      }
+      if(myArtIds.length){
+        var acRes = await db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id')
+          .in('work_id',myArtIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
+        (acRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){
+          c._type='artwork'; commentNotifs.push(c);
+        });
+      }
+      commentNotifs.sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
+      if(commentNotifs.length){
+        var uIds=[...new Set(commentNotifs.map(function(c){return c.user_id;}))];
+        var {data:uProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',uIds);
+        var uMap={};(uProfs||[]).forEach(function(p){uMap[p.id]=p;});
+        commentNotifs.forEach(function(cm){
+          cm.profiles=uMap[cm.user_id]||null;
+          cm.works=titleMap[cm.work_id]||null;
+        });
+      }
+      var cleared = getClearedIds('comments');
+      commentNotifs.sort(function(a,b){
+        var aU=!cleared[a.id], bU=!cleared[b.id];
+        if(aU!==bU) return aU?-1:1;
+        return new Date(b.created_at)-new Date(a.created_at);
+      });
+      allData.comments = commentNotifs;
+      renderBatch('comments', false);
+      setTabBadge('comments', commentNotifs.filter(function(c){return !cleared[c.id];}).length);
+    } catch(e){ feed.innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>'; }
+  }
+
+  function setTabBadge(tab, count){
+    var btn = document.getElementById('tab-btn-'+tab);
+    if(!btn) return;
+    var ex = btn.querySelector('.tab-badge'); if(ex) ex.remove();
+    if(count>0){
+      var b=document.createElement('span'); b.className='tab-badge';
+      b.textContent=Math.min(count,99); btn.appendChild(b);
+    }
+  }
+
+  // ── INIT ─────────────────────────────────────────────────────────
+  (async function init(){
+    var session = null;
+    for(var i=0;i<5;i++){
+      session = (await db.auth.getSession()).data.session;
+      if(session) break;
+      await new Promise(function(r){setTimeout(r,350);});
+    }
+    if(!session){
+      document.getElementById('feed-novels').innerHTML='<div class="empty-state"><i class="ti ti-lock"></i><p>Please <a href="login.html" style="color:var(--accent);">log in</a> to view notifications.</p></div>';
+      document.getElementById('feed-artists').innerHTML='';
+      document.getElementById('feed-comments').innerHTML='';
+      return;
+    }
+    var uid = session.user.id;
+    await loadAll(uid);
+  })();
+</script>
+<script src="nav.js"></script>
+</body>
+</html>
