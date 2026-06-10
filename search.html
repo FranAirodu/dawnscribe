@@ -145,7 +145,8 @@
     <p>© 2026 DawnScribe. All rights reserved.</p>
   </footer>
 
-  <script>
+  <script src="blockUtils.js"></script>
+<script>
     const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
     const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
     const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
@@ -323,6 +324,11 @@
     }
 
      function renderResults(items, type, append, profileMap, collabSet) {
+      // Filter out blocked users
+      items = items.filter(function(item){
+        var uid = item.author_id || item.id; // works use author_id, profiles use id
+        return !dsBlock.either(uid);
+      });
       var container = document.getElementById('results-container');
       var isProfile = (type === 'authors' || type === 'artists');
       var isArtwork = (type === 'artwork');
@@ -471,7 +477,14 @@
     });
 
     // ── INIT
-    (function init() {
+    (async function init() {
+      // Load block list if logged in (nav.js hasn't run yet)
+      try {
+        var bSess = await window.db.auth.getSession();
+        if (bSess && bSess.data && bSess.data.session) {
+          await dsBlock.load(bSess.data.session.user.id);
+        }
+      } catch(e) {}
       var params = getParams();
       state.type = params.type;
       state.query = params.q;
@@ -501,5 +514,6 @@
   </script>
 
 <script src="nav.js"></script>
+<script src="footer.js"></script>
 </body>
 </html>

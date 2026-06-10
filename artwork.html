@@ -123,6 +123,8 @@
     .comment-delete-btn:hover{color:var(--red);}
     .comment-reply-btn{background:transparent;border:none;color:var(--text3);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.2s;display:flex;align-items:center;gap:3px;}
     .comment-reply-btn:hover{color:var(--accent);}
+    .comment-block-btn{background:transparent;border:none;color:var(--text3);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.2s;display:inline-flex;align-items:center;gap:3px;margin-top:6px;}
+    .comment-block-btn:hover{color:var(--red,#f87171);}
     .comment-actions{display:flex;align-items:center;gap:4px;margin-top:6px;}
     .replies-list{margin-top:8px;padding-left:16px;border-left:2px solid var(--border);display:flex;flex-direction:column;gap:8px;}
     .reply-card{background:var(--bg);border-radius:8px;padding:10px 12px;}
@@ -787,6 +789,9 @@
       }
     }
 
+    // Load block list
+    if (session) { await dsBlock.load(session.user.id); }
+
     // ── COMMENTS (THREADED)
     function buildCommentCard(c, profileMap, isOwner, isReply){
       var p = profileMap[c.user_id] || {};
@@ -798,6 +803,7 @@
       var card = document.createElement('div');
       card.className = isReply ? 'reply-card' : 'comment-card';
       card.dataset.commentId = c.id;
+      card.dataset.userId = c.user_id;
       card.innerHTML =
         '<div class="comment-header">'
           + '<div class="comment-avatar" style="' + (isReply ? 'width:24px;height:24px;font-size:11px;' : '') + '">' + avatarHtml + '</div>'
@@ -808,6 +814,7 @@
         + '<div class="comment-text">' + esc(c.content) + '</div>'
         + (session ? '<div class="comment-actions">'
             + '<button class="comment-reply-btn"><i class="ti ti-corner-down-right"></i> Reply</button>'
+            + (session.user.id !== c.user_id ? '<button class="comment-block-btn"><i class="ti ti-ban"></i> Block</button>' : '')
           + '</div>' : '');
 
       if(canDelete){
@@ -819,6 +826,16 @@
         card.querySelector('.comment-reply-btn').addEventListener('click', function(){
           toggleReplyBox(c.id, card, name);
         });
+        if(session.user.id !== c.user_id){
+          card.querySelector('.comment-block-btn').addEventListener('click', async function(){
+            if(!confirm('Block ' + esc(name) + '? Their comments will be hidden from your view.')) return;
+            await dsBlock.block(c.user_id);
+            document.querySelectorAll('.comment-card, .reply-card').forEach(function(el){
+              if(el.dataset.userId === c.user_id) el.remove();
+            });
+            showToast('User blocked.', 'ti-ban');
+          });
+        }
       }
       return card;
     }
@@ -915,7 +932,7 @@
       var countEl = document.getElementById('comment-count');
       if(!list) return;
 
-      var comments = data || [];
+      var comments = (data || []).filter(function(cm){ return !dsBlock.either(cm.user_id); });
       if(countEl) countEl.textContent = comments.length;
 
       if(!comments.length){
@@ -1506,6 +1523,8 @@
 
     init();
   </script>
+<script src="blockUtils.js"></script>
 <script src="nav.js"></script>
+<script src="footer.js"></script>
 </body>
 </html>
