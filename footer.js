@@ -29,6 +29,11 @@
     </div>
     <div class="ds-footer-copy">&copy; ${year} DawnScribe. All rights reserved.</div>
   `;
+  // Skip on full-height app pages where a footer would break the layout
+  var noFooterPages = ['messages.html'];
+  var currentPage = window.location.pathname.split('/').pop();
+  if (noFooterPages.indexOf(currentPage) !== -1) return;
+
   var existing = document.querySelector('footer');
   if (existing) { existing.removeAttribute('style'); existing.className = 'ds-footer'; existing.innerHTML = html; }
   else { var f = document.createElement('footer'); f.className = 'ds-footer'; f.innerHTML = html; document.body.appendChild(f); }

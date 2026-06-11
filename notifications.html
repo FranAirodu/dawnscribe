@@ -303,11 +303,14 @@
     var workTitle = work ? work.title : 'your work';
     var snippet = (cm.content||'').slice(0,90)+(cm.content&&cm.content.length>90?'…':'');
     var isUnread = !cleared[cm.id];
+    var action = cm._para ? 'commented on a paragraph in' : 'commented on';
+    var paraIcon = cm._para ? '<i class="ti ti-pilcrow" style="color:var(--accent);font-size:11px;margin-right:3px;"></i>' : '';
     var card = document.createElement('div');
     card.className = 'notif-card' + (isUnread ? ' unread' : '');
     card.dataset.id = cm.id;
     card.onclick = function(){
       if(!cm.work_id) return;
+      if(cm._para && cm.chapter_id){ window.location.href='chapter.html?id='+cm.chapter_id; return; }
       window.location.href = cm._type==='artwork' ? 'artwork.html?id='+cm.work_id : 'story.html?id='+cm.work_id;
     };
     var avHtml = prof&&prof.avatar_url
@@ -316,7 +319,7 @@
     card.innerHTML =
       '<div class="notif-cover '+coverColor(cm.user_id||cm.id)+'" style="overflow:hidden;">'+avHtml+'</div>'+
       '<div class="notif-body">'+
-        '<div class="notif-card-title">'+esc(name)+' commented on <em>'+esc(workTitle)+'</em></div>'+
+        '<div class="notif-card-title">'+paraIcon+esc(name)+' '+action+' <em>'+esc(workTitle)+'</em></div>'+
         '<div class="notif-card-text">"'+esc(snippet)+'"</div>'+
         '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</div>'+
       '</div>'+
@@ -502,6 +505,12 @@
             .in('chapter_id',chapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
           (ncRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){
             c.work_id=chapWMap[c.chapter_id]||null; c._type='novel'; commentNotifs.push(c);
+          });
+          // Paragraph comments
+          var pcRes = await db.from('paragraph_comments').select('id,content,created_at,chapter_id,user_id,parent_id')
+            .in('chapter_id',chapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
+          (pcRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){
+            c.work_id=chapWMap[c.chapter_id]||null; c._type='novel'; c._para=true; commentNotifs.push(c);
           });
         }
       }

@@ -508,6 +508,16 @@
       document.getElementById('user-avatar-initial').textContent = displayName.charAt(0).toUpperCase();
       if(username) document.getElementById('dd-profile-link').href = 'profile.html?user='+username;
 
+      // Always fetch profile by uid — metadata may be missing/stale
+      var res = await db.from('profiles').select('avatar_url,display_name,username,id').eq('id',session.user.id).maybeSingle();
+      if(res && !res.error && res.data && !username){
+        username = res.data.username;
+        if(username){
+          document.getElementById('dd-handle').textContent = '@'+username;
+          document.getElementById('dd-profile-link').href = 'profile.html?user='+username;
+        }
+      }
+
       if(username){
         var res = await db.from('profiles').select('avatar_url,display_name,id').eq('username',username).maybeSingle();
         if(res && !res.error && res.data){
