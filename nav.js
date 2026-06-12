@@ -8,6 +8,10 @@
 
   /* ── CSS ─────────────────────────────────────────────────────── */
   var css = `
+    .gem-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--gold); font-size: 14px; font-weight: 700; cursor: default; transition: all 0.2s, transform 0.2s; }
+    .gem-wrap:hover { border-color: var(--gold); }
+    .gem-wrap i { font-size: 16px; }
+    .gem-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
     .dm-wrap { position: relative; }
     .dm-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; position: relative; text-decoration: none; }
     .dm-btn.has-unread { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.08); }
@@ -95,6 +99,10 @@
 
   /* ── NAV HTML ────────────────────────────────────────────────── */
   var navHtml = `
+    <div class="gem-wrap" id="gem-wrap" style="display:none;" title="Your gems — earned by reading chapters">
+      <i class="ti ti-diamond"></i>
+      <span class="gem-count" id="ds-gem-count">0</span>
+    </div>
     <div class="dm-wrap">
       <a class="dm-btn" href="messages.html" id="dm-btn">
         <i class="ti ti-message"></i>
@@ -500,6 +508,17 @@
       if(userWrap) userWrap.style.display = 'flex';
       var avatarBtn = document.getElementById('user-avatar-btn');
 
+      // Load gem balance
+      var gemWrap = document.getElementById('gem-wrap');
+      if (gemWrap) {
+        gemWrap.style.display = 'flex';
+        try {
+          var gemRes = await db.from('user_gems').select('balance').eq('user_id', session.user.id).maybeSingle();
+          var balance = (gemRes.data && gemRes.data.balance) || 0;
+          document.getElementById('ds-gem-count').textContent = balance.toLocaleString();
+        } catch(e) {}
+      }
+
       var meta = session.user.user_metadata || {};
       var username = meta.username || null;
       var displayName = meta.display_name || username || session.user.email.split('@')[0];
@@ -573,6 +592,16 @@
       }
     } catch(err){ console.warn('DS nav:', err); }
   })();
+
+  // Live-update gem count when gems are awarded elsewhere on the page
+  window.addEventListener('ds-gems-awarded', function(e){
+    var el = document.getElementById('ds-gem-count');
+    if (!el) return;
+    var current = parseInt((el.textContent||'0').replace(/,/g,'')) || 0;
+    el.textContent = (current + (e.detail.amount||0)).toLocaleString();
+    el.parentElement.style.transform = 'scale(1.15)';
+    setTimeout(function(){ el.parentElement.style.transform = 'scale(1)'; }, 200);
+  });
   }); // dsWaitForDb
 
 })();

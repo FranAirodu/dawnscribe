@@ -10,6 +10,7 @@ window.CharacterTitles = (function() {
     { key: 'role',         label: 'Role',                  icon: 'ti-shield-star' },
     { key: 'dawnscribe',   label: 'DawnScribe Originals',  icon: 'ti-sparkles' },
     { key: 'relationship', label: 'Relationship',          icon: 'ti-heart' },
+    { key: 'fan_reaction', label: 'Fan Reaction',          icon: 'ti-flame' },
     { key: 'negative',     label: 'Negative',              icon: 'ti-alert-triangle' }
   ];
 
@@ -191,6 +192,12 @@ window.CharacterTitles = (function() {
     wrap.className = 'ct-picker-wrap';
     wrap.id = 'ct-picker-' + charId;
 
+    // One-time warning
+    var warning = document.createElement('div');
+    warning.className = 'ct-picker-warning';
+    warning.innerHTML = '<i class="ti ti-alert-circle"></i> You only get to choose one title for this chapter, once. Pick wisely.';
+    wrap.appendChild(warning);
+
     // Category tabs
     var tabBar = document.createElement('div');
     tabBar.className = 'ct-tab-bar';
@@ -338,7 +345,7 @@ window.CharacterTitles = (function() {
     var html = '<div class="ct-results-list">';
     entries.forEach(function(e, i) {
       var pct = total > 0 ? Math.round((e.count / total) * 100) : 0;
-      var catColor = { personality:'var(--accent)', role:'var(--gold)', dawnscribe:'#a78bfa', relationship:'#f472b6', negative:'var(--red)' };
+      var catColor = { personality:'var(--accent)', role:'var(--gold)', dawnscribe:'#a78bfa', relationship:'#f472b6', fan_reaction:'#fb923c', negative:'var(--red)' };
       var color = catColor[e.title.category] || 'var(--accent)';
       html +=
         '<div class="ct-result-row">' +
@@ -556,7 +563,7 @@ window.CharacterTitles = (function() {
 
       var titlesHtml = top3.length
         ? top3.map(function(e, i){
-            var catColor = { personality:'var(--accent)', role:'var(--gold)', dawnscribe:'#a78bfa', relationship:'#f472b6', negative:'var(--red)' };
+            var catColor = { personality:'var(--accent)', role:'var(--gold)', dawnscribe:'#a78bfa', relationship:'#f472b6', fan_reaction:'#fb923c', negative:'var(--red)' };
             var color = catColor[e.title.category] || 'var(--accent)';
             return '<div class="ct-story-top-title" style="border-color:'+color+';color:'+color+';">' +
               (i===0 ? '<i class="ti ti-crown" style="font-size:10px;"></i> ' : '') +

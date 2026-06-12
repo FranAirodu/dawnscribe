@@ -76,14 +76,26 @@
     /* CHAPTER OVERLAY */
     .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:200;padding:24px;opacity:0;pointer-events:none;transition:opacity 0.2s;}
     .overlay.open{opacity:1;pointer-events:all;}
-    .overlay-panel{background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:720px;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;}
+    .overlay-panel{background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:720px;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;transition:all 0.25s cubic-bezier(.4,0,.2,1);}
     .overlay-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg2);z-index:5;border-radius:16px 16px 0 0;}
     .overlay-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);}
     .overlay-title span{color:var(--accent);}
     .overlay-close{background:none;border:1px solid var(--border);border-radius:7px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:16px;transition:all 0.2s;}
     .overlay-close:hover{border-color:var(--red);color:var(--red);}
+    .overlay-expand{background:none;border:1px solid var(--border);border-radius:7px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:16px;transition:all 0.2s;margin-right:6px;}
+    .overlay-expand:hover{border-color:var(--accent);color:var(--accent);}
+    .overlay-header-btns{display:flex;align-items:center;gap:0;}
     .overlay-body{padding:24px;flex:1;}
     .overlay-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--bg2);border-radius:0 0 16px 16px;}
+
+    /* FULLSCREEN MODE */
+    .overlay.fullscreen{padding:0;}
+    .overlay.fullscreen .overlay-panel{max-width:100%;max-height:100vh;height:100vh;border-radius:0;border:none;}
+    .overlay.fullscreen .overlay-header{border-radius:0;}
+    .overlay.fullscreen .overlay-footer{border-radius:0;}
+    .overlay.fullscreen .overlay-body{display:flex;flex-direction:column;}
+    .overlay.fullscreen #chapter-editor .ql-editor{min-height:calc(100vh - 220px);font-size:16px;line-height:1.8;}
+    .fs-hint{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:4px;margin-right:auto;}
     .field-group{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
     .field-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);}
     .field-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:all 0.2s;width:100%;}
@@ -162,7 +174,10 @@
     <div class="overlay-panel">
       <div class="overlay-header">
         <div class="overlay-title">Add Chapter — <span id="overlay-work-title"></span></div>
-        <button class="overlay-close" onclick="closeOverlay()"><i class="ti ti-x"></i></button>
+        <div class="overlay-header-btns">
+          <button class="overlay-expand" id="expand-btn" onclick="toggleFullscreen()" title="Toggle fullscreen"><i class="ti ti-arrows-maximize" id="expand-icon"></i></button>
+          <button class="overlay-close" onclick="closeOverlay()"><i class="ti ti-x"></i></button>
+        </div>
       </div>
       <div class="overlay-body">
         <div class="field-group">
@@ -176,6 +191,7 @@
         </div>
       </div>
       <div class="overlay-footer">
+        <span class="fs-hint" id="fs-hint" style="display:none;"><i class="ti ti-arrows-minimize"></i> Press Esc or click <i class="ti ti-arrows-minimize" style="font-size:10px;"></i> to exit fullscreen</span>
         <button class="cancel-btn" onclick="closeOverlay()">Cancel</button>
         <button class="save-btn" id="save-chapter-btn" onclick="saveChapter()"><i class="ti ti-check"></i> Publish Chapter</button>
       </div>
@@ -318,14 +334,43 @@
       }
     }
 
+    function toggleFullscreen() {
+      var overlay = document.getElementById('chapter-overlay');
+      var icon = document.getElementById('expand-icon');
+      var hint = document.getElementById('fs-hint');
+      var isFs = overlay.classList.toggle('fullscreen');
+      icon.className = isFs ? 'ti ti-arrows-minimize' : 'ti ti-arrows-maximize';
+      document.getElementById('expand-btn').title = isFs ? 'Exit fullscreen' : 'Toggle fullscreen';
+      if (hint) hint.style.display = isFs ? 'flex' : 'none';
+      // Resize Quill editor
+      if (quill) setTimeout(function(){ quill.focus(); }, 50);
+    }
+
     function closeOverlay() {
-      document.getElementById('chapter-overlay').classList.remove('open');
+      var overlay = document.getElementById('chapter-overlay');
+      overlay.classList.remove('open', 'fullscreen');
+      var icon = document.getElementById('expand-icon');
+      if (icon) icon.className = 'ti ti-arrows-maximize';
+      var hint = document.getElementById('fs-hint');
+      if (hint) hint.style.display = 'none';
       activeWorkId = null;
     }
 
-    // Close on backdrop click
+    // Esc exits fullscreen first, then closes
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Escape') return;
+      var overlay = document.getElementById('chapter-overlay');
+      if (!overlay.classList.contains('open')) return;
+      if (overlay.classList.contains('fullscreen')) {
+        toggleFullscreen(); // just exit fullscreen, keep overlay open
+      } else {
+        closeOverlay();
+      }
+    });
+
+    // Backdrop click only works when NOT in fullscreen
     document.getElementById('chapter-overlay').addEventListener('click', function(e) {
-      if (e.target === this) closeOverlay();
+      if (e.target === this && !this.classList.contains('fullscreen')) closeOverlay();
     });
 
     async function saveChapter() {
