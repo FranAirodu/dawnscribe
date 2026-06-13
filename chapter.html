@@ -19,6 +19,41 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+  <script src="readingFonts.js"></script>
+  <script>
+    (function(){
+      if (window.READING_FONTS_GOOGLE_URL) {
+        var l = document.createElement('link');
+        l.rel = 'stylesheet';
+        l.href = window.READING_FONTS_GOOGLE_URL;
+        document.head.appendChild(l);
+      }
+      // Register font whitelist BEFORE any Quill instance is created
+      if (window.READING_FONTS) {
+        var fontKeys = Object.keys(window.READING_FONTS);
+        var Font = Quill.import('formats/font');
+        Font.whitelist = fontKeys;
+        Quill.register(Font, true);
+
+        var css = '';
+        fontKeys.forEach(function(key){
+          var f = window.READING_FONTS[key];
+          css += '.ql-font-' + key + '{font-family:' + f.css + ';}';
+          css += '.page-content .ql-font-' + key + '{font-family:' + f.css + ';}';
+          css += '.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="' + key + '"]::before,';
+          css += '.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="' + key + '"]::before{';
+          css += 'content:"' + f.label + '";font-family:' + f.css + ';}';
+        });
+        css += '.ql-snow .ql-picker.ql-font .ql-picker-label::before,';
+        css += '.ql-snow .ql-picker.ql-font .ql-picker-item::before{content:"Default";}';
+        css += '.ql-snow .ql-picker.ql-font{width:170px;}';
+        css += '.ql-snow .ql-picker.ql-font .ql-picker-options{max-height:260px;overflow-y:auto;}';
+        var styleTag = document.createElement('style');
+        styleTag.textContent = css;
+        document.head.appendChild(styleTag);
+      }
+    })();
+  </script>
   <style>
     :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;--shadow:rgba(0,0,0,0.4);
       --reader-bg:#1a1a26;--reader-text:#9b9bc0;--reader-font:'Lato',sans-serif;--reader-size:16px;--reader-lh:1.8;--reader-width:650px;}
@@ -416,14 +451,35 @@
       if (!saved) return;
       try {
         var r = JSON.parse(saved);
-        var bgMap = { default:'#1a1a26', black:'#000000', sepia:'#f5e6c8', white:'#ffffff' };
-        var colorMap = { default:'#9b9bc0', black:'#888888', sepia:'#5c4a2a', white:'#333333' };
-        var fontMap = { lato:"'Lato',sans-serif", merriweather:"'Merriweather',serif", 'source-serif':"'Source Serif 4',serif", nunito:"'Nunito',sans-serif", georgia:'Georgia,serif', mono:'monospace' };
+        var bgMap = { default:'#1a1a26', black:'#000000', sepia:'#f5e6c8', white:'#ffffff', cream:'#faf3e6', nightblue:'#0d1b2a', gray:'#3a3a3f' };
+        var colorMap = { default:'#9b9bc0', black:'#888888', sepia:'#5c4a2a', white:'#333333', cream:'#4a4035', nightblue:'#a8c0d8', gray:'#d8d8dc' };
         if (r.bg) { document.documentElement.style.setProperty('--reader-bg', bgMap[r.bg]||bgMap.default); document.documentElement.style.setProperty('--reader-text', colorMap[r.bg]||colorMap.default); }
-        if (r.font) document.documentElement.style.setProperty('--reader-font', fontMap[r.font]||fontMap.lato);
+        // Font: only apply reader override here. If no override, the author's
+        // chapter-level font (chapterData.font) is applied later in init()
+        // once chapterData has loaded — see applyChapterFont().
+        if (r.font_override && r.font && window.READING_FONTS) {
+          var fontEntry = window.READING_FONTS[r.font] || window.READING_FONTS.lato;
+          document.documentElement.style.setProperty('--reader-font', fontEntry.css);
+        } else if (window.READING_FONTS) {
+          document.documentElement.style.setProperty('--reader-font', window.READING_FONTS.lato.css);
+        }
         if (r.fontsize) document.documentElement.style.setProperty('--reader-size', r.fontsize+'px');
         if (r.lineheight) document.documentElement.style.setProperty('--reader-lh', (r.lineheight/10).toFixed(1));
         if (r.width) document.documentElement.style.setProperty('--reader-width', r.width+'px');
+      } catch(e){}
+    }
+
+    // Apply the author's chapter-level default font, unless the reader has
+    // chosen to override it in their settings.
+    function applyChapterFont() {
+      if (!window.READING_FONTS) return;
+      try {
+        var saved = localStorage.getItem('ds_reading');
+        var r = saved ? JSON.parse(saved) : {};
+        if (r.font_override && r.font) return; // reader override already applied
+        var key = (chapterData && chapterData.font) || 'lato';
+        var fontEntry = window.READING_FONTS[key] || window.READING_FONTS.lato;
+        document.documentElement.style.setProperty('--reader-font', fontEntry.css);
       } catch(e){}
     }
 
@@ -728,10 +784,11 @@
       document.getElementById('edit-overlay').classList.add('open');
       document.getElementById('edit-title-input').value = chapterData.title || '';
       if (!editQuill) {
+        var editFontKeys = window.READING_FONTS ? Object.keys(window.READING_FONTS) : [];
         editQuill = new Quill('#edit-editor', {
           theme: 'snow',
           modules: {
-            toolbar: [[{header:[1,2,3,false]}],['bold','italic','underline','strike'],['blockquote'],[{list:'ordered'},{list:'bullet'}],[{align:[]}],['link'],['clean']],
+            toolbar: [[{header:[1,2,3,false]}],[{font:editFontKeys}],['bold','italic','underline','strike'],['blockquote'],[{list:'ordered'},{list:'bullet'}],[{align:[]}],['link'],['clean']],
             keyboard: {
               bindings: {
                 tab: {
@@ -1554,6 +1611,7 @@
       var chapResult = await db.from('chapters').select('*').eq('id', chapterId).maybeSingle();
       if (!chapResult.data) { document.getElementById('chapter-title-display').textContent = 'Chapter not found.'; return; }
       chapterData = chapResult.data;
+      applyChapterFont();
 
       // Load work
       var workResult = await db.from('works').select('*').eq('id', chapterData.work_id).maybeSingle();
