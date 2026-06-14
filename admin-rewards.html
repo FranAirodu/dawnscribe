@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Reward Manager</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root {
+      --bg:#0a0a0f; --bg2:#12121a; --bg3:#1a1a26; --bg4:#22223a;
+      --accent:#2dd4bf; --accent2:#0d9488;
+      --text:#f1f0ff; --text2:#9b9bc0; --text3:#5a5a80;
+      --border:rgba(255,255,255,0.07); --red:#f87171; --green:#34d399; --gold:#f59e0b; --silver:#c5c5d8;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:var(--text);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    .page{max-width:1200px;margin:0 auto;padding:40px 24px 80px;}
+    .page-title{font-family:'Cinzel',serif;font-size:26px;font-weight:700;color:var(--text);margin-bottom:6px;}
+    .page-title span{color:var(--accent);}
+    .page-sub{font-size:14px;color:var(--text3);margin-bottom:32px;}
+
+    .access-denied{max-width:480px;margin:120px auto;text-align:center;}
+    .access-denied i{font-size:48px;color:var(--red);margin-bottom:16px;display:block;}
+    .access-denied h2{font-family:'Cinzel',serif;font-size:22px;margin-bottom:8px;}
+    .access-denied p{color:var(--text3);font-size:14px;}
+
+    /* ── LAYOUT: sidebar + detail panel ───────────────────── */
+    .rewards-layout{display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:start;}
+    @media(max-width:860px){.rewards-layout{grid-template-columns:1fr;}}
+
+    .tag-sidebar{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:sticky;top:84px;max-height:calc(100vh - 110px);display:flex;flex-direction:column;}
+    .tag-search{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;margin-bottom:12px;}
+    .tag-search:focus{border-color:var(--accent);}
+    .tag-search::placeholder{color:var(--text3);}
+    .tag-list{overflow-y:auto;display:flex;flex-direction:column;gap:2px;flex:1;}
+    .tag-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--text2);transition:all 0.15s;border:1px solid transparent;}
+    .tag-item:hover{background:var(--bg3);color:var(--text);}
+    .tag-item.active{background:rgba(45,212,191,0.08);border-color:rgba(45,212,191,0.25);color:var(--accent);font-weight:700;}
+    .tag-item-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .tag-item-count{font-size:11px;color:var(--text3);background:var(--bg4);border-radius:10px;padding:2px 7px;flex-shrink:0;}
+    .tag-item.active .tag-item-count{background:rgba(45,212,191,0.15);color:var(--accent);}
+    .tag-empty-note{font-size:12px;color:var(--text3);text-align:center;padding:24px 12px;}
+
+    /* ── DETAIL PANEL ───────────────────────────────────────── */
+    .detail-panel{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:28px;min-height:400px;}
+    .detail-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:360px;color:var(--text3);text-align:center;gap:10px;}
+    .detail-empty i{font-size:36px;}
+
+    .detail-header{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;flex-wrap:wrap;}
+    .detail-title{font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:var(--text);}
+    .detail-meta{font-size:12px;color:var(--text3);margin-bottom:24px;}
+
+    .rewards-table{display:flex;flex-direction:column;gap:10px;margin-bottom:28px;}
+    .reward-row{display:grid;grid-template-columns:64px 1fr auto auto;align-items:center;gap:14px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+    @media(max-width:600px){.reward-row{grid-template-columns:48px 1fr;}}
+    .reward-thumb{width:64px;height:64px;border-radius:8px;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:22px;overflow:hidden;flex-shrink:0;}
+    .reward-thumb img{width:100%;height:100%;object-fit:cover;}
+    .reward-info{display:flex;flex-direction:column;gap:3px;min-width:0;}
+    .reward-name{font-weight:700;font-size:14px;color:var(--text);}
+    .reward-desc{font-size:12px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .reward-slot{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);}
+    .reward-points{font-size:13px;font-weight:700;color:var(--gold);white-space:nowrap;text-align:right;}
+    .reward-points small{display:block;font-size:10px;font-weight:400;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;}
+    .reward-delete{background:none;border:1px solid var(--border);border-radius:6px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:14px;flex-shrink:0;transition:all 0.2s;}
+    .reward-delete:hover{border-color:var(--red);color:var(--red);}
+    .no-rewards{font-size:13px;color:var(--text3);font-style:italic;padding:16px 0;}
+
+    /* ── ADD REWARD FORM ──────────────────────────────────────── */
+    .form-section-title{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+    .form-section-title i{color:var(--accent);}
+    .form-section-sub{font-size:12px;color:var(--text3);margin-bottom:18px;}
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+    @media(max-width:600px){.form-grid{grid-template-columns:1fr;}}
+    .form-group{display:flex;flex-direction:column;gap:6px;}
+    .form-group.full{grid-column:1 / -1;}
+    .form-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);}
+    .form-input,.form-select,.form-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;transition:all 0.2s;width:100%;}
+    .form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent);}
+    .form-input::placeholder,.form-textarea::placeholder{color:var(--text3);}
+    .form-textarea{resize:vertical;min-height:60px;}
+    .form-select{cursor:pointer;}
+    .points-hint{font-size:11px;color:var(--text3);margin-top:2px;}
+    .points-hint b{color:var(--gold);}
+
+    .save-btn{background:var(--accent2);border:none;border-radius:9px;padding:11px 28px;color:white;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;}
+    .save-btn:hover{background:var(--accent);color:var(--bg);}
+    .save-btn:disabled{opacity:0.5;cursor:not-allowed;}
+
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+    .toast.error i{color:var(--red);}
+
+    footer{background:var(--bg2);border-top:1px solid var(--border);padding:24px;text-align:center;color:var(--text3);font-size:13px;}
+
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
+
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="WhiteRoomUnbreakable.html"><i class="ti ti-arrow-left"></i> Back to Admin</a>
+  </nav>
+
+  <div id="access-gate">
+    <div class="access-denied">
+      <i class="ti ti-lock"></i>
+      <h2>Checking access&hellip;</h2>
+      <p>One moment.</p>
+    </div>
+  </div>
+
+  <div class="page" id="main-content" style="display:none;">
+    <h1 class="page-title">Genre <span>Rewards</span></h1>
+    <p class="page-sub">Every tag on DawnScribe earns readers points as they read (gold/main tags &times;2, silver/sub tags &times;1 per word). Add cosmetic rewards here &mdash; readers unlock them automatically once they cross the point threshold.</p>
+
+    <div class="rewards-layout">
+      <!-- TAG SIDEBAR -->
+      <div class="tag-sidebar">
+        <input class="tag-search" id="tag-search" type="text" placeholder="Search tags..." oninput="renderTagList()"/>
+        <div class="tag-list" id="tag-list"></div>
+      </div>
+
+      <!-- DETAIL PANEL -->
+      <div class="detail-panel" id="detail-panel">
+        <div class="detail-empty">
+          <i class="ti ti-tags"></i>
+          <div>Select a tag to view and add rewards</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>&copy; 2026 DawnScribe. Admin panel.</footer>
+
+  <script>
+    const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.db = db;
+    const ADMIN_UID = '516db718-edd5-4856-9281-2df642d006f5';
+
+    const SLOT_ICONS = {
+      outfit: 'ti-shirt', weapon: 'ti-sword', accessory: 'ti-diamond',
+      headwear: 'ti-hat-cowboy', companion: 'ti-paw', effect: 'ti-sparkles',
+      background: 'ti-photo'
+    };
+
+    var allTags = [];
+    var allRewards = {};
+    var selectedTag = null;
+
+    // ── AUTH GATE ───────────────────────────────────────────────
+    async function checkAccess() {
+      var session = null;
+      for (var i = 0; i < 5; i++) {
+        var { data } = await db.auth.getSession();
+        session = data.session;
+        if (session) break;
+        await new Promise(r => setTimeout(r, 350));
+      }
+      if (session && session.user && session.user.id === ADMIN_UID) {
+        document.getElementById('access-gate').style.display = 'none';
+        document.getElementById('main-content').style.display = 'block';
+        init();
+      } else {
+        document.getElementById('access-gate').innerHTML =
+          '<div class="access-denied"><i class="ti ti-lock"></i><h2>Access Denied</h2><p>This page is only available to the site administrator.</p></div>';
+      }
+    }
+
+    // ── TOAST ───────────────────────────────────────────────────
+    function showToast(msg, icon, isError) {
+      var t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg;
+      t.querySelector('i').className = 'ti ' + (icon || 'ti-check');
+      t.classList.toggle('error', !!isError);
+      t.classList.add('show');
+      setTimeout(function() { t.classList.remove('show'); }, 2800);
+    }
+
+    function escHtml(s) {
+      return (s || '').replace(/[&<>"']/g, function(c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
+
+    // ── INIT: load all tags + all rewards ─────────────────────────
+    async function init() {
+      var worksResult = await db.from('works').select('tags_all');
+      var tagSet = new Set();
+      (worksResult.data || []).forEach(function(w) {
+        try {
+          var tags = JSON.parse(w.tags_all || '[]');
+          tags.forEach(function(t) { tagSet.add(t); });
+        } catch(e) {}
+      });
+      allTags = Array.from(tagSet).sort();
+
+      var rewardsResult = await db.from('tag_rewards')
+        .select('id, tag, points_required, cosmetic_item_id, cosmetic_items(id,name,description,image_url,slot)')
+        .order('points_required', { ascending: true });
+
+      allRewards = {};
+      (rewardsResult.data || []).forEach(function(r) {
+        if (!allRewards[r.tag]) allRewards[r.tag] = [];
+        allRewards[r.tag].push(r);
+      });
+
+      Object.keys(allRewards).forEach(function(tag) {
+        if (!allTags.includes(tag)) allTags.push(tag);
+      });
+      allTags.sort();
+
+      renderTagList();
+    }
+
+    // ── TAG SIDEBAR ─────────────────────────────────────────────
+    function renderTagList() {
+      var search = document.getElementById('tag-search').value.trim().toLowerCase();
+      var wrap = document.getElementById('tag-list');
+      var filtered = allTags.filter(function(t) { return t.toLowerCase().includes(search); });
+
+      if (filtered.length === 0) {
+        wrap.innerHTML = '<div class="tag-empty-note">No tags match your search.</div>';
+        return;
+      }
+
+      wrap.innerHTML = filtered.map(function(tag) {
+        var count = (allRewards[tag] || []).length;
+        var active = tag === selectedTag ? ' active' : '';
+        return '<div class="tag-item' + active + '" onclick="selectTag(\'' + tag.replace(/'/g, "\\'") + '\')">' +
+          '<span class="tag-item-name">' + escHtml(tag) + '</span>' +
+          (count > 0 ? '<span class="tag-item-count">' + count + '</span>' : '') +
+        '</div>';
+      }).join('');
+    }
+
+    // ── SELECT TAG ──────────────────────────────────────────────
+    function selectTag(tag) {
+      selectedTag = tag;
+      renderTagList();
+      renderDetailPanel();
+    }
+
+    // ── DETAIL PANEL ────────────────────────────────────────────
+    function renderDetailPanel() {
+      var panel = document.getElementById('detail-panel');
+      var rewards = allRewards[selectedTag] || [];
+
+      var rewardsHtml = rewards.length === 0
+        ? '<div class="no-rewards">No rewards yet for this tag. Add one below.</div>'
+        : '<div class="rewards-table">' + rewards.map(renderRewardRow).join('') + '</div>';
+
+      panel.innerHTML =
+        '<div class="detail-header"><div class="detail-title">' + escHtml(selectedTag) + '</div></div>' +
+        '<div class="detail-meta">Readers earn points toward this tag whenever they finish a chapter on a work tagged with it &mdash; double if it\'s one of the work\'s main (gold) tags, single if it\'s a secondary (silver) tag.</div>' +
+        rewardsHtml +
+        renderAddForm();
+    }
+
+    function renderRewardRow(r) {
+      var item = r.cosmetic_items || {};
+      var icon = SLOT_ICONS[item.slot] || 'ti-diamond';
+      var thumb = item.image_url
+        ? '<img src="' + escHtml(item.image_url) + '" alt=""/>'
+        : '<i class="ti ' + icon + '"></i>';
+      return '<div class="reward-row">' +
+        '<div class="reward-thumb">' + thumb + '</div>' +
+        '<div class="reward-info">' +
+          '<div class="reward-name">' + escHtml(item.name || 'Untitled item') + '</div>' +
+          (item.description ? '<div class="reward-desc">' + escHtml(item.description) + '</div>' : '') +
+          '<div class="reward-slot"><i class="ti ' + icon + '"></i> ' + escHtml(item.slot || 'accessory') + '</div>' +
+        '</div>' +
+        '<div class="reward-points">' + r.points_required.toLocaleString() + '<small>points</small></div>' +
+        '<button class="reward-delete" title="Delete reward" onclick="deleteReward(\'' + r.id + '\')"><i class="ti ti-trash"></i></button>' +
+      '</div>';
+    }
+
+    function renderAddForm() {
+      return '<div class="form-section-title"><i class="ti ti-plus"></i> Add Reward</div>' +
+        '<div class="form-section-sub">Create a new cosmetic item and tie it to a point threshold for this tag.</div>' +
+        '<div class="form-grid">' +
+          '<div class="form-group"><label class="form-label">Item Name</label><input class="form-input" id="new-item-name" placeholder="e.g. Survivor\'s Gear"/></div>' +
+          '<div class="form-group"><label class="form-label">Slot</label>' +
+            '<select class="form-select" id="new-item-slot">' +
+              Object.keys(SLOT_ICONS).map(function(s) { return '<option value="' + s + '">' + s.charAt(0).toUpperCase() + s.slice(1) + '</option>'; }).join('') +
+            '</select>' +
+          '</div>' +
+          '<div class="form-group full"><label class="form-label">Description</label><textarea class="form-textarea" id="new-item-desc" placeholder="Shown to users when they unlock or hover this item"></textarea></div>' +
+          '<div class="form-group"><label class="form-label">Image URL</label><input class="form-input" id="new-item-image" placeholder="https://..."/></div>' +
+          '<div class="form-group"><label class="form-label">Points Required</label><input class="form-input" type="number" min="1" id="new-points" placeholder="e.g. 10000"/>' +
+            '<div class="points-hint">A reader finishing a <b>2,500-word</b> chapter on a work where this is a <b>gold</b> tag earns <b>5,000</b> points toward it (or <b>2,500</b> if it\'s a silver tag).</div>' +
+          '</div>' +
+        '</div>' +
+        '<button class="save-btn" id="save-reward-btn" onclick="saveReward()"><i class="ti ti-check"></i> Add Reward</button>';
+    }
+
+    // ── SAVE / DELETE ───────────────────────────────────────────
+    async function saveReward() {
+      var name = document.getElementById('new-item-name').value.trim();
+      var slot = document.getElementById('new-item-slot').value;
+      var desc = document.getElementById('new-item-desc').value.trim();
+      var image = document.getElementById('new-item-image').value.trim();
+      var points = parseInt(document.getElementById('new-points').value, 10);
+
+      if (!name) { showToast('Item name is required', 'ti-alert-circle', true); return; }
+      if (!points || points <= 0) { showToast('Enter a valid point threshold', 'ti-alert-circle', true); return; }
+
+      var btn = document.getElementById('save-reward-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Saving...';
+
+      try {
+        var itemResult = await db.from('cosmetic_items').insert({
+          name: name,
+          description: desc || null,
+          image_url: image || null,
+          slot: slot
+        }).select().single();
+
+        if (itemResult.error) throw itemResult.error;
+
+        var rewardResult = await db.from('tag_rewards').insert({
+          tag: selectedTag,
+          points_required: points,
+          cosmetic_item_id: itemResult.data.id
+        }).select('id, tag, points_required, cosmetic_item_id, cosmetic_items(id,name,description,image_url,slot)').single();
+
+        if (rewardResult.error) throw rewardResult.error;
+
+        if (!allRewards[selectedTag]) allRewards[selectedTag] = [];
+        allRewards[selectedTag].push(rewardResult.data);
+        allRewards[selectedTag].sort(function(a,b) { return a.points_required - b.points_required; });
+
+        showToast('Reward added — readers will unlock it automatically.', 'ti-check');
+        renderTagList();
+        renderDetailPanel();
+      } catch (err) {
+        showToast(err.message || 'Failed to save reward', 'ti-alert-circle', true);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-check"></i> Add Reward';
+      }
+    }
+
+    async function deleteReward(rewardId) {
+      if (!confirm('Delete this reward? Users who already unlocked the item will keep it, but no one new will unlock it.')) return;
+
+      var result = await db.from('tag_rewards').delete().eq('id', rewardId);
+      if (result.error) {
+        showToast(result.error.message || 'Failed to delete', 'ti-alert-circle', true);
+        return;
+      }
+
+      allRewards[selectedTag] = (allRewards[selectedTag] || []).filter(function(r) { return r.id !== rewardId; });
+      if (allRewards[selectedTag].length === 0) delete allRewards[selectedTag];
+
+      showToast('Reward deleted', 'ti-trash');
+      renderTagList();
+      renderDetailPanel();
+    }
+
+    checkAccess();
+  </script>
+</body>
+</html>
