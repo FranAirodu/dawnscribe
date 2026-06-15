@@ -85,6 +85,35 @@
     .chapter-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--text);margin-bottom:12px;}
     .chapter-meta-row{display:flex;align-items:center;justify-content:center;gap:14px;font-size:12px;color:var(--text3);}
     .chapter-divider{width:60px;height:2px;background:var(--border);margin:20px auto;}
+    .author-note{background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px;margin:0 0 20px;font-size:13px;line-height:1.7;color:var(--text2);}
+    .author-note-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:6px;display:flex;align-items:center;gap:5px;}
+    .author-note p{margin:0 0 8px;}
+    .author-note p:last-child{margin-bottom:0;}
+    .author-note-bottom{margin:24px 0 0;}
+
+    /* ── POLL ─────────────────────────────────────────────── */
+    .poll-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:0 0 20px;}
+    .poll-card-bottom{margin:24px 0 0;}
+    .poll-question{font-size:15px;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:7px;}
+    .poll-question i{color:var(--accent);}
+    .poll-meta{font-size:11px;color:var(--text3);margin-bottom:14px;}
+    .poll-options{display:flex;flex-direction:column;gap:8px;}
+    .poll-option{position:relative;border:1px solid var(--border);border-radius:9px;padding:11px 14px;cursor:pointer;transition:all 0.15s;overflow:hidden;background:var(--bg3);}
+    .poll-option:hover{border-color:rgba(45,212,191,0.3);}
+    .poll-option.selected{border-color:var(--accent);background:rgba(45,212,191,0.06);}
+    .poll-option.disabled{cursor:default;}
+    .poll-option-fill{position:absolute;top:0;left:0;bottom:0;background:rgba(45,212,191,0.10);transition:width 0.4s;z-index:0;}
+    .poll-option-row{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .poll-option-label{font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px;min-width:0;}
+    .poll-option-label i{color:var(--accent);font-size:15px;flex-shrink:0;}
+    .poll-option-pct{font-size:12px;font-weight:700;color:var(--text3);flex-shrink:0;}
+    .poll-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;}
+    .poll-vote-count{font-size:11px;color:var(--text3);}
+    .poll-submit-btn{background:var(--accent2);border:none;border-radius:8px;padding:8px 18px;color:white;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:5px;}
+    .poll-submit-btn:hover{background:var(--accent);color:var(--bg);}
+    .poll-submit-btn:disabled{opacity:0.4;cursor:not-allowed;}
+    .poll-closed-note{font-size:11px;color:var(--text3);font-style:italic;}
+    .poll-locked-note{font-size:11px;color:var(--text3);text-align:center;padding:8px 0 0;}
 
     /* PAGE CONTENT */
     .page-content{background:var(--reader-bg);border-radius:12px;padding:32px;margin-bottom:24px;font-family:var(--reader-font);font-size:var(--reader-size);line-height:var(--reader-lh);color:var(--reader-text);min-height:300px;transition:background 0.3s,color 0.3s;}
@@ -378,6 +407,12 @@
       <div class="chapter-divider"></div>
     </div>
 
+    <!-- AUTHOR'S NOTE (TOP) -->
+    <div class="author-note" id="author-note-top" style="display:none;"></div>
+
+    <!-- POLL (TOP) -->
+    <div class="poll-card" id="poll-top" style="display:none;"></div>
+
     <!-- TIMER BAR -->
     <div class="timer-bar-wrap" id="timer-bar-wrap" style="display:none;">
       <div class="timer-bar-label">
@@ -389,6 +424,12 @@
 
     <!-- PAGE CONTENT -->
     <div class="page-content" id="page-content"></div>
+
+    <!-- AUTHOR'S NOTE (BOTTOM) — shown only on the last page -->
+    <div class="author-note author-note-bottom" id="author-note-bottom" style="display:none;"></div>
+
+    <!-- POLL (BOTTOM) — shown only on the last page -->
+    <div class="poll-card poll-card-bottom" id="poll-bottom" style="display:none;"></div>
 
     <!-- PAGE NAV -->
     <div class="page-nav" id="page-nav">
@@ -422,6 +463,7 @@
     var workData = null;
     var allChapters = [];
     var pages = [];
+    var chapterPolls = [];      // [{...poll, myVote: [indices] | null, voteCounts: [n,n,...], totalVotes: n}]
     var currentPage = 0;
     var timerDone = false;
     var timerInterval = null;
@@ -436,6 +478,199 @@
     function formatDate(s){ if(!s) return '—'; return new Date(s).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
     function timeAgo(s){ var d=Math.floor((Date.now()-new Date(s))/1000); if(d<60) return 'just now'; if(d<3600) return Math.floor(d/60)+'m ago'; if(d<86400) return Math.floor(d/3600)+'h ago'; if(d<2592000) return Math.floor(d/86400)+'d ago'; if(d<31536000) return Math.floor(d/2592000)+'mo ago'; return Math.floor(d/31536000)+'y ago'; }
     function getChapterId(){ return new URLSearchParams(window.location.search).get('id'); }
+
+    // ── AUTHOR'S NOTE ───────────────────────────────────────────
+    // Renders the author's top/bottom note (plain text, line breaks
+    // preserved). Hides the container entirely if there's no note.
+    function renderAuthorNote(pos, text) {
+      var el = document.getElementById('author-note-' + pos);
+      if (!el) return;
+      if (!text || !text.trim()) {
+        el.style.display = 'none';
+        el.innerHTML = '';
+        return;
+      }
+      var paragraphs = text.trim().split(/\n+/).map(function(line) {
+        return '<p>' + escHtml(line) + '</p>';
+      }).join('');
+      el.innerHTML = '<div class="author-note-label"><i class="ti ti-pin"></i> Author\'s Note</div>' + paragraphs;
+      el.style.display = 'block';
+    }
+
+    // ── POLLS ───────────────────────────────────────────────────
+    async function loadChapterPolls() {
+      chapterPolls = [];
+      if (!chapterData) return;
+
+      var pollsResult = await db.from('chapter_polls').select('*').eq('chapter_id', chapterData.id);
+      var polls = pollsResult.data || [];
+      if (polls.length === 0) return;
+
+      var pollIds = polls.map(function(p){ return p.id; });
+      var votesResult = await db.from('chapter_poll_votes').select('poll_id,user_id,option_indices').in('poll_id', pollIds);
+      var allVotes = votesResult.data || [];
+
+      chapterPolls = polls.map(function(p) {
+        var votesForPoll = allVotes.filter(function(v){ return v.poll_id === p.id; });
+        var voteCounts = (p.options || []).map(function(){ return 0; });
+        votesForPoll.forEach(function(v) {
+          (v.option_indices || []).forEach(function(idx) {
+            if (voteCounts[idx] !== undefined) voteCounts[idx]++;
+          });
+        });
+        var myVote = null;
+        if (currentSession) {
+          var mine = votesForPoll.find(function(v){ return v.user_id === currentSession.user.id; });
+          if (mine) myVote = mine.option_indices || [];
+        }
+        return {
+          poll: p,
+          voteCounts: voteCounts,
+          totalVoters: votesForPoll.length,
+          myVote: myVote,
+          selected: myVote ? myVote.slice() : []
+        };
+      });
+    }
+
+    function pollIsClosed(poll) {
+      return !!(poll.closes_at && new Date(poll.closes_at) < new Date());
+    }
+
+    // Should results (bars/percentages) be visible to this viewer?
+    function pollShowResults(state) {
+      var p = state.poll;
+      if (p.show_votes_publicly) return true;
+      if (state.myVote !== null) return true; // voters can always see results of polls they voted in
+      if (p.allow_results_without_voting) return true;
+      if (pollIsClosed(p)) return true;
+      return false;
+    }
+
+    function renderPoll(pos) {
+      var el = document.getElementById('poll-' + pos);
+      if (!el) return;
+
+      var state = chapterPolls.find(function(s){ return s.poll.position === pos; });
+      if (!state) {
+        el.style.display = 'none';
+        el.innerHTML = '';
+        return;
+      }
+
+      var p = state.poll;
+      var closed = pollIsClosed(p);
+      var showResults = pollShowResults(state);
+      var hasVoted = state.myVote !== null;
+      var canVote = !!currentSession && !closed && (!hasVoted || p.allow_change);
+
+      var totalVotes = state.voteCounts.reduce(function(a,b){ return a+b; }, 0);
+
+      var optionsHtml = (p.options || []).map(function(optText, idx) {
+        var count = state.voteCounts[idx] || 0;
+        var pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+        var isSelected = state.selected.indexOf(idx) !== -1;
+        var icon = isSelected ? 'ti-circle-check-filled' : (p.max_choices === 1 ? 'ti-circle' : 'ti-square');
+
+        var fillHtml = showResults ? '<div class="poll-option-fill" style="width:' + pct + '%;"></div>' : '';
+        var pctHtml = showResults ? '<span class="poll-option-pct">' + pct + '% (' + count + ')</span>' : '';
+        var optClass = 'poll-option' + (isSelected ? ' selected' : '') + (canVote ? '' : ' disabled');
+        var clickHandler = canVote ? ' onclick="togglePollOption(\'' + pos + '\',' + idx + ')"' : '';
+
+        return '<div class="' + optClass + '"' + clickHandler + '>' +
+          fillHtml +
+          '<div class="poll-option-row">' +
+            '<span class="poll-option-label"><i class="ti ' + icon + '"></i>' + escHtml(optText) + '</span>' +
+            pctHtml +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      var maxText = p.max_choices === 0 ? 'Choose any number' : (p.max_choices === 1 ? 'Choose 1' : 'Choose up to ' + p.max_choices);
+      var closesText = closed ? 'Poll closed' : (p.closes_at ? 'Closes ' + formatDate(p.closes_at) : '');
+      var metaParts = [maxText];
+      if (closesText) metaParts.push(closesText);
+
+      var footerHtml = '';
+      if (!currentSession) {
+        footerHtml = '<div class="poll-locked-note">Log in to vote in this poll.</div>';
+      } else if (closed) {
+        footerHtml = '<div class="poll-footer"><span class="poll-vote-count">' + totalVotes + ' vote' + (totalVotes===1?'':'s') + '</span><span class="poll-closed-note">This poll is closed.</span></div>';
+      } else if (canVote) {
+        var changed = JSON.stringify(state.selected.slice().sort()) !== JSON.stringify((state.myVote || []).slice().sort());
+        var btnLabel = hasVoted ? 'Update Vote' : 'Submit Vote';
+        var btnDisabled = state.selected.length === 0 || (hasVoted && !changed);
+        footerHtml = '<div class="poll-footer">' +
+          '<span class="poll-vote-count">' + totalVotes + ' vote' + (totalVotes===1?'':'s') + '</span>' +
+          '<button class="poll-submit-btn" onclick="submitPollVote(\'' + pos + '\')"' + (btnDisabled ? ' disabled' : '') + '><i class="ti ti-check"></i> ' + btnLabel + '</button>' +
+        '</div>';
+      } else {
+        footerHtml = '<div class="poll-footer"><span class="poll-vote-count">' + totalVotes + ' vote' + (totalVotes===1?'':'s') + '</span><span class="poll-closed-note">You voted in this poll.</span></div>';
+      }
+
+      el.innerHTML =
+        '<div class="poll-question"><i class="ti ti-chart-bar"></i>' + escHtml(p.question) + '</div>' +
+        '<div class="poll-meta">' + metaParts.join(' &middot; ') + '</div>' +
+        '<div class="poll-options">' + optionsHtml + '</div>' +
+        footerHtml;
+      el.style.display = 'block';
+    }
+
+    function togglePollOption(pos, idx) {
+      var state = chapterPolls.find(function(s){ return s.poll.position === pos; });
+      if (!state) return;
+      var p = state.poll;
+      var sel = state.selected;
+      var i = sel.indexOf(idx);
+
+      if (p.max_choices === 1) {
+        state.selected = (i !== -1) ? [] : [idx];
+      } else {
+        if (i !== -1) {
+          sel.splice(i, 1);
+        } else {
+          if (p.max_choices === 0 || sel.length < p.max_choices) {
+            sel.push(idx);
+          } else {
+            showToast('You can only choose up to ' + p.max_choices + '.', 'ti-alert-triangle');
+            return;
+          }
+        }
+      }
+      renderPoll(pos);
+    }
+
+    async function submitPollVote(pos) {
+      var state = chapterPolls.find(function(s){ return s.poll.position === pos; });
+      if (!state || !currentSession) return;
+      if (state.selected.length === 0) return;
+
+      var { error } = await db.from('chapter_poll_votes').upsert({
+        poll_id: state.poll.id,
+        user_id: currentSession.user.id,
+        option_indices: state.selected,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'poll_id,user_id' });
+
+      if (error) {
+        showToast('Could not save your vote: ' + error.message, 'ti-alert-triangle');
+        return;
+      }
+
+      // Update local vote counts optimistically
+      var prevVote = state.myVote || [];
+      prevVote.forEach(function(idx) {
+        if (state.voteCounts[idx] > 0) state.voteCounts[idx]--;
+      });
+      state.selected.forEach(function(idx) {
+        state.voteCounts[idx]++;
+      });
+      if (state.myVote === null) state.totalVoters++;
+      state.myVote = state.selected.slice();
+
+      showToast('Vote recorded!', 'ti-check');
+      renderPoll(pos);
+    }
 
     function showToast(msg, icon){
       var t = document.getElementById('toast');
@@ -539,6 +774,15 @@
       var isLastPage = idx === pages.length - 1;
       var alreadyRead = isChapterRead();
 
+      // Bottom author's note only appears on the final page
+      renderAuthorNote('bottom', isLastPage ? chapterData.author_note_bottom : null);
+      // Bottom poll only appears on the final page
+      if (isLastPage) {
+        renderPoll('bottom');
+      } else {
+        document.getElementById('poll-bottom').style.display = 'none';
+      }
+
       if (isLastPage) {
         nextBtn.innerHTML = '<i class="ti ti-check"></i> Finish Chapter';
         nextBtn.onclick = finishChapter;
@@ -637,18 +881,18 @@
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_id,chapter_id' });
 
-          // Award gems (owner reading their own chapter doesn't earn gems)
+          // Award embers (owner reading their own chapter doesn't earn embers)
           if (!isOwner) {
             try {
-              var { data: gemsAwarded } = await db.rpc('award_reading_gems', {
+              var { data: embersAwarded } = await db.rpc('award_reading_embers', {
                 p_user_id: currentSession.user.id,
                 p_chapter_id: chapterData.id,
                 p_work_id: workData.id,
                 p_word_count: chapterData.word_count || 0
               });
-              if (gemsAwarded && gemsAwarded > 0) {
-                showToast('Chapter complete! +' + gemsAwarded + ' gem' + (gemsAwarded > 1 ? 's' : '') + ' 💎', 'ti-diamond');
-                window.dispatchEvent(new CustomEvent('ds-gems-awarded', { detail: { amount: gemsAwarded } }));
+              if (embersAwarded && embersAwarded > 0) {
+                showToast('Chapter complete! +' + embersAwarded + ' ember' + (embersAwarded > 1 ? 's' : '') + ' 🔥', 'ti-flame');
+                window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: embersAwarded } }));
               } else {
                 showToast('Chapter complete! +1 reading progress', 'ti-circle-check');
               }
@@ -657,8 +901,7 @@
             }
 
             // Award genre/tag reading progress (foundation for future
-            // avatar cosmetic rewards). Silent — no toast, since this
-            // isn't user-facing yet.
+            // avatar cosmetic rewards), then check for newly unlocked items.
             try {
               await db.rpc('add_tag_reading_progress', {
                 p_user_id: currentSession.user.id,
@@ -666,6 +909,16 @@
                 p_work_id: workData.id,
                 p_word_count: chapterData.word_count || 0
               });
+              var { data: newlyUnlocked } = await db.rpc('check_and_unlock_tag_rewards', {
+                p_user_id: currentSession.user.id
+              });
+              if (newlyUnlocked && newlyUnlocked.length > 0) {
+                newlyUnlocked.forEach(function(itemName, i) {
+                  setTimeout(function() {
+                    showToast('New item unlocked: ' + itemName + '! 🎁', 'ti-gift');
+                  }, i * 600);
+                });
+              }
             } catch(e) {
               // Non-critical — don't interrupt the reading flow if this fails
             }
@@ -1677,6 +1930,19 @@
       if (isOwner) {
         document.getElementById('edit-chapter-btn').classList.add('visible');
       }
+
+      // AUTHOR'S NOTE — top note shows above the content for everyone.
+      // Bottom note shows below the content for the owner (full view, no
+      // pagination) and is otherwise handled per-page in renderPage().
+      renderAuthorNote('top', chapterData.author_note_top);
+      if (isOwner) renderAuthorNote('bottom', chapterData.author_note_bottom);
+
+      // POLLS — load and render. Top poll always shows; bottom poll only
+      // shows on the last page for non-owners (handled in renderPage),
+      // and immediately for the owner (full view, no pagination).
+      await loadChapterPolls();
+      renderPoll('top');
+      if (isOwner) renderPoll('bottom');
 
       // Paginate — or show full content for owner (no timer, no pages)
       if (isOwner) {

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Rewards — DawnScribe</title>
+  <script>
+    (function(){
+      var t=localStorage.getItem('ds_theme');
+      if(t==='light'){document.documentElement.setAttribute('data-theme','light');}
+    })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
+      --border:#2a3347; --text:#e8eaf0; --text2:#9ba3b8; --text3:#5c6480;
+      --accent:#2dd4bf; --gold:#f59e0b; --red:#f87171;
+    }
+    [data-theme="light"] {
+      --bg:#f4f5f8; --bg2:#ffffff; --bg3:#eef0f5; --bg4:#e4e7ef;
+      --border:#d0d5e8; --text:#1a1f2e; --text2:#4a5270; --text3:#8890a8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Lato', sans-serif; min-height: 100vh; }
+
+    /* NAV */
+    nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .nav-left { display: flex; align-items: center; gap: 16px; }
+    .logo { font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700; color: var(--text); text-decoration: none; letter-spacing: 0.5px; }
+    .logo span { color: var(--accent); }
+    .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; font-weight: 700; text-decoration: none; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); transition: all 0.2s; }
+    .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .page-wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+    .page-header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+    .page-icon { width: 48px; height: 48px; border-radius: 12px; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.2); display: flex; align-items: center; justify-content: center; color: var(--gold); font-size: 22px; flex-shrink: 0; }
+    .page-title { font-family: 'Cinzel', serif; font-size: 26px; font-weight: 700; }
+    .page-title span { color: var(--gold); }
+    .page-subtitle { color: var(--text3); font-size: 13px; margin-top: 3px; }
+
+    .section { margin-top: 36px; }
+    .section-title { font-family: 'Cinzel', serif; font-size: 17px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+    .section-title i { color: var(--accent); }
+    .section-sub { font-size: 13px; color: var(--text3); margin-bottom: 18px; }
+
+    /* ── UNLOCKED ITEMS GRID ─────────────────────────────────── */
+    .items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+    .item-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; transition: border-color 0.2s; }
+    .item-card:hover { border-color: rgba(245,158,11,0.3); }
+    .item-thumb { width: 100%; aspect-ratio: 1; border-radius: 10px; background: var(--bg3); display: flex; align-items: center; justify-content: center; color: var(--text3); font-size: 32px; overflow: hidden; }
+    .item-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .item-name { font-weight: 700; font-size: 14px; color: var(--text); }
+    .item-desc { font-size: 12px; color: var(--text3); line-height: 1.5; }
+    .item-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: auto; }
+    .item-slot-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent); display: flex; align-items: center; gap: 4px; }
+    .item-date { font-size: 11px; color: var(--text3); }
+    .item-tag-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: var(--gold); background: rgba(245,158,11,0.1); border-radius: 8px; padding: 2px 8px; margin-top: 2px; }
+
+    /* ── TEASERS ──────────────────────────────────────────────── */
+    .teaser-list { display: flex; flex-direction: column; gap: 8px; }
+    .teaser-row { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    .teaser-tag { font-size: 13px; font-weight: 700; color: var(--text); }
+    .teaser-progress-wrap { flex: 1; max-width: 240px; }
+    .teaser-bar-bg { height: 6px; background: var(--bg4); border-radius: 3px; overflow: hidden; }
+    .teaser-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.6s ease; }
+    .teaser-points { font-size: 11px; color: var(--text3); margin-top: 4px; white-space: nowrap; }
+    .teaser-points b { color: var(--accent); }
+
+    /* ── EMPTY / LOADING ──────────────────────────────────────── */
+    .empty-state { padding: 48px 24px; text-align: center; color: var(--text3); background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; }
+    .empty-state i { font-size: 36px; display: block; margin-bottom: 12px; opacity: 0.4; }
+    .empty-state p { font-size: 14px; }
+    .empty-state a { color: var(--accent); text-decoration: none; }
+    .loading-state { padding: 40px 0; text-align: center; color: var(--text3); font-size: 13px; }
+    .loading-state i { display: block; margin-bottom: 8px; font-size: 22px; animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-left">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </div>
+</nav>
+
+<div class="page-wrap">
+  <div class="page-header">
+    <div class="page-icon"><i class="ti ti-award"></i></div>
+    <div>
+      <div class="page-title">My <span>Rewards</span></div>
+      <div class="page-subtitle">Cosmetic items earned through reading. New milestones unlock automatically as you read.</div>
+    </div>
+  </div>
+
+  <!-- UNLOCKED ITEMS -->
+  <div class="section">
+    <div class="section-title"><i class="ti ti-sparkles"></i> Unlocked Items</div>
+    <div class="section-sub">Rare items you've earned, shown in the order you unlocked them.</div>
+    <div id="items-container"><div class="loading-state"><i class="ti ti-loader"></i>Loading your rewards...</div></div>
+  </div>
+
+  <!-- NEXT MILESTONES -->
+  <div class="section" id="teasers-section" style="display:none;">
+    <div class="section-title"><i class="ti ti-flag"></i> Next Milestones</div>
+    <div class="section-sub">Keep reading — these genres are closest to their next unlock.</div>
+    <div class="teaser-list" id="teasers-container"></div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+  var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  window.db = db;
+
+  const SLOT_ICONS = {
+    hat: 'ti-hat-cowboy', hair: 'ti-cut', face: 'ti-mask',
+    outfit: 'ti-shirt', shirt: 'ti-shirt', jacket: 'ti-shirt', gloves: 'ti-hand',
+    pants: 'ti-tag', shoes: 'ti-shoe',
+    back: 'ti-wind', neck: 'ti-circle-dot', accessory: 'ti-diamond',
+    companion: 'ti-paw', effect: 'ti-sparkles', background: 'ti-photo'
+  };
+
+  function esc(s){ var d=document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+  function formatDate(s) {
+    return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  // ── UNLOCKED ITEMS ──────────────────────────────────────────────
+  async function loadUnlockedItems(uid) {
+    var container = document.getElementById('items-container');
+
+    var result = await db.from('user_unlocked_items')
+      .select('id, unlocked_at, source, cosmetic_items(id,name,description,image_url,slot)')
+      .eq('user_id', uid)
+      .order('unlocked_at', { ascending: false });
+
+    var items = result.data || [];
+    if (items.length === 0) {
+      container.innerHTML = '<div class="empty-state"><i class="ti ti-award"></i><p>No rewards unlocked yet. Keep reading — rare items unlock automatically as you reach genre milestones.</p></div>';
+      return;
+    }
+
+    // For tag context: find which tag each item came from via tag_rewards
+    var itemIds = items.map(function(it){ return it.cosmetic_items.id; });
+    var rewardsResult = await db.from('tag_rewards').select('tag, points_required, cosmetic_item_id').in('cosmetic_item_id', itemIds);
+    var tagByItem = {};
+    (rewardsResult.data || []).forEach(function(r) {
+      // If an item is tied to multiple tags, just show the first one found
+      if (!tagByItem[r.cosmetic_item_id]) tagByItem[r.cosmetic_item_id] = r.tag;
+    });
+
+    container.innerHTML = '<div class="items-grid">' + items.map(function(it) {
+      var item = it.cosmetic_items;
+      var icon = SLOT_ICONS[item.slot] || 'ti-diamond';
+      var thumb = item.image_url
+        ? '<img src="' + esc(item.image_url) + '" alt=""/>'
+        : '<i class="ti ' + icon + '"></i>';
+      var tag = tagByItem[item.id];
+      var tagBadge = tag ? '<div class="item-tag-badge"><i class="ti ti-tag"></i>' + esc(tag) + '</div>' : '';
+
+      return '<div class="item-card">' +
+        '<div class="item-thumb">' + thumb + '</div>' +
+        '<div class="item-name">' + esc(item.name) + '</div>' +
+        (item.description ? '<div class="item-desc">' + esc(item.description) + '</div>' : '') +
+        tagBadge +
+        '<div class="item-meta-row">' +
+          '<span class="item-slot-badge"><i class="ti ' + icon + '"></i>' + esc(item.slot) + '</span>' +
+          '<span class="item-date">' + formatDate(it.unlocked_at) + '</span>' +
+        '</div>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+
+  // ── NEXT MILESTONE TEASERS ────────────────────────────────────────
+  async function loadTeasers(uid) {
+    var section = document.getElementById('teasers-section');
+    var container = document.getElementById('teasers-container');
+
+    var [progressResult, rewardsResult, unlockedResult] = await Promise.all([
+      db.from('user_tag_progress').select('tag, points').eq('user_id', uid),
+      db.from('tag_rewards').select('tag, points_required, cosmetic_item_id'),
+      db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', uid)
+    ]);
+
+    var progress = progressResult.data || [];
+    var rewards = rewardsResult.data || [];
+    var unlockedIds = new Set((unlockedResult.data || []).map(function(u){ return u.cosmetic_item_id; }));
+
+    if (progress.length === 0 || rewards.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    var progressByTag = {};
+    progress.forEach(function(p){ progressByTag[p.tag] = p.points; });
+
+    // For each tag with progress, find the smallest not-yet-unlocked reward
+    // threshold above the user's current points.
+    var teasers = [];
+    progress.forEach(function(p) {
+      var candidates = rewards.filter(function(r) {
+        return r.tag === p.tag && !unlockedIds.has(r.cosmetic_item_id) && r.points_required > p.points;
+      });
+      if (candidates.length === 0) return;
+      candidates.sort(function(a,b){ return a.points_required - b.points_required; });
+      var next = candidates[0];
+      teasers.push({
+        tag: p.tag,
+        current: p.points,
+        required: next.points_required,
+        remaining: next.points_required - p.points
+      });
+    });
+
+    if (teasers.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    // Show the closest few milestones (smallest remaining gap first)
+    teasers.sort(function(a,b){ return a.remaining - b.remaining; });
+    teasers = teasers.slice(0, 5);
+
+    container.innerHTML = teasers.map(function(t) {
+      var pct = Math.min(100, Math.round((t.current / t.required) * 100));
+      return '<div class="teaser-row">' +
+        '<div class="teaser-tag">' + esc(t.tag) + '</div>' +
+        '<div class="teaser-progress-wrap">' +
+          '<div class="teaser-bar-bg"><div class="teaser-bar-fill" style="width:' + pct + '%;"></div></div>' +
+          '<div class="teaser-points"><b>' + t.remaining.toLocaleString() + '</b> points to next unlock</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    section.style.display = 'block';
+  }
+
+  // ── INIT ─────────────────────────────────────────────────────────
+  (async function init(){
+    var session = null;
+    for (var i = 0; i < 5; i++) {
+      session = (await db.auth.getSession()).data.session;
+      if (session) break;
+      await new Promise(function(r){ setTimeout(r, 350); });
+    }
+    if (!session) {
+      document.getElementById('items-container').innerHTML = '<div class="empty-state"><i class="ti ti-lock"></i><p>Please <a href="login.html">log in</a> to view your rewards.</p></div>';
+      return;
+    }
+    var uid = session.user.id;
+    await loadUnlockedItems(uid);
+    await loadTeasers(uid);
+  })();
+</script>
+<script src="footer.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

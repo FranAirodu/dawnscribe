@@ -79,6 +79,14 @@
     .search-preview-spinner { text-align: center; padding: 10px; color: var(--text3); font-size: 12px; }
 
     /* DM */
+    .ember-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: #f97316; font-size: 14px; font-weight: 700; cursor: default; transition: all 0.2s, transform 0.2s; }
+    .ember-wrap:hover { border-color: #f97316; }
+    .ember-wrap i { font-size: 16px; }
+    .ember-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
+    .quill-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--gold); font-size: 14px; font-weight: 700; cursor: default; transition: all 0.2s, transform 0.2s; }
+    .quill-wrap:hover { border-color: var(--gold); }
+    .quill-wrap i { font-size: 16px; }
+    .quill-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
     .dm-wrap { position: relative; }
     .dm-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; position: relative; text-decoration: none; }
     .dm-btn.has-unread { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.08); }
@@ -197,6 +205,14 @@
     .page-wrap { display: flex; align-items: flex-start; position: relative; }
     .hero-banner { flex: 1; min-width: 0; overflow: hidden; padding: 40px 0; background: var(--bg); }
     .banner-scroll-wrap { display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+    .avatar-widget { display: flex; align-items: center; gap: 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; text-decoration: none; transition: all 0.2s; max-width: fit-content; }
+    .avatar-widget:hover { border-color: rgba(45,212,191,0.3); }
+    .avatar-widget-preview { width: 56px; height: 84px; border-radius: 8px; background: var(--bg3); border: 1px solid var(--border); overflow: hidden; flex-shrink: 0; }
+    .avatar-widget-preview svg { width: 100%; height: 100%; display: block; }
+    .avatar-widget-text { display: flex; flex-direction: column; gap: 2px; }
+    .avatar-widget-title { font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; }
+    .avatar-widget-title i { color: var(--accent); font-size: 15px; }
+    .avatar-widget-sub { font-size: 11px; color: var(--text3); }
 
     /* SCROLL ROWS */
     .scroll-label { display: flex; align-items: center; gap: 8px; padding: 24px 40px 4px; font-family: 'Cinzel', serif; font-size: 18px; font-weight: 600; cursor: pointer; user-select: none; }
@@ -377,6 +393,14 @@
       </div>
     </div>
     <div class="nav-right">
+      <div class="quill-wrap" id="quill-wrap" style="display:none;" title="Your Quills — purchased to support creators">
+        <i class="ti ti-feather"></i>
+        <span class="quill-count" id="ds-quill-count">0</span>
+      </div>
+      <div class="ember-wrap" id="ember-wrap" style="display:none;" title="Your embers — earned by reading chapters">
+        <i class="ti ti-flame"></i>
+        <span class="ember-count" id="ds-ember-count">0</span>
+      </div>
       <div class="dm-wrap">
           <a class="dm-btn" href="messages.html" id="dm-btn">
             <i class="ti ti-message"></i>
@@ -434,6 +458,8 @@
             <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>
             <a class="user-dropdown-item" href="following.html#artists"><i class="ti ti-palette"></i> Following Artists</a>
             <a class="user-dropdown-item" href="following.html#history"><i class="ti ti-history"></i> Reading History</a>
+            <a class="user-dropdown-item" href="avatar.html"><i class="ti ti-shirt"></i> My Avatar</a>
+            <a class="user-dropdown-item" href="rewards.html"><i class="ti ti-award"></i> My Rewards</a>
             <a class="user-dropdown-item" href="settings.html"><i class="ti ti-settings"></i> Settings</a>
             <div class="user-dropdown-divider"></div>
             <button class="user-dropdown-item signout-btn" onclick="signOut()"><i class="ti ti-logout"></i> Sign Out</button>
@@ -588,6 +614,14 @@
   <div class="page-wrap">
     <section class="hero-banner">
       <div class="banner-scroll-wrap">
+
+        <a class="avatar-widget" id="avatar-widget" href="avatar.html" style="display:none;">
+          <div class="avatar-widget-preview" id="avatar-widget-preview"></div>
+          <div class="avatar-widget-text">
+            <div class="avatar-widget-title"><i class="ti ti-shirt"></i> My Avatar</div>
+            <div class="avatar-widget-sub">Customize your look</div>
+          </div>
+        </a>
 
         <div class="scroll-label" onclick="toggleRow(0)">
           <i class="ti ti-bell"></i>
@@ -921,6 +955,129 @@
         arr.forEach(function(id) { map[id] = true; });
         return map;
       } catch(e) { return {}; }
+    }
+
+    /* ── AVATAR WIDGET ──────────────────────────────────────────── */
+    // Renders a small preview of the user's customized avatar (same
+    // placeholder layering used in avatar.html) and links through to
+    // the full avatar editor.
+    var AVATAR_SLOT_ORDER = [
+      'background','companion','effect','pants','shoes','outfit','shirt',
+      'jacket','gloves','accessory','neck','back','hair','face','hat'
+    ];
+    var AVATAR_PLACEHOLDER_SHAPES = {
+      shirt:    { d: 'M150 165 q50 22 100 0 l14 34 q-64 28 -128 0 Z', region: 'main' },
+      outfit:   { d: 'M150 165 q50 22 100 0 l14 34 q-64 28 -128 0 Z M155 205 q45 16 90 0 l8 140 q-53 18 -106 0 Z', region: 'main' },
+      jacket:   { d: 'M145 160 q55 26 110 0 l18 40 q-72 32 -146 0 Z', region: 'main' },
+      pants:    { d: 'M155 205 q45 16 90 0 l8 140 q-53 18 -106 0 Z', region: 'main' },
+      shoes:    { d: 'M150 410 l-10 50 q-2 12 12 14 l16 2 q12 -2 12 -14 l-2 -52 Z M200 410 l10 50 q2 12 -12 14 l-16 2 q-12 -2 -12 -14 l2 -52 Z', region: 'main' },
+      gloves:   { d: 'M115 245 l-12 36 q-3 8 6 11 l10 3 q8 2 11 -7 l11 -35 Z M235 245 l12 36 q3 8 -6 11 l-10 3 q-8 2 -11 -7 l-11 -35 Z', region: 'main' },
+      accessory:{ d: 'M150 195 l50 0 l0 14 l-50 0 Z', region: 'main' },
+      neck:     { d: 'M165 158 q20 10 20 10 q0 0 20 -10 l4 12 q-24 12 -48 0 Z', region: 'main' },
+      back:     { d: 'M120 175 q-20 40 -10 90 l16 -4 q-8 -44 8 -78 Z M230 175 q20 40 10 90 l-16 -4 q8 -44 -8 -78 Z', region: 'main' },
+      hair:     { d: 'M120 60 q10 -34 52 -34 q44 0 54 36 q6 22 -2 40 q-2 -22 -16 -30 q-6 14 -18 18 q2 -12 -6 -18 q-8 12 -28 12 q-22 0 -28 -16 q-8 8 -8 22 q-12 -16 -8 -38 Z', region: 'main' },
+      face:     { d: 'M148 95 q4 -6 10 -2 M192 95 q-4 -6 -10 -2', stroke: true, region: null },
+      hat:      { d: 'M125 45 q45 -38 100 0 l-4 18 q-46 -26 -92 0 Z', region: 'main' }
+    };
+
+    function renderAvatarSvg(avatarData, allItems) {
+      var parts = [];
+      var skin = avatarData.skin_tone || '#f4d9c4';
+
+      parts.push(
+        '<g fill="' + skin + '">' +
+          '<path d="M130 30 q30 -34 60 0 q16 6 14 30 q-2 18 -12 24 l-8 4 q-22 10 -48 0 l-8 -4 q-10 -6 -12 -24 q-2 -24 14 -30 Z"/>' +
+          '<path d="M118 110 q42 18 84 0 l14 36 q-56 22 -112 0 Z"/>' +
+          '<path d="M108 122 l-28 110 q-4 14 10 18 q14 4 18 -10 l30 -106 Z"/>' +
+          '<path d="M212 122 l28 110 q4 14 -10 18 q-14 4 -18 -10 l-30 -106 Z"/>' +
+          '<path d="M100 250 l-26 130 q-4 14 10 18 l16 4 l28 -142 Z"/>' +
+          '<path d="M220 250 l26 130 q4 14 -10 18 l-16 4 l-28 -142 Z"/>' +
+          '<path d="M126 158 q34 14 68 0 l10 130 q-44 16 -88 0 Z"/>' +
+        '</g>' +
+        '<g fill="#000" opacity="0.16" style="mix-blend-mode:multiply">' +
+          '<path d="M130 50 q30 24 60 0 l4 14 q-34 16 -68 0 Z"/>' +
+          '<path d="M118 122 q42 18 84 0 l-2 14 q-40 16 -80 0 Z"/>' +
+          '<path d="M108 130 l-10 60 q14 4 22 -6 l10 -58 Z"/>' +
+          '<path d="M212 130 l10 60 q-14 4 -22 -6 l-10 -58 Z"/>' +
+          '<path d="M100 270 l-10 80 q12 4 18 -6 l10 -78 Z"/>' +
+          '<path d="M220 270 l10 80 q-12 4 -18 -6 l-10 -78 Z"/>' +
+          '<path d="M126 170 q34 14 68 0 l4 70 q-38 14 -76 0 Z"/>' +
+        '</g>' +
+        '<g fill="#fff" opacity="0.45" style="mix-blend-mode:screen">' +
+          '<path d="M142 36 q18 -16 36 0 q-4 14 -18 16 q-14 -2 -18 -16 Z"/>' +
+          '<path d="M128 120 q14 6 24 4 l-4 18 q-14 0 -22 -8 Z"/>' +
+          '<path d="M134 168 q14 6 24 4 l-2 20 q-14 0 -24 -8 Z"/>' +
+        '</g>' +
+        '<g fill="none" stroke="#1a1a1a" stroke-width="2">' +
+          '<path d="M130 30 q30 -34 60 0 q16 6 14 30 q-2 18 -12 24 l-8 4 q-22 10 -48 0 l-8 -4 q-10 -6 -12 -24 q-2 -24 14 -30 Z" stroke-width="2.5"/>' +
+          '<path d="M118 110 q42 18 84 0 l14 36 q-56 22 -112 0 Z" stroke-width="2.5"/>' +
+          '<path d="M108 122 l-28 110 q-4 14 10 18 q14 4 18 -10 l30 -106 Z"/>' +
+          '<path d="M212 122 l28 110 q4 14 -10 18 q-14 4 -18 -10 l-30 -106 Z"/>' +
+          '<path d="M100 250 l-26 130 q-4 14 10 18 l16 4 l28 -142 Z"/>' +
+          '<path d="M220 250 l26 130 q4 14 -10 18 l-16 4 l-28 -142 Z"/>' +
+          '<path d="M126 158 q34 14 68 0 l10 130 q-44 16 -88 0 Z" stroke-width="2.5"/>' +
+        '</g>'
+      );
+
+      AVATAR_SLOT_ORDER.forEach(function(slot) {
+        var eq = (avatarData.equipped || {})[slot];
+        if (!eq) return;
+        var item = allItems.find(function(it){ return it.id === eq.item_id; });
+        if (!item) return;
+        var shape = AVATAR_PLACEHOLDER_SHAPES[slot];
+        if (!shape) return;
+
+        var fillColor = '#888';
+        if (shape.region && eq.colors && eq.colors[shape.region]) {
+          fillColor = eq.colors[shape.region];
+        } else if (item.fill_regions && item.fill_regions[0]) {
+          fillColor = item.fill_regions[0].default_color;
+        }
+
+        if (shape.stroke) {
+          parts.push('<path d="' + shape.d + '" fill="none" stroke="' + fillColor + '" stroke-width="3" stroke-linecap="round"/>');
+        } else {
+          parts.push(
+            '<path d="' + shape.d + '" fill="' + fillColor + '"/>' +
+            '<path d="' + shape.d + '" fill="#000" opacity="0.14" style="mix-blend-mode:multiply"/>' +
+            '<path d="' + shape.d + '" fill="none" stroke="#1a1a1a" stroke-width="1.5" opacity="0.7"/>'
+          );
+        }
+      });
+
+      return '<svg viewBox="0 0 320 480" xmlns="http://www.w3.org/2000/svg">' +
+        '<ellipse cx="160" cy="465" rx="90" ry="12" fill="rgba(0,0,0,0.15)"/>' +
+        parts.join('') +
+        '</svg>';
+    }
+
+    async function loadAvatarWidget(uid) {
+      try {
+        var [avatarRes, itemsRes] = await Promise.all([
+          db.from('user_avatars').select('*').eq('user_id', uid).maybeSingle(),
+          db.from('cosmetic_items').select('*')
+        ]);
+
+        var allItems = itemsRes.data || [];
+        var avatarData = avatarRes.data;
+
+        if (!avatarData) {
+          // First-time user — build the same default (base items equipped,
+          // default skin tone) used by avatar.html, without saving it.
+          avatarData = { skin_tone: '#f4d9c4', equipped: {} };
+          allItems.filter(function(it){ return it.is_base_item; }).forEach(function(it) {
+            var colors = {};
+            (it.fill_regions || []).forEach(function(r){ colors[r.id] = r.default_color; });
+            avatarData.equipped[it.slot] = { item_id: it.id, colors: colors };
+          });
+        }
+
+        document.getElementById('avatar-widget-preview').innerHTML = renderAvatarSvg(avatarData, allItems);
+        document.getElementById('avatar-widget').style.display = 'flex';
+      } catch(e) {
+        // Avatar system unavailable — silently hide the widget rather
+        // than show a broken preview.
+      }
     }
 
     /* ── SIDEBAR PANELS (LIVE) ──────────────────────────────────── */
@@ -1395,6 +1552,7 @@
       var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
       var uid = session ? session.user.id : null;
       if(session){ await dsBlock.load(uid); }
+      if(session){ loadAvatarWidget(uid); }
 
       // Load public data regardless of auth
       Promise.all([
@@ -1936,6 +2094,31 @@
         if (!session) { return; }
         document.getElementById('nav-login-btn').style.display = 'none';
         document.getElementById('publish-btn').style.display = 'flex';
+
+        // Load ember balance
+        var emberWrap = document.getElementById('ember-wrap');
+        if (emberWrap) {
+          emberWrap.style.display = 'flex';
+          try {
+            var emberRes = await db.from('user_embers').select('balance').eq('user_id', session.user.id).maybeSingle();
+            var emberBalance = (emberRes.data && emberRes.data.balance) || 0;
+            document.getElementById('ds-ember-count').textContent = emberBalance.toLocaleString();
+          } catch(e) {}
+        }
+
+        // Load Quill balance (placeholder until the Quills system exists)
+        var quillWrap = document.getElementById('quill-wrap');
+        if (quillWrap) {
+          quillWrap.style.display = 'flex';
+          try {
+            var quillRes = await db.from('user_quills').select('balance').eq('user_id', session.user.id).maybeSingle();
+            var quillBalance = (quillRes.data && quillRes.data.balance) || 0;
+            document.getElementById('ds-quill-count').textContent = quillBalance.toLocaleString();
+          } catch(e) {
+            document.getElementById('ds-quill-count').textContent = '0';
+          }
+        }
+
         // Showcase only shows for artists — check role from profiles
         var roleRes = await db.from('profiles').select('role').eq('id', session.user.id).maybeSingle();
         var userRole = roleRes && roleRes.data ? (roleRes.data.role || '') : '';

@@ -8,10 +8,14 @@
 
   /* ── CSS ─────────────────────────────────────────────────────── */
   var css = `
-    .gem-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--gold); font-size: 14px; font-weight: 700; cursor: default; transition: all 0.2s, transform 0.2s; }
-    .gem-wrap:hover { border-color: var(--gold); }
-    .gem-wrap i { font-size: 16px; }
-    .gem-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
+    .ember-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: #f97316; font-size: 14px; font-weight: 700; cursor: default; transition: all 0.2s, transform 0.2s; }
+    .ember-wrap:hover { border-color: #f97316; }
+    .ember-wrap i { font-size: 16px; }
+    .ember-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
+    .quill-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--gold); font-size: 14px; font-weight: 700; cursor: default; transition: all 0.2s, transform 0.2s; }
+    .quill-wrap:hover { border-color: var(--gold); }
+    .quill-wrap i { font-size: 16px; }
+    .quill-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
     .dm-wrap { position: relative; }
     .dm-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; position: relative; text-decoration: none; }
     .dm-btn.has-unread { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.08); }
@@ -99,9 +103,13 @@
 
   /* ── NAV HTML ────────────────────────────────────────────────── */
   var navHtml = `
-    <div class="gem-wrap" id="gem-wrap" style="display:none;" title="Your gems — earned by reading chapters">
-      <i class="ti ti-diamond"></i>
-      <span class="gem-count" id="ds-gem-count">0</span>
+    <div class="quill-wrap" id="quill-wrap" style="display:none;" title="Your Quills — purchased to support creators">
+      <i class="ti ti-feather"></i>
+      <span class="quill-count" id="ds-quill-count">0</span>
+    </div>
+    <div class="ember-wrap" id="ember-wrap" style="display:none;" title="Your embers — earned by reading chapters">
+      <i class="ti ti-flame"></i>
+      <span class="ember-count" id="ds-ember-count">0</span>
     </div>
     <div class="dm-wrap">
       <a class="dm-btn" href="messages.html" id="dm-btn">
@@ -160,6 +168,8 @@
           <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>
           <a class="user-dropdown-item" href="following.html#artists"><i class="ti ti-palette"></i> Following Artists</a>
           <a class="user-dropdown-item" href="following.html#history"><i class="ti ti-history"></i> Reading History</a>
+          <a class="user-dropdown-item" href="avatar.html"><i class="ti ti-shirt"></i> My Avatar</a>
+          <a class="user-dropdown-item" href="rewards.html"><i class="ti ti-award"></i> My Rewards</a>
           <a class="user-dropdown-item" href="settings.html"><i class="ti ti-settings"></i> Settings</a>
           <div class="user-dropdown-divider"></div>
           <button class="user-dropdown-item signout-btn" onclick="dsSignOut()"><i class="ti ti-logout"></i> Sign Out</button>
@@ -508,15 +518,31 @@
       if(userWrap) userWrap.style.display = 'flex';
       var avatarBtn = document.getElementById('user-avatar-btn');
 
-      // Load gem balance
-      var gemWrap = document.getElementById('gem-wrap');
-      if (gemWrap) {
-        gemWrap.style.display = 'flex';
+      // Load ember balance
+      var emberWrap = document.getElementById('ember-wrap');
+      if (emberWrap) {
+        emberWrap.style.display = 'flex';
         try {
-          var gemRes = await db.from('user_gems').select('balance').eq('user_id', session.user.id).maybeSingle();
-          var balance = (gemRes.data && gemRes.data.balance) || 0;
-          document.getElementById('ds-gem-count').textContent = balance.toLocaleString();
+          var emberRes = await db.from('user_embers').select('balance').eq('user_id', session.user.id).maybeSingle();
+          var balance = (emberRes.data && emberRes.data.balance) || 0;
+          document.getElementById('ds-ember-count').textContent = balance.toLocaleString();
         } catch(e) {}
+      }
+
+      // Load Quill balance. The Quills system (real-money currency,
+      // purchased to support creators) isn't built yet — this shows
+      // 0 as a placeholder until a user_quills table/RPC exists, at
+      // which point swap this query for the real one.
+      var quillWrap = document.getElementById('quill-wrap');
+      if (quillWrap) {
+        quillWrap.style.display = 'flex';
+        try {
+          var quillRes = await db.from('user_quills').select('balance').eq('user_id', session.user.id).maybeSingle();
+          var quillBalance = (quillRes.data && quillRes.data.balance) || 0;
+          document.getElementById('ds-quill-count').textContent = quillBalance.toLocaleString();
+        } catch(e) {
+          document.getElementById('ds-quill-count').textContent = '0';
+        }
       }
 
       var meta = session.user.user_metadata || {};
@@ -593,9 +619,9 @@
     } catch(err){ console.warn('DS nav:', err); }
   })();
 
-  // Live-update gem count when gems are awarded elsewhere on the page
-  window.addEventListener('ds-gems-awarded', function(e){
-    var el = document.getElementById('ds-gem-count');
+  // Live-update ember count when embers are awarded elsewhere on the page
+  window.addEventListener('ds-embers-awarded', function(e){
+    var el = document.getElementById('ds-ember-count');
     if (!el) return;
     var current = parseInt((el.textContent||'0').replace(/,/g,'')) || 0;
     el.textContent = (current + (e.detail.amount||0)).toLocaleString();

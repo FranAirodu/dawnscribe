@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Avatar — DawnScribe</title>
+  <script>
+    (function(){
+      var t=localStorage.getItem('ds_theme');
+      if(t==='light'){document.documentElement.setAttribute('data-theme','light');}
+    })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
+      --border:#2a3347; --text:#e8eaf0; --text2:#9ba3b8; --text3:#5c6480;
+      --accent:#2dd4bf; --gold:#f59e0b; --red:#f87171;
+    }
+    [data-theme="light"] {
+      --bg:#f4f5f8; --bg2:#ffffff; --bg3:#eef0f5; --bg4:#e4e7ef;
+      --border:#d0d5e8; --text:#1a1f2e; --text2:#4a5270; --text3:#8890a8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Lato', sans-serif; min-height: 100vh; }
+
+    /* NAV */
+    nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .nav-left { display: flex; align-items: center; gap: 16px; }
+    .logo { font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700; color: var(--text); text-decoration: none; letter-spacing: 0.5px; }
+    .logo span { color: var(--accent); }
+    .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; font-weight: 700; text-decoration: none; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); transition: all 0.2s; }
+    .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .page-wrap { max-width: 1080px; margin: 0 auto; padding: 40px 20px 80px; }
+    .page-header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+    .page-icon { width: 48px; height: 48px; border-radius: 12px; background: rgba(45,212,191,0.1); border: 1px solid rgba(45,212,191,0.2); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 22px; flex-shrink: 0; }
+    .page-title { font-family: 'Cinzel', serif; font-size: 26px; font-weight: 700; }
+    .page-title span { color: var(--accent); }
+    .page-subtitle { color: var(--text3); font-size: 13px; margin-top: 3px; }
+
+    .editor-layout { display: grid; grid-template-columns: 360px 1fr; gap: 24px; align-items: start; }
+    @media (max-width: 840px) { .editor-layout { grid-template-columns: 1fr; } }
+
+    /* ── PREVIEW PANEL ────────────────────────────────────────── */
+    .preview-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; align-items: center; position: sticky; top: 84px; }
+    .preview-canvas-wrap { width: 100%; max-width: 320px; aspect-ratio: 2/3; background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; position: relative; }
+    .preview-canvas-wrap svg { width: 100%; height: 100%; display: block; }
+    .preview-note { font-size: 11px; color: var(--text3); text-align: center; margin-top: 12px; line-height: 1.6; }
+    .save-btn { width: 100%; max-width: 320px; margin-top: 16px; background: var(--accent); border: none; border-radius: 9px; padding: 12px; color: var(--bg); font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s; }
+    .save-btn:hover { opacity: 0.9; }
+    .save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .save-status { font-size: 12px; color: var(--accent); margin-top: 8px; text-align: center; min-height: 16px; }
+
+    /* ── CONTROLS PANEL ───────────────────────────────────────── */
+    .controls-panel { display: flex; flex-direction: column; gap: 18px; }
+    .control-section { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+    .control-section-title { font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .control-section-title i { color: var(--accent); }
+
+    /* skin tone swatches */
+    .swatch-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
+    .swatch:hover { transform: scale(1.1); }
+    .swatch.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+    .swatch-locked { position: relative; opacity: 0.4; cursor: not-allowed; }
+    .swatch-locked:hover { transform: none; }
+    .swatch-locked i { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 12px; color: var(--text); }
+
+    /* slot tabs */
+    .slot-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .slot-tab { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 700; color: var(--text2); cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s; }
+    .slot-tab:hover { color: var(--text); }
+    .slot-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.06); }
+
+    /* item grid */
+    .item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 10px; }
+    .item-option { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; transition: all 0.15s; }
+    .item-option:hover { border-color: rgba(45,212,191,0.3); }
+    .item-option.selected { border-color: var(--accent); background: rgba(45,212,191,0.06); }
+    .item-option-thumb { width: 40px; height: 40px; border-radius: 8px; background: var(--bg4); display: flex; align-items: center; justify-content: center; color: var(--text3); font-size: 18px; }
+    .item-option-name { font-size: 10px; color: var(--text2); text-align: center; line-height: 1.3; }
+    .item-option.none .item-option-thumb { color: var(--text3); }
+
+    /* color pickers */
+    .color-region { padding: 10px 0; }
+    .color-region:not(:last-child) { border-bottom: 1px solid var(--border); }
+    .color-region-label { font-size: 12px; color: var(--text2); font-weight: 700; margin-bottom: 8px; display: block; }
+    .color-swatch-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .color-swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; transition: all 0.15s; flex-shrink: 0; position: relative; }
+    .color-swatch:hover { transform: scale(1.1); }
+    .color-swatch.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+    .color-swatch-default::after { content: ''; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--border); }
+
+    .empty-note { font-size: 12px; color: var(--text3); text-align: center; padding: 16px 0; }
+
+    /* ── RANDOMIZER ───────────────────────────────────────────── */
+    .ember-balance-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+    .ember-balance { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; color: #f97316; }
+    .ember-balance i { font-size: 20px; }
+    .ember-balance-label { font-size: 11px; color: var(--text3); font-weight: 400; margin-left: 4px; }
+    .randomizer-block { padding: 14px 0; }
+    .randomizer-block:not(:last-child) { border-bottom: 1px solid var(--border); }
+    .randomizer-block-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .randomizer-block-desc { font-size: 12px; color: var(--text3); margin-bottom: 12px; line-height: 1.5; }
+    .randomizer-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .randomizer-select { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 12px; font-family: 'Lato', sans-serif; cursor: pointer; }
+    .reroll-target-label { font-size: 12px; color: var(--text2); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .reroll-target-label b { color: var(--text); }
+    .reroll-target-label i { color: var(--accent); }
+    .region-tab-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .region-tab { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; color: var(--text2); cursor: pointer; transition: all 0.15s; }
+    .region-tab:hover { color: var(--text); }
+    .region-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.06); }
+    .reroll-empty-note { font-size: 12px; color: var(--text3); font-style: italic; }
+    .randomizer-btn { background: #f97316; border: none; border-radius: 9px; padding: 10px 18px; color: #1a1208; font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; white-space: nowrap; }
+    .randomizer-btn:hover { opacity: 0.85; }
+    .randomizer-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .randomizer-result { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: var(--bg3); border: 1px solid var(--border); display: none; align-items: center; gap: 12px; }
+    .randomizer-result.show { display: flex; }
+    .randomizer-result-swatch { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border); flex-shrink: 0; }
+    .randomizer-result-text { font-size: 13px; color: var(--text); }
+    .randomizer-result-text b { color: #f97316; }
+    .randomizer-result-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .loading-state { padding: 40px 0; text-align: center; color: var(--text3); font-size: 13px; }
+    .loading-state i { display: block; margin-bottom: 8px; font-size: 22px; animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-left">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </div>
+</nav>
+
+<div class="page-wrap">
+  <div class="page-header">
+    <div class="page-icon"><i class="ti ti-shirt"></i></div>
+    <div>
+      <div class="page-title">My <span>Avatar</span></div>
+      <div class="page-subtitle">Customize your look. Unlock new items and colors through reading rewards and Embers.</div>
+    </div>
+  </div>
+
+  <div id="editor-root">
+    <div class="loading-state"><i class="ti ti-loader"></i>Loading your avatar...</div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+  var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  window.db = db;
+
+  // ── CONFIG ──────────────────────────────────────────────────────
+  // Slot render order (bottom to top). Matches the layered-asset spec.
+  const SLOT_ORDER = [
+    'background','companion','effect','pants','shoes','outfit','shirt',
+    'jacket','gloves','accessory','neck','back','hair','face','hat'
+  ];
+
+  // Default skin tone palette, always available at avatar creation.
+  const DEFAULT_SKIN_TONES = ['#f4d9c4','#e8b894','#c98a5e','#8d5a3c','#5c3a26','#3a2418'];
+
+  const SLOT_ICONS = {
+    hat: 'ti-hat-cowboy', hair: 'ti-cut', face: 'ti-mask',
+    outfit: 'ti-shirt', shirt: 'ti-shirt', jacket: 'ti-shirt', gloves: 'ti-hand',
+    pants: 'ti-tag', shoes: 'ti-shoe',
+    back: 'ti-wind', neck: 'ti-circle-dot', accessory: 'ti-diamond',
+    companion: 'ti-paw', effect: 'ti-sparkles', background: 'ti-photo'
+  };
+
+  // Slots shown as customization tabs. (background/companion/effect are
+  // valid future slots but not surfaced in the editor yet — no items
+  // exist for them. Hidden slots are simply skipped.)
+  const VISIBLE_SLOTS = ['shirt','pants','shoes','jacket','gloves','outfit','accessory','neck','back','hair','face','hat'];
+
+  function esc(s){ var d=document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+  // ── STATE ───────────────────────────────────────────────────────
+  var currentUid = null;
+  var avatarData = null;     // { skin_tone, equipped: {slot:{item_id,colors}}, unlocked_skin_tones }
+  var allItems = [];          // all cosmetic_items rows
+  var unlockedItemIds = new Set();
+  var activeSlot = 'shirt';
+  var activeRegionId = null; // which fill_region of the active item is selected for Color Unlock
+  var dirty = false;
+  var emberBalance = 0;
+
+  // ── PLACEHOLDER RENDERING ─────────────────────────────────────
+  // Until real layered art exists, each slot renders as a simple
+  // colored region on the body silhouette. This keeps the data model,
+  // equip logic, and recolor system fully functional — swapping in
+  // real PNG/SVG layers later only changes renderLayer(), not the
+  // surrounding system.
+  const SLOT_PLACEHOLDER_SHAPES = {
+    shirt:    { d: 'M150 165 q50 22 100 0 l14 34 q-64 28 -128 0 Z', region: 'main' },
+    outfit:   { d: 'M150 165 q50 22 100 0 l14 34 q-64 28 -128 0 Z M155 205 q45 16 90 0 l8 140 q-53 18 -106 0 Z', region: 'main' },
+    jacket:   { d: 'M145 160 q55 26 110 0 l18 40 q-72 32 -146 0 Z', region: 'main' },
+    pants:    { d: 'M155 205 q45 16 90 0 l8 140 q-53 18 -106 0 Z', region: 'main' },
+    shoes:    { d: 'M150 410 l-10 50 q-2 12 12 14 l16 2 q12 -2 12 -14 l-2 -52 Z M200 410 l10 50 q2 12 -12 14 l-16 2 q-12 -2 -12 -14 l2 -52 Z', region: 'main' },
+    gloves:   { d: 'M115 245 l-12 36 q-3 8 6 11 l10 3 q8 2 11 -7 l11 -35 Z M235 245 l12 36 q3 8 -6 11 l-10 3 q-8 2 -11 -7 l-11 -35 Z', region: 'main' },
+    accessory:{ d: 'M150 195 l50 0 l0 14 l-50 0 Z', region: 'main' },
+    neck:     { d: 'M165 158 q20 10 20 10 q0 0 20 -10 l4 12 q-24 12 -48 0 Z', region: 'main' },
+    back:     { d: 'M120 175 q-20 40 -10 90 l16 -4 q-8 -44 8 -78 Z M230 175 q20 40 10 90 l-16 -4 q8 -44 -8 -78 Z', region: 'main' },
+    hair:     { d: 'M120 60 q10 -34 52 -34 q44 0 54 36 q6 22 -2 40 q-2 -22 -16 -30 q-6 14 -18 18 q2 -12 -6 -18 q-8 12 -28 12 q-22 0 -28 -16 q-8 8 -8 22 q-12 -16 -8 -38 Z', region: 'main' },
+    face:     { d: 'M148 95 q4 -6 10 -2 M192 95 q-4 -6 -10 -2', stroke: true, region: null },
+    hat:      { d: 'M125 45 q45 -38 100 0 l-4 18 q-46 -26 -92 0 Z', region: 'main' }
+  };
+
+  // ── INIT ────────────────────────────────────────────────────────
+  (async function init(){
+    var session = null;
+    for (var i = 0; i < 5; i++) {
+      session = (await db.auth.getSession()).data.session;
+      if (session) break;
+      await new Promise(function(r){ setTimeout(r, 350); });
+    }
+    if (!session) {
+      document.getElementById('editor-root').innerHTML = '<div class="empty-note" style="padding:48px 0;">Please <a href="login.html" style="color:var(--accent);">log in</a> to customize your avatar.</div>';
+      return;
+    }
+    currentUid = session.user.id;
+
+    var [avatarResult, itemsResult, unlockedResult, embersResult] = await Promise.all([
+      db.from('user_avatars').select('*').eq('user_id', currentUid).maybeSingle(),
+      db.from('cosmetic_items').select('*'),
+      db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', currentUid),
+      db.from('user_embers').select('balance').eq('user_id', currentUid).maybeSingle()
+    ]);
+
+    emberBalance = (embersResult.data && embersResult.data.balance) || 0;
+
+    allItems = itemsResult.data || [];
+    unlockedItemIds = new Set((unlockedResult.data || []).map(function(u){ return u.cosmetic_item_id; }));
+
+    if (avatarResult.data) {
+      avatarData = avatarResult.data;
+      if (!avatarData.unlocked_colors) avatarData.unlocked_colors = {};
+    } else {
+      // First visit — initialize with base items equipped and a default skin tone.
+      avatarData = { skin_tone: DEFAULT_SKIN_TONES[0], equipped: {}, unlocked_skin_tones: [], unlocked_colors: {} };
+      allItems.filter(function(it){ return it.is_base_item; }).forEach(function(it) {
+        var colors = {};
+        (it.fill_regions || []).forEach(function(r){ colors[r.id] = r.default_color; });
+        avatarData.equipped[it.slot] = { item_id: it.id, colors: colors };
+      });
+    }
+
+    renderEditor();
+  })();
+
+  function getItemsForSlot(slot) {
+    return allItems.filter(function(it) {
+      return it.slot === slot && (it.is_base_item || unlockedItemIds.has(it.id));
+    });
+  }
+
+  function getEquippedItem(slot) {
+    var eq = avatarData.equipped[slot];
+    if (!eq) return null;
+    return allItems.find(function(it){ return it.id === eq.item_id; }) || null;
+  }
+
+  // ── RENDER: PREVIEW ──────────────────────────────────────────────
+  function renderPreview() {
+    var parts = [];
+
+    // Base body, tinted with skin tone. Same body shapes as earlier
+    // concept art, simplified — fill is the user's chosen skin tone.
+    var skin = avatarData.skin_tone;
+    parts.push(
+      '<g fill="' + skin + '">' +
+        '<path d="M130 30 q30 -34 60 0 q16 6 14 30 q-2 18 -12 24 l-8 4 q-22 10 -48 0 l-8 -4 q-10 -6 -12 -24 q-2 -24 14 -30 Z"/>' +
+        '<path d="M118 110 q42 18 84 0 l14 36 q-56 22 -112 0 Z"/>' +
+        '<path d="M108 122 l-28 110 q-4 14 10 18 q14 4 18 -10 l30 -106 Z"/>' +
+        '<path d="M212 122 l28 110 q4 14 -10 18 q-14 4 -18 -10 l-30 -106 Z"/>' +
+        '<path d="M100 250 l-26 130 q-4 14 10 18 l16 4 l28 -142 Z"/>' +
+        '<path d="M220 250 l26 130 q4 14 -10 18 l-16 4 l-28 -142 Z"/>' +
+        '<path d="M126 158 q34 14 68 0 l10 130 q-44 16 -88 0 Z"/>' +
+      '</g>' +
+      '<g fill="#000" opacity="0.16" style="mix-blend-mode:multiply">' +
+        '<path d="M130 50 q30 24 60 0 l4 14 q-34 16 -68 0 Z"/>' +
+        '<path d="M118 122 q42 18 84 0 l-2 14 q-40 16 -80 0 Z"/>' +
+        '<path d="M108 130 l-10 60 q14 4 22 -6 l10 -58 Z"/>' +
+        '<path d="M212 130 l10 60 q-14 4 -22 -6 l-10 -58 Z"/>' +
+        '<path d="M100 270 l-10 80 q12 4 18 -6 l10 -78 Z"/>' +
+        '<path d="M220 270 l10 80 q-12 4 -18 -6 l-10 -78 Z"/>' +
+        '<path d="M126 170 q34 14 68 0 l4 70 q-38 14 -76 0 Z"/>' +
+      '</g>' +
+      '<g fill="#fff" opacity="0.45" style="mix-blend-mode:screen">' +
+        '<path d="M142 36 q18 -16 36 0 q-4 14 -18 16 q-14 -2 -18 -16 Z"/>' +
+        '<path d="M128 120 q14 6 24 4 l-4 18 q-14 0 -22 -8 Z"/>' +
+        '<path d="M134 168 q14 6 24 4 l-2 20 q-14 0 -24 -8 Z"/>' +
+      '</g>' +
+      '<g fill="none" stroke="#1a1a1a" stroke-width="2">' +
+        '<path d="M130 30 q30 -34 60 0 q16 6 14 30 q-2 18 -12 24 l-8 4 q-22 10 -48 0 l-8 -4 q-10 -6 -12 -24 q-2 -24 14 -30 Z" stroke-width="2.5"/>' +
+        '<path d="M118 110 q42 18 84 0 l14 36 q-56 22 -112 0 Z" stroke-width="2.5"/>' +
+        '<path d="M108 122 l-28 110 q-4 14 10 18 q14 4 18 -10 l30 -106 Z"/>' +
+        '<path d="M212 122 l28 110 q4 14 -10 18 q-14 4 -18 -10 l-30 -106 Z"/>' +
+        '<path d="M100 250 l-26 130 q-4 14 10 18 l16 4 l28 -142 Z"/>' +
+        '<path d="M220 250 l26 130 q4 14 -10 18 l-16 4 l-28 -142 Z"/>' +
+        '<path d="M126 158 q34 14 68 0 l10 130 q-44 16 -88 0 Z" stroke-width="2.5"/>' +
+      '</g>'
+    );
+
+    // Equipped item layers, in SLOT_ORDER (bottom to top). Each is a
+    // placeholder shape filled with the user's chosen color(s).
+    SLOT_ORDER.forEach(function(slot) {
+      var eq = avatarData.equipped[slot];
+      if (!eq) return;
+      var item = allItems.find(function(it){ return it.id === eq.item_id; });
+      if (!item) return;
+      var shape = SLOT_PLACEHOLDER_SHAPES[slot];
+      if (!shape) return;
+
+      var fillColor = '#888';
+      if (shape.region && eq.colors && eq.colors[shape.region]) {
+        fillColor = eq.colors[shape.region];
+      } else if (item.fill_regions && item.fill_regions[0]) {
+        fillColor = item.fill_regions[0].default_color;
+      }
+
+      if (shape.stroke) {
+        parts.push('<path d="' + shape.d + '" fill="none" stroke="' + fillColor + '" stroke-width="3" stroke-linecap="round"/>');
+      } else {
+        parts.push(
+          '<path d="' + shape.d + '" fill="' + fillColor + '"/>' +
+          '<path d="' + shape.d + '" fill="#000" opacity="0.14" style="mix-blend-mode:multiply"/>' +
+          '<path d="' + shape.d + '" fill="none" stroke="#1a1a1a" stroke-width="1.5" opacity="0.7"/>'
+        );
+      }
+    });
+
+    var svg = '<svg viewBox="0 0 320 480" xmlns="http://www.w3.org/2000/svg">' +
+      '<ellipse cx="160" cy="465" rx="90" ry="12" fill="rgba(0,0,0,0.15)"/>' +
+      parts.join('') +
+      '</svg>';
+
+    document.getElementById('avatar-preview-svg').innerHTML = svg;
+  }
+
+  // ── RENDER: SKIN TONE PICKER ─────────────────────────────────────
+  function renderSkinTones() {
+    var allTones = DEFAULT_SKIN_TONES.concat(avatarData.unlocked_skin_tones || []);
+    var html = allTones.map(function(tone) {
+      var selected = tone === avatarData.skin_tone ? ' selected' : '';
+      return '<div class="swatch' + selected + '" style="background:' + tone + ';" onclick="setSkinTone(\'' + tone + '\')" title="' + tone + '"></div>';
+    }).join('');
+    // A few locked placeholder tones to hint at future unlocks
+    html += '<div class="swatch swatch-locked" title="Unlock with Embers"><i class="ti ti-lock"></i></div>';
+    html += '<div class="swatch swatch-locked" title="Unlock with Embers"><i class="ti ti-lock"></i></div>';
+    document.getElementById('skin-tone-row').innerHTML = html;
+  }
+
+  function setSkinTone(tone) {
+    avatarData.skin_tone = tone;
+    dirty = true;
+    renderSkinTones();
+    renderPreview();
+    updateSaveState();
+  }
+
+  // ── RENDER: SLOT TABS ─────────────────────────────────────────────
+  function renderSlotTabs() {
+    var html = VISIBLE_SLOTS.map(function(slot) {
+      var active = slot === activeSlot ? ' active' : '';
+      var icon = SLOT_ICONS[slot] || 'ti-diamond';
+      var label = slot.charAt(0).toUpperCase() + slot.slice(1);
+      var hasEquipped = !!avatarData.equipped[slot];
+      var dot = hasEquipped ? '' : '';
+      return '<div class="slot-tab' + active + '" onclick="selectSlot(\'' + slot + '\')"><i class="ti ' + icon + '"></i>' + label + '</div>';
+    }).join('');
+    document.getElementById('slot-tabs').innerHTML = html;
+  }
+
+  function selectSlot(slot) {
+    activeSlot = slot;
+    activeRegionId = null;
+    renderSlotTabs();
+    renderItemGrid();
+    renderColorPickers();
+    renderRandomizer();
+  }
+
+  // ── RENDER: ITEM GRID FOR ACTIVE SLOT ────────────────────────────
+  function renderItemGrid() {
+    var items = getItemsForSlot(activeSlot);
+    var equippedId = avatarData.equipped[activeSlot] ? avatarData.equipped[activeSlot].item_id : null;
+    var icon = SLOT_ICONS[activeSlot] || 'ti-diamond';
+
+    var html = '';
+    // "None" option — only for non-base slots (you can't remove your shirt/pants/shoes)
+    var slotHasBaseItem = allItems.some(function(it){ return it.slot === activeSlot && it.is_base_item; });
+    if (!slotHasBaseItem) {
+      var noneSelected = !equippedId ? ' selected' : '';
+      html += '<div class="item-option none' + noneSelected + '" onclick="equipItem(null)">' +
+        '<div class="item-option-thumb"><i class="ti ti-circle-x"></i></div>' +
+        '<div class="item-option-name">None</div>' +
+      '</div>';
+    }
+
+    if (items.length === 0 && slotHasBaseItem === false) {
+      html += '<div class="empty-note" style="grid-column:1/-1;">No items unlocked for this slot yet. Keep reading to earn rewards!</div>';
+    } else {
+      items.forEach(function(it) {
+        var selected = it.id === equippedId ? ' selected' : '';
+        var thumbColor = (it.fill_regions && it.fill_regions[0]) ? it.fill_regions[0].default_color : null;
+        var thumb = thumbColor
+          ? '<div class="item-option-thumb" style="background:' + thumbColor + ';"></div>'
+          : '<div class="item-option-thumb"><i class="ti ' + icon + '"></i></div>';
+        html += '<div class="item-option' + selected + '" onclick="equipItem(\'' + it.id + '\')">' +
+          thumb +
+          '<div class="item-option-name">' + esc(it.name) + '</div>' +
+        '</div>';
+      });
+    }
+
+    document.getElementById('item-grid').innerHTML = html;
+  }
+
+  function equipItem(itemId) {
+    if (itemId === null) {
+      delete avatarData.equipped[activeSlot];
+    } else {
+      var item = allItems.find(function(it){ return it.id === itemId; });
+      var colors = {};
+      (item.fill_regions || []).forEach(function(r){ colors[r.id] = r.default_color; });
+      avatarData.equipped[activeSlot] = { item_id: itemId, colors: colors };
+    }
+    activeRegionId = null;
+    dirty = true;
+    renderSlotTabs();
+    renderItemGrid();
+    renderColorPickers();
+    renderPreview();
+    renderRandomizer();
+    updateSaveState();
+  }
+
+  // ── RENDER: COLOR PICKERS FOR EQUIPPED ITEM IN ACTIVE SLOT ───────
+  function renderColorPickers() {
+    var section = document.getElementById('color-section');
+    var item = getEquippedItem(activeSlot);
+
+    if (!item || !item.fill_regions || item.fill_regions.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    var eq = avatarData.equipped[activeSlot];
+    var html = item.fill_regions.map(function(region) {
+      var current = (eq.colors && eq.colors[region.id]) || region.default_color;
+      var key = activeSlot + ':' + region.id;
+      var unlocked = (avatarData.unlocked_colors && avatarData.unlocked_colors[key]) || [];
+
+      var swatches = [region.default_color].concat(unlocked.filter(function(c){ return c !== region.default_color; }));
+
+      var swatchHtml = swatches.map(function(hex) {
+        var selected = hex === current ? ' selected' : '';
+        var isDefault = hex === region.default_color ? ' color-swatch-default' : '';
+        return '<div class="color-swatch' + selected + isDefault + '" style="background:' + hex + ';" title="' + hex + (hex === region.default_color ? ' (default)' : '') + '" onclick="setRegionColor(\'' + region.id + '\', \'' + hex + '\')"></div>';
+      }).join('');
+
+      return '<div class="color-region">' +
+        '<span class="color-region-label">' + esc(region.label || region.id) + '</span>' +
+        '<div class="color-swatch-row">' + swatchHtml + '</div>' +
+      '</div>';
+    }).join('');
+
+    document.getElementById('color-pickers').innerHTML = html;
+    section.style.display = 'block';
+  }
+
+  function setRegionColor(regionId, hex) {
+    var eq = avatarData.equipped[activeSlot];
+    if (!eq.colors) eq.colors = {};
+    eq.colors[regionId] = hex;
+    dirty = true;
+    renderColorPickers();
+    renderPreview();
+    updateSaveState();
+  }
+
+  // ── RANDOMIZER ──────────────────────────────────────────────────
+  // The active item's recolorable regions (if any). This is what the
+  // Color Unlock section now targets — synced with the Equipment tab.
+  function getActiveItemRegions() {
+    var item = getEquippedItem(activeSlot);
+    if (!item || !item.fill_regions || item.fill_regions.length === 0) return [];
+    return item.fill_regions;
+  }
+
+  function getActiveRegionType() {
+    return activeSlot === 'hair' ? 'hair' : 'clothing';
+  }
+
+  function renderRandomizer() {
+    document.getElementById('ember-balance-amount').textContent = emberBalance.toLocaleString();
+
+    var gachaBtn = document.getElementById('gacha-btn');
+    gachaBtn.disabled = emberBalance < 10;
+
+    var item = getEquippedItem(activeSlot);
+    var regions = getActiveItemRegions();
+    var infoEl = document.getElementById('reroll-target-info');
+    var rerollBtn = document.getElementById('reroll-btn');
+
+    if (!item || regions.length === 0) {
+      infoEl.innerHTML = '<div class="reroll-empty-note">Select an item with colors in the Equipment section above to unlock new colors for it.</div>';
+      rerollBtn.disabled = true;
+      return;
+    }
+
+    // Default to the first region if none selected yet, or if the
+    // previously selected region doesn't exist on this item
+    if (!activeRegionId || !regions.some(function(r){ return r.id === activeRegionId; })) {
+      activeRegionId = regions[0].id;
+    }
+
+    var html = '<div class="reroll-target-label"><i class="ti ti-target-arrow"></i>Unlocking colors for <b>' + esc(item.name) + '</b></div>';
+
+    if (regions.length > 1) {
+      html += '<div class="region-tab-row">' + regions.map(function(r) {
+        var active = r.id === activeRegionId ? ' active' : '';
+        return '<div class="region-tab' + active + '" onclick="selectRegionTab(\'' + r.id + '\')">' + esc(r.label || r.id) + '</div>';
+      }).join('') + '</div>';
+    }
+
+    infoEl.innerHTML = html;
+    rerollBtn.disabled = emberBalance < 1;
+
+    // Skin tone unlock button (separate control, lives in the Skin Tone section)
+    var skinBtn = document.getElementById('skin-reroll-btn');
+    if (skinBtn) skinBtn.disabled = emberBalance < 1;
+  }
+
+  function selectRegionTab(regionId) {
+    activeRegionId = regionId;
+    document.getElementById('reroll-result').classList.remove('show');
+    renderRandomizer();
+  }
+
+  async function rollItemGacha() {
+    var btn = document.getElementById('gacha-btn');
+    var result = document.getElementById('gacha-result');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Rolling...';
+
+    var { data, error } = await db.rpc('roll_item_gacha', { p_user_id: currentUid });
+
+    btn.innerHTML = '<i class="ti ti-gift"></i> Pull (10 Embers)';
+
+    if (error) {
+      result.className = 'randomizer-result show';
+      result.innerHTML = '<div class="randomizer-result-text">Something went wrong: ' + esc(error.message) + '</div>';
+      btn.disabled = emberBalance < 10;
+      return;
+    }
+
+    if (data.status === 'insufficient_embers') {
+      result.className = 'randomizer-result show';
+      result.innerHTML = '<div class="randomizer-result-text">You need <b>10 Embers</b> to pull. You have ' + data.balance + '.</div>';
+      btn.disabled = true;
+      return;
+    }
+
+    if (data.status === 'all_owned') {
+      result.className = 'randomizer-result show';
+      result.innerHTML = '<div class="randomizer-result-text">You already own every Mystery Item available right now! Check back later for more.</div>';
+      btn.disabled = emberBalance < 10;
+      return;
+    }
+
+    // Success — update local state
+    emberBalance -= 10;
+    notifyEmbersSpent(10);
+    unlockedItemIds.add(data.cosmetic_item_id);
+
+    var swatchColor = (data.fill_regions && data.fill_regions[0]) ? data.fill_regions[0].default_color : '#888';
+    var icon = SLOT_ICONS[data.slot] || 'ti-diamond';
+    result.className = 'randomizer-result show';
+    result.innerHTML =
+      '<div class="randomizer-result-swatch" style="background:' + swatchColor + ';"></div>' +
+      '<div>' +
+        '<div class="randomizer-result-text">You got <b>' + esc(data.name) + '</b>!</div>' +
+        '<div class="randomizer-result-sub">Added to your unlocked items — equip it from the ' + esc(data.slot) + ' tab.</div>' +
+      '</div>';
+
+    document.getElementById('ember-balance-amount').textContent = emberBalance.toLocaleString();
+    btn.disabled = emberBalance < 10;
+
+    // Refresh the item grid in case the new item belongs to the active slot
+    renderSlotTabs();
+    renderItemGrid();
+  }
+
+  // Notifies nav.js (and index.html's inline nav) to update the Embers
+  // pill in the header immediately when Embers are spent here.
+  function notifyEmbersSpent(amount) {
+    window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: -amount } }));
+  }
+
+  async function rollColorReroll() {
+    var btn = document.getElementById('reroll-btn');
+    var result = document.getElementById('reroll-result');
+    var item = getEquippedItem(activeSlot);
+    var regions = getActiveItemRegions();
+    if (!item || regions.length === 0 || !activeRegionId) return;
+
+    var region = regions.find(function(r){ return r.id === activeRegionId; });
+    if (!region) return;
+
+    var label = item.name + ' — ' + (region.label || region.id);
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Rolling...';
+
+    var { data, error } = await db.rpc('roll_color_reroll', {
+      p_user_id: currentUid,
+      p_region_type: getActiveRegionType(),
+      p_slot: activeSlot,
+      p_region_id: activeRegionId
+    });
+
+    btn.innerHTML = '<i class="ti ti-sparkles"></i> Unlock Color (1 Ember)';
+
+    if (error) {
+      result.className = 'randomizer-result show';
+      result.innerHTML = '<div class="randomizer-result-text">Something went wrong: ' + esc(error.message) + '</div>';
+      btn.disabled = emberBalance < 1;
+      return;
+    }
+
+    if (data.status === 'insufficient_embers') {
+      result.className = 'randomizer-result show';
+      result.innerHTML = '<div class="randomizer-result-text">You need <b>1 Ember</b> to unlock a color. You have ' + data.balance + '.</div>';
+      btn.disabled = true;
+      return;
+    }
+
+    if (data.status !== 'success') {
+      result.className = 'randomizer-result show';
+      result.innerHTML = '<div class="randomizer-result-text">Could not unlock a color right now. Please try again later.</div>';
+      btn.disabled = emberBalance < 1;
+      return;
+    }
+
+    // Success — permanently unlocked, not auto-applied
+    emberBalance -= 1;
+    notifyEmbersSpent(1);
+
+    var key = activeSlot + ':' + activeRegionId;
+    var alreadyHad = false;
+    if (!avatarData.unlocked_colors) avatarData.unlocked_colors = {};
+    if (!avatarData.unlocked_colors[key]) avatarData.unlocked_colors[key] = [];
+    if (avatarData.unlocked_colors[key].indexOf(data.hex) === -1) {
+      avatarData.unlocked_colors[key].push(data.hex);
+    } else {
+      alreadyHad = true;
+    }
+
+    renderColorPickers();
+    dirty = true;
+    updateSaveState();
+
+    result.className = 'randomizer-result show';
+    var subText = alreadyHad
+      ? 'You already had this color for ' + esc(label) + ' — no duplicate added.'
+      : 'Added to your unlocked colors for ' + esc(label) + ' — select it from the swatches above and Save Avatar to apply.';
+    result.innerHTML =
+      '<div class="randomizer-result-swatch" style="background:' + data.hex + ';"></div>' +
+      '<div>' +
+        '<div class="randomizer-result-text">Rolled <b>' + esc(data.label || data.hex) + '</b>!</div>' +
+        '<div class="randomizer-result-sub">' + subText + '</div>' +
+      '</div>';
+
+    document.getElementById('ember-balance-amount').textContent = emberBalance.toLocaleString();
+    btn.disabled = emberBalance < 1;
+  }
+
+  async function rollSkinToneUnlock() {
+    var btn = document.getElementById('skin-reroll-btn');
+    var result = document.getElementById('skin-reroll-result');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Rolling...';
+
+    var { data, error } = await db.rpc('roll_color_reroll', {
+      p_user_id: currentUid,
+      p_region_type: 'skin'
+    });
+
+    btn.innerHTML = '<i class="ti ti-sparkles"></i> Unlock Skin Tone (1 Ember)';
+
+    if (error) {
+      result.className = 'randomizer-result show';
+      result.innerHTML = '<div class="randomizer-result-text">Something went wrong: ' + esc(error.message) + '</div>';
+      btn.disabled = emberBalance < 1;
+      return;
+    }
+
+    if (data.status === 'insufficient_embers') {
+      result.className = 'randomizer-result show';
+      result.innerHTML = '<div class="randomizer-result-text">You need <b>1 Ember</b> to unlock a skin tone. You have ' + data.balance + '.</div>';
+      btn.disabled = true;
+      return;
+    }
+
+    if (data.status !== 'success') {
+      result.className = 'randomizer-result show';
+      result.innerHTML = '<div class="randomizer-result-text">Could not unlock a skin tone right now. Please try again later.</div>';
+      btn.disabled = emberBalance < 1;
+      return;
+    }
+
+    emberBalance -= 1;
+    notifyEmbersSpent(1);
+
+    var alreadyHad = false;
+    if (!avatarData.unlocked_skin_tones) avatarData.unlocked_skin_tones = [];
+    if (avatarData.unlocked_skin_tones.indexOf(data.hex) === -1) {
+      avatarData.unlocked_skin_tones.push(data.hex);
+    } else {
+      alreadyHad = true;
+    }
+
+    renderSkinTones();
+    dirty = true;
+    updateSaveState();
+
+    result.className = 'randomizer-result show';
+    var subText = alreadyHad
+      ? 'You already had this skin tone — no duplicate added.'
+      : 'Added to your unlocked skin tones — select it above and Save Avatar to apply.';
+    result.innerHTML =
+      '<div class="randomizer-result-swatch" style="background:' + data.hex + ';"></div>' +
+      '<div>' +
+        '<div class="randomizer-result-text">Rolled <b>' + esc(data.label || data.hex) + '</b>!</div>' +
+        '<div class="randomizer-result-sub">' + subText + '</div>' +
+      '</div>';
+
+    document.getElementById('ember-balance-amount').textContent = emberBalance.toLocaleString();
+    btn.disabled = emberBalance < 1;
+  }
+
+
+  function updateSaveState() {
+    document.getElementById('save-btn').disabled = !dirty;
+  }
+
+  async function saveAvatar() {
+    var btn = document.getElementById('save-btn');
+    var status = document.getElementById('save-status');
+    btn.disabled = true;
+    status.textContent = 'Saving...';
+
+    var payload = {
+      user_id: currentUid,
+      skin_tone: avatarData.skin_tone,
+      equipped: avatarData.equipped,
+      unlocked_skin_tones: avatarData.unlocked_skin_tones || [],
+      unlocked_colors: avatarData.unlocked_colors || {},
+      updated_at: new Date().toISOString()
+    };
+
+    var { error } = await db.from('user_avatars').upsert(payload, { onConflict: 'user_id' });
+
+    if (error) {
+      status.textContent = 'Could not save: ' + error.message;
+      btn.disabled = false;
+      return;
+    }
+
+    dirty = false;
+    status.textContent = 'Saved!';
+    setTimeout(function(){ status.textContent = ''; }, 2000);
+  }
+
+  // ── MAIN RENDER ─────────────────────────────────────────────────
+  function renderEditor() {
+    document.getElementById('editor-root').innerHTML =
+      '<div class="editor-layout">' +
+        '<div class="preview-panel">' +
+          '<div class="preview-canvas-wrap"><div id="avatar-preview-svg"></div></div>' +
+          '<button class="save-btn" id="save-btn" onclick="saveAvatar()" disabled><i class="ti ti-device-floppy"></i> Save Avatar</button>' +
+          '<div class="save-status" id="save-status"></div>' +
+          '<div class="preview-note">Placeholder art shown — final illustrated layers are in progress. Colors and equipped items will carry over once real artwork is added.</div>' +
+        '</div>' +
+        '<div class="controls-panel">' +
+          '<div class="control-section">' +
+            '<div class="control-section-title"><i class="ti ti-palette"></i> Skin Tone</div>' +
+            '<div class="swatch-row" id="skin-tone-row"></div>' +
+            '<div style="margin-top:12px;">' +
+              '<button class="randomizer-btn" id="skin-reroll-btn" onclick="rollSkinToneUnlock()"><i class="ti ti-sparkles"></i> Unlock Skin Tone (1 Ember)</button>' +
+            '</div>' +
+            '<div class="randomizer-result" id="skin-reroll-result"></div>' +
+          '</div>' +
+          '<div class="control-section">' +
+            '<div class="control-section-title"><i class="ti ti-shirt"></i> Equipment</div>' +
+            '<div class="slot-tabs" id="slot-tabs"></div>' +
+            '<div class="item-grid" id="item-grid"></div>' +
+          '</div>' +
+          '<div class="control-section" id="color-section" style="display:none;">' +
+            '<div class="control-section-title"><i class="ti ti-droplet"></i> Colors</div>' +
+            '<div id="color-pickers"></div>' +
+          '</div>' +
+          '<div class="control-section">' +
+            '<div class="control-section-title"><i class="ti ti-dice"></i> Randomizer</div>' +
+            '<div class="ember-balance-row">' +
+              '<div class="ember-balance"><i class="ti ti-flame"></i><span id="ember-balance-amount">0</span><span class="ember-balance-label">Embers available</span></div>' +
+            '</div>' +
+            '<div class="randomizer-block">' +
+              '<div class="randomizer-block-title">Mystery Item</div>' +
+              '<div class="randomizer-block-desc">Spend 10 Embers for a random white &amp; teal accessory or clothing item. Rarer items are less likely.</div>' +
+              '<div class="randomizer-controls">' +
+                '<button class="randomizer-btn" id="gacha-btn" onclick="rollItemGacha()"><i class="ti ti-gift"></i> Pull (10 Embers)</button>' +
+              '</div>' +
+              '<div class="randomizer-result" id="gacha-result"></div>' +
+            '</div>' +
+            '<div class="randomizer-block">' +
+              '<div class="randomizer-block-title">Color Unlock</div>' +
+              '<div class="randomizer-block-desc">Spend 1 Ember to permanently unlock a random new color for the selected item. Unlocked colors stay forever — mix and match them anytime.</div>' +
+              '<div id="reroll-target-info"></div>' +
+              '<div class="randomizer-controls">' +
+                '<button class="randomizer-btn" id="reroll-btn" onclick="rollColorReroll()"><i class="ti ti-sparkles"></i> Unlock Color (1 Ember)</button>' +
+              '</div>' +
+              '<div class="randomizer-result" id="reroll-result"></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    renderSkinTones();
+    renderSlotTabs();
+    renderItemGrid();
+    renderColorPickers();
+    renderPreview();
+    renderRandomizer();
+  }
+</script>
+<script src="footer.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

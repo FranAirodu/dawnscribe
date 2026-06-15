@@ -32,11 +32,36 @@
     .access-denied h2{font-family:'Cinzel',serif;font-size:22px;margin-bottom:8px;}
     .access-denied p{color:var(--text3);font-size:14px;}
 
+    /* ── OVERVIEW SECTION ─────────────────────────────────── */
+    .overview-section{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:24px;overflow:hidden;}
+    .overview-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;cursor:pointer;transition:background 0.15s;}
+    .overview-header:hover{background:var(--bg3);}
+    .overview-title{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;}
+    .overview-title i:first-child{color:var(--accent);}
+    .overview-count{background:rgba(45,212,191,0.12);color:var(--accent);font-size:11px;font-weight:700;border-radius:10px;padding:2px 9px;font-family:'Lato',sans-serif;}
+    .overview-chevron{color:var(--text3);transition:transform 0.2s;font-size:16px;}
+    .overview-section.collapsed .overview-chevron{transform:rotate(-90deg);}
+    .overview-section.collapsed .overview-body{display:none;}
+    .overview-body{padding:0 20px 18px;display:flex;flex-direction:column;gap:8px;}
+    .overview-empty{font-size:13px;color:var(--text3);font-style:italic;padding:0 0 4px;}
+    .overview-group{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;transition:all 0.15s;}
+    .overview-group:hover{border-color:rgba(45,212,191,0.3);}
+    .overview-group-head{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;}
+    .overview-group-head i{color:var(--accent);font-size:13px;}
+    .overview-item-row{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--text2);padding:3px 0;}
+    .overview-item-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px;}
+    .overview-item-points{color:var(--gold);font-weight:700;white-space:nowrap;}
+
     /* ── LAYOUT: sidebar + detail panel ───────────────────── */
     .rewards-layout{display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:start;}
     @media(max-width:860px){.rewards-layout{grid-template-columns:1fr;}}
 
     .tag-sidebar{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:sticky;top:84px;max-height:calc(100vh - 110px);display:flex;flex-direction:column;}
+    .sort-toggle{display:flex;gap:6px;margin-bottom:10px;}
+    .sort-btn{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:var(--text2);cursor:pointer;transition:all 0.15s;font-family:'Lato',sans-serif;}
+    .sort-btn:hover{color:var(--text);}
+    .sort-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(45,212,191,0.06);}
+    .tag-item-usage{font-size:10px;color:var(--text3);background:var(--bg4);border-radius:10px;padding:2px 7px;flex-shrink:0;margin-left:4px;}
     .tag-search{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;margin-bottom:12px;}
     .tag-search:focus{border-color:var(--accent);}
     .tag-search::placeholder{color:var(--text3);}
@@ -48,6 +73,7 @@
     .tag-item-count{font-size:11px;color:var(--text3);background:var(--bg4);border-radius:10px;padding:2px 7px;flex-shrink:0;}
     .tag-item.active .tag-item-count{background:rgba(45,212,191,0.15);color:var(--accent);}
     .tag-empty-note{font-size:12px;color:var(--text3);text-align:center;padding:24px 12px;}
+    .tag-divider{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);padding:10px 12px 4px;}
 
     /* ── DETAIL PANEL ───────────────────────────────────────── */
     .detail-panel{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:28px;min-height:400px;}
@@ -125,9 +151,22 @@
     <h1 class="page-title">Genre <span>Rewards</span></h1>
     <p class="page-sub">Every tag on DawnScribe earns readers points as they read (gold/main tags &times;2, silver/sub tags &times;1 per word). Add cosmetic rewards here &mdash; readers unlock them automatically once they cross the point threshold.</p>
 
+    <!-- OVERVIEW -->
+    <div class="overview-section" id="overview-section">
+      <div class="overview-header" onclick="toggleOverview()">
+        <div class="overview-title"><i class="ti ti-list-details"></i> Configured Rewards <span class="overview-count" id="overview-count">0</span></div>
+        <i class="ti ti-chevron-down overview-chevron" id="overview-chevron"></i>
+      </div>
+      <div class="overview-body" id="overview-body"></div>
+    </div>
+
     <div class="rewards-layout">
       <!-- TAG SIDEBAR -->
       <div class="tag-sidebar">
+        <div class="sort-toggle" id="sort-toggle">
+          <button class="sort-btn active" id="sort-az-btn" onclick="setSortMode('az')">A–Z</button>
+          <button class="sort-btn" id="sort-popular-btn" onclick="setSortMode('popular')">Most Used</button>
+        </div>
         <input class="tag-search" id="tag-search" type="text" placeholder="Search tags..." oninput="renderTagList()"/>
         <div class="tag-list" id="tag-list"></div>
       </div>
@@ -152,13 +191,27 @@
     const ADMIN_UID = '516db718-edd5-4856-9281-2df642d006f5';
 
     const SLOT_ICONS = {
-      outfit: 'ti-shirt', weapon: 'ti-sword', accessory: 'ti-diamond',
-      headwear: 'ti-hat-cowboy', companion: 'ti-paw', effect: 'ti-sparkles',
-      background: 'ti-photo'
+      hat: 'ti-hat-cowboy', hair: 'ti-cut', face: 'ti-mask',
+      outfit: 'ti-shirt', shirt: 'ti-shirt', jacket: 'ti-shirt', gloves: 'ti-hand',
+      pants: 'ti-tag', shoes: 'ti-shoe',
+      back: 'ti-wind', neck: 'ti-circle-dot', accessory: 'ti-diamond',
+      companion: 'ti-paw', effect: 'ti-sparkles', background: 'ti-photo'
     };
+
+    // Slot groups for the dropdown — organized by avatar region so
+    // similar layer types are grouped together when picking a slot.
+    const SLOT_GROUPS = [
+      { label: 'Head', slots: ['hat','hair','face'] },
+      { label: 'Body', slots: ['outfit','shirt','jacket','gloves'] },
+      { label: 'Lower Body', slots: ['pants','shoes'] },
+      { label: 'Accessories', slots: ['back','neck','accessory'] },
+      { label: 'Scene', slots: ['companion','effect','background'] }
+    ];
 
     var allTags = [];
     var allRewards = {};
+    var tagUsage = {};       // tag -> number of published works using it
+    var sortMode = 'az';     // 'az' | 'popular'
     var selectedTag = null;
 
     // ── AUTH GATE ───────────────────────────────────────────────
@@ -198,14 +251,35 @@
 
     // ── INIT: load all tags + all rewards ─────────────────────────
     async function init() {
-      var worksResult = await db.from('works').select('tags_all');
+      // Load the curated tag vocabulary from publish.html's TAG_CATEGORIES —
+      // this is the same source users pick from when tagging a work, so it
+      // excludes one-off character-name tags that users type in freely.
       var tagSet = new Set();
-      (worksResult.data || []).forEach(function(w) {
-        try {
-          var tags = JSON.parse(w.tags_all || '[]');
-          tags.forEach(function(t) { tagSet.add(t); });
-        } catch(e) {}
-      });
+      try {
+        var pubResp = await fetch('publish.html');
+        var pubHtml = await pubResp.text();
+        var startIdx = pubHtml.indexOf('var TAG_CATEGORIES');
+        var braceIdx = pubHtml.indexOf('{', startIdx);
+        var depth = 0, endIdx = braceIdx;
+        for (var k = braceIdx; k < pubHtml.length; k++) {
+          if (pubHtml[k] === '{') depth++;
+          else if (pubHtml[k] === '}') { depth--; if (depth === 0) { endIdx = k + 1; break; } }
+        }
+        var block = pubHtml.slice(braceIdx, endIdx);
+        // Match each category's array, then pull quoted tag strings from it
+        var catRegex = /'((?:[^'\\]|\\.)*)':\s*\[((?:[^\[\]]|\[[^\[\]]*\])*)\]/g;
+        var catMatch;
+        while ((catMatch = catRegex.exec(block)) !== null) {
+          var arr = catMatch[2];
+          var tagRegex = /'((?:[^'\\]|\\.)*)'/g;
+          var tagMatch;
+          while ((tagMatch = tagRegex.exec(arr)) !== null) {
+            tagSet.add(tagMatch[1]);
+          }
+        }
+      } catch (e) {
+        showToast('Could not load tag list from publish.html', 'ti-alert-circle', true);
+      }
       allTags = Array.from(tagSet).sort();
 
       var rewardsResult = await db.from('tag_rewards')
@@ -218,11 +292,33 @@
         allRewards[r.tag].push(r);
       });
 
+      // Any tag with existing rewards but no longer in TAG_CATEGORIES still
+      // needs to show up so you can see/manage it (e.g. if the tag list changed)
       Object.keys(allRewards).forEach(function(tag) {
         if (!allTags.includes(tag)) allTags.push(tag);
       });
       allTags.sort();
 
+      // Tag usage counts (how many published works use each tag) — powers
+      // the "Most Used" sort, to prioritize rewards for tags readers
+      // encounter most often.
+      tagUsage = {};
+      var worksResult = await db.from('works').select('tags_all').eq('is_published', true);
+      (worksResult.data || []).forEach(function(w) {
+        try {
+          var tags = JSON.parse(w.tags_all || '[]');
+          tags.forEach(function(t) { tagUsage[t] = (tagUsage[t] || 0) + 1; });
+        } catch(e) {}
+      });
+
+      renderTagList();
+      renderOverview();
+    }
+
+    function setSortMode(mode) {
+      sortMode = mode;
+      document.getElementById('sort-az-btn').classList.toggle('active', mode === 'az');
+      document.getElementById('sort-popular-btn').classList.toggle('active', mode === 'popular');
       renderTagList();
     }
 
@@ -237,12 +333,81 @@
         return;
       }
 
-      wrap.innerHTML = filtered.map(function(tag) {
-        var count = (allRewards[tag] || []).length;
-        var active = tag === selectedTag ? ' active' : '';
-        return '<div class="tag-item' + active + '" onclick="selectTag(\'' + tag.replace(/'/g, "\\'") + '\')">' +
-          '<span class="tag-item-name">' + escHtml(tag) + '</span>' +
-          (count > 0 ? '<span class="tag-item-count">' + count + '</span>' : '') +
+      if (sortMode === 'popular') {
+        // Sort all filtered tags by usage count (desc), then alphabetically.
+        // No grouping by reward status in this mode — the point is to see
+        // priority order regardless of what's already configured.
+        var sorted = filtered.slice().sort(function(a, b) {
+          var diff = (tagUsage[b] || 0) - (tagUsage[a] || 0);
+          if (diff !== 0) return diff;
+          return a.localeCompare(b);
+        });
+        wrap.innerHTML = sorted.map(renderTagItem).join('');
+        return;
+      }
+
+      var configured = filtered.filter(function(t) { return (allRewards[t] || []).length > 0; });
+      var unconfigured = filtered.filter(function(t) { return (allRewards[t] || []).length === 0; });
+
+      var html = '';
+      if (configured.length > 0) {
+        html += '<div class="tag-divider">Has rewards (' + configured.length + ')</div>';
+        html += configured.map(renderTagItem).join('');
+      }
+      if (unconfigured.length > 0) {
+        if (configured.length > 0) html += '<div class="tag-divider">No rewards yet</div>';
+        html += unconfigured.map(renderTagItem).join('');
+      }
+      wrap.innerHTML = html;
+    }
+
+    function renderTagItem(tag) {
+      var count = (allRewards[tag] || []).length;
+      var usage = tagUsage[tag] || 0;
+      var active = tag === selectedTag ? ' active' : '';
+      var badges = '';
+      if (sortMode === 'popular') {
+        badges += '<span class="tag-item-usage" title="Published works using this tag">' + usage + ' work' + (usage === 1 ? '' : 's') + '</span>';
+      }
+      if (count > 0) {
+        badges += '<span class="tag-item-count">' + count + '</span>';
+      }
+      return '<div class="tag-item' + active + '" onclick="selectTag(\'' + tag.replace(/'/g, "\\'") + '\')">' +
+        '<span class="tag-item-name">' + escHtml(tag) + '</span>' +
+        '<span style="display:flex;gap:4px;flex-shrink:0;">' + badges + '</span>' +
+      '</div>';
+    }
+
+    // ── OVERVIEW SECTION ──────────────────────────────────────────
+    var overviewCollapsed = false;
+    function toggleOverview() {
+      overviewCollapsed = !overviewCollapsed;
+      document.getElementById('overview-section').classList.toggle('collapsed', overviewCollapsed);
+    }
+
+    function renderOverview() {
+      var configuredTags = Object.keys(allRewards).filter(function(t) { return allRewards[t].length > 0; }).sort();
+      var totalRewards = configuredTags.reduce(function(sum, t) { return sum + allRewards[t].length; }, 0);
+      document.getElementById('overview-count').textContent = totalRewards + (totalRewards === 1 ? ' reward' : ' rewards') + ' across ' + configuredTags.length + (configuredTags.length === 1 ? ' tag' : ' tags');
+
+      var body = document.getElementById('overview-body');
+      if (configuredTags.length === 0) {
+        body.innerHTML = '<div class="overview-empty">No rewards configured yet. Select a tag on the left to add your first one.</div>';
+        return;
+      }
+
+      body.innerHTML = configuredTags.map(function(tag) {
+        var rewards = allRewards[tag];
+        var rows = rewards.map(function(r) {
+          var item = r.cosmetic_items || {};
+          return '<div class="overview-item-row">' +
+            '<span class="overview-item-name">' + escHtml(item.name || 'Untitled item') + '</span>' +
+            '<span class="overview-item-points">' + r.points_required.toLocaleString() + ' pts</span>' +
+          '</div>';
+        }).join('');
+        return '<div class="overview-group" onclick="selectTag(\'' + tag.replace(/'/g, "\\'") + '\')">' +
+          '<div class="overview-group-head"><span>' + escHtml(tag) + '</span><i class="ti ti-arrow-right"></i></div>' +
+          rows +
         '</div>';
       }).join('');
     }
@@ -295,7 +460,14 @@
           '<div class="form-group"><label class="form-label">Item Name</label><input class="form-input" id="new-item-name" placeholder="e.g. Survivor\'s Gear"/></div>' +
           '<div class="form-group"><label class="form-label">Slot</label>' +
             '<select class="form-select" id="new-item-slot">' +
-              Object.keys(SLOT_ICONS).map(function(s) { return '<option value="' + s + '">' + s.charAt(0).toUpperCase() + s.slice(1) + '</option>'; }).join('') +
+              SLOT_GROUPS.map(function(g) {
+                return '<optgroup label="' + g.label + '">' +
+                  g.slots.map(function(s) {
+                    var label = s.charAt(0).toUpperCase() + s.slice(1);
+                    return '<option value="' + s + '">' + label + '</option>';
+                  }).join('') +
+                '</optgroup>';
+              }).join('') +
             '</select>' +
           '</div>' +
           '<div class="form-group full"><label class="form-label">Description</label><textarea class="form-textarea" id="new-item-desc" placeholder="Shown to users when they unlock or hover this item"></textarea></div>' +
@@ -347,6 +519,7 @@
         showToast('Reward added — readers will unlock it automatically.', 'ti-check');
         renderTagList();
         renderDetailPanel();
+        renderOverview();
       } catch (err) {
         showToast(err.message || 'Failed to save reward', 'ti-alert-circle', true);
         btn.disabled = false;
@@ -369,6 +542,7 @@
       showToast('Reward deleted', 'ti-trash');
       renderTagList();
       renderDetailPanel();
+      renderOverview();
     }
 
     checkAccess();
