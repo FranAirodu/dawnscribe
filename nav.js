@@ -364,7 +364,7 @@
       novelNotifs = chapRes.data||[];
       if(novelNotifs.length){
         var cwIds=[...new Set(novelNotifs.map(function(c){return c.work_id;}))];
-        var {data:cwData}=await db.from('works').select('id,title').in('id',cwIds);
+        var {data:cwData}=await db.from('works').select('id,title,cover_url').in('id',cwIds);
         var cwMap={};(cwData||[]).forEach(function(w){cwMap[w.id]=w;});
         novelNotifs.forEach(function(ch){ch.works=cwMap[ch.work_id]||null;});
       }
@@ -380,7 +380,11 @@
         var chLabel=ch.title?'Chapter '+ch.chapter_number+' — "'+ch.title+'"':'Chapter '+ch.chapter_number;
         var item=document.createElement('div'); item.className='notif-item unread'; item.dataset.id=ch.id; item.style.cursor='pointer';
         item.onclick=function(){if(work) window.location.href='story.html?id='+work.id;};
-        item.innerHTML='<div class="notif-cover '+dsCoverColor(ch.work_id)+'">'+dsEsc(dsCoverLetter(title))+'</div>'
+        var coverHtml = work && work.cover_url
+          ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
+          : dsEsc(dsCoverLetter(title));
+        var coverClass = work && work.cover_url ? '' : dsCoverColor(ch.work_id);
+        item.innerHTML='<div class="notif-cover '+coverClass+'" style="overflow:hidden;padding:0;">'+coverHtml+'</div>'
           +'<div class="notif-body"><div class="notif-title">'+dsEsc(title)+'</div><div class="notif-text">'+dsEsc(chLabel)+' is now available</div>'
           +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(ch.created_at)+'</div></div><div class="notif-dot"></div>';
         novelFeed.appendChild(item);
@@ -391,7 +395,7 @@
     var followedIds = (followedUsers.data||[]).map(function(r){return r.following_id;});
     var artistNotifs = [];
     if(followedIds.length){
-      var artRes = await db.from('works').select('id,title,type,created_at,author_id').eq('type','artwork').in('author_id',followedIds).order('created_at',{ascending:false}).limit(8);
+      var artRes = await db.from('works').select('id,title,type,created_at,author_id,cover_url').eq('type','artwork').in('author_id',followedIds).order('created_at',{ascending:false}).limit(8);
       artistNotifs = artRes.data||[];
       if(artistNotifs.length){
         var aaIds=[...new Set(artistNotifs.map(function(w){return w.author_id;}))];
@@ -430,17 +434,20 @@
     else {
       unrA.forEach(function(work){
         var prof=work.profiles; var name=prof?(prof.display_name||prof.username||'Unknown'):'Unknown';
-        var avHtml=prof&&prof.avatar_url?'<img src="'+dsEsc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>':dsEsc(name.charAt(0).toUpperCase());
+        var avHtml = work.cover_url
+          ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
+          : prof&&prof.avatar_url ? '<img src="'+dsEsc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
+        var coverClass = work.cover_url ? '' : dsCoverColor(work.author_id);
         var item=document.createElement('div'); item.className='notif-item unread'; item.dataset.id=work.id; item.style.cursor='pointer';
         item.onclick=function(){window.location.href='artwork.html?id='+work.id;};
-        item.innerHTML='<div class="notif-cover '+dsCoverColor(work.author_id)+'" style="overflow:hidden;">'+avHtml+'</div>'
+        item.innerHTML='<div class="notif-cover '+coverClass+'" style="overflow:hidden;padding:0;">'+avHtml+'</div>'
           +'<div class="notif-body"><div class="notif-title">'+dsEsc(name)+'</div><div class="notif-text">Posted — "'+dsEsc(work.title)+'"</div>'
           +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(work.created_at)+'</div></div><div class="notif-dot"></div>';
         artistFeed.appendChild(item);
       });
     }
 
-    var myWorks=await db.from('works').select('id,title,type').eq('author_id',uid);
+    var myWorks=await db.from('works').select('id,title,type,cover_url').eq('author_id',uid);
     var myWorkRows=myWorks.data||[];
     var myNovelIds=myWorkRows.filter(function(w){return w.type!=='artwork';}).map(function(w){return w.id;});
     var myArtworkIds=myWorkRows.filter(function(w){return w.type==='artwork';}).map(function(w){return w.id;});
@@ -479,8 +486,11 @@
         var workTitle=work?work.title:'your work';
         var item=document.createElement('div'); item.className='notif-item unread'; item.dataset.id=cm.id; item.style.cursor='pointer';
         item.onclick=function(){if(!cm.work_id)return;window.location.href=cm._type==='artwork'?'artwork.html?id='+cm.work_id:'story.html?id='+cm.work_id;};
-        var avHtml2=prof&&prof.avatar_url?'<img src="'+dsEsc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>':dsEsc(name.charAt(0).toUpperCase());
-        item.innerHTML='<div class="notif-cover '+dsCoverColor(cm.user_id||cm.id)+'" style="overflow:hidden;">'+avHtml2+'</div>'
+        var avHtml2 = work && work.cover_url
+          ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
+          : prof&&prof.avatar_url ? '<img src="'+dsEsc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
+        var coverClass2 = work && work.cover_url ? '' : dsCoverColor(cm.user_id||cm.id);
+        item.innerHTML='<div class="notif-cover '+coverClass2+'" style="overflow:hidden;padding:0;">'+avHtml2+'</div>'
           +'<div class="notif-body"><div class="notif-title">'+dsEsc(name)+' commented on '+dsEsc(workTitle)+'</div>'
           +'<div class="notif-text">"'+dsEsc((cm.content||'').slice(0,70))+(cm.content&&cm.content.length>70?'...':'')+'"</div>'
           +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(cm.created_at)+'</div></div><div class="notif-dot"></div>';
