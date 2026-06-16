@@ -199,20 +199,24 @@
   }
 
   // Returns the HSL hue (0-360) of a hex color, used for spectrum sorting
+  // Returns a sort key for spectrum ordering.
+  // Achromatic colors (black/white/grey, saturation < 8%) sort to the front (key < 0).
+  // Chromatic colors sort by hue 0-360.
   function hexHue(hex) {
     if (!hex) return 0;
-    hex = hex.replace("#","");
+    hex = hex.replace('#','');
     if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
     var r = parseInt(hex.slice(0,2),16)/255;
     var g = parseInt(hex.slice(2,4),16)/255;
     var b = parseInt(hex.slice(4,6),16)/255;
-    var max = Math.max(r,g,b), min = Math.min(r,g,b), h = 0;
-    if (max !== min) {
-      var d = max - min;
-      if (max===r) h = ((g-b)/d + (g<b?6:0)) / 6;
-      else if (max===g) h = ((b-r)/d + 2) / 6;
-      else h = ((r-g)/d + 4) / 6;
-    }
+    var max = Math.max(r,g,b), min = Math.min(r,g,b);
+    var saturation = max === 0 ? 0 : (max - min) / max;
+    // Achromatic — sort by lightness so black→grey→white
+    if (saturation < 0.08) return -1 + (max * 0.99); // range -1 to ~-0.01
+    var h = 0, d = max - min;
+    if (max === r) h = ((g-b)/d + (g<b?6:0)) / 6;
+    else if (max === g) h = ((b-r)/d + 2) / 6;
+    else h = ((r-g)/d + 4) / 6;
     return h * 360;
   }
 
