@@ -54,11 +54,15 @@
     .save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .save-status { font-size: 12px; color: var(--accent); margin-top: 8px; text-align: center; min-height: 16px; }
 
-    /* ── CONTROLS PANEL ───────────────────────────────────────── */
-    .controls-panel { display: flex; flex-direction: column; gap: 18px; }
-    .control-section { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
-    .control-section-title { font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-    .control-section-title i { color: var(--accent); }
+    /* ── CONTROLS PANEL / TABS ────────────────────────────────── */
+    .controls-panel { display: flex; flex-direction: column; }
+    .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 0; background: var(--bg2); border-radius: 14px 14px 0 0; border: 1px solid var(--border); overflow: hidden; }
+    .tab-btn { flex: 1; padding: 12px 6px; font-size: 11px; font-weight: 700; font-family: 'Lato', sans-serif; color: var(--text2); background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.5px; }
+    .tab-btn i { font-size: 18px; }
+    .tab-btn:hover { color: var(--text); background: var(--bg3); }
+    .tab-btn.active { color: var(--accent); border-bottom: 2px solid var(--accent); background: rgba(45,212,191,0.04); }
+    .tab-panel { background: var(--bg2); border: 1px solid var(--border); border-top: none; border-radius: 0 0 14px 14px; padding: 20px; display: none; }
+    .tab-panel.active { display: block; }
 
     /* skin tone swatches */
     .swatch-row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -516,13 +520,20 @@
 
   // ── RENDER: COLOR PICKERS FOR EQUIPPED ITEM IN ACTIVE SLOT ───────
   function renderColorPickers() {
-    var section = document.getElementById('color-section');
+    var pickers = document.getElementById('color-pickers');
+    var rerollSection = document.getElementById('color-reroll-section');
+    var emptyNote = document.getElementById('color-empty-note');
+    if (!pickers) return;
+
     var item = getEquippedItem(activeSlot);
 
     if (!item || !item.fill_regions || item.fill_regions.length === 0) {
-      section.style.display = 'none';
+      pickers.innerHTML = '';
+      if (rerollSection) rerollSection.style.display = 'none';
+      if (emptyNote) emptyNote.style.display = 'block';
       return;
     }
+    if (emptyNote) emptyNote.style.display = 'none';
 
     var eq = avatarData.equipped[activeSlot];
     var html = item.fill_regions.map(function(region) {
@@ -548,8 +559,8 @@
       '</div>';
     }).join('');
 
-    document.getElementById('color-pickers').innerHTML = html;
-    section.style.display = 'block';
+    pickers.innerHTML = html;
+    if (rerollSection) rerollSection.style.display = 'block';
   }
 
   function setRegionColor(regionId, hex) {
@@ -577,6 +588,8 @@
 
   function renderRandomizer() {
     document.getElementById('ember-balance-amount').textContent = emberBalance.toLocaleString();
+    var dawnBal = document.getElementById('ember-balance-amount-dawn');
+    if (dawnBal) dawnBal.textContent = emberBalance.toLocaleString();
 
     var gachaBtn = document.getElementById('gacha-btn');
     gachaBtn.disabled = emberBalance < 10;
@@ -919,12 +932,12 @@
       result.classList.add('show'); return;
     }
     emberBalance -= 10;
-    document.getElementById('ember-balance-amount').textContent = emberBalance;
+    document.getElementById('ember-balance-amount-dawn').textContent = emberBalance;
     if (!avatarData.unlocked_accents) avatarData.unlocked_accents = [];
     if (avatarData.unlocked_accents.indexOf(data.hex) === -1) avatarData.unlocked_accents.push(data.hex);
     result.innerHTML =
       flameSwatch(data.hex, data.label, 'randomizer-result-swatch', '') +
-      '<div class="randomizer-result-text">Unlocked <b style="color:' + data.hex + ';">' + esc(data.label) + '</b>!<div class="randomizer-result-sub">Head to Your Dawn Color above to equip it.</div></div>';
+      '<div class="randomizer-result-text">Unlocked <b style="color:' + data.hex + ';">' + esc(data.label) + '</b>!<div class="randomizer-result-sub">Scroll down to pick it as your Dawn Color.</div></div>';
     result.classList.add('show');
     renderAccentSection();
     // Dispatch ember event for nav pill
@@ -962,6 +975,16 @@
   }
 
   // ── MAIN RENDER ─────────────────────────────────────────────────
+  var activeTab = 'skin';
+
+  function switchTab(tab) {
+    activeTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tab === tab); });
+    document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.toggle('active', p.dataset.tab === tab); });
+    if (tab === 'colors') renderColorPickers();
+    if (tab === 'dawn') renderAccentSection();
+  }
+
   function renderEditor() {
     document.getElementById('editor-root').innerHTML =
       '<div class="editor-layout">' +
@@ -972,71 +995,66 @@
           '<div class="preview-note">Placeholder art shown — final illustrated layers are in progress. Colors and equipped items will carry over once real artwork is added.</div>' +
         '</div>' +
         '<div class="controls-panel">' +
-          '<div class="control-section">' +
-            '<div class="control-section-title"><i class="ti ti-palette"></i> Skin Tone</div>' +
+          '<div class="tab-bar">' +
+            '<button class="tab-btn active" data-tab="skin" onclick="switchTab(\'skin\')"><i class="ti ti-droplet"></i>Skin</button>' +
+            '<button class="tab-btn" data-tab="equipment" onclick="switchTab(\'equipment\')"><i class="ti ti-shirt"></i>Equip</button>' +
+            '<button class="tab-btn" data-tab="colors" onclick="switchTab(\'colors\')"><i class="ti ti-palette"></i>Colors</button>' +
+            '<button class="tab-btn" data-tab="gacha" onclick="switchTab(\'gacha\')"><i class="ti ti-gift"></i>Items</button>' +
+            '<button class="tab-btn" data-tab="dawn" onclick="switchTab(\'dawn\')"><i class="ti ti-wand"></i>Dawn</button>' +
+          '</div>' +
+          '<div class="tab-panel active" data-tab="skin">' +
+            '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px;">Skin Tone</div>' +
             '<div class="swatch-row" id="skin-tone-row"></div>' +
-            '<div style="margin-top:12px;">' +
+            '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">' +
+              '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Spend 1 Ember to unlock a new skin tone.</div>' +
               '<button class="randomizer-btn" id="skin-reroll-btn" onclick="rollSkinToneUnlock()"><i class="ti ti-sparkles"></i> Unlock Skin Tone (1 Ember)</button>' +
             '</div>' +
             '<div class="randomizer-result" id="skin-reroll-result"></div>' +
           '</div>' +
-          '<div class="control-section">' +
-            '<div class="control-section-title"><i class="ti ti-shirt"></i> Equipment</div>' +
+          '<div class="tab-panel" data-tab="equipment">' +
             '<div class="slot-tabs" id="slot-tabs"></div>' +
             '<div class="item-grid" id="item-grid"></div>' +
           '</div>' +
-          '<div class="control-section" id="color-section" style="display:none;">' +
-            '<div class="control-section-title"><i class="ti ti-droplet"></i> Colors</div>' +
+          '<div class="tab-panel" data-tab="colors">' +
             '<div id="color-pickers"></div>' +
+            '<div id="color-reroll-section" style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;display:none;">' +
+              '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5;">Spend 1 Ember to permanently unlock a random new color for this item.</div>' +
+              '<div id="reroll-target-info"></div>' +
+              '<button class="randomizer-btn" id="reroll-btn" onclick="rollColorReroll()"><i class="ti ti-sparkles"></i> Unlock Color (1 Ember)</button>' +
+              '<div class="randomizer-result" id="reroll-result"></div>' +
+            '</div>' +
+            '<div id="color-empty-note" class="empty-note" style="display:none;padding:32px 0;"><i class="ti ti-shirt" style="font-size:28px;display:block;margin-bottom:8px;color:var(--text3);"></i>Equip an item first to see its colors.</div>' +
           '</div>' +
-          '<div class="control-section">' +
-            '<div class="control-section-title"><i class="ti ti-dice"></i> Randomizer</div>' +
+          '<div class="tab-panel" data-tab="gacha">' +
             '<div class="ember-balance-row">' +
               '<div class="ember-balance"><i class="ti ti-flame"></i><span id="ember-balance-amount">0</span><span class="ember-balance-label">Embers available</span></div>' +
             '</div>' +
-            '<div class="randomizer-block">' +
-              '<div class="randomizer-block-title">Mystery Item</div>' +
-              '<div class="randomizer-block-desc">Spend 10 Embers for a random white &amp; teal accessory or clothing item. Rarer items are less likely.</div>' +
-              '<div class="randomizer-controls">' +
-                '<button class="randomizer-btn" id="gacha-btn" onclick="rollItemGacha()"><i class="ti ti-gift"></i> Pull (10 Embers)</button>' +
-              '</div>' +
-              '<div class="randomizer-result" id="gacha-result"></div>' +
+            '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;">Mystery Item</div>' +
+            '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5;">Spend 10 Embers for a random white &amp; teal accessory or clothing item. Rarer items are less likely. Already-owned items cannot be pulled again.</div>' +
+            '<button class="randomizer-btn" id="gacha-btn" onclick="rollItemGacha()"><i class="ti ti-gift"></i> Pull (10 Embers)</button>' +
+            '<div class="randomizer-result" id="gacha-result"></div>' +
+          '</div>' +
+          '<div class="tab-panel" data-tab="dawn">' +
+            '<div class="ember-balance-row">' +
+              '<div class="ember-balance"><i class="ti ti-flame"></i><span id="ember-balance-amount-dawn">0</span><span class="ember-balance-label">Embers available</span></div>' +
             '</div>' +
-            '<div class="randomizer-block">' +
-              '<div class="randomizer-block-title">Color Unlock</div>' +
-              '<div class="randomizer-block-desc">Spend 1 Ember to permanently unlock a random new color for the selected item. Unlocked colors stay forever — mix and match them anytime.</div>' +
-              '<div id="reroll-target-info"></div>' +
-              '<div class="randomizer-controls">' +
-                '<button class="randomizer-btn" id="reroll-btn" onclick="rollColorReroll()"><i class="ti ti-sparkles"></i> Unlock Color (1 Ember)</button>' +
-              '</div>' +
-              '<div class="randomizer-result" id="reroll-result"></div>' +
-            '</div>' +
-            '<div class="randomizer-block">' +
-              '<div class="randomizer-block-title"><i class="ti ti-palette" style="color:var(--accent);margin-right:6px;"></i>Dawn Color</div>' +
-              '<div class="randomizer-block-desc">Roll for a unique accent color that replaces the teal across your entire DawnScribe experience — the logo, buttons, highlights, everything. 10 Embers per roll.</div>' +
-              '<div class="randomizer-controls">' +
-                '<button class="randomizer-btn" id="accent-roll-btn" onclick="rollAccentColor()"><i class="ti ti-wand"></i> Roll Accent (10 Embers)</button>' +
-              '</div>' +
-              '<div class="randomizer-result" id="accent-roll-result"></div>' +
+            '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;">Roll a Dawn Color</div>' +
+            '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5;">Roll for a unique accent color that replaces the teal across your entire DawnScribe experience — the logo, buttons, highlights, everything. 10 Embers per roll.</div>' +
+            '<button class="randomizer-btn" id="accent-roll-btn" onclick="rollAccentColor()"><i class="ti ti-wand"></i> Roll Accent (10 Embers)</button>' +
+            '<div class="randomizer-result" id="accent-roll-result"></div>' +
+            '<div id="dawn-color-section" style="display:none;margin-top:20px;border-top:1px solid var(--border);padding-top:20px;">' +
+              '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;">Your Dawn Colors</div>' +
+              '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;">Pick one to apply sitewide. The teal default is always available.</div>' +
+              '<div id="accent-swatch-row" class="swatch-row" style="margin-bottom:16px;"></div>' +
+              '<label style="font-size:13px;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
+                '<input type="checkbox" id="accent-stroke-toggle" onchange="toggleAccentStroke()" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;"/>' +
+                'Text outline on logo &amp; headings' +
+              '</label>' +
+              '<button class="randomizer-btn" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);" onclick="clearAccentColor()"><i class="ti ti-x"></i> Reset to Default Teal</button>' +
             '</div>' +
           '</div>' +
         '</div>' +
-        '<div class="control-section" id="dawn-color-section">' +
-          '<div class="control-section-title"><i class="ti ti-palette"></i> Your Dawn Color</div>' +
-          '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;">Pick from your unlocked accent colors. This changes the teal highlight everywhere on DawnScribe for you.</div>' +
-          '<div id="accent-swatch-row" class="swatch-row" style="margin-bottom:16px;"></div>' +
-          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">' +
-            '<label style="font-size:13px;font-weight:700;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:8px;">' +
-              '<input type="checkbox" id="accent-stroke-toggle" onchange="toggleAccentStroke()" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;"/>' +
-              'Text outline — black border around colored logo text' +
-            '</label>' +
-          '</div>' +
-          '<div style="display:flex;gap:8px;">' +
-            '<button class="btn-cancel" onclick="clearAccentColor()"><i class="ti ti-x"></i> Reset to Teal</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
+      '</div>';
 
     renderSkinTones();
     renderSlotTabs();
@@ -1045,7 +1063,6 @@
     renderPreview();
     renderRandomizer();
     renderAccentSection();
-    // Apply saved accent color immediately on load
     if (avatarData.accent_color && avatarData.accent_color.hex) {
       applyAccentCSS(avatarData.accent_color.hex, !!avatarData.accent_color.stroke);
     }
