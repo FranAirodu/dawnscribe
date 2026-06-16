@@ -783,7 +783,7 @@
       // Fetch works for novel notifs
       if(novelNotifs.length){
         var chapWorkIds=[...new Set(novelNotifs.map(function(c){return c.work_id;}))];
-        var {data:chapWorks}=await db.from('works').select('id,title').in('id',chapWorkIds);
+        var {data:chapWorks}=await db.from('works').select('id,title,cover_url').in('id',chapWorkIds);
         var chapWorkMap={};(chapWorks||[]).forEach(function(w){chapWorkMap[w.id]=w;});
         novelNotifs.forEach(function(ch){ch.works=chapWorkMap[ch.work_id]||null;});
       }
@@ -805,8 +805,11 @@
           item.dataset.id = ch.id;
           item.style.cursor = 'pointer';
           item.onclick = function(){ if(work) window.location.href='story.html?id='+work.id; };
+          var coverHtml = work && work.cover_url
+            ? '<img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" alt=""/>'
+            : esc(coverLetter(title));
           item.innerHTML =
-            '<div class="notif-cover '+coverColor(ch.work_id)+'">'+esc(coverLetter(title))+'</div>'+
+            '<div class="notif-cover '+(work && work.cover_url ? '' : coverColor(ch.work_id))+'" style="overflow:hidden;padding:0;">'+coverHtml+'</div>'+
             '<div class="notif-body">'+
               '<div class="notif-title">'+esc(title)+'</div>'+
               '<div class="notif-text">'+esc(chLabel)+' is now available</div>'+
@@ -823,7 +826,7 @@
       var artistNotifs = [];
       if(followedIds.length){
         var artRes = await db.from('works')
-          .select('id,title,type,created_at,author_id')
+          .select('id,title,type,created_at,author_id,cover_url')
           .eq('type','artwork').in('author_id',followedIds)
           .order('created_at',{ascending:false}).limit(8);
         artistNotifs = artRes.data||[];
@@ -853,11 +856,13 @@
           item.dataset.id = work.id;
           item.style.cursor = 'pointer';
           item.onclick = function(){ window.location.href='artwork.html?id='+work.id; };
-          var avatarHtml = prof&&prof.avatar_url
-            ? '<img src="'+esc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
-            : esc(name.charAt(0).toUpperCase());
+          var avatarHtml = work.cover_url
+            ? '<img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
+            : prof && prof.avatar_url
+              ? '<img src="'+esc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
+              : esc(name.charAt(0).toUpperCase());
           item.innerHTML =
-            '<div class="notif-cover '+coverColor(work.author_id)+'" style="overflow:hidden;">'+avatarHtml+'</div>'+
+            '<div class="notif-cover '+coverColor(work.author_id)+'" style="overflow:hidden;padding:0;">'+avatarHtml+'</div>'+
             '<div class="notif-body">'+
               '<div class="notif-title">'+esc(name)+'</div>'+
               '<div class="notif-text">Posted — "'+esc(work.title)+'"</div>'+
