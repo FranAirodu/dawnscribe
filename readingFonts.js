@@ -36,7 +36,7 @@ window.READING_FONTS = {
   playfair:    { label: 'Playfair Display', css: "'Playfair Display',serif",     category: 'display' },
   poppins:     { label: 'Poppins',          css: "'Poppins',sans-serif",         category: 'sans' },
   ptserif:     { label: 'PT Serif',         css: "'PT Serif',serif",             category: 'serif' },
-  'source-serif': { label: 'Source Serif',  css: "'Source Serif 4',serif",       category: 'serif' },
+  sourceserif: { label: 'Source Serif',  css: "'Source Serif 4',serif",       category: 'serif' },
   spectral:    { label: 'Spectral',         css: "'Spectral',serif",             category: 'display' },
   timesnewroman: { label: 'Times New Roman', css: "'Times New Roman',Times,serif", category: 'system' },
   verdana:     { label: 'Verdana',          css: "Verdana,sans-serif",           category: 'system' },

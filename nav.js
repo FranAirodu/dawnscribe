@@ -563,6 +563,23 @@
         }
       }
 
+      // Apply user's saved accent color sitewide
+      var accentRes = await db.from('user_avatars').select('accent_color').eq('user_id', session.user.id).maybeSingle();
+      if (accentRes.data && accentRes.data.accent_color && accentRes.data.accent_color.hex) {
+        var ac = accentRes.data.accent_color;
+        var hex = ac.hex;
+        var darker = hex.replace('#','');
+        var r = Math.max(0, parseInt(darker.slice(0,2),16) - 30);
+        var g = Math.max(0, parseInt(darker.slice(2,4),16) - 30);
+        var b = Math.max(0, parseInt(darker.slice(4,6),16) - 30);
+        var hex2 = '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
+        var strokeRule = ac.stroke ? '.logo, .footer-logo { -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }' : '';
+        var styleTag = document.createElement('style');
+        styleTag.id = 'ds-accent-override';
+        styleTag.textContent = ':root { --accent: ' + hex + ' !important; --accent2: ' + hex2 + ' !important; }' + strokeRule;
+        document.head.appendChild(styleTag);
+      }
+
       if(username){
         var res = await db.from('profiles').select('avatar_url,display_name,id').eq('username',username).maybeSingle();
         if(res && !res.error && res.data){

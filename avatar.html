@@ -62,11 +62,13 @@
 
     /* skin tone swatches */
     .swatch-row { display: flex; gap: 10px; flex-wrap: wrap; }
-    .swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
-    .swatch:hover { transform: scale(1.1); }
-    .swatch.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-    .swatch-locked { position: relative; opacity: 0.4; cursor: not-allowed; }
-    .swatch-locked:hover { transform: none; }
+    .swatch { width: 26px; height: 32px; cursor: pointer; transition: all 0.15s; flex-shrink: 0; position: relative; filter: drop-shadow(0 0 0px transparent); }
+    .swatch svg { width: 100%; height: 100%; }
+    .swatch:hover { transform: scale(1.15); filter: drop-shadow(0 0 4px currentColor); }
+    .swatch.selected svg path { stroke: var(--accent); stroke-width: 2; }
+    .swatch.selected { filter: drop-shadow(0 0 5px var(--accent)); }
+    .swatch-locked { position: relative; opacity: 0.35; cursor: not-allowed; }
+    .swatch-locked:hover { transform: none; filter: none; }
     .swatch-locked i { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 12px; color: var(--text); }
 
     /* slot tabs */
@@ -89,10 +91,12 @@
     .color-region:not(:last-child) { border-bottom: 1px solid var(--border); }
     .color-region-label { font-size: 12px; color: var(--text2); font-weight: 700; margin-bottom: 8px; display: block; }
     .color-swatch-row { display: flex; gap: 8px; flex-wrap: wrap; }
-    .color-swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; transition: all 0.15s; flex-shrink: 0; position: relative; }
-    .color-swatch:hover { transform: scale(1.1); }
-    .color-swatch.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-    .color-swatch-default::after { content: ''; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--border); }
+    .color-swatch { width: 22px; height: 28px; cursor: pointer; transition: all 0.15s; flex-shrink: 0; position: relative; }
+    .color-swatch svg { width: 100%; height: 100%; }
+    .color-swatch:hover { transform: scale(1.18); filter: drop-shadow(0 0 4px currentColor); }
+    .color-swatch.selected svg path { stroke: var(--accent); stroke-width: 2.5; }
+    .color-swatch.selected { filter: drop-shadow(0 0 5px var(--accent)); }
+    .color-swatch-default::after { content: '★'; position: absolute; top: -4px; right: -4px; font-size: 8px; color: var(--accent); line-height: 1; }
 
     .empty-note { font-size: 12px; color: var(--text3); text-align: center; padding: 16px 0; }
 
@@ -183,6 +187,56 @@
 
   function esc(s){ var d=document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
+  // Returns a color name from the palette map, or falls back to the hex value
+  function colorName(hex) {
+    if (!hex) return '';
+    var name = window.hexColorMap && window.hexColorMap[hex.toLowerCase()];
+    return name || hex;
+  }
+
+  // Returns the HSL hue (0-360) of a hex color, used for spectrum sorting
+  function hexHue(hex) {
+    if (!hex) return 0;
+    hex = hex.replace("#","");
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    var r = parseInt(hex.slice(0,2),16)/255;
+    var g = parseInt(hex.slice(2,4),16)/255;
+    var b = parseInt(hex.slice(4,6),16)/255;
+    var max = Math.max(r,g,b), min = Math.min(r,g,b), h = 0;
+    if (max !== min) {
+      var d = max - min;
+      if (max===r) h = ((g-b)/d + (g<b?6:0)) / 6;
+      else if (max===g) h = ((b-r)/d + 2) / 6;
+      else h = ((r-g)/d + 4) / 6;
+    }
+    return h * 360;
+  }
+
+  // Flame SVG swatch (free/ember colors)
+  function flameSwatch(hex, tooltip, extraClass, onclick) {
+    var tipAttr = tooltip ? ' title="' + esc(tooltip) + '"' : '';
+    var clickAttr = onclick ? ' onclick="' + onclick + '"' : '';
+    return '<div class="' + extraClass + '"' + tipAttr + clickAttr + '>' +
+      '<svg viewBox="0 0 26 32" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M12 8 C12 8 6 14 6 19 C6 23.5 8.5 27 12 28 C15.5 27 18 23.5 18 19 C18 14 12 8 12 8Z" fill="' + hex + '" stroke="rgba(0,0,0,0.18)" stroke-width="0.8"/>' +
+        '<circle cx="19" cy="4" r="2.5" fill="' + hex + '" stroke="rgba(0,0,0,0.18)" stroke-width="0.8"/>' +
+        '<circle cx="8" cy="2" r="1.5" fill="' + hex + '" stroke="rgba(0,0,0,0.18)" stroke-width="0.8" opacity="0.75"/>' +
+      '</svg>' +
+    '</div>';
+  }
+
+  // Quill SVG swatch (marketplace/paid colors — placeholder for future use)
+  function quillSwatch(hex, tooltip, extraClass, onclick) {
+    var tipAttr = tooltip ? ' title="' + esc(tooltip) + '"' : '';
+    var clickAttr = onclick ? ' onclick="' + onclick + '"' : '';
+    return '<div class="' + extraClass + '"' + tipAttr + clickAttr + '>' +
+      '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M28 4C22 4 14 8 10 16c-1.5 3-2 5.5-2 8l3-3c0.5 2 1.5 4 3 5.5L12 30c2-1 4-3 5.5-5.5C20 23 22 21 23 18c2-1 4-3 5-6 0.5-2 0.5-4 0-8z" fill="' + hex + '" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>' +
+        '<line x1="10" y1="22" x2="4" y2="28" stroke="' + hex + '" stroke-width="2" stroke-linecap="round"/>' +
+      '</svg>' +
+    '</div>';
+  }
+
   // ── STATE ───────────────────────────────────────────────────────
   var currentUid = null;
   var avatarData = null;     // { skin_tone, equipped: {slot:{item_id,colors}}, unlocked_skin_tones }
@@ -228,14 +282,27 @@
     }
     currentUid = session.user.id;
 
-    var [avatarResult, itemsResult, unlockedResult, embersResult] = await Promise.all([
+    var [avatarResult, itemsResult, unlockedResult, embersResult, paletteResult, accentPaletteResult] = await Promise.all([
       db.from('user_avatars').select('*').eq('user_id', currentUid).maybeSingle(),
       db.from('cosmetic_items').select('*'),
       db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', currentUid),
-      db.from('user_embers').select('balance').eq('user_id', currentUid).maybeSingle()
+      db.from('user_embers').select('balance').eq('user_id', currentUid).maybeSingle(),
+      db.from('reroll_color_palette').select('hex,label'),
+      db.from('reroll_color_palette').select('hex,label,rarity_weight').eq('region_type','accent').order('label')
     ]);
 
     emberBalance = (embersResult.data && embersResult.data.balance) || 0;
+
+    // Build hex → label map for color name tooltips
+    window.hexColorMap = {};
+    (paletteResult.data || []).forEach(function(c) {
+      window.hexColorMap[c.hex.toLowerCase()] = c.label;
+    });
+    // Also index accent colors
+    window.accentPalette = accentPaletteResult.data || [];
+    window.accentPalette.forEach(function(c) {
+      window.hexColorMap[c.hex.toLowerCase()] = c.label;
+    });
 
     allItems = itemsResult.data || [];
     unlockedItemIds = new Set((unlockedResult.data || []).map(function(u){ return u.cosmetic_item_id; }));
@@ -243,9 +310,10 @@
     if (avatarResult.data) {
       avatarData = avatarResult.data;
       if (!avatarData.unlocked_colors) avatarData.unlocked_colors = {};
+      if (!avatarData.unlocked_accents) avatarData.unlocked_accents = [];
     } else {
       // First visit — initialize with base items equipped and a default skin tone.
-      avatarData = { skin_tone: DEFAULT_SKIN_TONES[0], equipped: {}, unlocked_skin_tones: [], unlocked_colors: {} };
+      avatarData = { skin_tone: DEFAULT_SKIN_TONES[0], equipped: {}, unlocked_skin_tones: [], unlocked_colors: {}, unlocked_accents: [], accent_color: null };
       allItems.filter(function(it){ return it.is_base_item; }).forEach(function(it) {
         var colors = {};
         (it.fill_regions || []).forEach(function(r){ colors[r.id] = r.default_color; });
@@ -348,10 +416,12 @@
 
   // ── RENDER: SKIN TONE PICKER ─────────────────────────────────────
   function renderSkinTones() {
-    var allTones = DEFAULT_SKIN_TONES.concat(avatarData.unlocked_skin_tones || []);
+    var unlockedTones = (avatarData.unlocked_skin_tones || []).slice().sort(function(a,b){ return hexHue(a) - hexHue(b); });
+    var allTones = DEFAULT_SKIN_TONES.concat(unlockedTones);
     var html = allTones.map(function(tone) {
-      var selected = tone === avatarData.skin_tone ? ' selected' : '';
-      return '<div class="swatch' + selected + '" style="background:' + tone + ';" onclick="setSkinTone(\'' + tone + '\')" title="' + tone + '"></div>';
+      var selectedClass = tone === avatarData.skin_tone ? ' selected' : '';
+      var tip = colorName(tone);
+      return flameSwatch(tone, tip, 'swatch' + selectedClass, "setSkinTone('" + tone + "')");
     }).join('');
     // A few locked placeholder tones to hint at future unlocks
     html += '<div class="swatch swatch-locked" title="Unlock with Embers"><i class="ti ti-lock"></i></div>';
@@ -460,12 +530,16 @@
       var key = activeSlot + ':' + region.id;
       var unlocked = (avatarData.unlocked_colors && avatarData.unlocked_colors[key]) || [];
 
-      var swatches = [region.default_color].concat(unlocked.filter(function(c){ return c !== region.default_color; }));
+      var unlockedOthers = unlocked.filter(function(c){ return c !== region.default_color; });
+      unlockedOthers.sort(function(a, b){ return hexHue(a) - hexHue(b); });
+      var swatches = [region.default_color].concat(unlockedOthers);
 
       var swatchHtml = swatches.map(function(hex) {
-        var selected = hex === current ? ' selected' : '';
+        var selectedClass = hex === current ? ' selected' : '';
         var isDefault = hex === region.default_color ? ' color-swatch-default' : '';
-        return '<div class="color-swatch' + selected + isDefault + '" style="background:' + hex + ';" title="' + hex + (hex === region.default_color ? ' (default)' : '') + '" onclick="setRegionColor(\'' + region.id + '\', \'' + hex + '\')"></div>';
+        var tip = colorName(hex) + (hex === region.default_color ? ' (default)' : '');
+        var click = "setRegionColor('" + region.id + "', '" + hex + "')";
+        return flameSwatch(hex, tip, 'color-swatch' + selectedClass + isDefault, click);
       }).join('');
 
       return '<div class="color-region">' +
@@ -755,6 +829,108 @@
     document.getElementById('save-btn').disabled = !dirty;
   }
 
+  // ── ACCENT COLOR SYSTEM ─────────────────────────────────────────
+
+  // Derives a darker shade of a hex color for --accent2 (hover states)
+  function darkenHex(hex, amount) {
+    hex = hex.replace('#','');
+    var r = Math.max(0, parseInt(hex.slice(0,2),16) - amount);
+    var g = Math.max(0, parseInt(hex.slice(2,4),16) - amount);
+    var b = Math.max(0, parseInt(hex.slice(4,6),16) - amount);
+    return '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
+  }
+
+  function applyAccentCSS(hex, stroke) {
+    var existing = document.getElementById('ds-accent-override');
+    if (existing) existing.remove();
+    if (!hex) return;
+    var darker = darkenHex(hex, 30);
+    var strokeRule = stroke
+      ? '.logo, .footer-logo { -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }'
+      : '';
+    var style = document.createElement('style');
+    style.id = 'ds-accent-override';
+    style.textContent = ':root { --accent: ' + hex + ' !important; --accent2: ' + darker + ' !important; }' + strokeRule;
+    document.head.appendChild(style);
+  }
+
+  function renderAccentSection() {
+    var unlocked = avatarData.unlocked_accents || [];
+    var section = document.getElementById('dawn-color-section');
+    if (!section) return;
+    if (unlocked.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = 'block';
+    var currentHex = avatarData.accent_color ? avatarData.accent_color.hex : null;
+    var swatchHtml = unlocked.map(function(hex) {
+      var selectedClass = hex === currentHex ? ' selected' : '';
+      var tip = colorName(hex);
+      return flameSwatch(hex, tip, 'swatch' + selectedClass, "setAccentColor('" + hex + "')");
+    }).join('');
+    // Add "none / default teal" swatch
+    var tealSelected = !currentHex ? ' selected' : '';
+    swatchHtml = flameSwatch('#2dd4bf', 'Default Teal (reset)', 'swatch' + tealSelected, "clearAccentColor()") + swatchHtml;
+    document.getElementById('accent-swatch-row').innerHTML = swatchHtml;
+    var strokeToggle = document.getElementById('accent-stroke-toggle');
+    if (strokeToggle) strokeToggle.checked = !!(avatarData.accent_color && avatarData.accent_color.stroke);
+  }
+
+  function setAccentColor(hex) {
+    if (!avatarData.accent_color) avatarData.accent_color = {};
+    avatarData.accent_color.hex = hex;
+    var stroke = !!(avatarData.accent_color && avatarData.accent_color.stroke);
+    applyAccentCSS(hex, stroke);
+    dirty = true;
+    renderAccentSection();
+    updateSaveState();
+  }
+
+  function toggleAccentStroke() {
+    var checked = document.getElementById('accent-stroke-toggle').checked;
+    if (!avatarData.accent_color) avatarData.accent_color = {};
+    avatarData.accent_color.stroke = checked;
+    applyAccentCSS(avatarData.accent_color.hex, checked);
+    dirty = true;
+    updateSaveState();
+  }
+
+  function clearAccentColor() {
+    avatarData.accent_color = null;
+    applyAccentCSS(null, false);
+    dirty = true;
+    renderAccentSection();
+    updateSaveState();
+  }
+
+  async function rollAccentColor() {
+    var btn = document.getElementById('accent-roll-btn');
+    var result = document.getElementById('accent-roll-result');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Rolling...';
+    var { data, error } = await db.rpc('roll_accent_color', { p_user_id: currentUid });
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-wand"></i> Roll Accent (10 Embers)';
+    if (error || !data) { showToast('Something went wrong.', 'ti-alert-triangle'); return; }
+    if (data.status === 'insufficient_embers') { showToast('Not enough Embers! You need 10.', 'ti-flame'); return; }
+    if (data.status === 'all_unlocked') {
+      result.innerHTML = '<div class="randomizer-result-text">You\'ve unlocked every Dawn Color! More may be added in future updates.</div>';
+      result.classList.add('show'); return;
+    }
+    emberBalance -= 10;
+    document.getElementById('ember-balance-amount').textContent = emberBalance;
+    if (!avatarData.unlocked_accents) avatarData.unlocked_accents = [];
+    if (avatarData.unlocked_accents.indexOf(data.hex) === -1) avatarData.unlocked_accents.push(data.hex);
+    result.innerHTML =
+      flameSwatch(data.hex, data.label, 'randomizer-result-swatch', '') +
+      '<div class="randomizer-result-text">Unlocked <b style="color:' + data.hex + ';">' + esc(data.label) + '</b>!<div class="randomizer-result-sub">Head to Your Dawn Color above to equip it.</div></div>';
+    result.classList.add('show');
+    renderAccentSection();
+    // Dispatch ember event for nav pill
+    window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: -10 } }));
+  }
+
   async function saveAvatar() {
     var btn = document.getElementById('save-btn');
     var status = document.getElementById('save-status');
@@ -767,6 +943,8 @@
       equipped: avatarData.equipped,
       unlocked_skin_tones: avatarData.unlocked_skin_tones || [],
       unlocked_colors: avatarData.unlocked_colors || {},
+      unlocked_accents: avatarData.unlocked_accents || [],
+      accent_color: avatarData.accent_color || null,
       updated_at: new Date().toISOString()
     };
 
@@ -833,9 +1011,32 @@
               '</div>' +
               '<div class="randomizer-result" id="reroll-result"></div>' +
             '</div>' +
+            '<div class="randomizer-block">' +
+              '<div class="randomizer-block-title"><i class="ti ti-palette" style="color:var(--accent);margin-right:6px;"></i>Dawn Color</div>' +
+              '<div class="randomizer-block-desc">Roll for a unique accent color that replaces the teal across your entire DawnScribe experience — the logo, buttons, highlights, everything. 10 Embers per roll.</div>' +
+              '<div class="randomizer-controls">' +
+                '<button class="randomizer-btn" id="accent-roll-btn" onclick="rollAccentColor()"><i class="ti ti-wand"></i> Roll Accent (10 Embers)</button>' +
+              '</div>' +
+              '<div class="randomizer-result" id="accent-roll-result"></div>' +
+            '</div>' +
           '</div>' +
         '</div>' +
-      '</div>';
+        '<div class="control-section" id="dawn-color-section">' +
+          '<div class="control-section-title"><i class="ti ti-palette"></i> Your Dawn Color</div>' +
+          '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;">Pick from your unlocked accent colors. This changes the teal highlight everywhere on DawnScribe for you.</div>' +
+          '<div id="accent-swatch-row" class="swatch-row" style="margin-bottom:16px;"></div>' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">' +
+            '<label style="font-size:13px;font-weight:700;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:8px;">' +
+              '<input type="checkbox" id="accent-stroke-toggle" onchange="toggleAccentStroke()" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;"/>' +
+              'Text outline — black border around colored logo text' +
+            '</label>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;">' +
+            '<button class="btn-cancel" onclick="clearAccentColor()"><i class="ti ti-x"></i> Reset to Teal</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
 
     renderSkinTones();
     renderSlotTabs();
@@ -843,6 +1044,11 @@
     renderColorPickers();
     renderPreview();
     renderRandomizer();
+    renderAccentSection();
+    // Apply saved accent color immediately on load
+    if (avatarData.accent_color && avatarData.accent_color.hex) {
+      applyAccentCSS(avatarData.accent_color.hex, !!avatarData.accent_color.stroke);
+    }
   }
 </script>
 <script src="footer.js"></script>

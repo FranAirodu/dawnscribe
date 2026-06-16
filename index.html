@@ -87,6 +87,12 @@
     .quill-wrap:hover { border-color: var(--gold); }
     .quill-wrap i { font-size: 16px; }
     .quill-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
+    html[data-theme="light"] .ember-wrap { background: #fff4ed; border-color: rgba(249,115,22,0.3); color: #c2410c; }
+    html[data-theme="light"] .ember-wrap:hover { border-color: #c2410c; }
+    html[data-theme="light"] .ember-count { color: #7c2d12; font-weight: 700; }
+    html[data-theme="light"] .quill-wrap { background: #fffbeb; border-color: rgba(217,119,6,0.3); color: #b45309; }
+    html[data-theme="light"] .quill-wrap:hover { border-color: #b45309; }
+    html[data-theme="light"] .quill-count { color: #78350f; font-weight: 700; }
     .dm-wrap { position: relative; }
     .dm-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; position: relative; text-decoration: none; }
     .dm-btn.has-unread { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.08); }
@@ -376,7 +382,7 @@
     .sc-hint.success{color:var(--green);}
 
     footer { background: var(--bg2); border-top: 1px solid var(--border); padding: 40px 32px; text-align: center; color: var(--text3); font-size: 13px; }
-    footer .footer-logo { font-family: 'Cinzel', serif; font-size: 20px; color: var(--accent); margin-bottom: 12px; }
+    footer .footer-logo { font-family: 'Cinzel', serif; font-size: 20px; margin-bottom: 12px; }
     footer .footer-links { display: flex; justify-content: center; gap: 24px; margin: 16px 0; flex-wrap: wrap; }
     footer .footer-links a { color: var(--text3); text-decoration: none; font-size: 13px; transition: color 0.2s; }
     footer .footer-links a:hover { color: var(--accent); }
@@ -723,7 +729,7 @@
   </div>
 
   <footer>
-    <div class="footer-logo">DawnScribe</div>
+    <div class="footer-logo"><span style="color:var(--accent)">Dawn</span><span style="color:var(--text)">Scribe</span></div>
     <p>A home for stories, art, and the people who love them.</p>
     <div class="footer-links">
       <a href="about.html">About</a><a href="terms.html">Terms of Service</a><a href="privacy.html">Privacy Policy</a><a href="terms.html#dmca">DMCA</a><a href="contact.html">Contact</a>
@@ -2105,6 +2111,24 @@
             document.getElementById('ds-ember-count').textContent = emberBalance.toLocaleString();
           } catch(e) {}
         }
+
+        // Apply user's saved accent color sitewide
+        try {
+          var accentRes = await db.from('user_avatars').select('accent_color').eq('user_id', session.user.id).maybeSingle();
+          if (accentRes.data && accentRes.data.accent_color && accentRes.data.accent_color.hex) {
+            var ac = accentRes.data.accent_color;
+            var _h = ac.hex.replace('#','');
+            var _r = Math.max(0, parseInt(_h.slice(0,2),16) - 30);
+            var _g = Math.max(0, parseInt(_h.slice(2,4),16) - 30);
+            var _b = Math.max(0, parseInt(_h.slice(4,6),16) - 30);
+            var _hex2 = '#' + [_r,_g,_b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
+            var _stroke = ac.stroke ? '.logo, .footer-logo { -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }' : '';
+            var _st = document.createElement('style');
+            _st.id = 'ds-accent-override';
+            _st.textContent = ':root { --accent: ' + ac.hex + ' !important; --accent2: ' + _hex2 + ' !important; }' + _stroke;
+            document.head.appendChild(_st);
+          }
+        } catch(e) {}
 
         // Load Quill balance (placeholder until the Quills system exists)
         var quillWrap = document.getElementById('quill-wrap');
