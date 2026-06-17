@@ -512,7 +512,7 @@ function dsApplyAccent(hex) {
         item.onclick=function(){
           if(!cm.work_id) return;
           if(cm._type==='artwork') { window.location.href='artwork.html?id='+cm.work_id; }
-          else if(cm._type==='para' && cm.chapter_id) { window.location.href='chapter.html?id='+cm.chapter_id+'#para-'+cm.paragraph_index; }
+          else if(cm._type==='para' && cm.chapter_id) { sessionStorage.setItem('ds_open_para', cm.paragraph_index); window.location.href='chapter.html?id='+cm.chapter_id; }
           else { window.location.href='chapter.html?id='+cm.chapter_id; }
         };
         var avHtml2 = work && work.cover_url

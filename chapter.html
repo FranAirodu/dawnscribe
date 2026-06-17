@@ -2303,12 +2303,13 @@
       await spLoadComments();
       if(currentSession && !isOwner) { await echoInit(); }
 
-      // AUTO-OPEN PARAGRAPH PANEL from notification hash (#para-N)
-      var _hash = window.location.hash;
-      if (_hash && _hash.startsWith('#para-')) {
-        var _paraIdx = parseInt(_hash.replace('#para-', ''));
+      // AUTO-OPEN PARAGRAPH PANEL from notification (stored in sessionStorage)
+      var _storedPara = sessionStorage.getItem('ds_open_para');
+      sessionStorage.removeItem('ds_open_para');
+      if (_storedPara !== null) {
+        var _paraIdx = parseInt(_storedPara);
         if (!isNaN(_paraIdx)) {
-          // Find which page this paragraph is on and navigate there first
+          // Find which page this paragraph is on and jump there
           var _targetPage = 0;
           if (paraAbsoluteMap && paraAbsoluteMap.length) {
             for (var _pi = 0; _pi < paraAbsoluteMap.length; _pi++) {
@@ -2318,26 +2319,26 @@
           if (typeof renderPage === 'function' && pages && pages.length) {
             renderPage(_targetPage);
           }
-          // Poll until the paragraph element exists in the DOM
-          var _attempts = 0;
-          var _paraPoller = setInterval(function() {
-            _attempts++;
+          // injectParaWraps is async — wait for it to finish before opening
+          function _doParaOpen() {
             var _paraEl = document.querySelector('[data-para-idx="' + _paraIdx + '"]');
-            if (_paraEl || _attempts > 25) {
-              clearInterval(_paraPoller);
-              if (!_paraEl) return;
-              var _quotedText = _paraEl.textContent || '';
-              // Scroll paragraph into view first
-              _paraEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              // Open the panel after scroll settles
-              setTimeout(function() {
-                openParaPanel(_paraIdx, _quotedText);
-              }, 400);
-              // Clean the hash without reloading
-              history.replaceState(null, '', window.location.pathname + window.location.search);
+            if (!_paraEl) return;
+            var _quotedText = Array.from(_paraEl.childNodes)
+              .filter(function(n){ return n.nodeType === 3; })
+              .map(function(n){ return n.textContent; }).join('').trim();
+            _paraEl.scrollIntoView({ behavior: 'instant', block: 'center' });
+            openParaPanel(_paraIdx, _quotedText);
+          }
+          // Poll until injectParaWraps finishes (para-wrap elements appear)
+          var _pw = 0;
+          var _pwPoller = setInterval(function() {
+            _pw++;
+            var ready = document.querySelector('.para-wrap');
+            if (ready || _pw > 30) {
+              clearInterval(_pwPoller);
+              _doParaOpen();
             }
-          }, 150);
-        }
+          }, 100);
       }
 
       // CHARACTER TITLES — show after chapter nav
