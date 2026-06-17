@@ -163,21 +163,21 @@ window.CharacterTitles = (function() {
       resultsDiv.style.display = 'none';
       resultsDiv.innerHTML = buildResultsHTML(charVotes, titleMap, 'chapter');
 
-      // Suggest a Song button — inside results panel, visible to logged-in non-owners
-      if (session && userId) {
+      card.appendChild(resultsDiv);
+
+      // Suggest a Song button — on the card directly, visible to logged-in users
+      if (session) {
         (function(cid, cname, wid, uid) {
           var songBtn = document.createElement('button');
           songBtn.className = 'ct-suggest-song-btn ct-suggest-song-inline';
-          songBtn.innerHTML = '<i class="ti ti-music-plus"></i> Suggest a Song for ' + esc(cname);
+          songBtn.innerHTML = '<i class="ti ti-music-plus"></i> Suggest a theme song for ' + esc(cname);
           songBtn.addEventListener('click', function(e) {
             e.stopPropagation();
-            openSongModal(cid, cname, wid, uid);
+            openSongModal(cid, cname, wid, uid || 'anon');
           });
-          resultsDiv.appendChild(songBtn);
+          card.appendChild(songBtn);
         })(char.id, char.name, workId, userId);
       }
-
-      card.appendChild(resultsDiv);
 
       // Title picker (only if not yet voted and logged in)
       if (!hasVoted && session) {
