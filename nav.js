@@ -512,7 +512,24 @@ function dsApplyAccent(hex) {
         item.onclick=function(){
           if(!cm.work_id) return;
           if(cm._type==='artwork') { window.location.href='artwork.html?id='+cm.work_id; }
-          else if(cm._type==='para' && cm.chapter_id) { sessionStorage.setItem('ds_open_para', cm.paragraph_index); window.location.href='chapter.html?id='+cm.chapter_id; }
+          else if(cm._type==='para' && cm.chapter_id) {
+            var _destUrl = 'chapter.html?id='+cm.chapter_id;
+            var _alreadyThere = window.location.href.includes(cm.chapter_id);
+            if (_alreadyThere) {
+              // Already on this chapter — directly trigger the open
+              if (typeof openParaPanel === 'function') {
+                var _el = document.querySelector('[data-para-idx="'+cm.paragraph_index+'"]');
+                if (_el) {
+                  _el.scrollIntoView({ behavior: 'instant', block: 'center' });
+                  var _qt = Array.from(_el.childNodes).filter(function(n){return n.nodeType===3;}).map(function(n){return n.textContent;}).join('').trim();
+                  openParaPanel(cm.paragraph_index, _qt);
+                }
+              }
+            } else {
+              sessionStorage.setItem('ds_open_para', cm.paragraph_index);
+              window.location.href = _destUrl;
+            }
+          }
           else { window.location.href='chapter.html?id='+cm.chapter_id; }
         };
         var avHtml2 = work && work.cover_url
