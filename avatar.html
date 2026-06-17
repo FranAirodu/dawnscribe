@@ -320,9 +320,13 @@
       avatarData = avatarResult.data;
       if (!avatarData.unlocked_colors) avatarData.unlocked_colors = {};
       if (!avatarData.unlocked_accents) avatarData.unlocked_accents = [];
+      // Always ensure default teal is in unlocked accents
+      if (avatarData.unlocked_accents.indexOf('#2dd4bf') === -1) avatarData.unlocked_accents.unshift('#2dd4bf');
+      // Default accent to teal if never set
+      if (!avatarData.accent_color || !avatarData.accent_color.hex) avatarData.accent_color = { hex: '#2dd4bf' };
     } else {
       // First visit — initialize with base items equipped and a default skin tone.
-      avatarData = { skin_tone: DEFAULT_SKIN_TONES[0], equipped: {}, unlocked_skin_tones: [], unlocked_colors: {}, unlocked_accents: [], accent_color: null };
+      avatarData = { skin_tone: DEFAULT_SKIN_TONES[0], equipped: {}, unlocked_skin_tones: [], unlocked_colors: {}, unlocked_accents: ['#2dd4bf'], accent_color: { hex: '#2dd4bf' } };
       allItems.filter(function(it){ return it.is_base_item; }).forEach(function(it) {
         var colors = {};
         (it.fill_regions || []).forEach(function(r){ colors[r.id] = r.default_color; });
@@ -330,6 +334,13 @@
       });
     }
 
+    // Seed localStorage with current accent so all pages pick it up instantly
+    var _currentAccentHex = (avatarData.accent_color && avatarData.accent_color.hex) ? avatarData.accent_color.hex : '#2dd4bf';
+    if (_currentAccentHex === '#2dd4bf') {
+      localStorage.removeItem('ds_accent_hex'); // default teal — no override needed
+    } else {
+      localStorage.setItem('ds_accent_hex', _currentAccentHex);
+    }
     renderEditor();
   })();
 
@@ -915,8 +926,9 @@
 
 
   function clearAccentColor() {
-    avatarData.accent_color = null;
-    applyAccentCSS(null);
+    avatarData.accent_color = { hex: '#2dd4bf' };
+    localStorage.removeItem('ds_accent_hex'); // back to default teal
+    dsApplyAccent(null); // remove override, let default teal show
     dirty = true;
     renderAccentSection();
     updateSaveState();

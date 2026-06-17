@@ -5,7 +5,7 @@
 (function () {
   var css = `
     .ds-footer{background:var(--bg2);border-top:1px solid var(--border);padding:40px 32px 32px;text-align:center;color:var(--text3);font-size:13px;margin-top:60px;font-family:'Lato',sans-serif;}
-    .ds-footer-logo{font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:var(--accent);letter-spacing:1px;margin-bottom:6px;}
+    .ds-footer-logo{font-family:'Cinzel',serif;font-size:22px;font-weight:700;letter-spacing:1px;margin-bottom:6px;color:var(--text);}
     .ds-footer-tagline{color:var(--text3);font-size:13px;margin-bottom:20px;}
     .ds-footer-links{display:flex;justify-content:center;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:20px;}
     .ds-footer-link{color:var(--text3);text-decoration:none;font-size:12px;font-weight:600;padding:4px 2px;transition:color 0.2s;}
@@ -16,7 +16,7 @@
   var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
   var year = new Date().getFullYear();
   var html = `
-    <div class="ds-footer-logo">DawnScribe</div>
+    <div class="ds-footer-logo"><span style="color:var(--accent)">Dawn</span>Scribe</div>
     <div class="ds-footer-tagline">A home for stories, art, and the people who love them.</div>
     <div class="ds-footer-links">
       <a href="index.html" class="ds-footer-link">Home</a><span class="ds-footer-sep">·</span>

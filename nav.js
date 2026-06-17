@@ -17,7 +17,7 @@ function dsApplyAccent(hex) {
   var hex2 = '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
   var st = document.createElement('style');
   st.id = 'ds-accent-override';
-  st.textContent = ':root { --accent: ' + hex + ' !important; --accent2: ' + hex2 + ' !important; }';
+  st.textContent = ':root { --accent: ' + hex + ' !important; --accent2: ' + hex2 + ' !important; } html[data-theme="light"] { --accent: ' + hex + ' !important; --accent2: ' + hex2 + ' !important; }';
   document.head.appendChild(st);
 }
 (function(){ var c = localStorage.getItem('ds_accent_hex'); if (c) dsApplyAccent(c); })();
@@ -26,6 +26,8 @@ function dsApplyAccent(hex) {
 
   /* ── CSS ─────────────────────────────────────────────────────── */
   var css = `
+    :root { --accent: #2dd4bf; --accent2: #0d9488; }
+    html[data-theme="light"] { --accent: #0d9488; --accent2: #0f766e; }
     .ember-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: #f97316; font-size: 14px; font-weight: 700; cursor: default; transition: all 0.2s, transform 0.2s; }
     .ember-wrap:hover { border-color: #f97316; }
     .ember-wrap i { font-size: 16px; }

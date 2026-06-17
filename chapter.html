@@ -438,6 +438,20 @@
       <button class="page-nav-btn primary" id="next-page-btn" onclick="nextPage()">Next Page <i class="ti ti-chevron-right"></i></button>
     </div>
 
+
+    <!-- ECHOES FAB -->
+    <div class="echo-fab" id="echo-fab">
+      <div class="echo-panel" id="echo-panel">
+        <div class="echo-panel-header">
+          <div class="echo-panel-title">🔮 Echoes</div>
+          <button onclick="closeEchoPanel()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="echo-panel-hint" id="echo-hint">Select an Echo, then click a paragraph to place it.</div>
+        <div class="echo-list" id="echo-list"></div>
+      </div>
+      <button class="echo-fab-btn" id="echo-fab-btn" onclick="toggleEchoPanel()" title="Echoes">🔮</button>
+    </div>
+
     <!-- CHAPTER NAV -->
     <div class="chapter-nav" id="chapter-nav"></div>
 
@@ -767,6 +781,7 @@
       var content = document.getElementById('page-content');
       content.innerHTML = pages[idx].join('');
       injectParaWraps();
+      echoRenderPage();
       document.getElementById('page-info').textContent = 'Page ' + (idx+1) + ' of ' + pages.length;
       document.getElementById('prev-page-btn').disabled = idx === 0;
 
@@ -1972,6 +1987,7 @@
       renderChapterNav();
       if(currentSession){ await dsBlock.load(currentSession.user.id); }
       await loadChapterComments();
+      if(currentSession && !isOwner) { await echoInit(); }
 
       // CHARACTER TITLES — show after chapter nav
       var ctSection = document.getElementById('character-titles-section');
@@ -1981,6 +1997,286 @@
         if (!ctSection.innerHTML.trim()) ctSection.style.display = 'none';
       }
     })();
+
+    // ── ECHOES ────────────────────────────────────────────────────
+    var echoTypes = [];
+    var myEchoes = {};        // echo_type_id -> {id, chapter_id, paragraph_index, highlight_text}
+    var activeEchoType = null; // currently selected echo type for placement
+    var echoModeActive = false;
+
+    async function echoInit() {
+      if (!currentSession || !chapterData) return;
+      // Show FAB
+      document.getElementById('echo-fab').style.display = 'block';
+      // Load echo types
+      var { data: types } = await db.from('echo_types').select('*').order('rarity').order('label');
+      echoTypes = types || [];
+      // Load user's echoes for this work
+      var { data: placed } = await db.from('reader_echoes')
+        .select('*')
+        .eq('work_id', chapterData.work_id)
+        .eq('user_id', currentSession.user.id);
+      myEchoes = {};
+      (placed || []).forEach(function(e){ myEchoes[e.echo_type_id] = e; });
+      echoRenderPanel();
+      echoRenderPage();
+    }
+
+    function echoRenderPanel() {
+      var list = document.getElementById('echo-list');
+      if (!list) return;
+      var rarities = [{key:'common',label:'Common Echoes'},{key:'rare',label:'Rare Echoes'},{key:'ultra',label:'Ultra Rare'}];
+      var html = '';
+      rarities.forEach(function(r) {
+        var items = echoTypes.filter(function(t){ return t.rarity === r.key; });
+        if (!items.length) return;
+        html += '<div class="echo-rarity-label ' + (r.key !== 'common' ? r.key : '') + '">' + r.label + '</div>';
+        items.forEach(function(t) {
+          var placed = myEchoes[t.id];
+          var isSelected = activeEchoType === t.id;
+          var isUsed = !!placed;
+          var appliesHere = echoAppliesToHere(t);
+          var cls = 'echo-item' + (isSelected ? ' selected' : '') + (isUsed && !isSelected ? ' used' : '') + (t.rarity !== 'common' ? ' ' + t.rarity : '');
+          var whereText = t.applies_to === 'paragraph' ? 'Click a paragraph' : t.applies_to === 'chapter' ? 'Applies to this chapter' : 'Applies to the whole story';
+          var placedText = placed ? ('Placed in Ch.' + (placed.chapter_id === chapterData.id ? 'this chapter' : '?')) : '';
+          html += '<div class="' + cls + '" onclick="echoSelect(' + JSON.stringify(t.id) + ')">' +
+            '<span class="echo-item-icon">' + t.icon + '</span>' +
+            '<div class="echo-item-info">' +
+              '<div class="echo-item-label ' + (t.rarity !== 'common' ? t.rarity : '') + '">' + t.label + '</div>' +
+              (placed ? '<div class="echo-item-placed ' + (t.rarity !== 'common' ? t.rarity : '') + '">✓ ' + placedText + ' — click to move</div>'
+                      : '<div class="echo-item-where">' + whereText + '</div>') +
+            '</div>' +
+            '</div>';
+        });
+      });
+      list.innerHTML = html;
+    }
+
+    function echoAppliesToHere(type) {
+      return type.applies_to === 'paragraph' || type.applies_to === 'chapter' || type.applies_to === 'story';
+    }
+
+    function echoSelect(typeId) {
+      var type = echoTypes.find(function(t){ return t.id === typeId; });
+      if (!type) return;
+      if (activeEchoType === typeId) {
+        // Deselect
+        activeEchoType = null;
+        echoModeActive = false;
+        echoExitParaMode();
+        echoRenderPanel();
+        updateEchoHint('Select an Echo, then click a paragraph to place it.');
+        return;
+      }
+      activeEchoType = typeId;
+      echoModeActive = true;
+      echoRenderPanel();
+      if (type.applies_to === 'chapter') {
+        // Place immediately on chapter
+        echoPlaceOnChapter(typeId);
+      } else if (type.applies_to === 'story') {
+        echoPlaceOnStory(typeId);
+      } else {
+        // Enter paragraph selection mode
+        echoEnterParaMode();
+        updateEchoHint('Now click a paragraph — or highlight text first.');
+      }
+    }
+
+    function echoEnterParaMode() {
+      var paras = document.querySelectorAll('#page-content p, #page-content h1, #page-content h2, #page-content h3, #page-content blockquote');
+      paras.forEach(function(p, idx) {
+        p.classList.add('para-echo-mode');
+        p.dataset.paraIdx = idx;
+        p.addEventListener('click', echoParaClick);
+      });
+    }
+
+    function echoExitParaMode() {
+      var paras = document.querySelectorAll('#page-content p, #page-content h1, #page-content h2, #page-content h3, #page-content blockquote');
+      paras.forEach(function(p) {
+        p.classList.remove('para-echo-mode');
+        p.removeEventListener('click', echoParaClick);
+      });
+    }
+
+    function echoParaClick(e) {
+      var paraEl = e.currentTarget;
+      var paraIdx = parseInt(paraEl.dataset.paraIdx);
+      // Check for text selection
+      var sel = window.getSelection();
+      var highlightText = null;
+      var highlightStart = null;
+      var highlightEnd = null;
+      if (sel && sel.rangeCount && sel.toString().trim().length > 0) {
+        var range = sel.getRangeAt(0);
+        if (paraEl.contains(range.commonAncestorContainer)) {
+          highlightText = sel.toString().trim();
+          highlightStart = range.startOffset;
+          highlightEnd = range.endOffset;
+        }
+      }
+      echoPlaceOnParagraph(activeEchoType, paraIdx, highlightText, highlightStart, highlightEnd);
+    }
+
+    async function echoPlaceOnParagraph(typeId, paraIdx, highlightText, highlightStart, highlightEnd) {
+      echoExitParaMode();
+      activeEchoType = null;
+      echoModeActive = false;
+      // If already placed, remove first (move)
+      var existing = myEchoes[typeId];
+      if (existing) {
+        await db.from('reader_echoes').delete().eq('id', existing.id);
+      }
+      var { data, error } = await db.from('reader_echoes').insert({
+        work_id: chapterData.work_id,
+        chapter_id: chapterData.id,
+        echo_type_id: typeId,
+        user_id: currentSession.user.id,
+        paragraph_index: paraIdx,
+        highlight_start: highlightStart,
+        highlight_end: highlightEnd,
+        highlight_text: highlightText
+      }).select().single();
+      if (error) { showToast('Could not place Echo: ' + (error.message||''), 'ti-x'); return; }
+      myEchoes[typeId] = data;
+      echoRenderPanel();
+      echoRenderPage();
+      showToast('Echo placed!', 'ti-sparkles');
+    }
+
+    async function echoPlaceOnChapter(typeId) {
+      activeEchoType = null;
+      echoModeActive = false;
+      var existing = myEchoes[typeId];
+      if (existing) { await db.from('reader_echoes').delete().eq('id', existing.id); }
+      var { data, error } = await db.from('reader_echoes').insert({
+        work_id: chapterData.work_id,
+        chapter_id: chapterData.id,
+        echo_type_id: typeId,
+        user_id: currentSession.user.id
+      }).select().single();
+      if (error) { showToast('Could not place Echo.', 'ti-x'); return; }
+      myEchoes[typeId] = data;
+      echoRenderPanel();
+      echoRenderPage();
+      showToast('Echo placed on this chapter!', 'ti-sparkles');
+    }
+
+    async function echoPlaceOnStory(typeId) {
+      activeEchoType = null;
+      echoModeActive = false;
+      var existing = myEchoes[typeId];
+      if (existing) { await db.from('reader_echoes').delete().eq('id', existing.id); }
+      var { data, error } = await db.from('reader_echoes').insert({
+        work_id: chapterData.work_id,
+        echo_type_id: typeId,
+        user_id: currentSession.user.id
+      }).select().single();
+      if (error) { showToast('Could not place Echo.', 'ti-x'); return; }
+      myEchoes[typeId] = data;
+      echoRenderPanel();
+      showToast('Masterpiece Echo placed on this story!', 'ti-sparkles');
+    }
+
+    function echoRenderPage() {
+      // Apply gold glows to paragraphs that have echoes on this page
+      var paras = document.querySelectorAll('#page-content p, #page-content h1, #page-content h2, #page-content h3, #page-content blockquote');
+      // Clear existing glows
+      paras.forEach(function(p) {
+        p.classList.remove('echo-glow','echo-glow-rare','rare','ultra');
+        // Remove existing highlight marks
+        p.querySelectorAll('mark.echo-highlight').forEach(function(m){
+          m.outerHTML = m.innerHTML;
+        });
+      });
+      // Remove existing badges
+      document.querySelectorAll('.echo-badge').forEach(function(b){ b.remove(); });
+
+      // Find echoes for this chapter
+      Object.values(myEchoes).forEach(function(echo) {
+        if (echo.chapter_id !== chapterData.id) return;
+        var type = echoTypes.find(function(t){ return t.id === echo.echo_type_id; });
+        if (!type) return;
+        if (type.applies_to === 'chapter') {
+          // Add badge to chapter title
+          var titleEl = document.getElementById('chapter-title-display');
+          if (titleEl && !titleEl.querySelector('.echo-badge')) {
+            var badge = document.createElement('span');
+            badge.className = 'echo-badge' + (type.rarity !== 'common' ? ' ' + type.rarity : '');
+            badge.innerHTML = type.icon + ' ' + type.label;
+            badge.title = 'Your Echo';
+            titleEl.appendChild(badge);
+          }
+          return;
+        }
+        if (type.applies_to !== 'paragraph') return;
+        var paraEl = paras[echo.paragraph_index];
+        if (!paraEl) return;
+        var rarityClass = type.rarity !== 'common' ? ' ' + type.rarity : '';
+        paraEl.classList.add('echo-glow');
+        if (type.rarity !== 'common') paraEl.classList.add(type.rarity);
+        // Add small badge
+        var badge = document.createElement('span');
+        badge.className = 'echo-badge' + rarityClass;
+        badge.innerHTML = type.icon + ' ' + type.label;
+        badge.title = 'Your Echo — click to remove';
+        badge.onclick = function(e) { e.stopPropagation(); echoRemove(echo.echo_type_id); };
+        paraEl.appendChild(badge);
+        // Apply highlight if text was selected
+        if (echo.highlight_text && echo.highlight_start !== null) {
+          try {
+            var text = paraEl.childNodes[0];
+            if (text && text.nodeType === 3) {
+              var before = text.textContent.slice(0, echo.highlight_start);
+              var highlighted = text.textContent.slice(echo.highlight_start, echo.highlight_end);
+              var after = text.textContent.slice(echo.highlight_end);
+              var rarityMark = type.rarity !== 'common' ? ' ' + type.rarity : '';
+              paraEl.childNodes[0].replaceWith(
+                document.createTextNode(before),
+                Object.assign(document.createElement('mark'), {
+                  className: 'echo-highlight' + rarityMark,
+                  textContent: highlighted
+                }),
+                document.createTextNode(after)
+              );
+            }
+          } catch(e) {}
+        }
+      });
+    }
+
+    async function echoRemove(typeId) {
+      var existing = myEchoes[typeId];
+      if (!existing) return;
+      await db.from('reader_echoes').delete().eq('id', existing.id);
+      delete myEchoes[typeId];
+      echoRenderPanel();
+      echoRenderPage();
+      showToast('Echo removed.', 'ti-check');
+    }
+
+    function toggleEchoPanel() {
+      var panel = document.getElementById('echo-panel');
+      var btn = document.getElementById('echo-fab-btn');
+      var open = panel.style.display === 'block';
+      panel.style.display = open ? 'none' : 'block';
+      btn.classList.toggle('active', !open);
+      if (!open) echoRenderPanel();
+    }
+
+    function closeEchoPanel() {
+      document.getElementById('echo-panel').style.display = 'none';
+      document.getElementById('echo-fab-btn').classList.remove('active');
+      echoExitParaMode();
+      activeEchoType = null;
+    }
+
+    function updateEchoHint(msg) {
+      var el = document.getElementById('echo-hint');
+      if (el) el.textContent = msg;
+    }
+
   </script>
 <script src="characterTitles.js"></script>
 <script src="footer.js"></script>
