@@ -79,7 +79,8 @@
     .edit-chapter-btn.visible{display:flex;}
 
     /* READING AREA */
-    .reader-wrap{max-width:var(--reader-width);margin:0 auto;padding:40px 24px 40px;}
+    .reader-wrap{max-width:var(--reader-width);margin:0 auto;padding:40px 24px 40px;transition:margin-right 0.28s cubic-bezier(.4,0,.2,1),max-width 0.28s cubic-bezier(.4,0,.2,1);}
+    body.sp-panel-open .reader-wrap,body.para-panel-active .reader-wrap{margin-right:320px;margin-left:auto;max-width:calc(var(--reader-width) - 160px);}
     .chapter-header{margin-bottom:32px;text-align:center;}
     .chapter-number{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px;}
     .chapter-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--text);margin-bottom:12px;}
@@ -261,10 +262,16 @@
     .para-comment-bubble .bubble-icon{font-size:13px;color:var(--text3);transition:color 0.15s;line-height:1;}
     .para-wrap:hover .para-comment-bubble .bubble-icon{color:var(--accent);}
     .para-comment-bubble .bubble-count{background:var(--accent);color:white;border-radius:50%;min-width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,0.2);line-height:1;padding:0 2px;}
+    /* Echo inline bubble */
+    .para-echo-bubble{display:inline-flex;align-items:center;gap:2px;vertical-align:middle;margin-left:3px;cursor:pointer;border:none;background:none;padding:0;opacity:0;transition:opacity 0.15s;position:relative;top:-1px;}
+    .para-wrap:hover .para-echo-bubble{opacity:1;}
+    .para-wrap.has-echo .para-echo-bubble{opacity:1;}
+    .para-echo-bubble .echo-bubble-icon{font-size:13px;line-height:1;transition:transform 0.15s;}
+    .para-wrap:hover .para-echo-bubble .echo-bubble-icon{transform:scale(1.15);}
+    .para-echo-bubble .echo-bubble-count{background:color-mix(in srgb,#f59e0b 80%,transparent);color:white;border-radius:50%;min-width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;line-height:1;padding:0 2px;}
 
     /* Reading area shifts left when panel open */
-    .reader-wrap{transition:margin-right 0.28s cubic-bezier(.4,0,.2,1);}
-    body.para-panel-active .reader-wrap{margin-right:340px;}
+
 
     /* EDIT OVERLAY */
     .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:200;padding:24px;opacity:0;pointer-events:none;transition:opacity 0.2s;}
@@ -1203,6 +1210,8 @@
       } else {
         quotedEl.style.display = 'none';
       }
+      // Close side panel if open
+      spClose();
       document.getElementById('para-panel-sidebar').classList.add('open');
       document.body.classList.add('para-panel-active');
       loadParaComments(idx);
@@ -1211,6 +1220,7 @@
     function closeParaPanel() {
       document.getElementById('para-panel-sidebar').classList.remove('open');
       document.body.classList.remove('para-panel-active');
+      document.body.classList.remove('sp-panel-open');
       activeParaIndex = null;
     }
 
@@ -1592,6 +1602,20 @@
           openParaPanel(absIdx, text);
         });
         p.appendChild(bubble);
+        // Echo bubble — only for logged-in non-owners
+        if (currentSession && !isOwner) {
+          var echoBubble = document.createElement('span');
+          echoBubble.className = 'para-echo-bubble';
+          echoBubble.setAttribute('data-para-idx', absIdx);
+          echoBubble.innerHTML = '<span class="echo-bubble-icon">🔮</span>';
+          echoBubble.addEventListener('click', function(e){
+            e.stopPropagation();
+            // Set this paragraph as the active target and open echoes panel
+            activeEchoParaTarget = absIdx;
+            spOpen('echoes');
+          });
+          p.appendChild(echoBubble);
+        }
         p.parentNode.insertBefore(wrap, p);
         wrap.appendChild(p);
       });
@@ -1919,8 +1943,11 @@
     var spComments = [];
 
     function spOpen(tab) {
+      // Close paragraph panel if open
+      closeParaPanel();
       spIsOpen = true;
       document.getElementById('sp-panel').style.display = 'flex';
+      document.body.classList.add('sp-panel-open');
       document.querySelectorAll('#sp-tabs button').forEach(function(b){
         b.style.color = 'var(--text3)';
         b.style.borderColor = 'var(--border)';
@@ -1934,6 +1961,8 @@
     function spClose() {
       spIsOpen = false;
       document.getElementById('sp-panel').style.display = 'none';
+      document.body.classList.remove('sp-panel-open');
+      document.body.classList.remove('para-panel-active');
       document.querySelectorAll('#sp-tabs button').forEach(function(b){
         b.style.color = 'var(--text3)'; b.style.borderColor = 'var(--border)'; b.style.background = 'var(--bg2)';
       });
@@ -2207,6 +2236,7 @@
     var echoTypes = [];
     var myEchoes = {};        // echo_type_id -> {id, chapter_id, paragraph_index, highlight_text}
     var activeEchoType = null; // currently selected echo type for placement
+    var activeEchoParaTarget = null; // paragraph index pre-targeted from inline bubble
     var echoModeActive = false;
 
     async function echoInit() {
@@ -2277,12 +2307,15 @@
       echoModeActive = true;
       echoRenderPanel();
       if (type.applies_to === 'chapter') {
-        // Place immediately on chapter
         echoPlaceOnChapter(typeId);
       } else if (type.applies_to === 'story') {
         echoPlaceOnStory(typeId);
+      } else if (activeEchoParaTarget !== null) {
+        // Pre-targeted from inline 🔮 bubble — place immediately
+        var targetIdx = activeEchoParaTarget;
+        activeEchoParaTarget = null;
+        echoPlaceOnParagraph(typeId, targetIdx, null, null, null);
       } else {
-        // Enter paragraph selection mode
         echoEnterParaMode();
         updateEchoHint('Now click a paragraph — or highlight text first.');
       }
@@ -2399,6 +2432,25 @@
       });
       document.querySelectorAll('.echo-badge').forEach(function(b){ b.remove(); });
 
+      // Group paragraph echoes by paragraph index for capping at 3
+      var echosByPara = {};
+      Object.values(myEchoes).forEach(function(echo) {
+        if (echo.chapter_id !== chapterData.id) return;
+        var t = echoTypes.find(function(x){ return x.id === echo.echo_type_id; });
+        if (!t || t.applies_to !== 'paragraph') return;
+        var idx = echo.paragraph_index;
+        if (!echosByPara[idx]) echosByPara[idx] = [];
+        echosByPara[idx].push(echo);
+      });
+      // Mark paragraphs that have echoes
+      Object.keys(echosByPara).forEach(function(idx) {
+        var p = paraByIdx[parseInt(idx)];
+        if (p) p.classList.add('has-echo');
+        // Update echo bubble count
+        var eb = p ? p.querySelector('.para-echo-bubble') : null;
+        if (eb) { var cnt = echosByPara[idx].length; if (cnt > 0) eb.innerHTML = '<span class="echo-bubble-icon">🔮</span><span class="echo-bubble-count">'+cnt+'</span>'; }
+      });
+
       Object.values(myEchoes).forEach(function(echo) {
         if (echo.chapter_id !== chapterData.id) return;
         var type = echoTypes.find(function(t){ return t.id === echo.echo_type_id; });
@@ -2420,10 +2472,23 @@
         if (type.applies_to !== 'paragraph') return;
         var paraEl = paraByIdx[echo.paragraph_index];
         if (!paraEl) return;
+        // Cap at 3 badges per paragraph
+        var existingBadges = paraEl.querySelectorAll('.echo-badge:not(.echo-badge-chapter)');
+        if (existingBadges.length >= 3) {
+          // Update/add overflow badge
+          var overflow = paraEl.querySelector('.echo-badge-overflow');
+          var total = (echosByPara[echo.paragraph_index] || []).length;
+          if (!overflow) {
+            overflow = document.createElement('span');
+            overflow.className = 'echo-badge echo-badge-overflow';
+            paraEl.appendChild(overflow);
+          }
+          overflow.innerHTML = '+' + (total - 3) + ' more';
+          return;
+        }
         var rarityClass = type.rarity !== 'common' ? ' ' + type.rarity : '';
         paraEl.classList.add('echo-glow');
         if (type.rarity !== 'common') paraEl.classList.add(type.rarity);
-        // Add small badge
         var badge = document.createElement('span');
         badge.className = 'echo-badge' + rarityClass;
         badge.innerHTML = type.icon + ' ' + type.label;
