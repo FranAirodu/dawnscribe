@@ -481,6 +481,9 @@ function dsApplyAccent(hex) {
       if(ownerChapIds.length){
         var ncRes=await db.from('chapter_comments').select('id,content,created_at,chapter_id,user_id,parent_id').in('chapter_id',ownerChapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(20);
         (ncRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){c.work_id=chapWorkMap[c.chapter_id]||null;c._type='novel';commentNotifs.push(c);});
+        // Also fetch paragraph_comments (deep-link to paragraph panel)
+        var prRes=await db.from('paragraph_comments').select('id,content,created_at,chapter_id,user_id,parent_id,paragraph_index').in('chapter_id',ownerChapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(20);
+        (prRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){c.work_id=chapWorkMap[c.chapter_id]||null;c._type='para';commentNotifs.push(c);});
       }
     }
     if(myArtworkIds.length){
@@ -506,13 +509,18 @@ function dsApplyAccent(hex) {
         var name=prof?(prof.display_name||prof.username||'Someone'):'Someone';
         var workTitle=work?work.title:'your work';
         var item=document.createElement('div'); item.className='notif-item unread'; item.dataset.id=cm.id; item.style.cursor='pointer';
-        item.onclick=function(){if(!cm.work_id)return;window.location.href=cm._type==='artwork'?'artwork.html?id='+cm.work_id:'story.html?id='+cm.work_id;};
+        item.onclick=function(){
+          if(!cm.work_id) return;
+          if(cm._type==='artwork') { window.location.href='artwork.html?id='+cm.work_id; }
+          else if(cm._type==='para' && cm.chapter_id) { window.location.href='chapter.html?id='+cm.chapter_id+'#para-'+cm.paragraph_index; }
+          else { window.location.href='chapter.html?id='+cm.chapter_id; }
+        };
         var avHtml2 = work && work.cover_url
           ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
           : prof&&prof.avatar_url ? '<img src="'+dsEsc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
         var coverClass2 = work && work.cover_url ? '' : dsCoverColor(cm.user_id||cm.id);
         item.innerHTML='<div class="notif-cover '+coverClass2+'" style="overflow:hidden;padding:0;">'+avHtml2+'</div>'
-          +'<div class="notif-body"><div class="notif-title">'+dsEsc(name)+' commented on '+dsEsc(workTitle)+'</div>'
+          +'<div class="notif-body"><div class="notif-title">'+dsEsc(name)+(cm._type==='para'?' commented on a paragraph in ':' commented on ')+dsEsc(workTitle)+'</div>'
           +'<div class="notif-text">"'+dsEsc((cm.content||'').slice(0,70))+(cm.content&&cm.content.length>70?'...':'')+'"</div>'
           +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(cm.created_at)+'</div></div><div class="notif-dot"></div>';
         commentFeed.appendChild(item);

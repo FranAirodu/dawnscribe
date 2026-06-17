@@ -1443,11 +1443,12 @@
       if (!currentSession) { showToast('Sign in to vote', 'ti-lock'); return; }
       var current = paraVoteCache[commentId] || null;
 
-      // Optimistic UI
-      var upBtn = card.querySelector('.upvote-btn');
-      var dnBtn = card.querySelector('.downvote-btn');
-      var upCount = card.querySelector('.up-count');
-      var dnCount = card.querySelector('.dn-count');
+      // Optimistic UI — scope to direct .para-cmt-actions child only, not nested replies
+      var actionsEl = card.querySelector(':scope > .para-cmt-actions');
+      var upBtn = actionsEl ? actionsEl.querySelector('.upvote-btn') : card.querySelector('[data-id="'+commentId+'"].upvote-btn');
+      var dnBtn = actionsEl ? actionsEl.querySelector('.downvote-btn') : card.querySelector('[data-id="'+commentId+'"].downvote-btn');
+      var upCount = upBtn ? upBtn.querySelector('.up-count') : null;
+      var dnCount = dnBtn ? dnBtn.querySelector('.dn-count') : null;
 
       if (current === dir) {
         // Remove vote
@@ -1570,6 +1571,8 @@
             type: 'para_comment',
             from_user_id: currentSession.user.id,
             work_id: workData.id,
+            chapter_id: chapterData.id,
+            paragraph_index: activeParaIndex,
             message: myName + ' commented on a paragraph in "' + workData.title + '"'
           });
         } catch(e) {}
@@ -2299,6 +2302,43 @@
       await loadChapterComments();
       await spLoadComments();
       if(currentSession && !isOwner) { await echoInit(); }
+
+      // AUTO-OPEN PARAGRAPH PANEL from notification hash (#para-N)
+      var _hash = window.location.hash;
+      if (_hash && _hash.startsWith('#para-')) {
+        var _paraIdx = parseInt(_hash.replace('#para-', ''));
+        if (!isNaN(_paraIdx)) {
+          // Find which page this paragraph is on and navigate there first
+          var _targetPage = 0;
+          if (paraAbsoluteMap && paraAbsoluteMap.length) {
+            for (var _pi = 0; _pi < paraAbsoluteMap.length; _pi++) {
+              if (paraAbsoluteMap[_pi].indexOf(_paraIdx) !== -1) { _targetPage = _pi; break; }
+            }
+          }
+          if (typeof renderPage === 'function' && pages && pages.length) {
+            renderPage(_targetPage);
+          }
+          // Poll until the paragraph element exists in the DOM
+          var _attempts = 0;
+          var _paraPoller = setInterval(function() {
+            _attempts++;
+            var _paraEl = document.querySelector('[data-para-idx="' + _paraIdx + '"]');
+            if (_paraEl || _attempts > 25) {
+              clearInterval(_paraPoller);
+              if (!_paraEl) return;
+              var _quotedText = _paraEl.textContent || '';
+              // Scroll paragraph into view first
+              _paraEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              // Open the panel after scroll settles
+              setTimeout(function() {
+                openParaPanel(_paraIdx, _quotedText);
+              }, 400);
+              // Clean the hash without reloading
+              history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+          }, 150);
+        }
+      }
 
       // CHARACTER TITLES — show after chapter nav
       var ctSection = document.getElementById('character-titles-section');
