@@ -744,7 +744,7 @@ window.CharacterTitles = (function() {
           // BACK
           '<div class="ct-flip-back">' +
             '<div class="ct-flip-back-header">' +
-              '<div class="ct-flip-back-name"><i class="ti ti-music"></i> ' + esc(char.name) + ''s Songs</div>' +
+              '<div class="ct-flip-back-name"><i class="ti ti-music"></i> ' + esc(char.name) + '\u2019s Songs</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
             '<div class="ct-songs-list">' + backSongsHtml + '</div>' +
