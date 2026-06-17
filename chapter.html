@@ -642,12 +642,25 @@
         footerHtml = '<div class="poll-footer"><span class="poll-vote-count">' + totalVotes + ' vote' + (totalVotes===1?'':'s') + '</span><span class="poll-closed-note">You voted in this poll.</span></div>';
       }
 
+      var pollCollapsed = el.dataset.collapsed === 'true';
       el.innerHTML =
-        '<div class="poll-question"><i class="ti ti-chart-bar"></i>' + escHtml(p.question) + '</div>' +
-        '<div class="poll-meta">' + metaParts.join(' &middot; ') + '</div>' +
-        '<div class="poll-options">' + optionsHtml + '</div>' +
-        footerHtml;
+        '<div class="poll-question" onclick="togglePollCollapse(\'' + pos + '\')">' +
+          '<div class="poll-question-left"><i class="ti ti-chart-bar"></i>' + escHtml(p.question) + '</div>' +
+          '<i class="ti ti-chevron-down poll-chevron' + (pollCollapsed ? ' collapsed' : '') + '"></i>' +
+        '</div>' +
+        (pollCollapsed ? '' :
+          '<div class="poll-meta">' + metaParts.join(' &middot; ') + '</div>' +
+          '<div class="poll-options">' + optionsHtml + '</div>' +
+          footerHtml
+        );
       el.style.display = 'block';
+    }
+
+    function togglePollCollapse(pos) {
+      var el = document.getElementById('poll-' + pos);
+      if (!el) return;
+      el.dataset.collapsed = el.dataset.collapsed === 'true' ? 'false' : 'true';
+      renderPoll(pos);
     }
 
     function togglePollOption(pos, idx) {
@@ -2086,6 +2099,19 @@
       // Load all chapters for nav
       var allChapResult = await db.from('chapters').select('id,chapter_number,title').eq('work_id', chapterData.work_id).eq('status','published').order('chapter_number',{ascending:true});
       allChapters = allChapResult.data || [];
+      // Sync reading progress from Supabase so returning readers on new devices skip the timer
+      if (currentSession) {
+        try {
+          var { data: rpData } = await db.from('reading_progress')
+            .select('chapter_id').eq('user_id', currentSession.user.id)
+            .eq('work_id', chapterData.work_id).eq('completed', true);
+          if (rpData && rpData.length) {
+            if (!readingProgress[chapterData.work_id]) readingProgress[chapterData.work_id] = {};
+            rpData.forEach(function(r){ readingProgress[chapterData.work_id][r.chapter_id] = true; });
+            localStorage.setItem('ds_reading_progress', JSON.stringify(readingProgress));
+          }
+        } catch(e) {}
+      }
 
       // Check ownership
       isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
@@ -2378,14 +2404,16 @@
         var type = echoTypes.find(function(t){ return t.id === echo.echo_type_id; });
         if (!type) return;
         if (type.applies_to === 'chapter') {
-          // Add badge to chapter title
-          var titleEl = document.getElementById('chapter-title-display');
-          if (titleEl && !titleEl.querySelector('.echo-badge')) {
+          // Add badge to last paragraph on page
+          var allParas = Object.values(paraByIdx);
+          var lastPara = allParas[allParas.length - 1];
+          if (lastPara && !lastPara.querySelector('.echo-badge-chapter')) {
             var badge = document.createElement('span');
-            badge.className = 'echo-badge' + (type.rarity !== 'common' ? ' ' + type.rarity : '');
+            badge.className = 'echo-badge echo-badge-chapter' + (type.rarity !== 'common' ? ' ' + type.rarity : '');
             badge.innerHTML = type.icon + ' ' + type.label;
-            badge.title = 'Your Echo';
-            titleEl.appendChild(badge);
+            badge.title = 'Your Echo — click to remove';
+            badge.onclick = function(){ echoRemove(echo.echo_type_id); };
+            lastPara.appendChild(badge);
           }
           return;
         }
