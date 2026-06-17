@@ -452,9 +452,9 @@
     <div id="sp-panel" style="position:fixed;right:0;top:0;height:100vh;width:320px;background:var(--bg2);border-left:1px solid var(--border);box-shadow:-4px 0 24px rgba(0,0,0,0.3);z-index:190;display:none;flex-direction:column;">
       <div style="padding:12px 14px 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
         <div style="display:flex;gap:0;">
-          <button id="spt-toc" onclick="spSwitch('toc')" style="padding:5px 12px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:none;background:none;color:var(--text3);border-bottom:2px solid transparent;">Chapters</button>
           <button id="spt-comments" onclick="spSwitch('comments')" style="padding:5px 12px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:none;background:none;color:var(--text3);border-bottom:2px solid transparent;">Comments</button>
           <button id="spt-echoes" onclick="spSwitch('echoes')" style="padding:5px 12px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:none;background:none;color:var(--text3);border-bottom:2px solid transparent;">🔮 Echoes</button>
+          <button id="spt-toc" onclick="spSwitch('toc')" style="padding:5px 12px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:none;background:none;color:var(--text3);border-bottom:2px solid transparent;">Chapters</button>
         </div>
         <button onclick="spClose()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:4px;line-height:1;">✕</button>
       </div>
@@ -812,6 +812,17 @@
     }
 
     // ── RENDER PAGE ──────────────────────────────────────────────
+    // Strip inline color/background styles injected by Word/LibreOffice paste
+    function stripInlineColors(container) {
+      container.querySelectorAll('[style]').forEach(function(el) {
+        el.style.removeProperty('color');
+        el.style.removeProperty('background-color');
+        el.style.removeProperty('background');
+        // If style attr is now empty, remove it entirely
+        if (!el.getAttribute('style').trim()) el.removeAttribute('style');
+      });
+    }
+
     function renderPage(idx) {
       currentPage = idx;
       // Save page position per chapter
@@ -820,6 +831,7 @@
       }
       var content = document.getElementById('page-content');
       content.innerHTML = pages[idx].join('');
+      stripInlineColors(content);
       injectParaWraps();
       echoRenderPage();
       document.getElementById('page-info').textContent = 'Page ' + (idx+1) + ' of ' + pages.length;
@@ -1261,8 +1273,34 @@
       }
 
       body.innerHTML = '';
+
+      // Echo strip — show all echoes placed on this paragraph by all readers
+      var paraEchoes = allReaderEchosByPara[idx];
+      if (paraEchoes && Object.keys(paraEchoes).length) {
+        var stripDiv = document.createElement('div');
+        stripDiv.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 12px;border-bottom:1px solid var(--border);margin-bottom:4px;';
+        Object.entries(paraEchoes).forEach(function(entry) {
+          var typeId = entry[0], count = entry[1];
+          var type = echoTypes.find(function(t){ return t.id === typeId; });
+          if (!type) return;
+          var rc = type.rarity==='rare'?'#ef4444':type.rarity==='ultra'?'#a855f7':'var(--text)';
+          var bg = type.rarity==='rare'?'color-mix(in srgb,#ef4444 10%,transparent)':type.rarity==='ultra'?'color-mix(in srgb,#a855f7 10%,transparent)':'var(--bg3)';
+          var bd = type.rarity==='rare'?'color-mix(in srgb,#ef4444 30%,transparent)':type.rarity==='ultra'?'color-mix(in srgb,#a855f7 30%,transparent)':'var(--border)';
+          var pill = document.createElement('div');
+          pill.title = type.label;
+          pill.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:'+bg+';border:1px solid '+bd+';font-size:12px;cursor:default;white-space:nowrap;';
+          pill.innerHTML = '<span>'+type.icon+'</span><span style="font-weight:600;color:'+rc+';">'+type.label+'</span>' +
+            (count > 1 ? '<span style="font-size:11px;font-weight:700;color:'+rc+';opacity:0.75;margin-left:2px;">×'+count+'</span>' : '');
+          stripDiv.appendChild(pill);
+        });
+        body.appendChild(stripDiv);
+      }
+
       if (!topLevel.length) {
-        body.innerHTML = '<div style="text-align:center;padding:24px 16px;color:var(--text3);font-size:13px;"><i class="ti ti-message-off" style="font-size:24px;display:block;margin-bottom:8px;opacity:0.35;"></i>No comments yet — be the first!</div>';
+        var emptyDiv = document.createElement('div');
+        emptyDiv.style.cssText = 'text-align:center;padding:24px 16px;color:var(--text3);font-size:13px;';
+        emptyDiv.innerHTML = '<i class="ti ti-message-off" style="font-size:24px;display:block;margin-bottom:8px;opacity:0.35;"></i>No comments yet — be the first!';
+        body.appendChild(emptyDiv);
       } else {
         topLevel.forEach(function(c) {
           var card = buildParaCommentCard(c, profileMap, replyMap[c.id] || [], profileMap);
@@ -2023,32 +2061,46 @@
       var hint = echoModeActive
         ? '<div style="margin:8px 12px;padding:8px 10px;background:color-mix(in srgb,#f59e0b 8%,transparent);border:1px solid color-mix(in srgb,#f59e0b 25%,transparent);border-radius:8px;font-size:12px;color:#f59e0b;text-align:center;">✨ Now click a paragraph in the chapter</div>'
         : '<div style="padding:8px 16px 4px;font-size:12px;color:var(--text3);font-style:italic;">Select an Echo then click a paragraph. One of each per novel.</div>';
-      var rarities = [{key:'common',label:'Common Echoes'},{key:'rare',label:'Rare Echoes ✦'},{key:'ultra',label:'Ultra Rare ✦✦'}];
       var html = hint;
+      // Helper to render a single echo row
+      function renderEchoRow(t) {
+        var placed = myEchoes[t.id];
+        var isSelected = activeEchoType === t.id;
+        var rc = t.rarity==='rare'?'#ef4444':t.rarity==='ultra'?'#a855f7':'var(--text)';
+        var sb = isSelected?(t.rarity==='rare'?'color-mix(in srgb,#ef4444 10%,transparent)':'color-mix(in srgb,#f59e0b 10%,transparent)'):'';
+        var sbd = isSelected?(t.rarity==='rare'?'color-mix(in srgb,#ef4444 35%,transparent)':'color-mix(in srgb,#f59e0b 35%,transparent)'):'transparent';
+        var op = (placed&&!isSelected)?'0.55':'1';
+        var pt = '';
+        if (placed) {
+          if (!placed.chapter_id) pt='On this story';
+          else if (chapterData&&placed.chapter_id===chapterData.id) pt='This chapter — click to move';
+          else { var pc=allChapters.find(function(c){return c.id===placed.chapter_id;}); pt='Ch.'+(pc?pc.chapter_number:'?')+' — click to move'; }
+        }
+        return '<div data-echo-id="'+t.id+'" class="sp-echo-row" style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:8px;cursor:pointer;border:1.5px solid '+sbd+';background:'+sb+';opacity:'+op+';margin:2px 6px;transition:all 0.12s;">' +
+          '<span style="font-size:15px;width:22px;text-align:center;flex-shrink:0;">'+t.icon+'</span>' +
+          '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;color:'+rc+';line-height:1.2;">'+t.label+'</div>' +
+          (pt?'<div style="font-size:10px;color:'+rc+';margin-top:1px;opacity:0.8;">✓ '+pt+'</div>':'') +
+          '</div></div>';
+      }
+      // Chapter-wide echoes
+      var chapterEchoes = echoTypes.filter(function(t){ return t.scope === 'chapter'; });
+      if (chapterEchoes.length) {
+        html += '<div style="padding:8px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">📖 Chapter Echoes</div>';
+        chapterEchoes.forEach(function(t){ html += renderEchoRow(t); });
+      }
+      // Divider
+      html += '<div style="margin:6px 12px 2px;border-top:1px solid var(--border);"></div>';
+      // Paragraph/Quote echoes by rarity
+      var rarities = [{key:'common',label:'Common'},{key:'rare',label:'Rare ✦'},{key:'ultra',label:'Ultra Rare ✦✦'}];
+      html += '<div style="padding:4px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">✏️ Paragraph & Quote Echoes</div>';
       rarities.forEach(function(r) {
-        var items = echoTypes.filter(function(t){ return t.rarity === r.key; });
+        var items = echoTypes.filter(function(t){ return t.rarity === r.key && t.scope !== 'chapter'; });
         if (!items.length) return;
-        var lc = r.key==='rare'?'#ef4444':r.key==='ultra'?'#a855f7':'var(--text3)';
-        html += '<div style="padding:8px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:'+lc+';">'+r.label+'</div>';
-        items.forEach(function(t) {
-          var placed = myEchoes[t.id];
-          var isSelected = activeEchoType === t.id;
-          var rc = t.rarity==='rare'?'#ef4444':t.rarity==='ultra'?'#a855f7':'var(--text)';
-          var sb = isSelected?(t.rarity==='rare'?'color-mix(in srgb,#ef4444 10%,transparent)':'color-mix(in srgb,#f59e0b 10%,transparent)'):'';
-          var sbd = isSelected?(t.rarity==='rare'?'color-mix(in srgb,#ef4444 35%,transparent)':'color-mix(in srgb,#f59e0b 35%,transparent)'):'transparent';
-          var op = (placed&&!isSelected)?'0.55':'1';
-          var pt = '';
-          if (placed) {
-            if (!placed.chapter_id) pt='On this story';
-            else if (chapterData&&placed.chapter_id===chapterData.id) pt='This chapter — click to move';
-            else { var pc=allChapters.find(function(c){return c.id===placed.chapter_id;}); pt='Ch.'+(pc?pc.chapter_number:'?')+' — click to move'; }
-          }
-          html += '<div data-echo-id="'+t.id+'" class="sp-echo-row" style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:8px;cursor:pointer;border:1.5px solid '+sbd+';background:'+sb+';opacity:'+op+';margin:2px 6px;transition:all 0.12s;">' +
-            '<span style="font-size:15px;width:22px;text-align:center;flex-shrink:0;">'+t.icon+'</span>' +
-            '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;color:'+rc+';line-height:1.2;">'+t.label+'</div>' +
-            (pt?'<div style="font-size:10px;color:'+rc+';margin-top:1px;opacity:0.8;">✓ '+pt+'</div>':'') +
-            '</div></div>';
-        });
+        if (r.key !== 'common') {
+          var lc = r.key==='rare'?'#ef4444':'#a855f7';
+          html += '<div style="padding:4px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:'+lc+';">'+r.label+'</div>';
+        }
+        items.forEach(function(t){ html += renderEchoRow(t); });
       });
       body.innerHTML = html;
       body.addEventListener('click', function spClick(e) {
@@ -2201,6 +2253,7 @@
       // Paginate — or show full content for owner (no timer, no pages)
       if (isOwner) {
         document.getElementById('page-content').innerHTML = chapterData.content || '';
+        stripInlineColors(document.getElementById('page-content'));
         // Tag paragraphs with absolute indices for owner view
         var ownerParas = document.getElementById('page-content').querySelectorAll('p, h1, h2, h3, blockquote');
         ownerParas.forEach(function(p, i){ p.setAttribute('data-para-idx', i); });
@@ -2235,6 +2288,7 @@
     // ── ECHOES ────────────────────────────────────────────────────
     var echoTypes = [];
     var myEchoes = {};        // echo_type_id -> {id, chapter_id, paragraph_index, highlight_text}
+    var allReaderEchosByPara = {}; // paragraph_index -> [{echo_type_id, count}] for ALL readers
     var activeEchoType = null; // currently selected echo type for placement
     var activeEchoParaTarget = null; // paragraph index pre-targeted from inline bubble
     var echoModeActive = false;
@@ -2253,6 +2307,20 @@
         .eq('user_id', currentSession.user.id);
       myEchoes = {};
       (placed || []).forEach(function(e){ myEchoes[e.echo_type_id] = e; });
+
+      // Fetch all readers' echoes for this chapter to power para panel display
+      var { data: allPlaced } = await db.from('reader_echoes')
+        .select('echo_type_id, paragraph_index')
+        .eq('work_id', chapterData.work_id)
+        .eq('chapter_id', chapterData.id)
+        .not('paragraph_index', 'is', null);
+      allReaderEchosByPara = {};
+      (allPlaced || []).forEach(function(e) {
+        var idx = e.paragraph_index;
+        if (!allReaderEchosByPara[idx]) allReaderEchosByPara[idx] = {};
+        allReaderEchosByPara[idx][e.echo_type_id] = (allReaderEchosByPara[idx][e.echo_type_id] || 0) + 1;
+      });
+
       echoRenderPanel();
       echoRenderPage();
     }
