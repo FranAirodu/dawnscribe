@@ -4,6 +4,24 @@
    controls (DM, notifications, avatar/dropdown, search) to that nav,
    injects the required CSS, and runs all auth-dependent logic.
 ──────────────────────────────────────────────────────────────────── */
+
+// Apply cached accent color immediately so there's no teal flash.
+function dsApplyAccent(hex) {
+  var existing = document.getElementById('ds-accent-override');
+  if (existing) existing.remove();
+  if (!hex) return;
+  var d = hex.replace('#','');
+  var r = Math.max(0, parseInt(d.slice(0,2),16) - 30);
+  var g = Math.max(0, parseInt(d.slice(2,4),16) - 30);
+  var b = Math.max(0, parseInt(d.slice(4,6),16) - 30);
+  var hex2 = '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
+  var st = document.createElement('style');
+  st.id = 'ds-accent-override';
+  st.textContent = ':root { --accent: ' + hex + ' !important; --accent2: ' + hex2 + ' !important; }';
+  document.head.appendChild(st);
+}
+(function(){ var c = localStorage.getItem('ds_accent_hex'); if (c) dsApplyAccent(c); })();
+
 (function() {
 
   /* ── CSS ─────────────────────────────────────────────────────── */
@@ -254,6 +272,7 @@
   };
   window.dsSignOut = async function() {
     try { await db.auth.signOut(); } catch(e) {}
+    localStorage.removeItem('ds_accent_hex');
     window.location.href = 'index.html';
   };
 
@@ -574,20 +593,16 @@
       }
 
       // Apply user's saved accent color sitewide
+      // Cache in localStorage so it applies instantly on next page load with no DB wait.
       var accentRes = await db.from('user_avatars').select('accent_color').eq('user_id', session.user.id).maybeSingle();
       if (accentRes.data && accentRes.data.accent_color && accentRes.data.accent_color.hex) {
         var ac = accentRes.data.accent_color;
         var hex = ac.hex;
-        var darker = hex.replace('#','');
-        var r = Math.max(0, parseInt(darker.slice(0,2),16) - 30);
-        var g = Math.max(0, parseInt(darker.slice(2,4),16) - 30);
-        var b = Math.max(0, parseInt(darker.slice(4,6),16) - 30);
-        var hex2 = '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
-        var strokeRule = ac.stroke ? '.logo, .footer-logo { -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }' : '';
-        var styleTag = document.createElement('style');
-        styleTag.id = 'ds-accent-override';
-        styleTag.textContent = ':root { --accent: ' + hex + ' !important; --accent2: ' + hex2 + ' !important; }' + strokeRule;
-        document.head.appendChild(styleTag);
+        localStorage.setItem('ds_accent_hex', hex);
+        dsApplyAccent(hex);
+      } else {
+        localStorage.removeItem('ds_accent_hex');
+        dsApplyAccent(null);
       }
 
       if(username){
