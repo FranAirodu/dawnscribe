@@ -56,7 +56,7 @@
   </script>
   <style>
     :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;--shadow:rgba(0,0,0,0.4);
-      --reader-bg:#1a1a26;--reader-text:#9b9bc0;--reader-font:'Lato',sans-serif;--reader-size:16px;--reader-lh:1.8;--reader-width:650px;}
+      --reader-bg:#1a1a26;--reader-text:#9b9bc0;--reader-strong:#f1f0ff;--reader-font:'Lato',sans-serif;--reader-size:16px;--reader-lh:1.8;--reader-width:650px;}
     html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#d97706;}
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
@@ -80,7 +80,10 @@
 
     /* READING AREA */
     .reader-wrap{max-width:var(--reader-width);margin:0 auto;padding:40px 24px 40px;transition:margin-right 0.28s cubic-bezier(.4,0,.2,1),max-width 0.28s cubic-bezier(.4,0,.2,1);}
+    /* Wide/Full: shrink and shift left to make room for panel */
     body.sp-panel-open .reader-wrap,body.para-panel-active .reader-wrap{margin-right:320px;margin-left:auto;max-width:calc(var(--reader-width) - 160px);}
+    /* Narrow/Medium: just anchor to the left, panel overlays */
+    body.panel-open-overlay .reader-wrap{margin-right:0;margin-left:0 !important;max-width:var(--reader-width) !important;}
     .chapter-header{margin-bottom:32px;text-align:center;}
     .chapter-number{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px;}
     .chapter-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--text);margin-bottom:12px;}
@@ -123,7 +126,7 @@
     .page-content h1+p,.page-content h2+p,.page-content h3+p,.page-content blockquote+p,.page-content p:first-child{text-indent:0;}
     .page-content h1,.page-content h2,.page-content h3{font-family:'Cinzel',serif;color:var(--text);margin-bottom:0.5em;margin-top:1em;}
     .page-content blockquote{border-left:3px solid var(--accent);padding-left:16px;color:var(--text3);font-style:italic;margin:1em 0;}
-    .page-content strong{color:var(--text);}
+    .page-content strong{color:var(--reader-strong);}
     .page-content ul,.page-content ol{padding-left:24px;margin-bottom:1em;}
 
     /* TIMER BAR */
@@ -742,7 +745,8 @@
         var r = JSON.parse(saved);
         var bgMap = { default:'#1a1a26', black:'#000000', sepia:'#f5e6c8', white:'#ffffff', cream:'#faf3e6', nightblue:'#0d1b2a', gray:'#3a3a3f' };
         var colorMap = { default:'#9b9bc0', black:'#888888', sepia:'#5c4a2a', white:'#333333', cream:'#4a4035', nightblue:'#a8c0d8', gray:'#d8d8dc' };
-        if (r.bg) { document.documentElement.style.setProperty('--reader-bg', bgMap[r.bg]||bgMap.default); document.documentElement.style.setProperty('--reader-text', colorMap[r.bg]||colorMap.default); }
+        var strongMap = { default:'#f1f0ff', black:'#dddddd', sepia:'#2a1f0a', white:'#000000', cream:'#1a1510', nightblue:'#e0eef8', gray:'#ffffff' };
+        if (r.bg) { document.documentElement.style.setProperty('--reader-bg', bgMap[r.bg]||bgMap.default); document.documentElement.style.setProperty('--reader-text', colorMap[r.bg]||colorMap.default); document.documentElement.style.setProperty('--reader-strong', strongMap[r.bg]||strongMap.default); }
         // Font: only apply reader override here. If no override, the author's
         // chapter-level font (chapterData.font) is applied later in init()
         // once chapterData has loaded — see applyChapterFont().
@@ -860,7 +864,9 @@
 
       // Timer — only for unread chapters
       if (!alreadyRead) {
-        startTimer(nextBtn);
+        // Count words on this page to scale the timer for short last pages
+        var pageWordCount = (pages[idx] || []).join(' ').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
+        startTimer(nextBtn, pageWordCount);
       } else {
         // Already read — no timer, free navigation
         nextBtn.disabled = false;
@@ -872,11 +878,15 @@
     }
 
     // ── TIMER ────────────────────────────────────────────────────
-    function startTimer(nextBtn) {
+    function startTimer(nextBtn, pageWords) {
       clearInterval(timerInterval);
       timerDone = false;
       nextBtn.disabled = true;
       nextBtn.classList.add('locked');
+
+      // Scale timer to page length: full 120s for 500 words, proportionally less for shorter pages, min 15s
+      var wordsForTimer = pageWords || WORDS_PER_PAGE;
+      var scaledSeconds = Math.max(15, Math.round(TIMER_SECONDS * (wordsForTimer / WORDS_PER_PAGE)));
 
       var wrap = document.getElementById('timer-bar-wrap');
       var fill = document.getElementById('timer-fill');
@@ -890,12 +900,12 @@
       var elapsed = 0;
       timerInterval = setInterval(function() {
         elapsed++;
-        var pct = Math.min((elapsed / TIMER_SECONDS) * 100, 100);
+        var pct = Math.min((elapsed / scaledSeconds) * 100, 100);
         fill.style.width = pct + '%';
-        var remaining = TIMER_SECONDS - elapsed;
+        var remaining = scaledSeconds - elapsed;
         countdown.textContent = remaining > 0 ? remaining + 's' : '';
 
-        if (elapsed >= TIMER_SECONDS) {
+        if (elapsed >= scaledSeconds) {
           clearInterval(timerInterval);
           timerDone = true;
           fill.classList.add('done');
@@ -936,8 +946,7 @@
     async function finishChapter() {
       clearInterval(timerInterval);
       if (!isChapterRead()) {
-        markChapterRead();
-        // Save to Supabase if logged in
+        // Save to Supabase FIRST — only mark locally once confirmed (or if logged out)
         if (currentSession) {
           await db.from('reading_progress').upsert({
             user_id: currentSession.user.id,
@@ -947,7 +956,10 @@
             completed: true,
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_id,chapter_id' });
+        }
+        markChapterRead();
 
+        if (currentSession) {
           // Award embers (owner reading their own chapter doesn't earn embers)
           if (!isOwner) {
             try {
@@ -1224,14 +1236,20 @@
       }
       // Close side panel if open
       spClose();
+      var rwp = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--reader-width')) || 650;
+      if (rwp <= 800) {
+        document.body.classList.add('panel-open-overlay');
+      } else {
+        document.body.classList.add('para-panel-active');
+      }
       document.getElementById('para-panel-sidebar').classList.add('open');
-      document.body.classList.add('para-panel-active');
       loadParaComments(idx);
     }
 
     function closeParaPanel() {
       document.getElementById('para-panel-sidebar').classList.remove('open');
       document.body.classList.remove('para-panel-active');
+      document.body.classList.remove('panel-open-overlay');
       document.body.classList.remove('sp-panel-open');
       activeParaIndex = null;
     }
@@ -1985,7 +2003,12 @@
       closeParaPanel();
       spIsOpen = true;
       document.getElementById('sp-panel').style.display = 'flex';
-      document.body.classList.add('sp-panel-open');
+      var rw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--reader-width')) || 650;
+      if (rw <= 800) {
+        document.body.classList.add('panel-open-overlay');
+      } else {
+        document.body.classList.add('sp-panel-open');
+      }
       document.querySelectorAll('#sp-tabs button').forEach(function(b){
         b.style.color = 'var(--text3)';
         b.style.borderColor = 'var(--border)';
@@ -2000,6 +2023,7 @@
       spIsOpen = false;
       document.getElementById('sp-panel').style.display = 'none';
       document.body.classList.remove('sp-panel-open');
+      document.body.classList.remove('panel-open-overlay');
       document.body.classList.remove('para-panel-active');
       document.querySelectorAll('#sp-tabs button').forEach(function(b){
         b.style.color = 'var(--text3)'; b.style.borderColor = 'var(--border)'; b.style.background = 'var(--bg2)';

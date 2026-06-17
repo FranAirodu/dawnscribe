@@ -457,6 +457,81 @@ window.CharacterTitles = (function() {
   }
 
   // ══════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // SONG SUGGESTIONS
+  // ══════════════════════════════════════════════════════════════
+
+  // Extract YouTube video ID from various URL formats
+  function ytId(url) {
+    var m = url.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+
+  // Load approved songs for all characters in a work
+  async function loadApprovedSongs(workId) {
+    var { data } = await db().from('character_song_suggestions')
+      .select('id, character_id, youtube_url, song_title, artist_name, is_featured, chapter_id, user_id')
+      .eq('work_id', workId)
+      .eq('status', 'approved')
+      .order('is_featured', { ascending: false })
+      .order('created_at', { ascending: true });
+    var map = {};
+    (data||[]).forEach(function(s) {
+      if (!map[s.character_id]) map[s.character_id] = [];
+      map[s.character_id].push(s);
+    });
+    return map;
+  }
+
+  // Load pending songs (author only)
+  async function loadPendingSongs(workId) {
+    var { data } = await db().from('character_song_suggestions')
+      .select('id, character_id, youtube_url, song_title, artist_name, user_id, chapter_id, created_at')
+      .eq('work_id', workId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+    return data || [];
+  }
+
+  // Load suggester usernames in batch
+  async function loadUsernames(userIds) {
+    if (!userIds.length) return {};
+    var { data } = await db().from('profiles').select('id, username, display_name').in('id', userIds);
+    var map = {};
+    (data||[]).forEach(function(p){ map[p.id] = p.display_name || p.username; });
+    return map;
+  }
+
+  // Submit a song suggestion
+  async function submitSongSuggestion(charId, workId, chapterId, userId, youtubeUrl, songTitle, artistName) {
+    var vid = ytId(youtubeUrl);
+    if (!vid) return { error: 'Invalid YouTube URL' };
+    var cleanUrl = 'https://www.youtube.com/watch?v=' + vid;
+    var { error } = await db().from('character_song_suggestions').insert({
+      character_id: charId, work_id: workId, chapter_id: chapterId || null,
+      user_id: userId, youtube_url: cleanUrl, song_title: songTitle.trim(),
+      artist_name: artistName.trim(), status: 'pending'
+    });
+    return { error: error ? error.message : null };
+  }
+
+  // Approve / reject a song
+  async function updateSongStatus(songId, status) {
+    var { error } = await db().from('character_song_suggestions')
+      .update({ status: status }).eq('id', songId);
+    return !error;
+  }
+
+  // Set featured song (unfeature others for same character first)
+  async function featureSong(songId, charId) {
+    await db().from('character_song_suggestions')
+      .update({ is_featured: false }).eq('character_id', charId).eq('is_featured', true);
+    var { error } = await db().from('character_song_suggestions')
+      .update({ is_featured: true }).eq('id', songId);
+    return !error;
+  }
+
+  // ══════════════════════════════════════════════════════════════
   // RENDER — STORY.HTML CHARACTER CARDS
   // ══════════════════════════════════════════════════════════════
   async function renderStoryCharacterCards(container, workId, isOwner) {
@@ -485,6 +560,17 @@ window.CharacterTitles = (function() {
       if (!collabsByChar[key]) collabsByChar[key] = [];
       collabsByChar[key].push(c);
     });
+
+    // Load approved songs and suggester names
+    var songsByChar = await loadApprovedSongs(workId);
+    var allSongUserIds = [];
+    Object.values(songsByChar).forEach(function(songs) {
+      songs.forEach(function(s){ allSongUserIds.push(s.user_id); });
+    });
+    var usernames = await loadUsernames([...new Set(allSongUserIds)]);
+
+    // Capture current session for suggest button
+    var currentUserSession = window._ctSession || null;
 
     container.innerHTML = '';
     var grid = document.createElement('div');
@@ -585,15 +671,77 @@ window.CharacterTitles = (function() {
           '</div>';
       }
 
+      // Songs for this character
+      var charSongs = songsByChar[char.id] || [];
+      var featuredSong = charSongs.find(function(s){ return s.is_featured; });
+
+      // Front: featured song strip (if exists)
+      var featuredHtml = '';
+      if (featuredSong) {
+        var sugName = usernames[featuredSong.user_id] || 'a reader';
+        var vid = ytId(featuredSong.youtube_url);
+        featuredHtml = '<a href="' + esc(featuredSong.youtube_url) + '" target="_blank" rel="noopener" class="ct-featured-song">' +
+          '<div class="ct-featured-song-thumb"><img src="https://img.youtube.com/vi/' + esc(vid) + '/default.jpg" alt=""/><div class="ct-featured-song-play"><i class="ti ti-player-play-filled"></i></div></div>' +
+          '<div class="ct-featured-song-info"><div class="ct-featured-song-title">' + esc(featuredSong.song_title) + '</div>' +
+          '<div class="ct-featured-song-artist">' + esc(featuredSong.artist_name || '') + '</div>' +
+          '<div class="ct-featured-song-credit">♪ suggested by ' + esc(sugName) + '</div></div>' +
+          '</a>';
+      }
+
+      // Back: all approved songs list
+      var backSongsHtml = charSongs.length
+        ? charSongs.map(function(s) {
+            var vid2 = ytId(s.youtube_url);
+            var sugName2 = usernames[s.user_id] || 'a reader';
+            var starBtn = isOwner
+              ? '<button class="ct-song-feature-btn" data-song-id="' + esc(s.id) + '" data-char-id="' + esc(char.id) + '" title="' + (s.is_featured ? 'Unfeature' : 'Set as featured') + '">' +
+                '<i class="ti ' + (s.is_featured ? 'ti-star-filled' : 'ti-star') + '"></i></button>'
+              : '';
+            return '<a href="' + esc(s.youtube_url) + '" target="_blank" rel="noopener" class="ct-song-row">' +
+              '<img src="https://img.youtube.com/vi/' + esc(vid2) + '/default.jpg" class="ct-song-thumb" alt=""/>' +
+              '<div class="ct-song-info"><div class="ct-song-title">' + esc(s.song_title) + '</div>' +
+              '<div class="ct-song-meta">' + esc(s.artist_name || '') + (s.artist_name ? ' · ' : '') + 'by ' + esc(sugName2) + '</div></div>' +
+              starBtn + '</a>';
+          }).join('')
+        : '<div class="ct-songs-empty"><i class="ti ti-music-off"></i> No songs yet — be the first!</div>';
+
+      // Suggest button (logged-in non-owner)
+      var suggestBtnHtml = currentUserSession && !isOwner
+        ? '<button class="ct-suggest-song-btn" data-char-id="' + esc(char.id) + '" data-char-name="' + esc(char.name) + '"><i class="ti ti-music-plus"></i> Suggest a Song</button>'
+        : '';
+
+      // Flip card structure
+      card.className += ' ct-flip-card';
       card.innerHTML =
-        '<div class="ct-story-char-top">' +
-          imgHtml +
-          '<div class="ct-story-char-name">' + esc(char.name) + '</div>' +
-          endedBadge +
-          editBtn +
-        '</div>' +
-        '<div class="ct-story-titles-wrap">' + titlesHtml + '</div>' +
-        collabsHtml;
+        '<div class="ct-flip-inner">' +
+          // FRONT
+          '<div class="ct-flip-front">' +
+            '<div class="ct-story-char-top">' +
+              imgHtml +
+              '<div class="ct-story-char-name">' + esc(char.name) + '</div>' +
+              endedBadge + editBtn +
+            '</div>' +
+            '<div class="ct-story-titles-wrap">' + titlesHtml + '</div>' +
+            featuredHtml +
+            collabsHtml +
+            (charSongs.length ? '<button class="ct-flip-trigger" title="View songs"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
+          '</div>' +
+          // BACK
+          '<div class="ct-flip-back">' +
+            '<div class="ct-flip-back-header">' +
+              '<div class="ct-flip-back-name"><i class="ti ti-music"></i> ' + esc(char.name) + ''s Songs</div>' +
+              '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
+            '</div>' +
+            '<div class="ct-songs-list">' + backSongsHtml + '</div>' +
+            suggestBtnHtml +
+          '</div>' +
+        '</div>';
+
+      // Wire flip trigger
+      var flipTrigger = card.querySelector('.ct-flip-trigger');
+      var flipClose = card.querySelector('.ct-flip-close');
+      if (flipTrigger) flipTrigger.addEventListener('click', function(e) { e.stopPropagation(); card.classList.add('flipped'); });
+      if (flipClose) flipClose.addEventListener('click', function(e) { e.stopPropagation(); card.classList.remove('flipped'); });
 
       // Wire edit button
       if (isOwner) {
@@ -604,10 +752,129 @@ window.CharacterTitles = (function() {
             document.getElementById('ct-portrait-input').click();
           });
         }
+        // Wire feature buttons
+        card.querySelectorAll('.ct-song-feature-btn').forEach(function(b) {
+          b.addEventListener('click', function(e) {
+            e.preventDefault(); e.stopPropagation();
+            var sid = b.dataset.songId, cid = b.dataset.charId;
+            featureSong(sid, cid).then(function(ok) {
+              if (ok) renderStoryCharacterCards(container, workId, isOwner);
+            });
+          });
+        });
+      }
+
+      // Wire suggest song button
+      var ssBtn = card.querySelector('.ct-suggest-song-btn');
+      if (ssBtn) {
+        ssBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          openSongModal(ssBtn.dataset.charId, ssBtn.dataset.charName, workId, currentUserSession.user.id);
+        });
       }
 
       grid.appendChild(card);
     });
+
+    // Author pending songs panel
+    if (isOwner) {
+      await renderPendingSongsPanel(container, workId);
+    }
+  }
+
+  // ── PENDING SONGS PANEL (author only) ─────────────────────────
+  async function renderPendingSongsPanel(container, workId) {
+    var pending = await loadPendingSongs(workId);
+    var existingPanel = container.querySelector('.ct-pending-songs-panel');
+    if (existingPanel) existingPanel.remove();
+    if (!pending.length) return;
+
+    var uids = [...new Set(pending.map(function(s){ return s.user_id; }))];
+    var names = await loadUsernames(uids);
+
+    var panel = document.createElement('div');
+    panel.className = 'ct-pending-songs-panel';
+    panel.innerHTML = '<div class="ct-pending-songs-title"><i class="ti ti-music-check"></i> Song Suggestions Awaiting Approval <span class="ct-pending-badge">' + pending.length + '</span></div>';
+
+    pending.forEach(function(s) {
+      var vid = ytId(s.youtube_url);
+      var name = names[s.user_id] || 'Unknown';
+      var row = document.createElement('div');
+      row.className = 'ct-pending-song-row';
+      row.innerHTML =
+        '<img src="https://img.youtube.com/vi/' + esc(vid) + '/default.jpg" class="ct-song-thumb" alt=""/>' +
+        '<div class="ct-song-info">' +
+          '<div class="ct-song-title"><a href="' + esc(s.youtube_url) + '" target="_blank" rel="noopener">' + esc(s.song_title) + '</a></div>' +
+          '<div class="ct-song-meta">' + esc(s.artist_name || '') + (s.artist_name ? ' · ' : '') + 'Suggested by ' + esc(name) + '</div>' +
+        '</div>' +
+        '<div class="ct-pending-song-actions">' +
+          '<button class="ct-song-approve-btn" data-id="' + esc(s.id) + '"><i class="ti ti-check"></i> Approve</button>' +
+          '<button class="ct-song-reject-btn" data-id="' + esc(s.id) + '"><i class="ti ti-x"></i> Reject</button>' +
+        '</div>';
+
+      row.querySelector('.ct-song-approve-btn').addEventListener('click', async function() {
+        await updateSongStatus(s.id, 'approved');
+        renderStoryCharacterCards(container, workId, true);
+      });
+      row.querySelector('.ct-song-reject-btn').addEventListener('click', async function() {
+        await updateSongStatus(s.id, 'rejected');
+        renderPendingSongsPanel(container, workId);
+      });
+
+      panel.appendChild(row);
+    });
+
+    container.appendChild(panel);
+  }
+
+  // ── SONG SUGGESTION MODAL ──────────────────────────────────────
+  var _songModal = null;
+  function openSongModal(charId, charName, workId, userId) {
+    if (_songModal) _songModal.remove();
+    var modal = document.createElement('div');
+    modal.className = 'ct-song-modal-overlay';
+    modal.innerHTML =
+      '<div class="ct-song-modal">' +
+        '<div class="ct-song-modal-header">' +
+          '<div class="ct-song-modal-title"><i class="ti ti-music-plus"></i> Suggest a Song for ' + esc(charName) + '</div>' +
+          '<button class="ct-song-modal-close"><i class="ti ti-x"></i></button>' +
+        '</div>' +
+        '<div class="ct-song-modal-body">' +
+          '<label class="ct-song-label">YouTube URL *</label>' +
+          '<input class="ct-song-input" id="ct-song-url" type="url" placeholder="https://www.youtube.com/watch?v=..." />' +
+          '<label class="ct-song-label">Song Title *</label>' +
+          '<input class="ct-song-input" id="ct-song-name" type="text" maxlength="100" placeholder="e.g. Believer" />' +
+          '<label class="ct-song-label">Artist Name</label>' +
+          '<input class="ct-song-input" id="ct-song-artist" type="text" maxlength="100" placeholder="e.g. Imagine Dragons" />' +
+          '<div class="ct-song-hint">The author will review your suggestion before it appears on the character card.</div>' +
+          '<div id="ct-song-error" style="color:var(--red);font-size:12px;margin-top:4px;display:none;"></div>' +
+        '</div>' +
+        '<div class="ct-song-modal-footer">' +
+          '<button class="ct-song-cancel-btn">Cancel</button>' +
+          '<button class="ct-song-submit-btn"><i class="ti ti-send"></i> Submit</button>' +
+        '</div>' +
+      '</div>';
+
+    modal.querySelector('.ct-song-modal-close').addEventListener('click', function() { modal.remove(); });
+    modal.querySelector('.ct-song-cancel-btn').addEventListener('click', function() { modal.remove(); });
+    modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+
+    modal.querySelector('.ct-song-submit-btn').addEventListener('click', async function() {
+      var url = document.getElementById('ct-song-url').value.trim();
+      var title = document.getElementById('ct-song-name').value.trim();
+      var artist = document.getElementById('ct-song-artist').value.trim();
+      var errEl = document.getElementById('ct-song-error');
+      errEl.style.display = 'none';
+      if (!url || !title) { errEl.textContent = 'YouTube URL and song title are required.'; errEl.style.display = 'block'; return; }
+      var result = await submitSongSuggestion(charId, workId, null, userId, url, title, artist);
+      if (result.error) { errEl.textContent = result.error; errEl.style.display = 'block'; return; }
+      modal.remove();
+      // Show thank-you toast if available
+      if (window.showToast) window.showToast('Song suggestion submitted! The author will review it. 🎵', 'ti-music');
+    });
+
+    document.body.appendChild(modal);
+    _songModal = modal;
   }
 
   // Public API
@@ -617,7 +884,8 @@ window.CharacterTitles = (function() {
     toggleResults: toggleResults,
     openSuggestModal: openSuggestModal,
     closeSuggestModal: closeSuggestModal,
-    submitSuggestion: submitSuggestion
+    submitSuggestion: submitSuggestion,
+    openSongModal: openSongModal
   };
 
 })();
