@@ -2004,7 +2004,7 @@
     var spTab = 'toc';
     var spComments = [];
 
-    function spOpen(tab) {
+    window.spOpen = function spOpen(tab) {
       // Close paragraph panel if open
       closeParaPanel();
       spIsOpen = true;
@@ -2036,7 +2036,7 @@
       });
     }
 
-    function spSwitch(tab) {
+    window.spSwitch = function spSwitch(tab) {
       spTab = tab;
       ['toc','comments','echoes'].forEach(function(t) {
         var btn = document.getElementById('spt-' + t);
@@ -2159,18 +2159,26 @@
     async function spLoadComments() {
       if (!chapterData) return;
       var { data: cc } = await db.from('chapter_comments')
-        .select('id,content,created_at,user_id,profiles:user_id(username,display_name,avatar_url)')
+        .select('id,content,created_at,user_id')
         .eq('chapter_id', chapterData.id).is('parent_id', null)
         .order('created_at',{ascending:false}).limit(50);
       var { data: pc } = await db.from('paragraph_comments')
-        .select('id,content,created_at,user_id,paragraph_index,profiles:user_id(username,display_name,avatar_url)')
+        .select('id,content,created_at,user_id,paragraph_index')
         .eq('chapter_id', chapterData.id).is('parent_id', null)
         .order('created_at',{ascending:false}).limit(50);
-      // Merge and sort by created_at descending, mark type
+      // Merge and sort
       var merged = [];
       (cc||[]).forEach(function(c){ c._type='chapter'; merged.push(c); });
       (pc||[]).forEach(function(c){ c._type='para'; merged.push(c); });
       merged.sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); });
+      // Batch fetch profiles
+      var uids = [...new Set(merged.map(function(c){ return c.user_id; }).filter(Boolean))];
+      var profMap = {};
+      if (uids.length) {
+        var { data: profs } = await db.from('profiles').select('id,username,display_name,avatar_url').in('id', uids);
+        (profs||[]).forEach(function(p){ profMap[p.id] = p; });
+      }
+      merged.forEach(function(c){ c.profiles = profMap[c.user_id] || {}; });
       spComments = merged;
       var ct = document.getElementById('sp-comment-count');
       if (ct) ct.textContent = spComments.length > 0 ? spComments.length : '';
@@ -2337,37 +2345,20 @@
     })();
 
     // AUTO-OPEN SIDE PANEL COMMENTS TAB from notification (sessionStorage)
-    (function() {
-      var _storedPara = sessionStorage.getItem('ds_open_para');
-      var _storedCommentId = sessionStorage.getItem('ds_open_comment');
-      if (!_storedPara && !_storedCommentId) return;
+    window.addEventListener('load', function() {
+      var _para = sessionStorage.getItem('ds_open_para');
+      var _cid = sessionStorage.getItem('ds_open_comment');
+      if (!_para && !_cid) return;
       sessionStorage.removeItem('ds_open_para');
       sessionStorage.removeItem('ds_open_comment');
-      // Wait for spSwitch and spComments to be ready
-      var _attempts = 0;
-      var _interval = setInterval(function() {
-        _attempts++;
-        var ready = typeof spSwitch === 'function' && document.getElementById('sp-panel');
-        if (ready || _attempts > 50) {
-          clearInterval(_interval);
-          if (!ready) return;
-          // Open side panel on Comments tab
-          spSwitch('comments');
-          // After comments render, scroll to the specific comment
-          setTimeout(function() {
-            if (_storedCommentId) {
-              var el = document.getElementById('sp-comment-' + _storedCommentId);
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-            // Also scroll the page to the paragraph
-            if (_storedPara) {
-              var paraEl = document.querySelector('[data-para-idx="' + _storedPara + '"]');
-              if (paraEl) paraEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }, 400);
-        }
-      }, 150);
-    })();
+      setTimeout(function() {
+        spOpen('comments');
+        setTimeout(function() {
+          if (_cid) { var el = document.getElementById('sp-comment-'+_cid); if (el) el.scrollIntoView({behavior:'smooth',block:'center'}); }
+          if (_para) { var p = document.querySelector('[data-para-idx="'+_para+'"]'); if (p) p.scrollIntoView({behavior:'smooth',block:'center'}); }
+        }, 500);
+      }, 1000);
+    });
 
     // ── ECHOES ────────────────────────────────────────────────────
     var echoTypes = [];

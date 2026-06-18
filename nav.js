@@ -516,8 +516,8 @@ function dsApplyAccent(hex) {
             var _destUrl = 'chapter.html?id='+cm.chapter_id;
             var _alreadyThere = window.location.href.includes(cm.chapter_id);
             if (_alreadyThere) {
-              if (typeof spSwitch === 'function') {
-                spSwitch('comments');
+              if (typeof spOpen === 'function') {
+                spOpen('comments');
                 setTimeout(function() {
                   var el = document.getElementById('sp-comment-'+cm.id);
                   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
