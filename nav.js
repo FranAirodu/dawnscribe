@@ -528,6 +528,8 @@ function dsApplyAccent(hex) {
             } else {
               sessionStorage.setItem('ds_open_para', cm.paragraph_index);
               sessionStorage.setItem('ds_open_comment', cm.id);
+              var _pname = prof ? (prof.display_name || prof.username || '') : '';
+              if (_pname) sessionStorage.setItem('ds_open_name', _pname);
               window.location.href = _destUrl;
             }
           }
