@@ -635,6 +635,41 @@ function dsApplyAccent(hex) {
         dsApplyAccent(null);
       }
 
+      // Run pending check for ALL logged-in users sitewide using session.user.id
+      (async function() {
+        var uid2 = session.user.id;
+        var pendingParts = [];
+        try {
+          var myArtworks2 = await db.from('works').select('id').eq('author_id',uid2).eq('type','artwork');
+          var artIds2 = (myArtworks2.data||[]).map(function(w){return w.id;});
+          if(artIds2.length){
+            var acRes2=await db.from('artwork_collabs').select('id').in('artwork_id',artIds2).eq('status','pending');
+            var acCount2=(acRes2.data||[]).length; if(acCount2>0) pendingParts.push(acCount2+' story collab'+(acCount2>1?'s':''));
+          }
+          var myNovels2 = await db.from('works').select('id').eq('author_id',uid2).eq('type','novel');
+          var novIds2 = (myNovels2.data||[]).map(function(w){return w.id;});
+          if(novIds2.length){
+            var scRes2=await db.from('story_collabs').select('id').in('work_id',novIds2).eq('status','pending');
+            var scCount2=(scRes2.data||[]).length; if(scCount2>0) pendingParts.push(scCount2+' fan art'+(scCount2>1?'s':''));
+            var songRes2=await db.from('character_song_suggestions').select('id').in('work_id',novIds2).eq('status','pending');
+            var songCount2=(songRes2.data||[]).length; if(songCount2>0) pendingParts.push(songCount2+' song suggestion'+(songCount2>1?'s':''));
+          }
+          var frRes2=await db.from('friendships').select('id').eq('recipient_id',uid2).eq('status','pending');
+          var frCount2=(frRes2.data||[]).length; if(frCount2>0) pendingParts.push(frCount2+' friend request'+(frCount2>1?'s':''));
+          var collabParts2 = pendingParts.filter(function(p){ return p.indexOf('friend') === -1; });
+          var friendParts2 = pendingParts.filter(function(p){ return p.indexOf('friend') !== -1; });
+          if(pendingParts.length>0) avatarBtn.classList.add('has-pending');
+          if(collabParts2.length>0){
+            var pl2=document.getElementById('dd-profile-link');
+            if(pl2) pl2.innerHTML='<i class="ti ti-user"></i> My Profile <span class="collab-pending-pill">'+collabParts2.join(' · ')+'</span>';
+          }
+          if(friendParts2.length>0){
+            var fl2=document.getElementById('dd-friends-link');
+            if(fl2) fl2.innerHTML='<i class="ti ti-users"></i> Friends <span class="collab-pending-pill">'+friendParts2.join(' · ')+'</span>';
+          }
+        } catch(e) {}
+      })();
+
       if(username){
         var res = await db.from('profiles').select('avatar_url,display_name,id').eq('username',username).maybeSingle();
         if(res && !res.error && res.data){
@@ -645,7 +680,7 @@ function dsApplyAccent(hex) {
           if(res.data.avatar_url){
             avatarBtn.innerHTML = '<img src="'+res.data.avatar_url+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
           }
-          var uid2 = res.data.id;
+          var uid2 = res.data.id || session.user.id;
           var pendingParts = [];
           var myArtworks = await db.from('works').select('id').eq('author_id',uid2).eq('type','artwork');
           var artIds = (myArtworks.data||[]).map(function(w){return w.id;});
@@ -661,6 +696,13 @@ function dsApplyAccent(hex) {
           }
           var frRes3=await db.from('friendships').select('id').eq('recipient_id',uid2).eq('status','pending');
           var frCount=(frRes3.data||[]).length; if(frCount>0) pendingParts.push(frCount+' friend request'+(frCount>1?'s':''));
+          // Song suggestions pending
+          var myWorkIds3=(await db.from('works').select('id').eq('author_id',uid2)).data||[];
+          var mwids3=myWorkIds3.map(function(w){return w.id;});
+          if(mwids3.length){
+            var songRes3=await db.from('character_song_suggestions').select('id').in('work_id',mwids3).eq('status','pending');
+            var songCount3=(songRes3.data||[]).length; if(songCount3>0) pendingParts.push(songCount3+' song suggestion'+(songCount3>1?'s':''));
+          }
           // Collab pending → My Profile pill
           var collabParts = pendingParts.filter(function(p){ return p.indexOf('friend') === -1; });
           var friendParts = pendingParts.filter(function(p){ return p.indexOf('friend') !== -1; });
