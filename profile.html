@@ -1022,12 +1022,55 @@
     }
 
     async function approveSong(id) {
+      // Fetch song details before updating so we can craft the notification
+      var { data: song } = await db.from('character_song_suggestions')
+        .select('user_id, song_title, artist_name, character_id, work_id')
+        .eq('id', id).maybeSingle();
       await db.from('character_song_suggestions').update({status:'approved'}).eq('id',id);
-      var row = document.querySelector('[data-song-id="'+id+'"]') || document.querySelector('.song-pending-row');
+      if (song && song.user_id) {
+        // Look up character name for the message
+        var charName = '';
+        if (song.character_id) {
+          var { data: ch } = await db.from('novel_characters').select('name').eq('id', song.character_id).maybeSingle();
+          if (ch) charName = ch.name;
+        }
+        var msg = '\u2705 Your song suggestion \u201c' + (song.song_title||'Unknown') + '\u201d' +
+          (song.artist_name ? ' by ' + song.artist_name : '') +
+          (charName ? ' for ' + charName : '') +
+          ' was approved!';
+        await db.from('notifications').insert({
+          user_id: song.user_id,
+          type: 'song_approved',
+          message: msg,
+          work_id: song.work_id || null,
+          character_id: song.character_id || null
+        });
+      }
       location.reload();
     }
     async function rejectSong(id) {
+      var { data: song } = await db.from('character_song_suggestions')
+        .select('user_id, song_title, artist_name, character_id, work_id')
+        .eq('id', id).maybeSingle();
       await db.from('character_song_suggestions').update({status:'rejected'}).eq('id',id);
+      if (song && song.user_id) {
+        var charName = '';
+        if (song.character_id) {
+          var { data: ch } = await db.from('novel_characters').select('name').eq('id', song.character_id).maybeSingle();
+          if (ch) charName = ch.name;
+        }
+        var msg = '\u274c Your song suggestion \u201c' + (song.song_title||'Unknown') + '\u201d' +
+          (song.artist_name ? ' by ' + song.artist_name : '') +
+          (charName ? ' for ' + charName : '') +
+          ' was not approved.';
+        await db.from('notifications').insert({
+          user_id: song.user_id,
+          type: 'song_rejected',
+          message: msg,
+          work_id: song.work_id || null,
+          character_id: song.character_id || null
+        });
+      }
       location.reload();
     }
 

@@ -135,6 +135,9 @@
     <button class="tab-btn" id="tab-btn-comments" onclick="switchTab('comments')">
       <i class="ti ti-message-circle"></i> Comments
     </button>
+    <button class="tab-btn" id="tab-btn-activity" onclick="switchTab('activity')">
+      <i class="ti ti-bell-ringing"></i> Activity
+    </button>
   </div>
 
   <!-- NOVELS PANEL -->
@@ -176,6 +179,19 @@
       <i class="ti ti-chevron-down"></i> Load more
     </button>
   </div>
+
+  <!-- ACTIVITY PANEL -->
+  <div class="tab-panel" id="panel-activity">
+    <div class="section-head">
+      <div class="section-title"><i class="ti ti-bell-ringing" style="color:var(--accent);"></i> Your Activity</div>
+    </div>
+    <div class="notif-list" id="feed-activity">
+      <div class="loading-row"><i class="ti ti-loader"></i></div>
+    </div>
+    <button class="load-more-btn hidden" id="load-more-activity" onclick="loadMore('activity')">
+      <i class="ti ti-chevron-down"></i> Load more
+    </button>
+  </div>
 </div>
 
 <script>
@@ -184,8 +200,8 @@
   var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
   // Per-tab data stores for load-more
-  var allData = { novels: [], artists: [], comments: [] };
-  var shown   = { novels: 0, artists: 0, comments: 0 };
+  var allData = { novels: [], artists: [], comments: [], activity: [] };
+  var shown   = { novels: 0, artists: 0, comments: 0, activity: 0 };
   var BATCH   = 30;
 
   // ── UTILS ────────────────────────────────────────────────────────
@@ -220,7 +236,7 @@
   // Open to the right tab if hash present
   (function(){
     var hash = window.location.hash.replace('#','');
-    if(['novels','artists','comments'].indexOf(hash) !== -1) switchTab(hash);
+    if(['novels','artists','comments','activity'].indexOf(hash) !== -1) switchTab(hash);
   })();
 
   // ── RENDER HELPERS ───────────────────────────────────────────────
@@ -333,6 +349,38 @@
     return card;
   }
 
+  function renderActivityCard(n, cleared) {
+    var isUnread = !cleared[n.id];
+    var card = document.createElement('div');
+    card.className = 'notif-card' + (isUnread ? ' unread' : '');
+    card.dataset.id = n.id;
+    card.dataset.tab = 'activity';
+    card.addEventListener('click', function(){
+      // Mark as cleared in localStorage
+      var map = getClearedIds('activity');
+      map[n.id] = true;
+      setClearedIds('activity', map);
+      card.classList.remove('unread');
+      // Mark as read in DB
+      db.from('notifications').update({is_read:true}).eq('id',n.id);
+      if (n.work_id) window.location.href = 'story.html?id=' + n.work_id;
+    });
+    var isApproved = n.type === 'song_approved';
+    var iconColor = isApproved ? '#22c55e' : '#ef4444';
+    var icon = isApproved ? 'ti-music' : 'ti-music-off';
+    card.innerHTML =
+      '<div class="notif-cover" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:22px;color:'+iconColor+';">'+
+        '<i class="ti '+icon+'"></i>'+
+      '</div>'+
+      '<div class="notif-body">'+
+        '<div class="notif-card-title" style="color:'+iconColor+';">'+(isApproved ? '🎵 Song Approved' : '🎵 Song Not Approved')+'</div>'+
+        '<div class="notif-card-text">'+esc(n.message||'')+'</div>'+
+        '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(n.created_at)+'</div>'+
+      '</div>'+
+      (isUnread ? '<div class="notif-unread-dot"></div>' : '');
+    return card;
+  }
+
   // ── RENDER BATCH ─────────────────────────────────────────────────
   function renderBatch(tab, append){
     var feed = document.getElementById('feed-'+tab);
@@ -346,6 +394,7 @@
       if(tab==='novels')   card = renderNovelCard(data[i], cleared);
       if(tab==='artists')  card = renderArtistCard(data[i], cleared);
       if(tab==='comments') card = renderCommentCard(data[i], cleared);
+      if(tab==='activity') card = renderActivityCard(data[i], cleared);
       if(card) feed.appendChild(card);
     }
     shown[tab] = end;
@@ -353,7 +402,7 @@
     if(end < data.length) btn.classList.remove('hidden');
     else btn.classList.add('hidden');
     if(!data.length || feed.children.length === 0){
-      var labels = {novels:'No new chapters from followed stories.', artists:'No new art from followed artists.', comments:'No new comments on your works.'};
+      var labels = {novels:'No new chapters from followed stories.', artists:'No new art from followed artists.', comments:'No new comments on your works.', activity:'No activity notifications yet.'};
       feed.innerHTML = '<div class="empty-state"><i class="ti ti-bell-off"></i><p>'+labels[tab]+'</p></div>';
     }
   }
@@ -378,7 +427,9 @@
     await Promise.all([
       loadNovels(uid),
       loadArtists(uid),
-      loadComments(uid)
+      loadComments(uid),
+      loadActivity(uid)
+    ]);
     ]);
   }
 
@@ -549,7 +600,29 @@
     } catch(e){ feed.innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>'; }
   }
 
-  function setTabBadge(tab, count){
+  async function loadActivity(uid) {
+    var feed = document.getElementById('feed-activity');
+    try {
+      var { data: rows } = await db.from('notifications')
+        .select('id,type,message,work_id,character_id,created_at,is_read')
+        .eq('user_id', uid)
+        .in('type', ['song_approved', 'song_rejected'])
+        .order('created_at', { ascending: false })
+        .limit(50);
+      var items = rows || [];
+      var cleared = getClearedIds('activity');
+      items.sort(function(a,b){
+        var aU = !cleared[a.id], bU = !cleared[b.id];
+        if(aU !== bU) return aU ? -1 : 1;
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+      allData.activity = items;
+      renderBatch('activity', false);
+      setTabBadge('activity', items.filter(function(n){ return !cleared[n.id]; }).length);
+    } catch(e) {
+      feed.innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>';
+    }
+  }
     var btn = document.getElementById('tab-btn-'+tab);
     if(!btn) return;
     var ex = btn.querySelector('.tab-badge'); if(ex) ex.remove();

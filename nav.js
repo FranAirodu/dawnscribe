@@ -147,6 +147,7 @@ function dsApplyAccent(hex) {
           <button class="notif-tab active" id="notif-tab-novels" onclick="dsSwitchNotif('novels')"><i class="ti ti-book"></i> Novels</button>
           <button class="notif-tab" id="notif-tab-artists" onclick="dsSwitchNotif('artists')"><i class="ti ti-palette"></i> Artists</button>
           <button class="notif-tab" id="notif-tab-comments" onclick="dsSwitchNotif('comments')"><i class="ti ti-message-circle"></i> Comments</button>
+          <button class="notif-tab" id="notif-tab-activity" onclick="dsSwitchNotif('activity')"><i class="ti ti-bell-ringing"></i> Activity</button>
         </div>
         <div class="notif-panel active" id="notif-novels">
           <div class="notif-feed" id="notif-feed-novels"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
@@ -167,6 +168,13 @@ function dsApplyAccent(hex) {
           <div class="notif-footer">
             <button class="mark-read-btn" onclick="dsMarkAllRead('comments')"><i class="ti ti-checks"></i> Mark all as read</button>
             <a class="view-all-notif" href="notifications.html#comments">View all <i class="ti ti-arrow-right"></i></a>
+          </div>
+        </div>
+        <div class="notif-panel" id="notif-activity">
+          <div class="notif-feed" id="notif-feed-activity"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
+          <div class="notif-footer">
+            <button class="mark-read-btn" onclick="dsMarkAllRead('activity')"><i class="ti ti-checks"></i> Mark all as read</button>
+            <a class="view-all-notif" href="notifications.html#activity">View all <i class="ti ti-arrow-right"></i></a>
           </div>
         </div>
       </div>
@@ -253,7 +261,7 @@ function dsApplyAccent(hex) {
   };
   window.dsSwitchNotif = function(tab) {
     document.querySelectorAll('.notif-tab').forEach(function(t,i){
-      t.classList.toggle('active', ['novels','artists','comments'][i]===tab);
+      t.classList.toggle('active', ['novels','artists','comments','activity'][i]===tab);
     });
     document.querySelectorAll('.notif-panel').forEach(function(p){ p.classList.remove('active'); });
     document.getElementById('notif-'+tab).classList.add('active');
@@ -549,13 +557,63 @@ function dsApplyAccent(hex) {
 
     // Badge counts
     var unreadN=unrN.length, unreadA=unrA.length, unreadC=unrC.length;
-    var total=unreadN+unreadA+unreadC;
+
+    // Activity notifications (song approved/rejected)
+    var activityFeed = document.getElementById('notif-feed-activity');
+    var unreadAct = 0;
+    try {
+      var { data: actRows } = await db.from('notifications')
+        .select('id,type,message,work_id,created_at')
+        .eq('user_id', uid)
+        .in('type', ['song_approved','song_rejected'])
+        .order('created_at', { ascending: false })
+        .limit(8);
+      var clearedAct = dsGetClearedIds('activity');
+      var unrAct = (actRows||[]).filter(function(n){ return !clearedAct[n.id]; });
+      unreadAct = unrAct.length;
+      if (!unrAct.length) {
+        activityFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new activity.</div>';
+      } else {
+        activityFeed.innerHTML = '';
+        unrAct.forEach(function(n) {
+          var isApproved = n.type === 'song_approved';
+          var iconColor = isApproved ? '#22c55e' : '#ef4444';
+          var item = document.createElement('div');
+          item.className = 'notif-item unread';
+          item.dataset.id = n.id;
+          item.style.cursor = n.work_id ? 'pointer' : 'default';
+          item.onclick = function() {
+            var map = dsGetClearedIds('activity');
+            map[n.id] = true;
+            localStorage.setItem('ds_notif_cleared_activity', JSON.stringify(Object.keys(map)));
+            item.classList.remove('unread');
+            db.from('notifications').update({is_read:true}).eq('id',n.id);
+            if (n.work_id) window.location.href = 'story.html?id=' + n.work_id;
+          };
+          item.innerHTML =
+            '<div class="notif-cover" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;color:'+iconColor+';">'+
+              '<i class="ti '+(isApproved?'ti-music':'ti-music-off')+'"></i>'+
+            '</div>'+
+            '<div class="notif-body">'+
+              '<div class="notif-title" style="color:'+iconColor+';">'+(isApproved?'🎵 Song Approved':'🎵 Song Not Approved')+'</div>'+
+              '<div class="notif-text">'+dsEsc((n.message||'').slice(0,80))+(n.message&&n.message.length>80?'...':'')+'</div>'+
+              '<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(n.created_at)+'</div>'+
+            '</div><div class="notif-dot"></div>';
+          activityFeed.appendChild(item);
+        });
+      }
+    } catch(e) {
+      if (activityFeed) activityFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">Could not load.</div>';
+    }
+
+    var total=unreadN+unreadA+unreadC+unreadAct;
     var badge=document.getElementById('ds-notif-badge');
     if(badge){ if(total>0){badge.textContent=Math.min(total,99);badge.style.display='flex';}else{badge.style.display='none';} }
     function setTabBadge(tabId,count){var btn=document.getElementById(tabId);if(!btn)return;var ex=btn.querySelector('.notif-tab-badge');if(ex)ex.remove();if(count>0){var b=document.createElement('span');b.className='notif-tab-badge';b.textContent=Math.min(count,99);btn.appendChild(b);}}
     setTabBadge('notif-tab-novels',unreadN);
     setTabBadge('notif-tab-artists',unreadA);
     setTabBadge('notif-tab-comments',unreadC);
+    setTabBadge('notif-tab-activity',unreadAct);
   }
 
   /* ── AUTH INIT ───────────────────────────────────────────────── */
