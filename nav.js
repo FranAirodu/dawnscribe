@@ -631,8 +631,11 @@ function dsApplyAccent(hex) {
         localStorage.setItem('ds_accent_hex', hex);
         dsApplyAccent(hex);
       } else {
-        localStorage.removeItem('ds_accent_hex');
-        dsApplyAccent(null);
+        // No custom accent — cache the default teal so it loads instantly on all pages
+        // without waiting for the session/DB fetch to complete.
+        var defaultAccent = '#2dd4bf';
+        localStorage.setItem('ds_accent_hex', defaultAccent);
+        dsApplyAccent(defaultAccent);
       }
 
       // Run pending check for ALL logged-in users sitewide using session.user.id
