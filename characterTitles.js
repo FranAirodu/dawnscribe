@@ -537,6 +537,13 @@ window.CharacterTitles = (function() {
     return !error;
   }
 
+  // Delete a song permanently
+  async function deleteSong(songId) {
+    var { error } = await db().from('character_song_suggestions')
+      .delete().eq('id', songId);
+    return !error;
+  }
+
   // Set featured song (unfeature others for same character first)
   async function featureSong(songId, charId) {
     await db().from('character_song_suggestions')
@@ -584,7 +591,18 @@ window.CharacterTitles = (function() {
     });
     var usernames = await loadUsernames([...new Set(allSongUserIds)]);
 
-    // Capture current session for suggest button
+    // Batch-fetch chapter titles for songs that were suggested on a specific chapter
+    var allChapterIds = [];
+    Object.values(songsByChar).forEach(function(songs) {
+      songs.forEach(function(s){ if (s.chapter_id) allChapterIds.push(s.chapter_id); });
+    });
+    var chapterMap = {};
+    if (allChapterIds.length) {
+      var { data: chapRows } = await db().from('chapters')
+        .select('id, title, chapter_number')
+        .in('id', [...new Set(allChapterIds)]);
+      (chapRows||[]).forEach(function(c){ chapterMap[c.id] = c; });
+    }
     var currentUserSession = window._ctSession || null;
 
     container.innerHTML = '';
@@ -708,15 +726,23 @@ window.CharacterTitles = (function() {
         ? charSongs.map(function(s) {
             var vid2 = ytId(s.youtube_url);
             var sugName2 = usernames[s.user_id] || 'a reader';
+            var chap = s.chapter_id ? chapterMap[s.chapter_id] : null;
+            var chapPill = chap
+              ? '<a href="chapter.html?id=' + esc(s.chapter_id) + '" class="ct-song-chapter-pill" onclick="event.stopPropagation();" title="Go to chapter"><i class="ti ti-book"></i> Ch. ' + chap.chapter_number + '</a>'
+              : '';
             var starBtn = isOwner
               ? '<button class="ct-song-feature-btn" data-song-id="' + esc(s.id) + '" data-char-id="' + esc(char.id) + '" title="' + (s.is_featured ? 'Unfeature' : 'Set as featured') + '">' +
                 '<i class="ti ' + (s.is_featured ? 'ti-star-filled' : 'ti-star') + '"></i></button>'
               : '';
+            var deleteBtn = isOwner
+              ? '<button class="ct-song-delete-btn" data-song-id="' + esc(s.id) + '" title="Delete song"><i class="ti ti-trash"></i></button>'
+              : '';
             return '<a href="' + esc(s.youtube_url) + '" target="_blank" rel="noopener" class="ct-song-row">' +
               '<img src="https://img.youtube.com/vi/' + esc(vid2) + '/default.jpg" class="ct-song-thumb" alt=""/>' +
               '<div class="ct-song-info"><div class="ct-song-title">' + esc(s.song_title) + '</div>' +
-              '<div class="ct-song-meta">' + esc(s.artist_name || '') + (s.artist_name ? ' · ' : '') + 'by ' + esc(sugName2) + '</div></div>' +
-              starBtn + '</a>';
+              '<div class="ct-song-meta">' + esc(s.artist_name || '') + (s.artist_name ? ' · ' : '') + 'by ' + esc(sugName2) + '</div>' +
+              chapPill + '</div>' +
+              starBtn + deleteBtn + '</a>';
           }).join('')
         : '<div class="ct-songs-empty"><i class="ti ti-music-off"></i> No songs yet — be the first!</div>';
 
@@ -777,6 +803,15 @@ window.CharacterTitles = (function() {
             });
           });
         });
+        // Wire delete buttons
+        card.querySelectorAll('.ct-song-delete-btn').forEach(function(b) {
+          b.addEventListener('click', function(e) {
+            e.preventDefault(); e.stopPropagation();
+            deleteSong(b.dataset.songId).then(function(ok) {
+              if (ok) renderStoryCharacterCards(container, workId, isOwner);
+            });
+          });
+        });
       }
 
       // Wire suggest song button
@@ -807,6 +842,14 @@ window.CharacterTitles = (function() {
     var uids = [...new Set(pending.map(function(s){ return s.user_id; }))];
     var names = await loadUsernames(uids);
 
+    // Batch-fetch chapter titles for pending songs
+    var pendingChapIds = [...new Set(pending.filter(function(s){ return s.chapter_id; }).map(function(s){ return s.chapter_id; }))];
+    var pendingChapMap = {};
+    if (pendingChapIds.length) {
+      var { data: pChaps } = await db().from('chapters').select('id, title, chapter_number').in('id', pendingChapIds);
+      (pChaps||[]).forEach(function(c){ pendingChapMap[c.id] = c; });
+    }
+
     var panel = document.createElement('div');
     panel.className = 'ct-pending-songs-panel';
     panel.innerHTML = '<div class="ct-pending-songs-title"><i class="ti ti-music-check"></i> Song Suggestions Awaiting Approval <span class="ct-pending-badge">' + pending.length + '</span></div>';
@@ -814,17 +857,20 @@ window.CharacterTitles = (function() {
     pending.forEach(function(s) {
       var vid = ytId(s.youtube_url);
       var name = names[s.user_id] || 'Unknown';
+      var chap = s.chapter_id ? pendingChapMap[s.chapter_id] : null;
+      var chapLabel = chap ? ' · <i class="ti ti-book" style="font-size:10px;"></i> Ch. ' + chap.chapter_number : '';
       var row = document.createElement('div');
       row.className = 'ct-pending-song-row';
       row.innerHTML =
         '<img src="https://img.youtube.com/vi/' + esc(vid) + '/default.jpg" class="ct-song-thumb" alt=""/>' +
         '<div class="ct-song-info">' +
           '<div class="ct-song-title"><a href="' + esc(s.youtube_url) + '" target="_blank" rel="noopener">' + esc(s.song_title) + '</a></div>' +
-          '<div class="ct-song-meta">' + esc(s.artist_name || '') + (s.artist_name ? ' · ' : '') + 'Suggested by ' + esc(name) + '</div>' +
+          '<div class="ct-song-meta">' + esc(s.artist_name || '') + (s.artist_name ? ' · ' : '') + 'Suggested by ' + esc(name) + chapLabel + '</div>' +
         '</div>' +
         '<div class="ct-pending-song-actions">' +
           '<button class="ct-song-approve-btn" data-id="' + esc(s.id) + '"><i class="ti ti-check"></i> Approve</button>' +
           '<button class="ct-song-reject-btn" data-id="' + esc(s.id) + '"><i class="ti ti-x"></i> Reject</button>' +
+          '<button class="ct-song-delete-pending-btn" data-id="' + esc(s.id) + '" title="Delete suggestion"><i class="ti ti-trash"></i></button>' +
         '</div>';
 
       row.querySelector('.ct-song-approve-btn').addEventListener('click', async function() {
@@ -833,6 +879,10 @@ window.CharacterTitles = (function() {
       });
       row.querySelector('.ct-song-reject-btn').addEventListener('click', async function() {
         await updateSongStatus(s.id, 'rejected');
+        renderPendingSongsPanel(container, workId);
+      });
+      row.querySelector('.ct-song-delete-pending-btn').addEventListener('click', async function() {
+        await deleteSong(s.id);
         renderPendingSongsPanel(container, workId);
       });
 
