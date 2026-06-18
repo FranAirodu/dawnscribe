@@ -2076,10 +2076,22 @@
         var prof = c.profiles || {};
         var name = escHtml(prof.display_name || prof.username || 'User');
         var av = prof.avatar_url ? '<img src="'+escHtml(prof.avatar_url)+'" style="width:26px;height:26px;border-radius:50%;object-fit:cover;" alt=""/>' : '<div style="width:26px;height:26px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text3);">'+name.charAt(0)+'</div>';
-        return '<div style="padding:10px 16px;border-bottom:1px solid var(--border);">' +
+        var paraLabel = c._type === 'para'
+          ? '<div data-para-jump="'+c.paragraph_index+'" style="font-size:10px;color:var(--accent);margin-bottom:4px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-arrow-bar-to-right"></i> Paragraph comment — click to jump</div>'
+          : '';
+        return '<div id="sp-comment-'+escHtml(c.id)+'" style="padding:10px 16px;border-bottom:1px solid var(--border);">' +
+          paraLabel +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' + av + '<span style="font-size:12px;font-weight:700;color:var(--text);">'+name+'</span><span style="font-size:11px;color:var(--text3);margin-left:auto;">'+timeAgo(c.created_at)+'</span></div>' +
           '<div style="font-size:13px;color:var(--text2);line-height:1.5;">'+escHtml(c.content||'')+'</div></div>';
       }).join('');
+      // Wire para jump clicks
+      body.querySelectorAll('[data-para-jump]').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var idx = parseInt(el.dataset.paraJump);
+          var paraEl = document.querySelector('[data-para-idx="'+idx+'"]');
+          if (paraEl) paraEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+      });
     }
 
     function spRenderEchoes() {
@@ -2146,11 +2158,20 @@
 
     async function spLoadComments() {
       if (!chapterData) return;
-      var { data } = await db.from('chapter_comments')
+      var { data: cc } = await db.from('chapter_comments')
         .select('id,content,created_at,user_id,profiles:user_id(username,display_name,avatar_url)')
         .eq('chapter_id', chapterData.id).is('parent_id', null)
         .order('created_at',{ascending:false}).limit(50);
-      spComments = data || [];
+      var { data: pc } = await db.from('paragraph_comments')
+        .select('id,content,created_at,user_id,paragraph_index,profiles:user_id(username,display_name,avatar_url)')
+        .eq('chapter_id', chapterData.id).is('parent_id', null)
+        .order('created_at',{ascending:false}).limit(50);
+      // Merge and sort by created_at descending, mark type
+      var merged = [];
+      (cc||[]).forEach(function(c){ c._type='chapter'; merged.push(c); });
+      (pc||[]).forEach(function(c){ c._type='para'; merged.push(c); });
+      merged.sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); });
+      spComments = merged;
       var ct = document.getElementById('sp-comment-count');
       if (ct) ct.textContent = spComments.length > 0 ? spComments.length : '';
       if (spIsOpen && spTab === 'comments') spRenderComments();
@@ -2315,26 +2336,37 @@
       }
     })();
 
-    // AUTO-OPEN PARAGRAPH PANEL from notification (sessionStorage)
+    // AUTO-OPEN SIDE PANEL COMMENTS TAB from notification (sessionStorage)
     (function() {
       var _storedPara = sessionStorage.getItem('ds_open_para');
-      if (!_storedPara) return;
+      var _storedCommentId = sessionStorage.getItem('ds_open_comment');
+      if (!_storedPara && !_storedCommentId) return;
       sessionStorage.removeItem('ds_open_para');
-      var _paraIdx = parseInt(_storedPara);
-      if (isNaN(_paraIdx)) return;
+      sessionStorage.removeItem('ds_open_comment');
+      // Wait for spSwitch and spComments to be ready
       var _attempts = 0;
       var _interval = setInterval(function() {
         _attempts++;
-        var _paraEl = document.querySelector('[data-para-idx="' + _paraIdx + '"]');
-        if (_paraEl) {
+        var ready = typeof spSwitch === 'function' && document.getElementById('sp-panel');
+        if (ready || _attempts > 50) {
           clearInterval(_interval);
-          var _qt = Array.from(_paraEl.childNodes).filter(function(n){return n.nodeType===3;}).map(function(n){return n.textContent;}).join('').trim();
-          _paraEl.scrollIntoView({ behavior: 'instant', block: 'center' });
-          if (typeof window.openParaPanel === 'function') window.openParaPanel(_paraIdx, _qt);
-        } else if (_attempts > 60) {
-          clearInterval(_interval);
+          if (!ready) return;
+          // Open side panel on Comments tab
+          spSwitch('comments');
+          // After comments render, scroll to the specific comment
+          setTimeout(function() {
+            if (_storedCommentId) {
+              var el = document.getElementById('sp-comment-' + _storedCommentId);
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            // Also scroll the page to the paragraph
+            if (_storedPara) {
+              var paraEl = document.querySelector('[data-para-idx="' + _storedPara + '"]');
+              if (paraEl) paraEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 400);
         }
-      }, 200);
+      }, 150);
     })();
 
     // ── ECHOES ────────────────────────────────────────────────────

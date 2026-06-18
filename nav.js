@@ -516,29 +516,18 @@ function dsApplyAccent(hex) {
             var _destUrl = 'chapter.html?id='+cm.chapter_id;
             var _alreadyThere = window.location.href.includes(cm.chapter_id);
             if (_alreadyThere) {
-              // Already on this chapter — navigate to correct page then open panel
-              if (typeof window.openParaPanel === 'function') {
-                var _pi = cm.paragraph_index;
-                // Jump to correct page if needed
-                if (window.paraAbsoluteMap && window.pages) {
-                  for (var _i = 0; _i < window.paraAbsoluteMap.length; _i++) {
-                    if (window.paraAbsoluteMap[_i].indexOf(_pi) !== -1) {
-                      if (typeof renderPage === 'function') renderPage(_i);
-                      break;
-                    }
-                  }
-                }
+              if (typeof spSwitch === 'function') {
+                spSwitch('comments');
                 setTimeout(function() {
-                  var _el = document.querySelector('[data-para-idx="'+_pi+'"]');
-                  if (_el) {
-                    _el.scrollIntoView({ behavior: 'instant', block: 'center' });
-                    var _qt = Array.from(_el.childNodes).filter(function(n){return n.nodeType===3;}).map(function(n){return n.textContent;}).join('').trim();
-                    window.openParaPanel(_pi, _qt);
-                  }
-                }, 300);
+                  var el = document.getElementById('sp-comment-'+cm.id);
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  var paraEl = document.querySelector('[data-para-idx="'+cm.paragraph_index+'"]');
+                  if (paraEl) paraEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 400);
               }
             } else {
               sessionStorage.setItem('ds_open_para', cm.paragraph_index);
+              sessionStorage.setItem('ds_open_comment', cm.id);
               window.location.href = _destUrl;
             }
           }
