@@ -789,7 +789,7 @@
       var currentPageParas = [];
       var currentWords = 0;
       var absIdx = 0;
-      paraAbsoluteMap = [];
+      paraAbsoluteMap.length = 0; window.paraAbsoluteMap = paraAbsoluteMap;
       var pageIndices = [];
 
       paras.forEach(function(p) {
@@ -1223,6 +1223,9 @@
 
     window.openParaPanel = function openParaPanel(idx, quotedText) {
       activeParaIndex = idx;
+      // Scroll to the paragraph
+      var _targetEl = document.querySelector('[data-para-idx="' + idx + '"]');
+      if (_targetEl) { _targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
       var countEl = document.querySelector('.para-comment-bubble[data-idx="'+idx+'"] .bubble-count');
       document.getElementById('para-panel-title').textContent = 'Paragraph Comments';
       // Show quoted snippet
@@ -2303,45 +2306,6 @@
       await spLoadComments();
       if(currentSession && !isOwner) { await echoInit(); }
 
-      // AUTO-OPEN PARAGRAPH PANEL from notification (stored in sessionStorage)
-      var _storedPara = sessionStorage.getItem('ds_open_para');
-      sessionStorage.removeItem('ds_open_para');
-      if (_storedPara !== null) {
-        var _paraIdx = parseInt(_storedPara);
-        if (!isNaN(_paraIdx)) {
-          // Find which page this paragraph is on and jump there
-          var _targetPage = 0;
-          if (paraAbsoluteMap && paraAbsoluteMap.length) {
-            for (var _pi = 0; _pi < paraAbsoluteMap.length; _pi++) {
-              if (paraAbsoluteMap[_pi].indexOf(_paraIdx) !== -1) { _targetPage = _pi; break; }
-            }
-          }
-          if (typeof renderPage === 'function' && pages && pages.length) {
-            renderPage(_targetPage);
-          }
-          // injectParaWraps is async — wait for it to finish before opening
-          function _doParaOpen() {
-            var _paraEl = document.querySelector('[data-para-idx="' + _paraIdx + '"]');
-            if (!_paraEl) return;
-            var _quotedText = Array.from(_paraEl.childNodes)
-              .filter(function(n){ return n.nodeType === 3; })
-              .map(function(n){ return n.textContent; }).join('').trim();
-            _paraEl.scrollIntoView({ behavior: 'instant', block: 'center' });
-            openParaPanel(_paraIdx, _quotedText);
-          }
-          // Poll until injectParaWraps finishes (para-wrap elements appear)
-          var _pw = 0;
-          var _pwPoller = setInterval(function() {
-            _pw++;
-            var ready = document.querySelector('.para-wrap');
-            if (ready || _pw > 30) {
-              clearInterval(_pwPoller);
-              _doParaOpen();
-            }
-          }, 100);
-        }
-      }
-
       // CHARACTER TITLES — show after chapter nav
       var ctSection = document.getElementById('character-titles-section');
       if (ctSection && chapterData && workData) {
@@ -2349,6 +2313,28 @@
         await CharacterTitles.renderVotingSection(ctSection, chapterData.id, workData.id, currentSession);
         if (!ctSection.innerHTML.trim()) ctSection.style.display = 'none';
       }
+    })();
+
+    // AUTO-OPEN PARAGRAPH PANEL from notification (sessionStorage)
+    (function() {
+      var _storedPara = sessionStorage.getItem('ds_open_para');
+      if (!_storedPara) return;
+      sessionStorage.removeItem('ds_open_para');
+      var _paraIdx = parseInt(_storedPara);
+      if (isNaN(_paraIdx)) return;
+      var _attempts = 0;
+      var _interval = setInterval(function() {
+        _attempts++;
+        var _paraEl = document.querySelector('[data-para-idx="' + _paraIdx + '"]');
+        if (_paraEl) {
+          clearInterval(_interval);
+          var _qt = Array.from(_paraEl.childNodes).filter(function(n){return n.nodeType===3;}).map(function(n){return n.textContent;}).join('').trim();
+          _paraEl.scrollIntoView({ behavior: 'instant', block: 'center' });
+          if (typeof window.openParaPanel === 'function') window.openParaPanel(_paraIdx, _qt);
+        } else if (_attempts > 60) {
+          clearInterval(_interval);
+        }
+      }, 200);
     })();
 
     // ── ECHOES ────────────────────────────────────────────────────
