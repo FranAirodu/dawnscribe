@@ -437,6 +437,7 @@
             <button class="notif-tab active" id="notif-tab-novels" onclick="switchNotif('novels')"><i class="ti ti-book"></i> Novels</button>
             <button class="notif-tab" id="notif-tab-artists" onclick="switchNotif('artists')"><i class="ti ti-palette"></i> Artists</button>
             <button class="notif-tab" id="notif-tab-comments" onclick="switchNotif('comments')"><i class="ti ti-message-circle"></i> Comments</button>
+            <button class="notif-tab" id="notif-tab-activity" onclick="switchNotif('activity')"><i class="ti ti-bell-ringing"></i> Activity</button>
           </div>
           <div class="notif-panel active" id="notif-novels">
             <div class="notif-feed" id="notif-feed-novels"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
@@ -457,6 +458,13 @@
             <div class="notif-footer">
               <button class="mark-read-btn" onclick="markAllRead('comments')"><i class="ti ti-checks"></i> Mark all as read</button>
               <a class="view-all-notif" href="notifications.html#comments">View all <i class="ti ti-arrow-right"></i></a>
+            </div>
+          </div>
+          <div class="notif-panel" id="notif-activity">
+            <div class="notif-feed" id="notif-feed-activity"><div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
+            <div class="notif-footer">
+              <button class="mark-read-btn" onclick="markAllRead('activity')"><i class="ti ti-checks"></i> Mark all as read</button>
+              <a class="view-all-notif" href="notifications.html#activity">View all <i class="ti ti-arrow-right"></i></a>
             </div>
           </div>
         </div>
@@ -844,6 +852,27 @@
           .eq('type','artwork').in('author_id',followedIds)
           .order('created_at',{ascending:false}).limit(8);
         artistNotifs = artRes.data||[];
+        // Also include collab artworks where the artist is someone we follow
+        try {
+          var collabArtRes2 = await db.from('artwork_collabs')
+            .select('artwork_id, artist_id').in('artist_id', followedIds).eq('status','approved');
+          var collabArtistMap2 = {};
+          (collabArtRes2.data||[]).forEach(function(r){ collabArtistMap2[r.artwork_id] = r.artist_id; });
+          var collabArtIds2 = [...new Set((collabArtRes2.data||[]).map(function(r){ return r.artwork_id; }))];
+          if(collabArtIds2.length){
+            var collabWorksRes2 = await db.from('works')
+              .select('id,title,type,created_at,author_id,cover_url').eq('type','artwork').in('id',collabArtIds2);
+            var existingIds2 = new Set(artistNotifs.map(function(w){ return w.id; }));
+            (collabWorksRes2.data||[]).forEach(function(w){
+              if(!existingIds2.has(w.id)){
+                w.author_id = collabArtistMap2[w.id] || w.author_id;
+                artistNotifs.push(w);
+              }
+            });
+          }
+        } catch(e){}
+        artistNotifs.sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+        artistNotifs = artistNotifs.slice(0,8);
       }
       // Fetch artist profiles separately
       if(artistNotifs.length){
@@ -949,7 +978,54 @@
       var unreadNovels=novelNotifs.filter(function(c){return !clearedN[c.id];}).length;
       var unreadArtists=artistNotifs.filter(function(w){return !clearedA[w.id];}).length;
       var unreadComments=commentNotifs.filter(function(c){return !clearedC[c.id];}).length;
-      var unreadCount=unreadNovels+unreadArtists+unreadComments;
+
+      // Activity: song approved/rejected notifications
+      var unreadActivity = 0;
+      try {
+        var actFeed = document.getElementById('notif-feed-activity');
+        var { data: actRows } = await db.from('notifications')
+          .select('id,type,message,work_id,created_at')
+          .eq('user_id', uid)
+          .in('type', ['song_approved','song_rejected'])
+          .order('created_at', { ascending: false })
+          .limit(8);
+        var clearedAct = getClearedIds('activity');
+        var unrAct = (actRows||[]).filter(function(n){ return !clearedAct[n.id]; });
+        unreadActivity = unrAct.length;
+        if (!unrAct.length) {
+          actFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No new activity.</div>';
+        } else {
+          actFeed.innerHTML = '';
+          unrAct.forEach(function(n) {
+            var isApproved = n.type === 'song_approved';
+            var iconColor = isApproved ? '#22c55e' : '#ef4444';
+            var item = document.createElement('div');
+            item.className = 'notif-item unread';
+            item.dataset.id = n.id;
+            item.style.cursor = n.work_id ? 'pointer' : 'default';
+            item.onclick = function() {
+              var map = getClearedIds('activity');
+              map[n.id] = true;
+              localStorage.setItem('ds_notif_cleared_activity', JSON.stringify(Object.keys(map)));
+              item.classList.remove('unread');
+              db.from('notifications').update({is_read:true}).eq('id',n.id);
+              if (n.work_id) window.location.href = 'story.html?id=' + n.work_id;
+            };
+            item.innerHTML =
+              '<div class="notif-cover" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;color:'+iconColor+';">'+
+                '<i class="ti '+(isApproved?'ti-music':'ti-music-off')+'"></i>'+
+              '</div>'+
+              '<div class="notif-body">'+
+                '<div class="notif-title" style="color:'+iconColor+';">'+(isApproved?'🎵 Song Approved':'🎵 Song Not Approved')+'</div>'+
+                '<div class="notif-text">'+esc((n.message||'').slice(0,80))+(n.message&&n.message.length>80?'...':'')+'</div>'+
+                '<div class="notif-time"><i class="ti ti-clock"></i> '+timeAgo(n.created_at)+'</div>'+
+              '</div><div class="notif-dot"></div>';
+            actFeed.appendChild(item);
+          });
+        }
+      } catch(e) {}
+
+      var unreadCount=unreadNovels+unreadArtists+unreadComments+unreadActivity;
       var notifBadge=document.querySelector('.notif-badge');
       if(unreadCount>0){notifBadge.textContent=Math.min(unreadCount,99);notifBadge.style.display='flex';}
       else{notifBadge.style.display='none';}
@@ -957,6 +1033,7 @@
       setTabBadge('notif-tab-novels',unreadNovels);
       setTabBadge('notif-tab-artists',unreadArtists);
       setTabBadge('notif-tab-comments',unreadComments);
+      setTabBadge('notif-tab-activity',unreadActivity);
     }
 
     function markAllRead(tab) {
@@ -1406,11 +1483,34 @@
         var fuIds = (fuRes.data||[]).map(function(r){return r.following_id;});
         if(fuIds.length){
           var artRes = await db.from('works')
-            .select('id,title,cover_url,author_id').eq('type','artwork').in('author_id',fuIds)
+            .select('id,title,cover_url,author_id,created_at').eq('type','artwork').in('author_id',fuIds)
             .order('created_at',{ascending:false}).limit(30);
+          var r1Items = artRes.data||[];
+          // Also include collab artworks where the artist is someone we follow
+          try {
+            var collabArtRes = await db.from('artwork_collabs')
+              .select('artwork_id, artist_id').in('artist_id', fuIds).eq('status','approved');
+            var collabArtIds = [...new Set((collabArtRes.data||[]).map(function(r){ return r.artwork_id; }))];
+            // Map artist_id per artwork for credit
+            var collabArtistMap = {};
+            (collabArtRes.data||[]).forEach(function(r){ collabArtistMap[r.artwork_id] = r.artist_id; });
+            if(collabArtIds.length){
+              var collabWorksRes = await db.from('works')
+                .select('id,title,cover_url,author_id,created_at').eq('type','artwork').in('id',collabArtIds);
+              var existingIds = new Set(r1Items.map(function(w){ return w.id; }));
+              (collabWorksRes.data||[]).forEach(function(w){
+                if(!existingIds.has(w.id)){
+                  // Override author_id with the actual artist for credit display
+                  w.author_id = collabArtistMap[w.id] || w.author_id;
+                  r1Items.push(w);
+                }
+              });
+            }
+          } catch(e){}
+          r1Items.sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
           var r1ProfMap={};
-          if((artRes.data||[]).length){var r1AIds=[...new Set((artRes.data).map(function(w){return w.author_id;}).filter(Boolean))];if(r1AIds.length){var {data:r1Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r1AIds);(r1Profs||[]).forEach(function(p){r1ProfMap[p.id]=p;});}}
-          renderCoverRow(row1track, artRes.data||[], function(w){
+          if(r1Items.length){var r1AIds=[...new Set(r1Items.map(function(w){return w.author_id;}).filter(Boolean))];if(r1AIds.length){var {data:r1Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r1AIds);(r1Profs||[]).forEach(function(p){r1ProfMap[p.id]=p;});}}
+          renderCoverRow(row1track, r1Items, function(w){
             var p1=r1ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p1?(p1.display_name||p1.username||null):null, authorUsername:p1?p1.username:null, isCollab:!!collabWorkIds.has(w.id) };
           });
         } else {
@@ -1449,12 +1549,12 @@
 
       // Row 5: Newest artwork (works + approved story_collabs fan art)
       var row5track = document.getElementById('track-5');
-      var newArtRes = await db.from('works').select('id,title,cover_url,author_id')
+      var newArtRes = await db.from('works').select('id,title,cover_url,author_id,created_at')
         .eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(30);
       var r5ProfMap={};if((newArtRes.data||[]).length){var r5AIds=[...new Set(newArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r5AIds.length){var {data:r5Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r5AIds);(r5Profs||[]).forEach(function(p){r5ProfMap[p.id]=p;});}}
       // Also fetch approved fan art from story_collabs
       var r5Items = (newArtRes.data||[]).map(function(w){
-        var p5=r5ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p5?(p5.display_name||p5.username||null):null, authorUsername:p5?p5.username:null, isCollab:!!collabWorkIds.has(w.id) };
+        var p5=r5ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p5?(p5.display_name||p5.username||null):null, authorUsername:p5?p5.username:null, isCollab:!!collabWorkIds.has(w.id), created_at:w.created_at };
       });
       try {
         var scArtRes = await db.from('story_collabs').select('id,image_url,description,artist_id,work_id,created_at').eq('status','approved').order('created_at',{ascending:false}).limit(20);
@@ -1464,10 +1564,12 @@
           if(scArtistIds.length){var {data:scArtProfs}=await db.from('profiles').select('id,username,display_name').in('id',scArtistIds);(scArtProfs||[]).forEach(function(p){scArtistMap[p.id]=p;});}
           (scArtRes.data||[]).forEach(function(r){
             var pa=scArtistMap[r.artist_id]||null;
-            r5Items.push({ id:'sc-'+r.id, title:r.description||'Fan Art', cover:r.image_url, href:'story.html?id='+r.work_id, authorName:pa?(pa.display_name||pa.username||null):null, authorUsername:pa?pa.username:null, isCollab:true });
+            r5Items.push({ id:'sc-'+r.id, title:r.description||'Fan Art', cover:r.image_url, href:'story.html?id='+r.work_id, authorName:pa?(pa.display_name||pa.username||null):null, authorUsername:pa?pa.username:null, isCollab:true, created_at:r.created_at });
           });
         }
       } catch(e){}
+      // Sort combined list newest-first before rendering
+      r5Items.sort(function(a,b){ return new Date(b.created_at||0) - new Date(a.created_at||0); });
       renderCoverRow(row5track, r5Items, function(w){ return w; });
     }
 
@@ -2085,7 +2187,7 @@
     }
     function switchNotif(tab) {
       document.querySelectorAll('.notif-tab').forEach(function(t, i) {
-        t.classList.toggle('active', ['novels','artists','comments'][i] === tab);
+        t.classList.toggle('active', ['novels','artists','comments','activity'][i] === tab);
       });
       document.querySelectorAll('.notif-panel').forEach(function(p) { p.classList.remove('active'); });
       document.getElementById('notif-' + tab).classList.add('active');

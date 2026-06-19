@@ -376,10 +376,10 @@
       </div>
       </div>
       <div class="header-actions">
-        <button id="follow-btn" class="visitor-only" onclick="toggleFollow()">
+        <button id="follow-btn" class="visitor-only" onclick="toggleFollow()" style="visibility:hidden;">
           <i class="ti ti-bell" id="follow-icon"></i><span id="follow-label">Follow</span>
         </button>
-        <button id="friend-btn" class="visitor-only" onclick="handleFriendBtn()">
+        <button id="friend-btn" class="visitor-only" onclick="handleFriendBtn()" style="visibility:hidden;">
           <i class="ti ti-user-plus" id="friend-icon"></i><span id="friend-label">Add Friend</span>
         </button>
         <a id="msg-btn" class="visitor-only" href="messages.html">
@@ -590,18 +590,18 @@
     }
 
     /* ── OWNER VISIBILITY ───────────────────────────────────────── */
-    async function setOwner(isOwner) {
+    async function setOwner(isOwner, currentSession, currentProfileData) {
       document.body.classList.toggle('is-owner', isOwner);
 
       // ── BLOCK SYSTEM ──────────────────────────────────────
       var blockBtn = document.getElementById('block-btn');
-      if (!isOwner && session) {
-        await dsBlock.load(session.user.id);
-        if (dsBlock.isBlockingMe(profileData.id)) {
+      if (!isOwner && currentSession) {
+        await dsBlock.load(currentSession.user.id);
+        if (dsBlock.isBlockingMe(currentProfileData.id)) {
           var main = document.getElementById('profile-tabs') || document.querySelector('.profile-main');
           if (main) main.innerHTML = '<div class="blocked-profile-wall"><i class="ti ti-ban"></i><h3>Content Unavailable</h3><p>You cannot view this profile.</p></div>';
         }
-        if (blockBtn) { blockBtn.style.display = 'inline-flex'; setBlockUI(dsBlock.isBlockedByMe(profileData.id)); }
+        if (blockBtn) { blockBtn.style.display = 'inline-flex'; setBlockUI(dsBlock.isBlockedByMe(currentProfileData.id)); }
       }
       function setBlockUI(blocked) {
         if (!blockBtn) return;
@@ -609,15 +609,15 @@
         document.getElementById('block-label').textContent = blocked ? 'Unblock' : 'Block';
       }
       window.toggleBlock = async function() {
-        if (!session || !profileData) return;
-        var isBlocked = dsBlock.isBlockedByMe(profileData.id);
+        if (!currentSession || !currentProfileData) return;
+        var isBlocked = dsBlock.isBlockedByMe(currentProfileData.id);
         if (isBlocked) {
-          await dsBlock.unblock(profileData.id); setBlockUI(false); showToast('User unblocked.','ti-check');
+          await dsBlock.unblock(currentProfileData.id); setBlockUI(false); showToast('User unblocked.','ti-check');
         } else {
           var modal = document.getElementById('block-modal'); modal.style.display = 'flex';
           document.getElementById('block-modal-confirm').onclick = async function() {
             modal.style.display = 'none';
-            await dsBlock.block(profileData.id); setBlockUI(true); showToast('User blocked.','ti-ban');
+            await dsBlock.block(currentProfileData.id); setBlockUI(true); showToast('User blocked.','ti-ban');
           };
         }
       };
@@ -650,9 +650,11 @@
         var sessionRes = await db.auth.getSession();
         var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
         if (!session) {
-          await new Promise(function(r){ setTimeout(r, 350); });
-          sessionRes = await db.auth.getSession();
-          session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+          for (var _r = 0; _r < 5 && !session; _r++) {
+            await new Promise(function(r){ setTimeout(r, 350); });
+            sessionRes = await db.auth.getSession();
+            session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+          }
         }
         var profileData = null;
         var resolvedUsername = viewingUser;
@@ -687,7 +689,7 @@
         if (profileData && profileData.id) { loadStats(profileData.id); }
         var isOwner = !!(session && profileData && session.user.id === profileData.id);
         if (isOwner) {
-          await setOwner(true);
+          await setOwner(true, session, profileData);
           renderAnnouncements(true);
           if (profileData && profileData.id) {
             loadWorks(profileData.id);
@@ -701,7 +703,7 @@
           var msgBtn = document.getElementById('msg-btn');
           if (msgBtn) { msgBtn.href = 'messages.html?to=' + uTarget; }
         } else {
-          await setOwner(false);
+          await setOwner(false, session, profileData);
           renderAnnouncements(false);
           if (profileData && profileData.id) {
             loadWorks(profileData.id);
@@ -710,15 +712,31 @@
             loadActivity(profileData.id);
             loadReadingList(profileData.id);
           }
+          if (!session) {
+            // Logged-out visitor — show Follow button in default state
+            var fb = document.getElementById('follow-btn');
+            if (fb) fb.style.visibility = 'visible';
+          }
           if (session && profileData && profileData.id) {
             currentProfileId = profileData.id;
+            // Apply cached follow state immediately (no flicker)
+            var followCacheKey = 'ds_following_' + session.user.id + '_' + profileData.id;
+            if (localStorage.getItem(followCacheKey) === '1') {
+              setFollowUI(true);
+            } else {
+              setFollowUI(false);
+            }
             var followCheck = await db.from('follows')
               .select('id')
               .eq('follower_id', session.user.id)
               .eq('following_id', profileData.id)
               .maybeSingle();
             if (followCheck && !followCheck.error && followCheck.data) {
+              localStorage.setItem(followCacheKey, '1');
               setFollowUI(true);
+            } else {
+              localStorage.removeItem(followCacheKey);
+              setFollowUI(false);
             }
             // Check friendship state
             checkFriendshipState(session.user.id, profileData.id);
@@ -735,7 +753,7 @@
       document.getElementById('display-handle').textContent = handle;
       if (data.bio) { document.getElementById('bio-text').textContent = data.bio; }
       if (data.location) { document.getElementById('info-location').textContent = data.location; document.getElementById('info-location').classList.remove('muted'); }
-      if (data.gender) { document.getElementById('info-gender').textContent = data.gender; document.getElementById('info-gender').classList.remove('muted'); }
+      if (data.gender) { document.getElementById('info-gender').textContent = data.gender.charAt(0).toUpperCase() + data.gender.slice(1); document.getElementById('info-gender').classList.remove('muted'); }
       if (data.role) { document.getElementById('info-role').textContent = data.role; }
       if (data.language) { document.getElementById('info-language').textContent = data.language; }
       if (data.created_at) { document.getElementById('info-joined').textContent = new Date(data.created_at).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}); }
@@ -1409,6 +1427,7 @@ function setFollowUI(following) {
     icon.className = 'ti ti-bell';
     label.textContent = 'Follow';
   }
+  btn.style.visibility = 'visible';
 }
 
 async function toggleFollow() {
@@ -1417,17 +1436,20 @@ async function toggleFollow() {
     var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
     if (!session) { showToast('Please log in to follow', 'ti-alert-triangle'); return; }
     if (!currentProfileId) { return; }
+    var followCacheKey = 'ds_following_' + session.user.id + '_' + currentProfileId;
     if (isFollowing) {
       await db.from('follows')
         .delete()
         .eq('follower_id', session.user.id)
         .eq('following_id', currentProfileId);
+      localStorage.removeItem(followCacheKey);
       setFollowUI(false);
       showToast('Unfollowed', 'ti-bell-off');
       loadStats(currentProfileId);
     } else {
       await db.from('follows')
         .insert({ follower_id: session.user.id, following_id: currentProfileId });
+      localStorage.setItem(followCacheKey, '1');
       setFollowUI(true);
       showToast('Now following!', 'ti-bell');
       loadStats(currentProfileId);
@@ -1447,6 +1469,7 @@ async function checkFriendshipState(myId, theirId) {
     .select('id, requester_id, recipient_id, status')
     .or('and(requester_id.eq.' + myId + ',recipient_id.eq.' + theirId + '),and(requester_id.eq.' + theirId + ',recipient_id.eq.' + myId + ')')
     .maybeSingle();
+  btn.style.visibility = 'visible';
   btn.style.display = 'flex';
   if (!data) {
     _friendshipId = null; _friendshipStatus = null;
@@ -1482,6 +1505,7 @@ async function handleFriendBtn() {
   if (!btn) return;
 
   if (_friendshipStatus === null) {
+    if (_friendshipId) return; // already exists, don't re-insert
     btn.style.opacity = '0.5';
     var { error } = await db.from('friendships').insert({ requester_id: session.user.id, recipient_id: currentProfileId });
     btn.style.opacity = '1';
@@ -1680,7 +1704,7 @@ async function handleFriendBtn() {
       if (name)     { document.getElementById('display-name').textContent = name; }
       if (location) { document.getElementById('info-location').textContent = location; }
       if (language) { document.getElementById('info-language').textContent = language; }
-      if (gender)   { document.getElementById('info-gender').textContent = gender; document.getElementById('info-gender').classList.remove('muted'); }
+      if (gender)   { document.getElementById('info-gender').textContent = gender.charAt(0).toUpperCase() + gender.slice(1); document.getElementById('info-gender').classList.remove('muted'); }
       if (role)     { document.getElementById('info-role').textContent = role; }
       var handleEl = document.getElementById('display-handle');
       var currentHandle = handleEl.textContent.split(' · ')[0];

@@ -2297,28 +2297,27 @@
       }
 
       // AUTHOR'S NOTE — top note shows above the content for everyone.
-      // Bottom note shows below the content for the owner (full view, no
-      // pagination) and is otherwise handled per-page in renderPage().
+      // Bottom note and poll show in the full-view block below (owner + already-read).
       renderAuthorNote('top', chapterData.author_note_top);
-      if (isOwner) renderAuthorNote('bottom', chapterData.author_note_bottom);
 
-      // POLLS — load and render. Top poll always shows; bottom poll only
-      // shows on the last page for non-owners (handled in renderPage),
-      // and immediately for the owner (full view, no pagination).
+      // POLLS — top poll always shows; bottom handled in the full-view block below.
       await loadChapterPolls();
       renderPoll('top');
-      if (isOwner) renderPoll('bottom');
 
-      // Paginate — or show full content for owner (no timer, no pages)
-      if (isOwner) {
+      // Paginate — or show full content for owner/already-read (no timer, no pages)
+      if (isOwner || isChapterRead()) {
         document.getElementById('page-content').innerHTML = chapterData.content || '';
         stripInlineColors(document.getElementById('page-content'));
-        // Tag paragraphs with absolute indices for owner view
-        var ownerParas = document.getElementById('page-content').querySelectorAll('p, h1, h2, h3, blockquote');
-        ownerParas.forEach(function(p, i){ p.setAttribute('data-para-idx', i); });
+        var fullParas = document.getElementById('page-content').querySelectorAll('p, h1, h2, h3, blockquote');
+        fullParas.forEach(function(p, i){ p.setAttribute('data-para-idx', i); });
         injectParaWraps();
+        echoRenderPage();
         document.getElementById('timer-bar-wrap').style.display = 'none';
         document.getElementById('page-nav').style.display = 'none';
+        document.getElementById('page-info').textContent = '';
+        // Bottom author's note and poll always visible in full view
+        renderAuthorNote('bottom', chapterData.author_note_bottom);
+        renderPoll('bottom');
       } else {
         pages = paginateContent(chapterData.content || '');
         var savedPage = parseInt(localStorage.getItem('ds_page_' + chapterData.id)) || 0;
