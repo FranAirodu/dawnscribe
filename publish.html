@@ -285,6 +285,24 @@
     .art-tag-input{border:none;outline:none;background:transparent;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;min-width:120px;flex:1;}
     @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 
+    /* FANDOM TAGS */
+    .fandom-input-wrap{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:8px 12px;min-height:46px;cursor:text;transition:border-color 0.2s;position:relative;}
+    .fandom-input-wrap:focus-within{border-color:var(--accent);}
+    .fandom-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(244,114,182,0.12);border:1px solid rgba(244,114,182,0.3);color:#f472b6;font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;}
+    .fandom-pill button{background:none;border:none;color:#f472b6;cursor:pointer;font-size:14px;padding:0;line-height:1;opacity:0.7;}
+    .fandom-pill button:hover{opacity:1;}
+    .fandom-input{border:none;outline:none;background:transparent;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;min-width:160px;flex:1;}
+    .fandom-suggest-wrap{position:relative;}
+    .fandom-suggest-dropdown{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--bg2);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,0.4);max-height:220px;overflow-y:auto;z-index:50;display:none;}
+    .fandom-suggest-dropdown.open{display:block;}
+    .fandom-suggest-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 14px;font-size:13px;color:var(--text2);cursor:pointer;transition:background 0.15s;}
+    .fandom-suggest-item:hover{background:var(--bg3);color:var(--text);}
+    .fandom-suggest-item .use-count{font-size:11px;color:var(--text3);}
+    .fandom-suggest-create{display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:13px;color:#f472b6;font-weight:700;cursor:pointer;border-top:1px solid var(--border);transition:background 0.15s;}
+    .fandom-suggest-create:hover{background:var(--bg3);}
+    .fandom-anime-note{font-size:11px;color:var(--text3);background:rgba(244,114,182,0.06);border:1px solid rgba(244,114,182,0.2);border-radius:8px;padding:9px 12px;margin-top:10px;display:flex;align-items:flex-start;gap:7px;line-height:1.5;}
+    .fandom-anime-note i{color:#f472b6;flex-shrink:0;margin-top:1px;}
+
     /* AI ART DISCLOSURE */
     .ai-art-btn{flex:1;display:flex;align-items:center;gap:8px;padding:11px 14px;background:var(--bg3);border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;font-size:13px;font-weight:700;color:var(--text2);user-select:none;}
     .ai-art-btn:hover{border-color:var(--text3);}
@@ -484,6 +502,29 @@
           <div class="type-card" id="type-fanfic" onclick="selectType('fanfic')"><i class="ti ti-heart"></i><div class="type-label">Fanfiction</div><div class="type-sub">Based on existing IP</div></div>
         </div>
         <div class="fanfic-notice" id="fanfic-notice"><i class="ti ti-alert-triangle"></i> Fanfiction works are excluded from avatar cosmetics due to copyright restrictions.</div>
+        </div>
+      </div>
+
+      <!-- STEP 4b: FANDOM TAGS (fanfiction only) -->
+      <div class="card" id="card-fandom-tags" style="display:none;">
+        <div class="card-header" onclick="toggleCard('card-fandom-tags')">
+          <div class="card-header-left">
+            <div class="step-badge"><i class="ti ti-heart"></i></div>
+            <div class="card-header-title"><i class="ti ti-tags"></i> Fandom Tags</div>
+            <span class="card-done-label" id="done-card-fandom-tags" style="display:none;">✓ Done</span>
+          </div>
+          <i class="ti ti-chevron-down card-chevron"></i>
+        </div>
+        <div class="card-body">
+        <div class="card-desc">What fandom(s) is this for? Search existing tags first — if yours isn't there, you can add it. Crossovers can use multiple tags.</div>
+        <div class="fandom-suggest-wrap">
+          <div class="fandom-input-wrap" id="fandom-input-wrap" onclick="document.getElementById('fandom-input').focus()">
+            <input class="fandom-input" id="fandom-input" type="text" placeholder="Search or add a fandom…" maxlength="80" oninput="onFandomInput(this.value)" onkeydown="onFandomKeydown(event)" onfocus="onFandomInput(this.value)"/>
+          </div>
+          <div class="fandom-suggest-dropdown" id="fandom-suggest-dropdown"></div>
+        </div>
+        <div class="fandom-anime-note"><i class="ti ti-info-circle"></i> For anime/manga fandoms, please use the format <strong>English Name / Japanese Name</strong> — e.g. <em>My Hero Academia / Boku no Hīrō Akademia</em>. This keeps the tag list consistent and searchable for everyone.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;"><span id="fandom-tag-count">0</span> fandom tag(s) added</div>
         </div>
       </div>
 
@@ -814,6 +855,120 @@
         e.target.value = '';
       }
     }
+
+    // ── FANDOM TAGS (fanfiction) ─────────────────────────────────────
+    var fandomTags = [];
+    var fandomSearchTimer = null;
+
+    function renderFandomTags() {
+      var wrap = document.getElementById('fandom-input-wrap');
+      if (!wrap) return;
+      wrap.querySelectorAll('.fandom-pill').forEach(function(p){ p.remove(); });
+      var inputEl = document.getElementById('fandom-input');
+      fandomTags.forEach(function(tag) {
+        var pill = document.createElement('span');
+        pill.className = 'fandom-pill';
+        pill.innerHTML = escHtml(tag) + '<button onclick="removeFandomTag(\'' + escHtml(tag).replace(/'/g,"\\'") + '\')">×</button>';
+        wrap.insertBefore(pill, inputEl);
+      });
+      var countEl = document.getElementById('fandom-tag-count');
+      if (countEl) countEl.textContent = fandomTags.length;
+      updateChecklist();
+    }
+
+    function addFandomTag(raw) {
+      var tag = raw.trim().replace(/\s+/g, ' ');
+      if (!tag || fandomTags.length >= 10) return;
+      // Case-insensitive duplicate check
+      var exists = fandomTags.some(function(t){ return t.toLowerCase() === tag.toLowerCase(); });
+      if (exists) return;
+      fandomTags.push(tag);
+      renderFandomTags();
+      closeFandomDropdown();
+    }
+
+    function removeFandomTag(tag) {
+      fandomTags = fandomTags.filter(function(t){ return t !== tag; });
+      renderFandomTags();
+    }
+
+    function closeFandomDropdown() {
+      var dd = document.getElementById('fandom-suggest-dropdown');
+      if (dd) { dd.classList.remove('open'); dd.innerHTML = ''; }
+    }
+
+    async function onFandomInput(value) {
+      clearTimeout(fandomSearchTimer);
+      var q = value.trim();
+      var dd = document.getElementById('fandom-suggest-dropdown');
+      if (!dd) return;
+      fandomSearchTimer = setTimeout(async function() {
+        if (!q) { closeFandomDropdown(); return; }
+        try {
+          var { data } = await db.from('fandom_tags')
+            .select('id,name,use_count')
+            .ilike('name', '%' + q + '%')
+            .order('use_count', { ascending: false })
+            .limit(8);
+          var results = (data || []).filter(function(r) {
+            return !fandomTags.some(function(t){ return t.toLowerCase() === r.name.toLowerCase(); });
+          });
+          var exactMatch = (data || []).some(function(r){ return r.name.toLowerCase() === q.toLowerCase(); });
+          var html = '';
+          results.forEach(function(r) {
+            html += '<div class="fandom-suggest-item" onclick="addFandomTag(' + "'" + escHtml(r.name).replace(/'/g,"\\'") + "'" + ')">'
+              + '<span>' + escHtml(r.name) + '</span>'
+              + '<span class="use-count">' + r.use_count + ' work' + (r.use_count===1?'':'s') + '</span>'
+              + '</div>';
+          });
+          if (!exactMatch) {
+            html += '<div class="fandom-suggest-create" onclick="addFandomTag(' + "'" + escHtml(q).replace(/'/g,"\\'") + "'" + ')">'
+              + '<i class="ti ti-plus"></i> Add "' + escHtml(q) + '" as a new fandom tag</div>';
+          }
+          if (!html) { closeFandomDropdown(); return; }
+          dd.innerHTML = html;
+          dd.classList.add('open');
+        } catch(e) { closeFandomDropdown(); }
+      }, 250);
+    }
+
+    function onFandomKeydown(e) {
+      var input = e.target;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (input.value.trim()) { addFandomTag(input.value); input.value = ''; }
+      } else if (e.key === 'Backspace' && input.value === '' && fandomTags.length) {
+        fandomTags.pop();
+        renderFandomTags();
+      } else if (e.key === 'Escape') {
+        closeFandomDropdown();
+      }
+    }
+
+    document.addEventListener('click', function(e) {
+      var wrap = document.querySelector('.fandom-suggest-wrap');
+      if (wrap && !wrap.contains(e.target)) closeFandomDropdown();
+    });
+
+    // Ensure any newly-created fandom tags exist in the shared table,
+    // and bump use_count for ones already there. Called at publish time.
+    async function syncFandomTags() {
+      if (!fandomTags.length) return;
+      for (var i = 0; i < fandomTags.length; i++) {
+        var tagName = fandomTags[i];
+        try {
+          var { data: existing } = await db.from('fandom_tags')
+            .select('id,use_count').ilike('name', tagName).maybeSingle();
+          if (existing) {
+            await db.from('fandom_tags').update({ use_count: (existing.use_count||1) + 1 }).eq('id', existing.id);
+          } else {
+            var sessionRes = await db.auth.getSession();
+            var uid = sessionRes && sessionRes.data && sessionRes.data.session ? sessionRes.data.session.user.id : null;
+            await db.from('fandom_tags').insert({ name: tagName, created_by: uid, use_count: 1 });
+          }
+        } catch(e) { /* non-fatal — don't block publishing over tag sync */ }
+      }
+    }
     function setArtworkMode() {
       isArtworkMode = true;
 
@@ -1076,6 +1231,9 @@
       document.getElementById('type-original').classList.toggle('selected', !isFanfic);
       document.getElementById('type-fanfic').classList.toggle('selected', isFanfic);
       document.getElementById('fanfic-notice').classList.toggle('show', isFanfic);
+      var fandomCard = document.getElementById('card-fandom-tags');
+      if (fandomCard) fandomCard.style.display = isFanfic ? '' : 'none';
+      if (!isFanfic) { fandomTags = []; renderFandomTags(); }
     }
 
     // ── CONTENT RATING ─────────────────────────────────────────────
@@ -1969,6 +2127,9 @@
           insertPayload.is_fanfiction = isFanfic;
           insertPayload.status = document.getElementById('field-status').value;
           insertPayload.language = document.getElementById('field-language').value;
+          if (isFanfic && fandomTags.length) {
+            insertPayload.fandom_tags = JSON.stringify(fandomTags);
+          }
         }
 
         var workResult = await db.from('works').insert(insertPayload).select().single();
@@ -1978,6 +2139,11 @@
           throw workResult.error;
         }
         var workId = workResult.data.id;
+
+        // Sync fandom tags into the shared lookup table (non-blocking on failure)
+        if (isFanfic && fandomTags.length) {
+          await syncFandomTags();
+        }
 
         // Insert co-authors
         if (coauthors.length) {
