@@ -202,6 +202,7 @@
   // Per-tab data stores for load-more
   var allData = { novels: [], artists: [], comments: [], activity: [] };
   var shown   = { novels: 0, artists: 0, comments: 0, activity: 0 };
+  var myPrefs = { notif_follow: true, notif_chapter: true, notif_comment: true, notif_message: true, notif_announce: false };
   var BATCH   = 30;
 
   // ── UTILS ────────────────────────────────────────────────────────
@@ -355,16 +356,33 @@
     card.className = 'notif-card' + (isUnread ? ' unread' : '');
     card.dataset.id = n.id;
     card.dataset.tab = 'activity';
+    var isBlast = n.type === 'blast';
     card.addEventListener('click', function(){
       // Mark as cleared in localStorage
       var map = getClearedIds('activity');
       map[n.id] = true;
       setClearedIds('activity', map);
       card.classList.remove('unread');
-      // Mark as read in DB
-      db.from('notifications').update({is_read:true}).eq('id',n.id);
-      if (n.work_id) window.location.href = 'story.html?id=' + n.work_id;
+      if (isBlast) {
+        // Shared broadcast row (user_id is null) — clear locally only, never mark is_read globally
+      } else {
+        db.from('notifications').update({is_read:true}).eq('id',n.id);
+        if (n.work_id) window.location.href = 'story.html?id=' + n.work_id;
+      }
     });
+    if (isBlast) {
+      card.innerHTML =
+        '<div class="notif-cover" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:22px;color:#2dd4bf;">'+
+          '<i class="ti ti-speakerphone"></i>'+
+        '</div>'+
+        '<div class="notif-body">'+
+          '<div class="notif-card-title" style="color:#2dd4bf;">📣 Announcement</div>'+
+          '<div class="notif-card-text">'+esc(n.message||'')+'</div>'+
+          '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(n.created_at)+'</div>'+
+        '</div>'+
+        (isUnread ? '<div class="notif-unread-dot"></div>' : '');
+      return card;
+    }
     var isApproved = n.type === 'song_approved';
     var iconColor = isApproved ? '#22c55e' : '#ef4444';
     var icon = isApproved ? 'ti-music' : 'ti-music-off';
@@ -430,12 +448,17 @@
       loadComments(uid),
       loadActivity(uid)
     ]);
-    ]);
   }
 
   async function loadNovels(uid){
     var feed = document.getElementById('feed-novels');
     try {
+      if (!myPrefs.notif_chapter) {
+        allData.novels = [];
+        feed.innerHTML = '<div class="empty-state"><i class="ti ti-bell-off"></i><p>New chapter notifications are turned off.</p></div>';
+        setTabBadge('novels', 0);
+        return;
+      }
       var fwRes = await db.from('work_follows').select('work_id').eq('user_id',uid);
       var workIds = (fwRes.data||[]).map(function(r){return r.work_id;});
       if(!workIds.length){ allData.novels=[]; renderBatch('novels',false); return; }
@@ -519,10 +542,37 @@
           friendsFeed.appendChild(el);
         });
       }
+      // New followers, respecting preference
+      var unreadFollowsCount = 0;
+      if (myPrefs.notif_follow) {
+        var folRes = await db.from('notifications').select('id,from_user_id,message,created_at')
+          .eq('user_id', uid).eq('type','new_follower').eq('is_read', false)
+          .order('created_at',{ascending:false}).limit(20);
+        var folRows = folRes.data||[];
+        unreadFollowsCount = folRows.length;
+        if(folRows.length){
+          var folIds = folRows.map(function(r){return r.from_user_id;}).filter(Boolean);
+          var {data:folProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',folIds);
+          var folMap={};(folProfs||[]).forEach(function(p){folMap[p.id]=p;});
+          folRows.forEach(function(fl){
+            var p=folMap[fl.from_user_id]||{}; var name=p.display_name||p.username||'Someone';
+            var avH=p.avatar_url?'<img src="'+esc(p.avatar_url)+'"/>':esc(name.charAt(0).toUpperCase());
+            var el=document.createElement('div'); el.className='fr-card';
+            el.style.cursor='pointer';
+            el.innerHTML='<div class="fr-avatar">'+avH+'</div>'
+              +'<div><div class="fr-name">'+esc(name)+'</div><div class="fr-sub">Started following you · '+timeAgo(fl.created_at)+'</div></div>';
+            el.onclick = function(){
+              db.from('notifications').update({is_read:true}).eq('id',fl.id);
+              if(p.username) window.location.href='profile.html?u='+p.username;
+            };
+            friendsFeed.appendChild(el);
+          });
+        }
+      }
       // Followed artists' new artwork
       var fuRes = await db.from('follows').select('following_id').eq('follower_id',uid);
       var followedIds = (fuRes.data||[]).map(function(r){return r.following_id;});
-      if(!followedIds.length){ allData.artists=[]; renderBatch('artists',false); return; }
+      if(!followedIds.length){ allData.artists=[]; renderBatch('artists',false); setTabBadge('artists', frRows.length + unreadFollowsCount); return; }
       var artRes = await db.from('works').select('id,title,type,created_at,author_id')
         .eq('type','artwork').in('author_id',followedIds).order('created_at',{ascending:false}).limit(30);
       var rows = artRes.data||[];
@@ -540,13 +590,19 @@
       });
       allData.artists = rows;
       renderBatch('artists', false);
-      setTabBadge('artists', rows.filter(function(w){return !cleared[w.id];}).length + frRows.length);
+      setTabBadge('artists', rows.filter(function(w){return !cleared[w.id];}).length + frRows.length + unreadFollowsCount);
     } catch(e){ feed.innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>'; }
   }
 
   async function loadComments(uid){
     var feed = document.getElementById('feed-comments');
     try {
+      if (!myPrefs.notif_comment) {
+        allData.comments = [];
+        feed.innerHTML = '<div class="empty-state"><i class="ti ti-bell-off"></i><p>Comment notifications are turned off.</p></div>';
+        setTabBadge('comments', 0);
+        return;
+      }
       var myWorks = await db.from('works').select('id,title,type').eq('author_id',uid);
       var myRows = myWorks.data||[];
       var myNovelIds = myRows.filter(function(w){return w.type!=='artwork';}).map(function(w){return w.id;});
@@ -610,6 +666,17 @@
         .order('created_at', { ascending: false })
         .limit(50);
       var items = rows || [];
+
+      if (myPrefs.notif_announce) {
+        var { data: blastRows } = await db.from('notifications')
+          .select('id,type,message,created_at')
+          .is('user_id', null)
+          .eq('type', 'blast')
+          .order('created_at', { ascending: false })
+          .limit(50);
+        items = items.concat(blastRows || []);
+      }
+
       var cleared = getClearedIds('activity');
       items.sort(function(a,b){
         var aU = !cleared[a.id], bU = !cleared[b.id];
@@ -623,6 +690,8 @@
       feed.innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>';
     }
   }
+
+  function setTabBadge(tab, count) {
     var btn = document.getElementById('tab-btn-'+tab);
     if(!btn) return;
     var ex = btn.querySelector('.tab-badge'); if(ex) ex.remove();
@@ -647,6 +716,16 @@
       return;
     }
     var uid = session.user.id;
+    try {
+      var { data: prefRow } = await db.from('profiles').select('notif_follow,notif_chapter,notif_comment,notif_message,notif_announce').eq('id', uid).maybeSingle();
+      if (prefRow) {
+        if (prefRow.notif_follow   !== null && prefRow.notif_follow   !== undefined) myPrefs.notif_follow   = prefRow.notif_follow;
+        if (prefRow.notif_chapter  !== null && prefRow.notif_chapter  !== undefined) myPrefs.notif_chapter  = prefRow.notif_chapter;
+        if (prefRow.notif_comment  !== null && prefRow.notif_comment  !== undefined) myPrefs.notif_comment  = prefRow.notif_comment;
+        if (prefRow.notif_message  !== null && prefRow.notif_message  !== undefined) myPrefs.notif_message  = prefRow.notif_message;
+        if (prefRow.notif_announce !== null && prefRow.notif_announce !== undefined) myPrefs.notif_announce = prefRow.notif_announce;
+      }
+    } catch(e) {}
     await loadAll(uid);
   })();
 </script>

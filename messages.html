@@ -702,6 +702,19 @@
     var btn = document.getElementById('compose-send');
     btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Sending…';
 
+    // Respect recipient's DM privacy setting: if they only allow DMs from people
+    // they follow, check whether they follow the sender before allowing a new conversation.
+    var dmCheck = await db.from('profiles').select('privacy_dm').eq('id', selectedNewUser.id).maybeSingle();
+    var allowsAnyone = !dmCheck.data || dmCheck.data.privacy_dm !== false;
+    if (!allowsAnyone) {
+      var followCheck = await db.from('follows').select('id').eq('follower_id', selectedNewUser.id).eq('following_id', currentSession.user.id).maybeSingle();
+      if (!followCheck.data) {
+        showToast('This user only accepts messages from people they follow', 'ti-lock');
+        btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Send';
+        return;
+      }
+    }
+
     // Get or create conversation
     var rpc = await db.rpc('get_or_create_conversation', { user_a: currentSession.user.id, user_b: selectedNewUser.id });
     if(rpc.error){ showToast('Error: '+rpc.error.message,'ti-x'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Send'; return; }

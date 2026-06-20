@@ -423,13 +423,6 @@
           </div>
           <div class="toggle-switch on" id="ts-privacy_dm"></div>
         </div>
-        <div class="toggle-row active" id="tr-privacy-history" onclick="toggleSetting('privacy_history')">
-          <div class="toggle-row-left">
-            <div class="toggle-icon gold"><i class="ti ti-history"></i></div>
-            <div><div class="toggle-label">Track Reading History</div><div class="toggle-sub">Save your reading progress and history</div></div>
-          </div>
-          <div class="toggle-switch on" id="ts-privacy_history"></div>
-        </div>
 
         <div class="section-divider"></div>
         <div class="field-label" style="margin-bottom:12px;">Blocked Users</div>
@@ -593,7 +586,7 @@
       reading_fontsize: 16, reading_lineheight: 18, reading_width: 650,
       autoplay: false, spoilers: false,
       notif_follow: true, notif_chapter: true, notif_comment: true, notif_message: true, notif_announce: false,
-      privacy_readinglist: true, privacy_activity: true, privacy_dm: true, privacy_history: true,
+      privacy_readinglist: true, privacy_activity: true, privacy_dm: true,
       lang_original: true, pref_language: 'any'
     };
 
@@ -1079,7 +1072,7 @@
         notif_follow: settings.notif_follow, notif_chapter: settings.notif_chapter,
         notif_comment: settings.notif_comment, notif_message: settings.notif_message, notif_announce: settings.notif_announce,
         privacy_readinglist: settings.privacy_readinglist, privacy_activity: settings.privacy_activity,
-        privacy_dm: settings.privacy_dm, privacy_history: settings.privacy_history,
+        privacy_dm: settings.privacy_dm,
         lang_original: settings.lang_original, pref_language: settings.pref_language
       }));
 
@@ -1090,7 +1083,15 @@
           settings_theme: settings.theme,
           settings_filter_safe: settings.filter_safe,
           settings_filter_gore: settings.filter_gore,
-          settings_filter_erotica: settings.filter_erotica
+          settings_filter_erotica: settings.filter_erotica,
+          privacy_readinglist: settings.privacy_readinglist,
+          privacy_activity: settings.privacy_activity,
+          privacy_dm: settings.privacy_dm,
+          notif_follow: settings.notif_follow,
+          notif_chapter: settings.notif_chapter,
+          notif_comment: settings.notif_comment,
+          notif_message: settings.notif_message,
+          notif_announce: settings.notif_announce
         };
         // Also save profile fields if changed
         var dn = document.getElementById('field-display-name').value.trim();
@@ -1128,7 +1129,7 @@
       if (reading) { try { var r = JSON.parse(reading); Object.assign(settings, { reading_bg: r.bg||'default', reading_font: r.font||'lato', reading_font_override: !!r.font_override, reading_fontsize: r.fontsize||16, reading_lineheight: r.lineheight||18, reading_width: r.width||650 }); } catch(e){} }
 
       var misc = localStorage.getItem('ds_settings_misc');
-      if (misc) { try { var m = JSON.parse(misc); ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce','privacy_readinglist','privacy_activity','privacy_dm','privacy_history','lang_original'].forEach(function(k){ if (m[k]!==undefined) settings[k]=m[k]; }); if (m.pref_language) settings.pref_language=m.pref_language; } catch(e){} }
+      if (misc) { try { var m = JSON.parse(misc); ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce','privacy_readinglist','privacy_activity','privacy_dm','lang_original'].forEach(function(k){ if (m[k]!==undefined) settings[k]=m[k]; }); if (m.pref_language) settings.pref_language=m.pref_language; } catch(e){} }
     }
 
     function applyAllSettings() {
@@ -1153,7 +1154,7 @@
 
       // Toggles
       ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce',
-       'privacy_readinglist','privacy_activity','privacy_dm','privacy_history','lang_original'].forEach(function(k) {
+       'privacy_readinglist','privacy_activity','privacy_dm','lang_original'].forEach(function(k) {
         var ts = document.getElementById('ts-' + k);
         var tr = document.getElementById('tr-' + k);
         if (ts) ts.classList.toggle('on', !!settings[k]);
@@ -1187,7 +1188,7 @@
         currentSession = session;
 
         var res = await db.from('profiles')
-          .select('display_name,username,bio,location,gender,role')
+          .select('display_name,username,bio,location,gender,role,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce')
           .eq('id', session.user.id)
           .maybeSingle();
 
@@ -1196,6 +1197,16 @@
           if (res.data.settings_filter_safe    !== null && res.data.settings_filter_safe    !== undefined) settings.filter_safe    = res.data.settings_filter_safe;
           if (res.data.settings_filter_gore    !== null && res.data.settings_filter_gore    !== undefined) settings.filter_gore    = res.data.settings_filter_gore;
           if (res.data.settings_filter_erotica !== null && res.data.settings_filter_erotica !== undefined) settings.filter_erotica = res.data.settings_filter_erotica;
+          // Privacy fields: DB is the source of truth across devices, overriding any stale localStorage cache
+          if (res.data.privacy_readinglist !== null && res.data.privacy_readinglist !== undefined) settings.privacy_readinglist = res.data.privacy_readinglist;
+          if (res.data.privacy_activity    !== null && res.data.privacy_activity    !== undefined) settings.privacy_activity    = res.data.privacy_activity;
+          if (res.data.privacy_dm          !== null && res.data.privacy_dm          !== undefined) settings.privacy_dm          = res.data.privacy_dm;
+          // Notification fields: same, DB is source of truth across devices
+          if (res.data.notif_follow   !== null && res.data.notif_follow   !== undefined) settings.notif_follow   = res.data.notif_follow;
+          if (res.data.notif_chapter  !== null && res.data.notif_chapter  !== undefined) settings.notif_chapter  = res.data.notif_chapter;
+          if (res.data.notif_comment  !== null && res.data.notif_comment  !== undefined) settings.notif_comment  = res.data.notif_comment;
+          if (res.data.notif_message  !== null && res.data.notif_message  !== undefined) settings.notif_message  = res.data.notif_message;
+          if (res.data.notif_announce !== null && res.data.notif_announce !== undefined) settings.notif_announce = res.data.notif_announce;
           loadProfileFields(res.data);
         }
 

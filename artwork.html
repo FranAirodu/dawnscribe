@@ -884,20 +884,23 @@
       wrap.remove();
       parentCard.dataset.replyOpen = '0';
 
-      // Notify original commenter if different from replier
+      // Notify original commenter if different from replier, respecting their preference
       var { data: parentCmt } = await db.from('artwork_comments')
         .select('user_id').eq('id', parentId).maybeSingle();
       if(parentCmt && parentCmt.user_id !== session.user.id){
-        var { data: myProf } = await db.from('profiles')
-          .select('display_name,username').eq('id', session.user.id).maybeSingle();
-        var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
-        try { await db.from('notifications').insert({
-          user_id: parentCmt.user_id,
-          type: 'artwork_reply',
-          from_user_id: session.user.id,
-          work_id: workId,
-          message: myName + ' replied to your comment on "' + (workData.title || 'Untitled') + '"'
-        }); } catch(e){}
+        var { data: replyToPref } = await db.from('profiles').select('notif_comment').eq('id', parentCmt.user_id).maybeSingle();
+        if (!replyToPref || replyToPref.notif_comment !== false) {
+          var { data: myProf } = await db.from('profiles')
+            .select('display_name,username').eq('id', session.user.id).maybeSingle();
+          var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
+          try { await db.from('notifications').insert({
+            user_id: parentCmt.user_id,
+            type: 'artwork_reply',
+            from_user_id: session.user.id,
+            work_id: workId,
+            message: myName + ' replied to your comment on "' + (workData.title || 'Untitled') + '"'
+          }); } catch(e){}
+        }
       }
 
       // Append reply to the replies list under this card
@@ -1025,9 +1028,11 @@
       var countEl = document.getElementById('comment-count');
       if(countEl) countEl.textContent = parseInt(countEl.textContent||'0') + 1;
 
-      // Notify artwork owner
+      // Notify artwork owner, respecting their preference
       if(workData && workData.author_id && workData.author_id !== session.user.id){
         var commenterName = myProfile ? (myProfile.display_name || myProfile.username || 'Someone') : 'Someone';
+        var { data: ownerPref } = await db.from('profiles').select('notif_comment').eq('id', workData.author_id).maybeSingle();
+        if (!ownerPref || ownerPref.notif_comment !== false) {
         try { await db.from('notifications').insert({
           user_id: workData.author_id,
           type: 'artwork_comment',
@@ -1035,6 +1040,7 @@
           work_id: workId,
           message: commenterName + ' commented on your artwork "' + (workData.title || 'Untitled') + '"'
         }); } catch(e){}
+        }
       }
     }
 

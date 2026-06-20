@@ -1564,20 +1564,23 @@
       if (error) { showToast('Error: ' + error.message, 'ti-x'); return; }
       input.value = '';
 
-      // Notify the work author (if not commenting on own chapter)
+      // Notify the work author (if not commenting on own chapter), respecting their preference
       if (workData && currentSession.user.id !== workData.author_id) {
         try {
-          var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
-          var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
-          await db.from('notifications').insert({
-            user_id: workData.author_id,
-            type: 'para_comment',
-            from_user_id: currentSession.user.id,
-            work_id: workData.id,
-            chapter_id: chapterData.id,
-            paragraph_index: activeParaIndex,
-            message: myName + ' commented on a paragraph in "' + workData.title + '"'
-          });
+          var { data: authorPref } = await db.from('profiles').select('notif_comment').eq('id', workData.author_id).maybeSingle();
+          if (!authorPref || authorPref.notif_comment !== false) {
+            var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
+            var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
+            await db.from('notifications').insert({
+              user_id: workData.author_id,
+              type: 'para_comment',
+              from_user_id: currentSession.user.id,
+              work_id: workData.id,
+              chapter_id: chapterData.id,
+              paragraph_index: activeParaIndex,
+              message: myName + ' commented on a paragraph in "' + workData.title + '"'
+            });
+          }
         } catch(e) {}
       }
 
@@ -1772,20 +1775,23 @@
 
       wrap.remove(); parentCard.dataset.replyOpen = '0';
 
-      // Notify original commenter
+      // Notify original commenter, respecting their preference
       var { data: parentCmt } = await db.from('chapter_comments')
         .select('user_id').eq('id', parentId).maybeSingle();
       if(parentCmt && parentCmt.user_id !== currentSession.user.id){
-        var { data: myProf } = await db.from('profiles')
-          .select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
-        var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
-        try { await db.from('notifications').insert({
-          user_id: parentCmt.user_id,
-          type: 'chapter_reply',
-          from_user_id: currentSession.user.id,
-          work_id: workData ? workData.id : null,
-          message: myName + ' replied to your comment on "' + (workData ? workData.title : 'a chapter') + '"'
-        }); } catch(e){}
+        var { data: replyToPref } = await db.from('profiles').select('notif_comment').eq('id', parentCmt.user_id).maybeSingle();
+        if (!replyToPref || replyToPref.notif_comment !== false) {
+          var { data: myProf } = await db.from('profiles')
+            .select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
+          var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
+          try { await db.from('notifications').insert({
+            user_id: parentCmt.user_id,
+            type: 'chapter_reply',
+            from_user_id: currentSession.user.id,
+            work_id: workData ? workData.id : null,
+            message: myName + ' replied to your comment on "' + (workData ? workData.title : 'a chapter') + '"'
+          }); } catch(e){}
+        }
       }
 
       // Append reply card

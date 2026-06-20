@@ -1453,6 +1453,15 @@ async function toggleFollow() {
       setFollowUI(true);
       showToast('Now following!', 'ti-bell');
       loadStats(currentProfileId);
+      // Notify the followed user, respecting their notification preference
+      try {
+        var wantsNotif = !profileData || profileData.notif_follow !== false;
+        if (wantsNotif) {
+          var { data: myProf2 } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
+          var myName2 = myProf2 ? (myProf2.display_name || myProf2.username || 'Someone') : 'Someone';
+          await db.from('notifications').insert({ user_id: currentProfileId, type: 'new_follower', from_user_id: session.user.id, message: myName2 + ' started following you' });
+        }
+      } catch(e) {}
     }
   } catch(err) {
     console.error('Follow error:', err);
@@ -1831,9 +1840,9 @@ async function handleFriendBtn() {
     /* ── READING LIST (LIVE) ────────────────────────────────────── */
     async function loadReadingList(profileId) {
       var container = document.getElementById('reading-list-container');
-      // Only show reading list if this is the owner's profile (privacy)
+      // Only show reading list if this is the owner's profile, or the owner has it set to public
       var isOwner = document.body.classList.contains('is-owner');
-      if (!isOwner) {
+      if (!isOwner && !(profileData && profileData.privacy_readinglist)) {
         container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">Reading list is private.</div>';
         return;
       }
@@ -1973,6 +1982,11 @@ async function handleFriendBtn() {
     /* ── ACTIVITY (LIVE) ────────────────────────────────────────── */
     async function loadActivity(profileId) {
       var container = document.getElementById('activity-container');
+      var isOwner = document.body.classList.contains('is-owner');
+      if (!isOwner && !(profileData && profileData.privacy_activity)) {
+        container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">This user\'s activity is private.</div>';
+        return;
+      }
       try {
         var commentsRes = await db.from('chapter_comments')
           .select('id, content, created_at, chapter_id')
