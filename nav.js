@@ -629,7 +629,7 @@ function dsApplyAccent(hex) {
       var { data: actRows } = await db.from('notifications')
         .select('id,type,message,work_id,created_at')
         .eq('user_id', uid)
-        .in('type', ['song_approved','song_rejected'])
+        .in('type', ['song_approved','song_rejected','fan_translation_linked'])
         .order('created_at', { ascending: false })
         .limit(8);
       var clearedAct = dsGetClearedIds('activity');
@@ -674,8 +674,11 @@ function dsApplyAccent(hex) {
           activityFeed.appendChild(item);
         });
         unrAct.forEach(function(n) {
+          var isTranslation = n.type === 'fan_translation_linked';
           var isApproved = n.type === 'song_approved';
-          var iconColor = isApproved ? '#22c55e' : '#ef4444';
+          var iconColor = isTranslation ? '#2dd4bf' : (isApproved ? '#22c55e' : '#ef4444');
+          var icon = isTranslation ? 'ti-language' : (isApproved ? 'ti-music' : 'ti-music-off');
+          var title = isTranslation ? '🌐 Fan Translation' : (isApproved ? '🎵 Song Approved' : '🎵 Song Not Approved');
           var item = document.createElement('div');
           item.className = 'notif-item unread';
           item.dataset.id = n.id;
@@ -690,10 +693,10 @@ function dsApplyAccent(hex) {
           };
           item.innerHTML =
             '<div class="notif-cover" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;color:'+iconColor+';">'+
-              '<i class="ti '+(isApproved?'ti-music':'ti-music-off')+'"></i>'+
+              '<i class="ti '+icon+'"></i>'+
             '</div>'+
             '<div class="notif-body">'+
-              '<div class="notif-title" style="color:'+iconColor+';">'+(isApproved?'🎵 Song Approved':'🎵 Song Not Approved')+'</div>'+
+              '<div class="notif-title" style="color:'+iconColor+';">'+title+'</div>'+
               '<div class="notif-text">'+dsEsc((n.message||'').slice(0,80))+(n.message&&n.message.length>80?'...':'')+'</div>'+
               '<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(n.created_at)+'</div>'+
             '</div><div class="notif-dot"></div>';

@@ -449,6 +449,12 @@
         </div>
       </div>
 
+      <!-- LINKED TRANSLATIONS -->
+      <div class="section" id="translations-section" style="display:none;">
+        <div class="section-title"><i class="ti ti-language"></i> <span id="translations-title">Translations</span></div>
+        <div id="translations-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+
       <!-- CHAPTERS -->
       <div class="section" id="chapters-section">
         <div class="section-title"><i class="ti ti-list"></i> Chapters <span id="chapter-count" style="font-family:'Lato';font-size:13px;font-weight:400;color:var(--text3);margin-left:4px;"></span></div>
@@ -613,6 +619,66 @@
 
     // ── HELPERS ──────────────────────────────────────────────────
     function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    // ── LINKED TRANSLATIONS ─────────────────────────────────────────
+    async function loadLinkedTranslations() {
+      var section = document.getElementById('translations-section');
+      var listEl = document.getElementById('translations-list');
+      var langNames = {en:'English',pt:'Portuguese',es:'Spanish',fr:'French',de:'German',ja:'Japanese',ko:'Korean',zh:'Chinese',id:'Indonesian'};
+      var items = [];
+      try {
+        // This work IS a translation — show what it's translated from
+        if (workData.is_fan_translation) {
+          var { data: fromLinks } = await db.from('story_links').select('linked_work_id').eq('work_id', workData.id).eq('link_type','fan_translation').eq('status','accepted');
+          if (fromLinks && fromLinks.length) {
+            var origIds = fromLinks.map(function(l){ return l.linked_work_id; });
+            var { data: origWorks } = await db.from('works').select('id,title,cover_url,author_id,language').in('id', origIds);
+            if (origWorks && origWorks.length) {
+              var oaIds = [...new Set(origWorks.map(function(w){return w.author_id;}).filter(Boolean))];
+              var { data: oprofs } = await db.from('profiles').select('id,username,display_name').in('id', oaIds);
+              var opm = {}; (oprofs||[]).forEach(function(p){ opm[p.id]=p; });
+              origWorks.forEach(function(w){
+                var p = opm[w.author_id]||{};
+                items.push({ relation: 'Translated from', work: w, authorName: p.display_name||p.username||'Unknown' });
+              });
+            }
+          }
+        }
+        // Other works link to THIS one as a translation — show available translations
+        var { data: toLinks } = await db.from('story_links').select('work_id').eq('linked_work_id', workData.id).eq('link_type','fan_translation').eq('status','accepted');
+        if (toLinks && toLinks.length) {
+          var transIds = toLinks.map(function(l){ return l.work_id; });
+          var { data: transWorks } = await db.from('works').select('id,title,cover_url,author_id,language').in('id', transIds);
+          if (transWorks && transWorks.length) {
+            var taIds = [...new Set(transWorks.map(function(w){return w.author_id;}).filter(Boolean))];
+            var { data: tprofs } = await db.from('profiles').select('id,username,display_name').in('id', taIds);
+            var tpm = {}; (tprofs||[]).forEach(function(p){ tpm[p.id]=p; });
+            transWorks.forEach(function(w){
+              var p = tpm[w.author_id]||{};
+              items.push({ relation: 'Translation', work: w, authorName: p.display_name||p.username||'Unknown' });
+            });
+          }
+        }
+      } catch(e) { return; }
+
+      if (!items.length) return;
+      listEl.innerHTML = items.map(function(it){
+        var langLabel = langNames[it.work.language] ? ' (' + langNames[it.work.language] + ')' : '';
+        var cov = it.work.cover_url
+          ? '<img src="'+escHtml(it.work.cover_url)+'" style="width:36px;height:50px;border-radius:5px;object-fit:cover;flex-shrink:0;" alt=""/>'
+          : '<div style="width:36px;height:50px;border-radius:5px;background:var(--bg3);flex-shrink:0;"></div>';
+        return '<a href="story.html?id='+it.work.id+'" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;text-decoration:none;color:inherit;">' +
+          cov +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-bottom:2px;">'+it.relation+langLabel+'</div>' +
+            '<div style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escHtml(it.work.title)+'</div>' +
+            '<div style="font-size:12px;color:var(--text3);">by '+escHtml(it.authorName)+'</div>' +
+          '</div>' +
+          '<i class="ti ti-chevron-right" style="color:var(--text3);flex-shrink:0;"></i>' +
+        '</a>';
+      }).join('');
+      section.style.display = 'block';
+    }
     function applyDocumentLang(code){
       var valid = ['en','pt','es','fr','de','ja','ko','zh','id'];
       if (code && valid.indexOf(code) !== -1) document.documentElement.lang = code;
@@ -1185,6 +1251,7 @@
       workData = workResult.data;
       applyDocumentLang(workData.language);
       dsTranslateHint.show(document.querySelector('.story-main'), workData.language);
+      loadLinkedTranslations();
       var authorIds = [workData.author_id];
       var coResult = await db.from('work_coauthors').select('user_id').eq('work_id', workId);
       if (coResult.data) coResult.data.forEach(function(c){ authorIds.push(c.user_id); });
