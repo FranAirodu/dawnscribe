@@ -157,6 +157,7 @@
     var counts = { titles: null, authors: null, artwork: null, artists: null };
     var myContentFilters = { gore: false, erotica: false };
     var myBlockedTags = [];
+    var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
 
     const coverColors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa','#fb923c'];
     function coverColor(id) { return coverColors[Math.abs(id || 0) % coverColors.length]; }
@@ -218,15 +219,24 @@
       return q;
     }
 
+    // Excludes fan translations if turned off, and hard-filters by language if
+    // strict mode is on. (Novels only — language doesn't apply to artwork search.)
+    function applyLanguageFilters(q) {
+      if (!myLangPrefs.lang_original) q = q.eq('is_fan_translation', false);
+      if (myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any') q = q.eq('language', myLangPrefs.pref_language);
+      return q;
+    }
+
     // ── QUERIES
     async function queryTitles(q, offset) {
       var col = tagMode ? 'tags_all' : 'title';
       var query = db.from('works')
-        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id', { count: 'exact' })
+        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id, language', { count: 'exact' })
         .ilike(col, '%' + q + '%')
         .eq('type', 'novel')
         .eq('is_published', true);
       query = applyContentFilters(query);
+      query = applyLanguageFilters(query);
       return await query
         .order('created_at', { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
@@ -493,10 +503,13 @@
         var bs = await window.db.auth.getSession();
         if(bs&&bs.data&&bs.data.session) {
           await dsBlock.load(bs.data.session.user.id);
-          var { data: prefRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica').eq('id', bs.data.session.user.id).maybeSingle();
+          var { data: prefRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict').eq('id', bs.data.session.user.id).maybeSingle();
           if (prefRow) {
             myContentFilters.gore = !!prefRow.settings_filter_gore;
             myContentFilters.erotica = !!prefRow.settings_filter_erotica;
+            if (prefRow.pref_story_language) myLangPrefs.pref_language = prefRow.pref_story_language;
+            if (prefRow.lang_original !== null && prefRow.lang_original !== undefined) myLangPrefs.lang_original = prefRow.lang_original;
+            if (prefRow.lang_strict !== null && prefRow.lang_strict !== undefined) myLangPrefs.lang_strict = prefRow.lang_strict;
           }
         }
       } catch(e){}
@@ -536,6 +549,7 @@
   </script>
 
 <script src="footer.js"></script>
+<script src="spoilerUtils.js"></script>
 <script src="nav.js"></script>
 </body>
 </html>

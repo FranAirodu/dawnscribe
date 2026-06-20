@@ -26,6 +26,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DawnScribe — Novels & Art</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="spoilerUtils.js"></script>
 <script src="blockUtils.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
@@ -1030,7 +1031,7 @@
             : prof && prof.avatar_url ? '<img src="'+esc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : esc(name.charAt(0).toUpperCase());
           var coverClass = work && work.cover_url ? '' : coverColor(cm.user_id||cm.id);
           var icon=cm._para?'<i class="ti ti-pilcrow" style="color:var(--accent);font-size:10px;margin-right:3px;" title="Paragraph comment"></i>':'';
-          item.innerHTML='<div class="notif-cover '+coverClass+'" style="overflow:hidden;padding:0;">'+coverHtml+'</div><div class="notif-body"><div class="notif-title">'+icon+esc(name)+' '+action+' '+esc(workTitle)+'</div><div class="notif-text">"'+esc((cm.content||'').slice(0,70))+(cm.content&&cm.content.length>70?'...':'')+'"</div><div class="notif-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</div></div><div class="notif-dot"></div>';
+          item.innerHTML='<div class="notif-cover '+coverClass+'" style="overflow:hidden;padding:0;">'+coverHtml+'</div><div class="notif-body"><div class="notif-title">'+icon+esc(name)+' '+action+' '+esc(workTitle)+'</div><div class="notif-text">"'+dsSpoiler.render(esc((cm.content||'').slice(0,70)))+(cm.content&&cm.content.length>70?'...':'')+'"</div><div class="notif-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</div></div><div class="notif-dot"></div>';
           commentFeed.appendChild(item);
         });
       }
@@ -1434,7 +1435,7 @@
           '</div>'+
           '<div class="comment-body">'+
             '<div class="comment-on"><span class="comment-type '+workType+'">'+workType.charAt(0).toUpperCase()+workType.slice(1)+'</span> '+esc(workTitle)+'</div>'+
-            '<div class="comment-text">"'+esc((cm.content||'').slice(0,90))+(cm.content&&cm.content.length>90?'...':'')+'"</div>'+
+            '<div class="comment-text">"'+dsSpoiler.render(esc((cm.content||'').slice(0,90)))+(cm.content&&cm.content.length>90?'...':'')+'"</div>'+
             '<div class="comment-meta"><span class="comment-user">'+esc(userName)+'</span><span class="comment-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</span></div>'+
           '</div>';
         feed.appendChild(el);
@@ -1492,12 +1493,19 @@
 
     /* ── SCROLL ROWS (LIVE) ─────────────────────────────────────── */
     async function loadScrollRows(uid){
-      // Load this viewer's content filter preferences (defaults: gore/erotica hidden)
+      // Load this viewer's content filter + language preferences
       var myContentFilters = { gore: false, erotica: false };
+      var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
       if (uid) {
         try {
-          var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica').eq('id', uid).maybeSingle();
-          if (cfRow) { myContentFilters.gore = !!cfRow.settings_filter_gore; myContentFilters.erotica = !!cfRow.settings_filter_erotica; }
+          var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict').eq('id', uid).maybeSingle();
+          if (cfRow) {
+            myContentFilters.gore = !!cfRow.settings_filter_gore;
+            myContentFilters.erotica = !!cfRow.settings_filter_erotica;
+            if (cfRow.pref_story_language) myLangPrefs.pref_language = cfRow.pref_story_language;
+            if (cfRow.lang_original !== null && cfRow.lang_original !== undefined) myLangPrefs.lang_original = cfRow.lang_original;
+            if (cfRow.lang_strict !== null && cfRow.lang_strict !== undefined) myLangPrefs.lang_strict = cfRow.lang_strict;
+          }
         } catch(e) {}
       }
       // Excludes a work only if it's flagged gore/erotica and that filter is off
@@ -1505,6 +1513,25 @@
         if (!myContentFilters.gore) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
         if (!myContentFilters.erotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
         return q;
+      }
+
+      // Excludes fan translations if that's turned off, and hard-filters by language
+      // if the viewer has strict mode on. (Soft-sort boosting happens client-side
+      // in applyLangSort, since PostgREST can't express "this language first".)
+      function applyLanguageFilters(q) {
+        if (!myLangPrefs.lang_original) q = q.eq('is_fan_translation', false);
+        if (myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any') q = q.eq('language', myLangPrefs.pref_language);
+        return q;
+      }
+      function applyLangSort(items) {
+        if (myLangPrefs.lang_strict || myLangPrefs.pref_language === 'any') return items;
+        var pref = myLangPrefs.pref_language;
+        items.sort(function(a,b){
+          var aMatch = a.language === pref, bMatch = b.language === pref;
+          if (aMatch === bMatch) return 0;
+          return aMatch ? -1 : 1;
+        });
+        return items;
       }
 
       // Tag preferences: hide blocked-tag works, float liked-tag works to the front
@@ -1618,11 +1645,12 @@
 
       // Row 2: Featured novels (admin-marked or highest rated)
       var row2track = document.getElementById('track-2');
-      var featQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main')
+      var featQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,language')
         .eq('type','novel').eq('is_published',true);
       featQ = applyContentFilters(featQ);
+      featQ = applyLanguageFilters(featQ);
       var featRes = await featQ.order('rating',{ascending:false}).limit(30);
-      featRes.data = applyTagPrefs(featRes.data || []);
+      featRes.data = applyLangSort(applyTagPrefs(featRes.data || []));
       var r2ProfMap={};if((featRes.data||[]).length){var r2AIds=[...new Set(featRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r2AIds.length){var {data:r2Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r2AIds);(r2Profs||[]).forEach(function(p){r2ProfMap[p.id]=p;});}}
       renderCoverRow(row2track, featRes.data||[], function(w){
         var p2=r2ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p2?(p2.display_name||p2.username||null):null, authorUsername:p2?p2.username:null, isCollab:!!collabWorkIds.has(w.id) };
@@ -1642,11 +1670,12 @@
 
       // Row 4: Newest novels
       var row4track = document.getElementById('track-4');
-      var newNovQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main')
+      var newNovQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,language')
         .eq('type','novel').eq('is_published',true);
       newNovQ = applyContentFilters(newNovQ);
+      newNovQ = applyLanguageFilters(newNovQ);
       var newNovRes = await newNovQ.order('created_at',{ascending:false}).limit(30);
-      newNovRes.data = applyTagPrefs(newNovRes.data || []);
+      newNovRes.data = applyLangSort(applyTagPrefs(newNovRes.data || []));
       var r4ProfMap={};if((newNovRes.data||[]).length){var r4AIds=[...new Set(newNovRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r4AIds.length){var {data:r4Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r4AIds);(r4Profs||[]).forEach(function(p){r4ProfMap[p.id]=p;});}}
       renderCoverRow(row4track, newNovRes.data||[], function(w){
         var p4=r4ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p4?(p4.display_name||p4.username||null):null, authorUsername:p4?p4.username:null, isCollab:!!collabWorkIds.has(w.id) };

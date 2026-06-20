@@ -449,10 +449,17 @@
             <option value="other">Other</option>
           </select>
         </div>
+        <div class="toggle-row" id="tr-lang-strict" onclick="toggleSetting('lang_strict')">
+          <div class="toggle-row-left">
+            <div class="toggle-icon gold"><i class="ti ti-filter"></i></div>
+            <div><div class="toggle-label">Only Show This Language</div><div class="toggle-sub">Off = your language is shown first, but other languages still appear. On = other languages are hidden entirely.</div></div>
+          </div>
+          <div class="toggle-switch" id="ts-lang_strict"></div>
+        </div>
         <div class="toggle-row active" id="tr-lang-original" onclick="toggleSetting('lang_original')">
           <div class="toggle-row-left">
             <div class="toggle-icon teal"><i class="ti ti-language"></i></div>
-            <div><div class="toggle-label">Show Translated Works</div><div class="toggle-sub">Include fan-translated stories in your feed</div></div>
+            <div><div class="toggle-label">Show Translated Works</div><div class="toggle-sub">Include stories marked as fan translations in your feed</div></div>
           </div>
           <div class="toggle-switch on" id="ts-lang_original"></div>
         </div>
@@ -587,7 +594,7 @@
       autoplay: false, spoilers: true,
       notif_follow: true, notif_chapter: true, notif_comment: true, notif_message: true, notif_announce: false,
       privacy_readinglist: true, privacy_activity: true, privacy_dm: true,
-      lang_original: true, pref_language: 'any'
+      lang_original: true, lang_strict: false, pref_language: 'any'
     };
 
     // ── COLLAPSIBLE SECTIONS ─────────────────────────────────────
@@ -1092,7 +1099,7 @@
         notif_comment: settings.notif_comment, notif_message: settings.notif_message, notif_announce: settings.notif_announce,
         privacy_readinglist: settings.privacy_readinglist, privacy_activity: settings.privacy_activity,
         privacy_dm: settings.privacy_dm,
-        lang_original: settings.lang_original, pref_language: settings.pref_language
+        lang_original: settings.lang_original, lang_strict: settings.lang_strict, pref_language: settings.pref_language
       }));
 
       if (currentSession) {
@@ -1110,7 +1117,10 @@
           notif_chapter: settings.notif_chapter,
           notif_comment: settings.notif_comment,
           notif_message: settings.notif_message,
-          notif_announce: settings.notif_announce
+          notif_announce: settings.notif_announce,
+          pref_story_language: settings.pref_language,
+          lang_original: settings.lang_original,
+          lang_strict: settings.lang_strict
         };
         // Also save profile fields if changed
         var dn = document.getElementById('field-display-name').value.trim();
@@ -1148,7 +1158,7 @@
       if (reading) { try { var r = JSON.parse(reading); Object.assign(settings, { reading_bg: r.bg||'default', reading_font: r.font||'lato', reading_font_override: !!r.font_override, reading_fontsize: r.fontsize||16, reading_lineheight: r.lineheight||18, reading_width: r.width||650 }); } catch(e){} }
 
       var misc = localStorage.getItem('ds_settings_misc');
-      if (misc) { try { var m = JSON.parse(misc); ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce','privacy_readinglist','privacy_activity','privacy_dm','lang_original'].forEach(function(k){ if (m[k]!==undefined) settings[k]=m[k]; }); if (m.pref_language) settings.pref_language=m.pref_language; } catch(e){} }
+      if (misc) { try { var m = JSON.parse(misc); ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce','privacy_readinglist','privacy_activity','privacy_dm','lang_original','lang_strict'].forEach(function(k){ if (m[k]!==undefined) settings[k]=m[k]; }); if (m.pref_language) settings.pref_language=m.pref_language; } catch(e){} }
     }
 
     function applyAllSettings() {
@@ -1173,7 +1183,7 @@
 
       // Toggles
       ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce',
-       'privacy_readinglist','privacy_activity','privacy_dm','lang_original'].forEach(function(k) {
+       'privacy_readinglist','privacy_activity','privacy_dm','lang_original','lang_strict'].forEach(function(k) {
         var ts = document.getElementById('ts-' + k);
         var tr = document.getElementById('tr-' + k);
         if (ts) ts.classList.toggle('on', !!settings[k]);
@@ -1207,7 +1217,7 @@
         currentSession = session;
 
         var res = await db.from('profiles')
-          .select('display_name,username,bio,location,gender,role,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce')
+          .select('display_name,username,bio,location,gender,role,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,pref_story_language,lang_original,lang_strict')
           .eq('id', session.user.id)
           .maybeSingle();
 
@@ -1226,6 +1236,10 @@
           if (res.data.notif_comment  !== null && res.data.notif_comment  !== undefined) settings.notif_comment  = res.data.notif_comment;
           if (res.data.notif_message  !== null && res.data.notif_message  !== undefined) settings.notif_message  = res.data.notif_message;
           if (res.data.notif_announce !== null && res.data.notif_announce !== undefined) settings.notif_announce = res.data.notif_announce;
+          // Language preferences: same, DB is source of truth across devices
+          if (res.data.pref_story_language) settings.pref_language = res.data.pref_story_language;
+          if (res.data.lang_original !== null && res.data.lang_original !== undefined) settings.lang_original = res.data.lang_original;
+          if (res.data.lang_strict   !== null && res.data.lang_strict   !== undefined) settings.lang_strict   = res.data.lang_strict;
           loadProfileFields(res.data);
         }
 
@@ -1244,6 +1258,7 @@
     })();
   </script>
 <script src="footer.js"></script>
+<script src="spoilerUtils.js"></script>
 <script src="nav.js"></script>
 </body>
 </html>

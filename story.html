@@ -9,6 +9,7 @@
   <title>DawnScribe — Story</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="spoilerUtils.js"></script>
+  <script src="translateHint.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <link rel="stylesheet" href="characterTitles.css"/>
@@ -483,7 +484,10 @@
         <div id="comments-list"></div>
         <div class="comment-input-wrap" id="comment-input-wrap" style="display:none;">
           <textarea class="comment-textarea" id="comment-input" placeholder="Leave a comment…" maxlength="1000"></textarea>
-          <button class="comment-submit" onclick="submitComment()"><i class="ti ti-send"></i> Post</button>
+          <div style="display:flex;gap:8px;">
+            <button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById('comment-input'))"><i class="ti ti-eye-off"></i> Spoiler</button>
+            <button class="comment-submit" onclick="submitComment()"><i class="ti ti-send"></i> Post</button>
+          </div>
         </div>
         <div id="comment-login-prompt" style="font-size:13px;color:var(--text3);margin-top:10px;display:none;">
           <a href="auth.html" style="color:var(--accent);">Sign in</a> to leave a comment.
@@ -576,6 +580,7 @@
           <div class="collab-detail-comments" id="collab-detail-comments"></div>
           <div class="collab-comment-input-row" id="collab-comment-input-row" style="display:none;">
             <textarea class="collab-comment-input" id="collab-comment-input" placeholder="Leave a comment…" rows="1" maxlength="500"></textarea>
+            <button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById('collab-comment-input'))"><i class="ti ti-eye-off"></i></button>
             <button class="collab-comment-post-btn" id="collab-comment-post-btn"><i class="ti ti-send"></i> Post</button>
           </div>
         </div>
@@ -608,6 +613,10 @@
 
     // ── HELPERS ──────────────────────────────────────────────────
     function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function applyDocumentLang(code){
+      var valid = ['en','pt','es','fr','de','ja','ko','zh','id'];
+      if (code && valid.indexOf(code) !== -1) document.documentElement.lang = code;
+    }
     function formatDate(s) { if(!s) return '—'; return new Date(s).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
     function timeAgo(s) {
       var d = Math.floor((Date.now()-new Date(s))/1000);
@@ -1089,7 +1098,7 @@
       document.getElementById('comment-count').textContent='('+comments.length+')';
       var listEl=document.getElementById('comments-list'); listEl.innerHTML='';
       if(!comments.length){ listEl.innerHTML='<div class="empty-state"><i class="ti ti-message-off"></i>No comments yet.</div>'; }
-      else { comments.forEach(function(c){ var p=c.profiles||{}; listEl.innerHTML+='<div class="comment-card"><div class="comment-header"><div class="comment-avatar">'+(p.avatar_url?'<img src="'+escHtml(p.avatar_url)+'" alt=""/>':'<i class="ti ti-user"></i>')+'</div><div class="comment-name">'+escHtml(p.display_name||p.username||'User')+'</div><div class="comment-date" style="margin-left:auto;">'+timeAgo(c.created_at)+'</div></div><div class="comment-text">'+escHtml(c.content)+'</div></div>'; }); }
+      else { comments.forEach(function(c){ var p=c.profiles||{}; listEl.innerHTML+='<div class="comment-card"><div class="comment-header"><div class="comment-avatar">'+(p.avatar_url?'<img src="'+escHtml(p.avatar_url)+'" alt=""/>':'<i class="ti ti-user"></i>')+'</div><div class="comment-name">'+escHtml(p.display_name||p.username||'User')+'</div><div class="comment-date" style="margin-left:auto;">'+timeAgo(c.created_at)+'</div></div><div class="comment-text">'+dsSpoiler.render(escHtml(c.content))+'</div></div>'; }); }
       if(currentSession){ document.getElementById('comment-input-wrap').style.display='flex'; } else { document.getElementById('comment-login-prompt').style.display='block'; }
     }
 
@@ -1174,8 +1183,8 @@
       var workResult = await db.from('works').select('*').eq('id', workId).maybeSingle();
       if (!workResult.data) { document.getElementById('story-title').textContent = 'Story not found.'; return; }
       workData = workResult.data;
-
-      // Load author(s)
+      applyDocumentLang(workData.language);
+      dsTranslateHint.show(document.querySelector('.story-main'), workData.language);
       var authorIds = [workData.author_id];
       var coResult = await db.from('work_coauthors').select('user_id').eq('work_id', workId);
       if (coResult.data) coResult.data.forEach(function(c){ authorIds.push(c.user_id); });
@@ -1434,7 +1443,7 @@
         var canDel=currentSession&&(currentSession.user.id===cm.user_id||currentSession.user.id===authorId);
         var delBtn=canDel?'<button style="margin-left:auto;background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:11px;padding:0;" data-cmid="'+cm.id+'" class="collab-cm-del"><i class="ti ti-x"></i></button>':'';
         var card=document.createElement('div'); card.className='collab-comment-card';
-        card.innerHTML='<div class="collab-comment-header"><div class="collab-comment-avatar">'+avH+'</div><span class="collab-comment-name">'+escHtml(name)+'</span>'+roleTag+'<span class="collab-comment-time">'+timeAgo(cm.created_at)+'</span>'+delBtn+'</div><div class="collab-comment-text">'+escHtml(cm.content)+'</div>';
+        card.innerHTML='<div class="collab-comment-header"><div class="collab-comment-avatar">'+avH+'</div><span class="collab-comment-name">'+escHtml(name)+'</span>'+roleTag+'<span class="collab-comment-time">'+timeAgo(cm.created_at)+'</span>'+delBtn+'</div><div class="collab-comment-text">'+dsSpoiler.render(escHtml(cm.content))+'</div>';
         if(canDel){ card.querySelector('.collab-cm-del').addEventListener('click',function(){ deleteCollabComment(this.dataset.cmid,card,collabId); }); }
         el.appendChild(card);
       });

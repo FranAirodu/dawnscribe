@@ -15,6 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="blockUtils.js"></script>
 <script src="spoilerUtils.js"></script>
+<script src="translateHint.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&family=Merriweather:wght@300;400;700&family=Source+Serif+4:wght@300;400;600&family=Nunito:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="characterTitles.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
@@ -523,6 +524,13 @@
     var readingProgress = {};
 
     function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    // Sets the real page language so the reader's browser (Chrome/Edge built-in
+    // translate, Safari Translate, etc.) correctly offers to translate foreign-
+    // language stories instead of assuming everything is English.
+    function applyDocumentLang(code){
+      var valid = ['en','pt','es','fr','de','ja','ko','zh','id'];
+      if (code && valid.indexOf(code) !== -1) document.documentElement.lang = code;
+    }
     function formatDate(s){ if(!s) return '—'; return new Date(s).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
     function timeAgo(s){ var d=Math.floor((Date.now()-new Date(s))/1000); if(d<60) return 'just now'; if(d<3600) return Math.floor(d/60)+'m ago'; if(d<86400) return Math.floor(d/3600)+'h ago'; if(d<2592000) return Math.floor(d/86400)+'d ago'; if(d<31536000) return Math.floor(d/2592000)+'mo ago'; return Math.floor(d/31536000)+'y ago'; }
     function getChapterId(){ return new URLSearchParams(window.location.search).get('id'); }
@@ -2270,6 +2278,8 @@
       // Load work
       var workResult = await db.from('works').select('*').eq('id', chapterData.work_id).maybeSingle();
       workData = workResult.data;
+      applyDocumentLang(workData && workData.language);
+      if (workData) dsTranslateHint.show(document.querySelector('.reader-wrap'), workData.language);
 
       // Load all chapters for nav
       var allChapResult = await db.from('chapters').select('id,chapter_number,title').eq('work_id', chapterData.work_id).eq('status','published').order('chapter_number',{ascending:true});

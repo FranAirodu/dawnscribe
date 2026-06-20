@@ -6,6 +6,15 @@
 ──────────────────────────────────────────────────────────────────── */
 
 // Apply cached accent color immediately so there's no teal flash.
+// Defensive fallback: if spoilerUtils.js wasn't included on this page for any
+// reason, don't let comment previews error out — just strip the || markers.
+if (!window.dsSpoiler) {
+  window.dsSpoiler = {
+    render: function(html){ return html ? html.replace(/\|\|([\s\S]+?)\|\|/g, '$1') : html; },
+    enabled: function(){ return false; }
+  };
+}
+
 function dsApplyAccent(hex) {
   var existing = document.getElementById('ds-accent-override');
   if (existing) existing.remove();
@@ -604,7 +613,7 @@ function dsApplyAccent(hex) {
         var coverClass2 = work && work.cover_url ? '' : dsCoverColor(cm.user_id||cm.id);
         item.innerHTML='<div class="notif-cover '+coverClass2+'" style="overflow:hidden;padding:0;">'+avHtml2+'</div>'
           +'<div class="notif-body"><div class="notif-title">'+dsEsc(name)+(cm._type==='para'?' commented on a paragraph in ':' commented on ')+dsEsc(workTitle)+'</div>'
-          +'<div class="notif-text">"'+dsEsc((cm.content||'').slice(0,70))+(cm.content&&cm.content.length>70?'...':'')+'"</div>'
+          +'<div class="notif-text">"'+dsSpoiler.render(dsEsc((cm.content||'').slice(0,70)))+(cm.content&&cm.content.length>70?'...':'')+'"</div>'
           +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(cm.created_at)+'</div></div><div class="notif-dot"></div>';
         commentFeed.appendChild(item);
       });
