@@ -27,6 +27,7 @@
   <title>DawnScribe — Novels & Art</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="spoilerUtils.js"></script>
+  <script src="accessibilityPrefs.js"></script>
 <script src="blockUtils.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
@@ -1494,12 +1495,13 @@
     /* ── SCROLL ROWS (LIVE) ─────────────────────────────────────── */
     async function loadScrollRows(uid){
       // Load this viewer's content filter + language preferences
-      var myContentFilters = { gore: false, erotica: false };
+      var myContentFilters = { safe: true, gore: false, erotica: false };
       var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
       if (uid) {
         try {
-          var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict').eq('id', uid).maybeSingle();
+          var { data: cfRow } = await db.from('profiles').select('settings_filter_safe,settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict').eq('id', uid).maybeSingle();
           if (cfRow) {
+            if (cfRow.settings_filter_safe !== null && cfRow.settings_filter_safe !== undefined) myContentFilters.safe = !!cfRow.settings_filter_safe;
             myContentFilters.gore = !!cfRow.settings_filter_gore;
             myContentFilters.erotica = !!cfRow.settings_filter_erotica;
             if (cfRow.pref_story_language) myLangPrefs.pref_language = cfRow.pref_story_language;
@@ -1508,10 +1510,13 @@
           }
         } catch(e) {}
       }
-      // Excludes a work only if it's flagged gore/erotica and that filter is off
+      // Safe is the master switch: when on, gore AND erotica are both hidden no
+      // matter what — closes the edge case where all three toggles end up off.
       function applyContentFilters(q) {
-        if (!myContentFilters.gore) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
-        if (!myContentFilters.erotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
+        var allowGore = myContentFilters.gore && !myContentFilters.safe;
+        var allowErotica = myContentFilters.erotica && !myContentFilters.safe;
+        if (!allowGore) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
+        if (!allowErotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
         return q;
       }
 
@@ -1553,6 +1558,20 @@
           return aLiked ? -1 : 1;
         });
         return filtered;
+      }
+
+      // Muted authors: hide their works from discovery entirely (unlike blocking,
+      // this is silent — they're never notified and can still interact with you)
+      var myMutedIds = [];
+      if (uid) {
+        try {
+          var { data: muteRows } = await db.from('mutes').select('muted_id').eq('muter_id', uid);
+          myMutedIds = (muteRows || []).map(function(r){ return r.muted_id; });
+        } catch(e) {}
+      }
+      function applyMutePrefs(items) {
+        if (!myMutedIds.length) return items;
+        return items.filter(function(w){ return myMutedIds.indexOf(w.author_id) === -1; });
       }
 
       // Row 0: New chapters from followed works
@@ -1650,7 +1669,7 @@
       featQ = applyContentFilters(featQ);
       featQ = applyLanguageFilters(featQ);
       var featRes = await featQ.order('rating',{ascending:false}).limit(30);
-      featRes.data = applyLangSort(applyTagPrefs(featRes.data || []));
+      featRes.data = applyMutePrefs(applyLangSort(applyTagPrefs(featRes.data || [])));
       var r2ProfMap={};if((featRes.data||[]).length){var r2AIds=[...new Set(featRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r2AIds.length){var {data:r2Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r2AIds);(r2Profs||[]).forEach(function(p){r2ProfMap[p.id]=p;});}}
       renderCoverRow(row2track, featRes.data||[], function(w){
         var p2=r2ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p2?(p2.display_name||p2.username||null):null, authorUsername:p2?p2.username:null, isCollab:!!collabWorkIds.has(w.id) };
@@ -1662,7 +1681,7 @@
         .eq('type','artwork').eq('is_published',true);
       featArtQ = applyContentFilters(featArtQ);
       var featArtRes = await featArtQ.order('rating',{ascending:false}).limit(30);
-      featArtRes.data = applyTagPrefs(featArtRes.data || []);
+      featArtRes.data = applyMutePrefs(applyTagPrefs(featArtRes.data || []));
       var r3ProfMap={};if((featArtRes.data||[]).length){var r3AIds=[...new Set(featArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r3AIds.length){var {data:r3Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r3AIds);(r3Profs||[]).forEach(function(p){r3ProfMap[p.id]=p;});}}
       renderCoverRow(row3track, featArtRes.data||[], function(w){
         var p3=r3ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p3?(p3.display_name||p3.username||null):null, authorUsername:p3?p3.username:null, isCollab:!!collabWorkIds.has(w.id) };
@@ -1675,7 +1694,7 @@
       newNovQ = applyContentFilters(newNovQ);
       newNovQ = applyLanguageFilters(newNovQ);
       var newNovRes = await newNovQ.order('created_at',{ascending:false}).limit(30);
-      newNovRes.data = applyLangSort(applyTagPrefs(newNovRes.data || []));
+      newNovRes.data = applyMutePrefs(applyLangSort(applyTagPrefs(newNovRes.data || [])));
       var r4ProfMap={};if((newNovRes.data||[]).length){var r4AIds=[...new Set(newNovRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r4AIds.length){var {data:r4Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r4AIds);(r4Profs||[]).forEach(function(p){r4ProfMap[p.id]=p;});}}
       renderCoverRow(row4track, newNovRes.data||[], function(w){
         var p4=r4ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p4?(p4.display_name||p4.username||null):null, authorUsername:p4?p4.username:null, isCollab:!!collabWorkIds.has(w.id) };
@@ -1687,7 +1706,7 @@
         .eq('type','artwork').eq('is_published',true);
       newArtQ = applyContentFilters(newArtQ);
       var newArtRes = await newArtQ.order('created_at',{ascending:false}).limit(30);
-      newArtRes.data = applyTagPrefs(newArtRes.data || []);
+      newArtRes.data = applyMutePrefs(applyTagPrefs(newArtRes.data || []));
       var r5ProfMap={};if((newArtRes.data||[]).length){var r5AIds=[...new Set(newArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r5AIds.length){var {data:r5Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r5AIds);(r5Profs||[]).forEach(function(p){r5ProfMap[p.id]=p;});}}
       // Also fetch approved fan art from story_collabs
       var r5Items = (newArtRes.data||[]).map(function(w){
@@ -2079,15 +2098,22 @@
       srchShowSpinner(previewId);
       try {
         var { data, error } = await db.from('works')
-          .select('id, title, cover_url, type, profiles(username, display_name)')
+          .select('id, title, cover_url, type, author_id')
           .ilike('title', '%' + q + '%')
           .eq('type', 'novel')
           .eq('is_published', true)
           .limit(4);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No titles found.'); return; }
+        var authorIds = data.map(function(w){ return w.author_id; }).filter(Boolean);
+        var profileMap = {};
+        if (authorIds.length) {
+          var { data: profs } = await db.from('profiles').select('id, username, display_name').in('id', authorIds);
+          (profs || []).forEach(function(p){ profileMap[p.id] = p; });
+        }
         var html = '<div class="search-preview-label">Titles</div>';
         data.forEach(function(w) {
-          var author = (w.profiles && (w.profiles.display_name || w.profiles.username)) || 'Unknown';
+          var prof = profileMap[w.author_id] || {};
+          var author = prof.display_name || prof.username || 'Unknown';
           var letter = (w.title || '?')[0].toUpperCase();
           var thumb = w.cover_url
             ? '<img src="' + w.cover_url + '" alt=""/>'

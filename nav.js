@@ -6,6 +6,27 @@
 ──────────────────────────────────────────────────────────────────── */
 
 // Apply cached accent color immediately so there's no teal flash.
+// Accessibility prefs (Reduced Motion / High Contrast) — applied here so every
+// page that loads nav.js gets them automatically, no per-page script tag needed.
+(function () {
+  try {
+    var misc = localStorage.getItem('ds_settings_misc');
+    var prefs = misc ? JSON.parse(misc) : {};
+    if (!document.getElementById('ds-accessibility-style')) {
+      var style = document.createElement('style');
+      style.id = 'ds-accessibility-style';
+      style.textContent =
+        'html.ds-reduced-motion *, html.ds-reduced-motion *::before, html.ds-reduced-motion *::after {' +
+        'animation-duration:0.001ms !important;animation-iteration-count:1 !important;' +
+        'transition-duration:0.001ms !important;scroll-behavior:auto !important;}' +
+        'html.ds-high-contrast{--text2:var(--text);--text3:#c8c8d8;--border:#6a6a8a;}';
+      document.head.appendChild(style);
+    }
+    document.documentElement.classList.toggle('ds-reduced-motion', !!prefs.pref_reduced_motion);
+    document.documentElement.classList.toggle('ds-high-contrast', !!prefs.pref_high_contrast);
+  } catch (e) {}
+})();
+
 // Defensive fallback: if spoilerUtils.js wasn't included on this page for any
 // reason, don't let comment previews error out — just strip the || markers.
 if (!window.dsSpoiler) {

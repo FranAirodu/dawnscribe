@@ -576,6 +576,35 @@
     var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
     var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     window.db = db;
+    var myContentFilters = { gore: false, erotica: false, safe: true };
+    var myContentFiltersLoaded = false;
+
+    async function ensureContentFilters() {
+      if (myContentFiltersLoaded) return;
+      myContentFiltersLoaded = true;
+      try {
+        var s = await db.auth.getSession();
+        var uid = s && s.data && s.data.session ? s.data.session.user.id : null;
+        if (!uid) return;
+        var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,settings_filter_safe').eq('id', uid).maybeSingle();
+        if (cfRow) {
+          myContentFilters.gore = !!cfRow.settings_filter_gore;
+          myContentFilters.erotica = !!cfRow.settings_filter_erotica;
+          myContentFilters.safe = cfRow.settings_filter_safe !== false;
+        }
+      } catch(e) {}
+    }
+
+    // A profile's own works aren't filtered out — you're already looking at this
+    // person on purpose. A small warning badge shows instead when a work is
+    // flagged gore/erotica and the viewer hasn't opted into that filter.
+    function contentWarningBadge(work) {
+      var warnGore = work.content_rating_gore && (myContentFilters.safe || !myContentFilters.gore);
+      var warnErotica = work.content_rating_erotica && (myContentFilters.safe || !myContentFilters.erotica);
+      if (!warnGore && !warnErotica) return '';
+      var label = warnGore && warnErotica ? 'Gore & Erotica' : (warnGore ? 'Gore' : 'Erotica');
+      return '<span title="This story is flagged for mature content you\'ve filtered in Settings" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#f87171;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);border-radius:20px;padding:1px 7px;margin-left:4px;"><i class="ti ti-alert-triangle" style="font-size:11px;"></i> ' + label + '</span>';
+    }
 
     /* ── TABS ───────────────────────────────────────────────────── */
     function switchTab(btn) {
@@ -1095,7 +1124,8 @@
     async function loadWorks(profileId) {
       var layout = document.getElementById('works-layout');
       layout.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;text-align:center;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading…</div>';
-      var result = await db.from('works').select('id,title,cover_url,status,tags_main,type,synopsis,views,chapters_count,word_count,total_readers,updated_at,avg_chapter_days').eq('author_id', profileId).order('created_at', { ascending: false });
+      await ensureContentFilters();
+      var result = await db.from('works').select('id,title,cover_url,status,tags_main,type,synopsis,views,chapters_count,word_count,total_readers,updated_at,avg_chapter_days,content_rating_gore,content_rating_erotica').eq('author_id', profileId).order('created_at', { ascending: false });
       layout.innerHTML = '';
       var isOwner = document.body.classList.contains('is-owner');
 
@@ -1182,7 +1212,7 @@
             : '<div class="work-cover cover-purple" style="display:flex;align-items:center;justify-content:center;font-size:28px;">🎨</div>') +
           '<div class="work-body" style="display:flex;flex-direction:column;justify-content:space-between;flex:1;min-width:0;">' +
             '<div>' +
-              '<div class="work-title" style="font-size:15px;font-weight:700;margin-bottom:8px;">'+escHtml(work.title)+'</div>' +
+              '<div class="work-title" style="font-size:15px;font-weight:700;margin-bottom:8px;">'+escHtml(work.title)+contentWarningBadge(work)+'</div>' +
               (artTags.length ? '<div class="work-tags" style="margin-bottom:10px;">'+artTags.slice(0,3).map(function(t){ return '<span class="work-tag genre">'+escHtml(t)+'</span>'; }).join('')+'</div>' : '') +
               (work.synopsis ? '<p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">'+escHtml(work.synopsis)+'</p>' : '') +
             '</div>' +
@@ -1276,7 +1306,7 @@
               (work.status||'ongoing').charAt(0).toUpperCase()+(work.status||'ongoing').slice(1)+'</span>' +
               '<div style="display:flex;align-items:center;gap:2px;">'+stars+ratingLabel+'</div>' +
             '</div>' +
-            '<div class="work-title" style="font-size:15px;font-weight:700;margin-bottom:4px;">'+escHtml(work.title)+'</div>' +
+            '<div class="work-title" style="font-size:15px;font-weight:700;margin-bottom:4px;">'+escHtml(work.title)+contentWarningBadge(work)+'</div>' +
             '<div class="work-tags" style="margin-bottom:6px;">'+mainTags.slice(0,3).map(function(t){ return '<span class="work-tag genre">'+escHtml(t)+'</span>'; }).join('')+'</div>' +
             synopsis +
           '</div>' +

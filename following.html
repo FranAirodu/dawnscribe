@@ -266,6 +266,18 @@
     var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     window.db = db;
     var currentSession = null;
+    var myContentFilters = { gore: false, erotica: false, safe: true };
+
+    // Followed content isn't filtered out — you chose to follow it. Instead, a
+    // small warning badge shows when a work is flagged gore/erotica and the
+    // viewer hasn't opted into that filter, so they know before clicking in.
+    function contentWarningBadge(work) {
+      var warnGore = work.content_rating_gore && (myContentFilters.safe || !myContentFilters.gore);
+      var warnErotica = work.content_rating_erotica && (myContentFilters.safe || !myContentFilters.erotica);
+      if (!warnGore && !warnErotica) return '';
+      var label = warnGore && warnErotica ? 'Gore & Erotica' : (warnGore ? 'Gore' : 'Erotica');
+      return '<span title="This story is flagged for mature content you\'ve filtered in Settings" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#f87171;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);border-radius:20px;padding:1px 7px;"><i class="ti ti-alert-triangle" style="font-size:11px;"></i> ' + label + '</span>';
+    }
 
     /* ── TABS ───────────────────────────────────────────────────── */
     function switchTab(btn) {
@@ -458,7 +470,7 @@
 
         var worksRes = await db
           .from('works')
-          .select('id, title, cover_url, status, type, tags_main, author_id, chapters_count')
+          .select('id, title, cover_url, status, type, tags_main, author_id, chapters_count, content_rating_gore, content_rating_erotica')
           .in('id', workIds)
           .eq('is_published', true);
 
@@ -522,9 +534,10 @@
             '<div class="title-body">' +
               '<div class="title-name">' + escHtml(w.title) + '</div>' +
               '<div class="title-author">by ' + escHtml(author.display_name || author.username || 'Unknown') + '</div>' +
-              '<div class="title-meta" style="display:flex;gap:8px;align-items:center;">' +
+              '<div class="title-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
                 '<span style="color:' + (statusColors[w.status]||'var(--text3)') + ';font-size:11px;font-weight:700;">' + (w.status||'ongoing').charAt(0).toUpperCase() + (w.status||'ongoing').slice(1) + '</span>' +
                 (mainTags[0] ? '<span style="font-size:11px;color:var(--text3);">· ' + escHtml(mainTags[0]) + '</span>' : '') +
+                contentWarningBadge(w) +
               '</div>' +
               '<div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11px;font-weight:700;color:' + progressColor + ';">' +
                 '<i class="ti ' + progressIcon + '" style="font-size:12px;"></i>' +
@@ -575,6 +588,14 @@
           return;
         }
         currentSession = session;
+        try {
+          var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,settings_filter_safe').eq('id', session.user.id).maybeSingle();
+          if (cfRow) {
+            myContentFilters.gore = !!cfRow.settings_filter_gore;
+            myContentFilters.erotica = !!cfRow.settings_filter_erotica;
+            myContentFilters.safe = cfRow.settings_filter_safe !== false;
+          }
+        } catch(e) {}
         var username = session.user.user_metadata && session.user.user_metadata.username;
         if (username) {
           document.getElementById('page-subtitle').textContent = 'People and titles ' + username + ' is following.';
