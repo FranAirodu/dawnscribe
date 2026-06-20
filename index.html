@@ -1492,6 +1492,42 @@
 
     /* ── SCROLL ROWS (LIVE) ─────────────────────────────────────── */
     async function loadScrollRows(uid){
+      // Load this viewer's content filter preferences (defaults: gore/erotica hidden)
+      var myContentFilters = { gore: false, erotica: false };
+      if (uid) {
+        try {
+          var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica').eq('id', uid).maybeSingle();
+          if (cfRow) { myContentFilters.gore = !!cfRow.settings_filter_gore; myContentFilters.erotica = !!cfRow.settings_filter_erotica; }
+        } catch(e) {}
+      }
+      // Excludes a work only if it's flagged gore/erotica and that filter is off
+      function applyContentFilters(q) {
+        if (!myContentFilters.gore) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
+        if (!myContentFilters.erotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
+        return q;
+      }
+
+      // Tag preferences: hide blocked-tag works, float liked-tag works to the front
+      var myTagPrefs = {};
+      try {
+        var tp = localStorage.getItem('ds_tag_prefs');
+        if (tp) myTagPrefs = JSON.parse(tp) || {};
+      } catch(e) {}
+      function applyTagPrefs(items) {
+        if (!Object.keys(myTagPrefs).length) return items;
+        function tagsOf(w) { try { return JSON.parse(w.tags_main || '[]'); } catch(e) { return []; } }
+        var filtered = items.filter(function(w){
+          return !tagsOf(w).some(function(t){ return myTagPrefs[t] === 'blocked'; });
+        });
+        filtered.sort(function(a,b){
+          var aLiked = tagsOf(a).some(function(t){ return myTagPrefs[t] === 'liked'; });
+          var bLiked = tagsOf(b).some(function(t){ return myTagPrefs[t] === 'liked'; });
+          if (aLiked === bLiked) return 0;
+          return aLiked ? -1 : 1;
+        });
+        return filtered;
+      }
+
       // Row 0: New chapters from followed works
       var row0track = document.getElementById('track-0');
       if(uid){
@@ -1582,8 +1618,11 @@
 
       // Row 2: Featured novels (admin-marked or highest rated)
       var row2track = document.getElementById('track-2');
-      var featRes = await db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id')
-        .eq('type','novel').eq('is_published',true).order('rating',{ascending:false}).limit(30);
+      var featQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main')
+        .eq('type','novel').eq('is_published',true);
+      featQ = applyContentFilters(featQ);
+      var featRes = await featQ.order('rating',{ascending:false}).limit(30);
+      featRes.data = applyTagPrefs(featRes.data || []);
       var r2ProfMap={};if((featRes.data||[]).length){var r2AIds=[...new Set(featRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r2AIds.length){var {data:r2Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r2AIds);(r2Profs||[]).forEach(function(p){r2ProfMap[p.id]=p;});}}
       renderCoverRow(row2track, featRes.data||[], function(w){
         var p2=r2ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p2?(p2.display_name||p2.username||null):null, authorUsername:p2?p2.username:null, isCollab:!!collabWorkIds.has(w.id) };
@@ -1591,8 +1630,11 @@
 
       // Row 3: Featured artwork
       var row3track = document.getElementById('track-3');
-      var featArtRes = await db.from('works').select('id,title,cover_url,author_id')
-        .eq('type','artwork').eq('is_published',true).order('rating',{ascending:false}).limit(30);
+      var featArtQ = db.from('works').select('id,title,cover_url,author_id,tags_main')
+        .eq('type','artwork').eq('is_published',true);
+      featArtQ = applyContentFilters(featArtQ);
+      var featArtRes = await featArtQ.order('rating',{ascending:false}).limit(30);
+      featArtRes.data = applyTagPrefs(featArtRes.data || []);
       var r3ProfMap={};if((featArtRes.data||[]).length){var r3AIds=[...new Set(featArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r3AIds.length){var {data:r3Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r3AIds);(r3Profs||[]).forEach(function(p){r3ProfMap[p.id]=p;});}}
       renderCoverRow(row3track, featArtRes.data||[], function(w){
         var p3=r3ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p3?(p3.display_name||p3.username||null):null, authorUsername:p3?p3.username:null, isCollab:!!collabWorkIds.has(w.id) };
@@ -1600,8 +1642,11 @@
 
       // Row 4: Newest novels
       var row4track = document.getElementById('track-4');
-      var newNovRes = await db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id')
-        .eq('type','novel').eq('is_published',true).order('created_at',{ascending:false}).limit(30);
+      var newNovQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main')
+        .eq('type','novel').eq('is_published',true);
+      newNovQ = applyContentFilters(newNovQ);
+      var newNovRes = await newNovQ.order('created_at',{ascending:false}).limit(30);
+      newNovRes.data = applyTagPrefs(newNovRes.data || []);
       var r4ProfMap={};if((newNovRes.data||[]).length){var r4AIds=[...new Set(newNovRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r4AIds.length){var {data:r4Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r4AIds);(r4Profs||[]).forEach(function(p){r4ProfMap[p.id]=p;});}}
       renderCoverRow(row4track, newNovRes.data||[], function(w){
         var p4=r4ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p4?(p4.display_name||p4.username||null):null, authorUsername:p4?p4.username:null, isCollab:!!collabWorkIds.has(w.id) };
@@ -1609,8 +1654,11 @@
 
       // Row 5: Newest artwork (works + approved story_collabs fan art)
       var row5track = document.getElementById('track-5');
-      var newArtRes = await db.from('works').select('id,title,cover_url,author_id,created_at')
-        .eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(30);
+      var newArtQ = db.from('works').select('id,title,cover_url,author_id,created_at,tags_main')
+        .eq('type','artwork').eq('is_published',true);
+      newArtQ = applyContentFilters(newArtQ);
+      var newArtRes = await newArtQ.order('created_at',{ascending:false}).limit(30);
+      newArtRes.data = applyTagPrefs(newArtRes.data || []);
       var r5ProfMap={};if((newArtRes.data||[]).length){var r5AIds=[...new Set(newArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r5AIds.length){var {data:r5Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r5AIds);(r5Profs||[]).forEach(function(p){r5ProfMap[p.id]=p;});}}
       // Also fetch approved fan art from story_collabs
       var r5Items = (newArtRes.data||[]).map(function(w){

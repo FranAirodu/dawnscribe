@@ -155,6 +155,8 @@
     const PAGE_SIZE = 20;
     var state = { type: 'titles', query: '', offset: 0, total: 0, results: [] };
     var counts = { titles: null, authors: null, artwork: null, artists: null };
+    var myContentFilters = { gore: false, erotica: false };
+    var myBlockedTags = [];
 
     const coverColors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa','#fb923c'];
     function coverColor(id) { return coverColors[Math.abs(id || 0) % coverColors.length]; }
@@ -208,14 +210,24 @@
       if (input.value.trim()) runSearch(true);
     }
 
+    // Applies the viewer's content filter and blocked-tag preferences to a works query
+    function applyContentFilters(q) {
+      if (!myContentFilters.gore) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
+      if (!myContentFilters.erotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
+      myBlockedTags.forEach(function(tag){ q = q.not('tags_all', 'ilike', '%"' + tag.replace(/"/g,'') + '"%'); });
+      return q;
+    }
+
     // ── QUERIES
     async function queryTitles(q, offset) {
       var col = tagMode ? 'tags_all' : 'title';
-      return await db.from('works')
+      var query = db.from('works')
         .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id', { count: 'exact' })
         .ilike(col, '%' + q + '%')
         .eq('type', 'novel')
-        .eq('is_published', true)
+        .eq('is_published', true);
+      query = applyContentFilters(query);
+      return await query
         .order('created_at', { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
     }
@@ -230,11 +242,13 @@
 
     async function queryArtwork(q, offset) {
       var col = tagMode ? 'tags_all' : 'title';
-      return await db.from('works')
+      var query = db.from('works')
         .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id', { count: 'exact' })
         .ilike(col, '%' + q + '%')
         .eq('type', 'artwork')
-        .eq('is_published', true)
+        .eq('is_published', true);
+      query = applyContentFilters(query);
+      return await query
         .order('created_at', { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
     }
@@ -475,7 +489,24 @@
 
     // ── INIT
     (async function init() {
-      try { var bs = await window.db.auth.getSession(); if(bs&&bs.data&&bs.data.session) await dsBlock.load(bs.data.session.user.id); } catch(e){}
+      try {
+        var bs = await window.db.auth.getSession();
+        if(bs&&bs.data&&bs.data.session) {
+          await dsBlock.load(bs.data.session.user.id);
+          var { data: prefRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica').eq('id', bs.data.session.user.id).maybeSingle();
+          if (prefRow) {
+            myContentFilters.gore = !!prefRow.settings_filter_gore;
+            myContentFilters.erotica = !!prefRow.settings_filter_erotica;
+          }
+        }
+      } catch(e){}
+      try {
+        var tp = localStorage.getItem('ds_tag_prefs');
+        if (tp) {
+          var parsed = JSON.parse(tp);
+          myBlockedTags = Object.keys(parsed).filter(function(t){ return parsed[t] === 'blocked'; });
+        }
+      } catch(e){}
       var params = getParams();
       state.type = params.type;
       state.query = params.q;

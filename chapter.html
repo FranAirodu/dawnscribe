@@ -14,6 +14,7 @@
   <title>DawnScribe — Reading</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="blockUtils.js"></script>
+<script src="spoilerUtils.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&family=Merriweather:wght@300;400;700&family=Source+Serif+4:wght@300;400;600&family=Nunito:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="characterTitles.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
@@ -464,7 +465,10 @@
       <div id="sp-body" style="flex:1;overflow-y:auto;"></div>
       <div id="sp-comment-wrap" style="display:none;padding:10px 12px;border-top:1px solid var(--border);flex-shrink:0;">
         <textarea id="sp-comment-input" rows="2" placeholder="Add a comment…" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;resize:none;box-sizing:border-box;"></textarea>
-        <button onclick="spSubmitComment()" style="margin-top:6px;width:100%;background:var(--accent);border:none;border-radius:8px;padding:7px;color:white;font-size:13px;font-weight:700;cursor:pointer;">Send</button>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById('sp-comment-input'))"><i class="ti ti-eye-off"></i> Spoiler</button>
+          <button onclick="spSubmitComment()" style="flex:1;background:var(--accent);border:none;border-radius:8px;padding:7px;color:white;font-size:13px;font-weight:700;cursor:pointer;">Send</button>
+        </div>
       </div>
     </div>
     <!-- SIDE TABS — shown once chapter loads -->
@@ -1011,6 +1015,21 @@
       renderChapterNav();
       // Scroll to chapter nav
       document.getElementById('chapter-nav').scrollIntoView({ behavior: 'smooth' });
+      maybeAutoAdvance();
+    }
+
+    // ── AUTO-ADVANCE ────────────────────────────────────────────────
+    function maybeAutoAdvance() {
+      try {
+        var misc = localStorage.getItem('ds_settings_misc');
+        var autoplay = misc ? !!JSON.parse(misc).autoplay : false;
+        if (!autoplay) return;
+        var idx = allChapters.findIndex(function(c){ return c.id === chapterData.id; });
+        var next = allChapters[idx + 1];
+        if (!next) return; // no next chapter — nothing to advance to
+        showToast('Auto-advancing to the next chapter…', 'ti-player-play');
+        setTimeout(function(){ window.location.href = 'chapter.html?id=' + next.id; }, 1800);
+      } catch(e) {}
     }
 
     // ── CHAPTER UNLOCK ────────────────────────────────────────────
@@ -1338,6 +1357,7 @@
         footer.innerHTML =
           '<div class="para-input-row">' +
             '<input class="para-input" type="text" id="para-comment-input" placeholder="Comment on this paragraph…" maxlength="500"/>' +
+            '<button class="spoiler-btn" type="button" onclick="dsSpoiler.wrapSelection(document.getElementById(\'para-comment-input\'))" title="Mark spoiler"><i class="ti ti-eye-off"></i></button>' +
             '<button class="para-send-btn" id="para-send-btn" onclick="submitParaComment()"><i class="ti ti-send"></i></button>' +
           '</div>';
         document.getElementById('para-comment-input').addEventListener('keydown', function(e){
@@ -1368,7 +1388,7 @@
           '<div class="para-cmt-name"><a href="profile.html?user=' + escHtml(p.username||'') + '">' + name + '</a></div>' +
           '<div class="para-cmt-time">' + timeAgo(c.created_at) + '</div>' +
         '</div>' +
-        '<div class="para-cmt-body">' + escHtml(c.content) + '</div>' +
+        '<div class="para-cmt-body">' + dsSpoiler.render(escHtml(c.content)) + '</div>' +
         (c.gif_url ? '<img class="para-cmt-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '') +
         '<div class="para-cmt-actions">' +
           '<button class="para-vote-btn upvote-btn' + (myVote==='up'?' voted-up':'') + '" data-id="'+c.id+'" data-dir="up"><i class="ti ti-thumb-up"></i> <span class="up-count">'+ups+'</span></button>' +
@@ -1431,7 +1451,7 @@
           '<div class="para-cmt-name"><a href="profile.html?user='+escHtml(p.username||'')+'">' + name + '</a></div>' +
           '<div class="para-cmt-time">' + timeAgo(r.created_at) + '</div>' +
         '</div>' +
-        '<div class="para-cmt-body">' + escHtml(r.content) + '</div>' +
+        '<div class="para-cmt-body">' + dsSpoiler.render(escHtml(r.content)) + '</div>' +
         '<div class="para-cmt-actions">' +
           '<button class="para-vote-btn upvote-btn'+(myVote==='up'?' voted-up':'')+'" data-id="'+r.id+'" data-dir="up"><i class="ti ti-thumb-up"></i> <span class="up-count">'+ups+'</span></button>' +
           (canDelete ? '<button class="para-cmt-del" data-id="'+r.id+'"><i class="ti ti-trash"></i></button>' : '') +
@@ -1501,12 +1521,16 @@
       wrap.innerHTML =
         '<textarea class="para-reply-ta" placeholder="Replying to ' + escHtml(parentName) + '…" maxlength="500"></textarea>' +
         '<div class="para-reply-actions">' +
+          '<button class="spoiler-btn" type="button" style="margin-right:auto;"><i class="ti ti-eye-off"></i> Spoiler</button>' +
           '<button class="para-reply-cancel">Cancel</button>' +
           '<button class="para-reply-submit"><i class="ti ti-send"></i> Reply</button>' +
         '</div>';
       var repliesList = parentCard.querySelector('.para-replies-list');
       parentCard.insertBefore(wrap, repliesList);
       wrap.querySelector('.para-reply-ta').focus();
+      wrap.querySelector('.spoiler-btn').addEventListener('click', function(){
+        dsSpoiler.wrapSelection(wrap.querySelector('.para-reply-ta'));
+      });
       wrap.querySelector('.para-reply-cancel').addEventListener('click', function(){ wrap.remove(); });
       wrap.querySelector('.para-reply-submit').addEventListener('click', function(){
         submitParaReply(parentId, wrap, parentCard);
@@ -1702,7 +1726,7 @@
           + '<div class="comment-name">' + name + '</div>'
           + '<div class="comment-time">' + timeAgo(c.created_at) + '</div>'
         + '</div>'
-        + '<div class="comment-body">' + escHtml(c.content) + '</div>'
+        + '<div class="comment-body">' + dsSpoiler.render(escHtml(c.content)) + '</div>'
         + (c.gif_url ? '<img class="comment-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '')
         + '<div class="comment-actions">'
           + (currentSession ? '<button class="comment-reply-btn"><i class="ti ti-corner-down-right"></i> Reply</button>' : '')
@@ -1741,11 +1765,15 @@
       wrap.innerHTML =
         '<textarea class="reply-textarea" placeholder="Replying to ' + escHtml(parentName) + '…" maxlength="1000"></textarea>'
         + '<div class="reply-actions">'
+          + '<button class="spoiler-btn" type="button"><i class="ti ti-eye-off"></i> Spoiler</button>'
           + '<button class="reply-cancel-btn">Cancel</button>'
           + '<button class="reply-submit-btn"><i class="ti ti-send"></i> Post Reply</button>'
         + '</div>';
       parentCard.appendChild(wrap);
       wrap.querySelector('.reply-textarea').focus();
+      wrap.querySelector('.spoiler-btn').addEventListener('click', function(){
+        dsSpoiler.wrapSelection(wrap.querySelector('.reply-textarea'));
+      });
       wrap.querySelector('.reply-cancel-btn').addEventListener('click', function(){
         wrap.remove(); parentCard.dataset.replyOpen = '0';
       });
@@ -1873,6 +1901,7 @@
           '<div class="comment-input-area">'
           + '<textarea class="comment-textarea" id="chapter-comment-input" placeholder="Leave a comment on this chapter…" maxlength="1000"></textarea>'
           + '<div class="comment-actions-row">'
+            + '<button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById(\'chapter-comment-input\'))"><i class="ti ti-eye-off"></i> Spoiler</button>'
             + '<button class="comment-submit" onclick="submitChapterComment()"><i class="ti ti-send"></i> Post Comment</button>'
           + '</div>'
           + '</div>';
@@ -2088,7 +2117,7 @@
         return '<div id="sp-comment-'+escHtml(c.id)+'" style="padding:10px 16px;border-bottom:1px solid var(--border);">' +
           paraLabel +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' + av + '<span style="font-size:12px;font-weight:700;color:var(--text);">'+name+'</span><span style="font-size:11px;color:var(--text3);margin-left:auto;">'+timeAgo(c.created_at)+'</span></div>' +
-          '<div style="font-size:13px;color:var(--text2);line-height:1.5;">'+escHtml(c.content||'')+'</div></div>';
+          '<div style="font-size:13px;color:var(--text2);line-height:1.5;">'+dsSpoiler.render(escHtml(c.content||''))+'</div></div>';
       }).join('');
       // Wire para jump clicks
       body.querySelectorAll('[data-para-jump]').forEach(function(el) {

@@ -6,6 +6,7 @@
   <title>DawnScribe — Artwork</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="blockUtils.js"></script>
+<script src="spoilerUtils.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <style>
@@ -596,7 +597,10 @@
           + '<div id="comments-list"></div>'
           + '<div class="comment-input-wrap" id="comment-input-wrap" style="display:none;">'
             + '<textarea class="comment-textarea" id="comment-input" placeholder="Leave a comment…" maxlength="1000"></textarea>'
-            + '<button class="comment-submit" onclick="submitComment()"><i class="ti ti-send"></i> Post</button>'
+            + '<div style="display:flex;gap:8px;align-items:center;">'
+              + '<button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById(\'comment-input\'))"><i class="ti ti-eye-off"></i> Spoiler</button>'
+              + '<button class="comment-submit" onclick="submitComment()"><i class="ti ti-send"></i> Post</button>'
+            + '</div>'
           + '</div>'
           + '<div class="comment-login-note" id="comment-login-note"><a href="auth.html">Log in</a> to leave a comment.</div>'
         + '</div>'
@@ -811,7 +815,7 @@
           + '<div class="comment-date">' + timeAgo(c.created_at) + '</div>'
           + (canDelete ? '<button class="comment-delete-btn" title="Delete"><i class="ti ti-trash"></i></button>' : '')
         + '</div>'
-        + '<div class="comment-text">' + esc(c.content) + '</div>'
+        + '<div class="comment-text">' + dsSpoiler.render(esc(c.content)) + '</div>'
         + (session ? '<div class="comment-actions">'
             + '<button class="comment-reply-btn"><i class="ti ti-corner-down-right"></i> Reply</button>'
             + (session.user.id !== c.user_id ? '<button class="comment-block-btn"><i class="ti ti-ban"></i> Block</button>' : '')
@@ -849,11 +853,15 @@
       wrap.innerHTML =
         '<textarea class="reply-textarea" placeholder="Replying to ' + esc(parentName) + '…" maxlength="1000"></textarea>'
         + '<div class="reply-actions">'
+          + '<button class="spoiler-btn" type="button" style="margin-right:auto;"><i class="ti ti-eye-off"></i> Spoiler</button>'
           + '<button class="reply-cancel-btn">Cancel</button>'
           + '<button class="reply-submit-btn"><i class="ti ti-send"></i> Post Reply</button>'
         + '</div>';
       parentCard.appendChild(wrap);
       wrap.querySelector('.reply-textarea').focus();
+      wrap.querySelector('.spoiler-btn').addEventListener('click', function(){
+        dsSpoiler.wrapSelection(wrap.querySelector('.reply-textarea'));
+      });
       wrap.querySelector('.reply-cancel-btn').addEventListener('click', function(){
         wrap.remove(); parentCard.dataset.replyOpen = '0';
       });
@@ -1272,6 +1280,7 @@
             + (session
                 ? '<div class="collab-comment-input-wrap">'
                     + '<textarea class="collab-comment-textarea" id="cct-' + collab.id + '" placeholder="Leave a comment on this story…" maxlength="600"></textarea>'
+                    + '<button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById(\'cct-' + collab.id + '\'))"><i class="ti ti-eye-off"></i></button>'
                     + '<button class="collab-comment-submit" onclick="submitCollabComment(\'' + collab.id + '\')"><i class="ti ti-send"></i> Post</button>'
                   + '</div>'
                 : '<p class="collab-comment-login"><a href="auth.html">Log in</a> to comment.</p>')
@@ -1324,7 +1333,7 @@
             + '<div class="collab-comment-date">' + timeAgo(c.created_at) + '</div>'
             + (canDel ? '<button class="collab-comment-del" title="Delete"><i class="ti ti-trash"></i></button>' : '')
           + '</div>'
-          + '<div class="collab-comment-text">' + esc(c.content) + '</div>';
+          + '<div class="collab-comment-text">' + dsSpoiler.render(esc(c.content)) + '</div>';
         if(canDel){
           item.querySelector('.collab-comment-del').addEventListener('click', function(){
             deleteCollabComment(c.id, item, collabId);
@@ -1381,7 +1390,7 @@
             + '<div class="collab-comment-date">just now</div>'
             + '<button class="collab-comment-del" title="Delete"><i class="ti ti-trash"></i></button>'
           + '</div>'
-          + '<div class="collab-comment-text">' + esc(inserted.content) + '</div>';
+          + '<div class="collab-comment-text">' + dsSpoiler.render(esc(inserted.content)) + '</div>';
         item.querySelector('.collab-comment-del').addEventListener('click', function(){
           deleteCollabComment(inserted.id, item, collabId);
         });

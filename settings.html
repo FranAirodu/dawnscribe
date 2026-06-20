@@ -309,12 +309,12 @@
           </div>
           <div class="toggle-switch" id="ts-autoplay"></div>
         </div>
-        <div class="toggle-row" id="tr-spoilers" onclick="toggleSetting('spoilers')">
+        <div class="toggle-row active" id="tr-spoilers" onclick="toggleSetting('spoilers')">
           <div class="toggle-row-left">
             <div class="toggle-icon purple"><i class="ti ti-eye-off"></i></div>
             <div><div class="toggle-label">Blur Spoilers</div><div class="toggle-sub">Blur text marked as a spoiler — click to reveal</div></div>
           </div>
-          <div class="toggle-switch" id="ts-spoilers"></div>
+          <div class="toggle-switch on" id="ts-spoilers"></div>
         </div>
       </div>
 
@@ -584,7 +584,7 @@
       filter_safe: true, filter_gore: false, filter_erotica: false,
       reading_bg: 'default', reading_font: 'lato', reading_font_override: false,
       reading_fontsize: 16, reading_lineheight: 18, reading_width: 650,
-      autoplay: false, spoilers: false,
+      autoplay: false, spoilers: true,
       notif_follow: true, notif_chapter: true, notif_comment: true, notif_message: true, notif_announce: false,
       privacy_readinglist: true, privacy_activity: true, privacy_dm: true,
       lang_original: true, pref_language: 'any'
@@ -926,17 +926,28 @@
     });
 
     // ── BLOCKED USERS ──────────────────────────────────────────────
-    function renderBlockedUsers() {
-      var blocked = JSON.parse(localStorage.getItem('ds_blocked_users') || '[]');
+    async function renderBlockedUsers() {
       var el = document.getElementById('blocked-users-list');
-      if (!blocked.length) { el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">You haven\'t blocked anyone.</div>'; return; }
-      el.innerHTML = blocked.map(function(u) {
-        return '<div class="blocked-user-row"><div class="blocked-avatar"><i class="ti ti-user"></i></div><div class="blocked-name">@' + u.username + '</div><button class="unblock-btn" onclick="unblockUser(\'' + u.id + '\')">Unblock</button></div>';
-      }).join('');
+      if (!currentSession) { el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">Log in to manage blocked users.</div>'; return; }
+      el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading…</div>';
+      try {
+        var res = await db.from('blocks').select('blocked_id').eq('blocker_id', currentSession.user.id);
+        var blockedIds = (res.data||[]).map(function(r){ return r.blocked_id; });
+        if (!blockedIds.length) { el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">You haven\'t blocked anyone.</div>'; return; }
+        var profRes = await db.from('profiles').select('id,username,display_name,avatar_url').in('id', blockedIds);
+        var profs = profRes.data || [];
+        el.innerHTML = profs.map(function(u) {
+          var avH = u.avatar_url ? '<img src="'+u.avatar_url+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : '<i class="ti ti-user"></i>';
+          return '<div class="blocked-user-row"><div class="blocked-avatar">'+avH+'</div><div class="blocked-name">@' + (u.username||'unknown') + '</div><button class="unblock-btn" onclick="unblockUser(\'' + u.id + '\')">Unblock</button></div>';
+        }).join('');
+      } catch(e) {
+        el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">Could not load blocked users.</div>';
+      }
     }
-    function unblockUser(id) {
-      var blocked = JSON.parse(localStorage.getItem('ds_blocked_users') || '[]');
-      localStorage.setItem('ds_blocked_users', JSON.stringify(blocked.filter(function(u){return u.id!==id;})));
+    async function unblockUser(id) {
+      if (!currentSession) return;
+      var res = await db.from('blocks').delete().eq('blocker_id', currentSession.user.id).eq('blocked_id', id);
+      if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); return; }
       renderBlockedUsers(); showToast('User unblocked');
     }
 
@@ -1018,33 +1029,41 @@
       await db.auth.signOut();
       window.location.href = 'index.html';
     }
-    function clearReadingHistory() {
-      if (!confirm('Clear all reading history? This cannot be undone.')) return;
-      localStorage.removeItem('ds_reading_history');
-      showToast('Reading history cleared', 'ti-trash');
+    async function clearReadingHistory() {
+      if (!currentSession) return;
+      if (!confirm('Clear all reading history? This permanently deletes your reading progress and cannot be undone.')) return;
+      showToast('Clearing reading history…', 'ti-loader');
+      try {
+        var res = await db.from('reading_progress').delete().eq('user_id', currentSession.user.id);
+        if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); return; }
+        localStorage.removeItem('ds_reading_progress');
+        showToast('Reading history cleared', 'ti-trash');
+      } catch(e) {
+        showToast('Something went wrong clearing your history.', 'ti-x');
+      }
     }
     async function deleteAccount() {
-      if (!confirm('Are you sure you want to delete your account?\n\nThis will permanently erase your profile, works, and all your data.')) return;
+      if (!confirm('Are you sure you want to delete your account?\n\nThis will permanently erase your profile, works, chapters, comments, messages, and all other data tied to your account — and log you out for good.')) return;
       if (!confirm('There is no coming back from this.\n\nAre you absolutely sure you want to delete your account forever?')) return;
       if (!confirm('Final warning — once deleted, your account is gone permanently.\n\nProceed with deletion?')) return;
 
       showToast('Deleting account…', 'ti-loader');
 
       try {
-        var userId = currentSession.user.id;
+        var res = await db.rpc('delete_my_account');
+        if (res.error) {
+          console.error('Delete account error:', res.error);
+          showToast('Something went wrong. Please contact support.', 'ti-x');
+          return;
+        }
 
-        // Delete profile data from Supabase
-        await db.from('follows').delete().eq('follower_id', userId);
-        await db.from('follows').delete().eq('following_id', userId);
-        await db.from('profiles').delete().eq('id', userId);
-
-        // Sign out the auth session
+        // Sign out the (now-deleted) auth session client-side
         await db.auth.signOut();
 
         // Clear all local data
         ['ds_theme','ds_filter_safe','ds_filter_gore','ds_filter_erotica',
-         'ds_reading','ds_settings_misc','ds_tag_prefs','ds_blocked_users',
-         'ds_reading_history','ds_audit_log','ds_sidebar_collapsed','ds_row_states'
+         'ds_reading','ds_settings_misc','ds_tag_prefs',
+         'ds_reading_progress','ds_audit_log','ds_sidebar_collapsed','ds_row_states'
         ].forEach(function(k){ localStorage.removeItem(k); });
 
         alert('Your account has been deleted. Thank you for being part of DawnScribe.');
