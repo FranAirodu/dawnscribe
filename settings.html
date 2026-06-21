@@ -72,6 +72,8 @@
 
     /* TOGGLE ROW */
     .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all 0.2s;user-select:none;margin-bottom:8px;}
+    .toggle-row.age-locked{opacity:0.55;cursor:not-allowed;}
+    .toggle-row.age-locked .toggle-switch{cursor:not-allowed;}
     .toggle-row:hover{border-color:var(--accent);}
     .toggle-row.active{border-color:var(--accent);background:rgba(45,212,191,0.06);}
     html[data-theme="light"] .toggle-row.active{background:rgba(13,148,136,0.06);}
@@ -364,16 +366,27 @@
         <div class="toggle-row" id="filter-gore" onclick="toggleFilter('gore')">
           <div class="toggle-row-left">
             <div class="toggle-icon gore"><i class="ti ti-droplet"></i></div>
-            <div><div class="toggle-label">Gore</div><div class="toggle-sub">Show stories with graphic violence</div><div class="toggle-warning"><i class="ti ti-alert-triangle"></i> Mature content — 18+ only</div></div>
+            <div><div class="toggle-label">Gore</div><div class="toggle-sub" id="gore-sub">Show stories with graphic violence</div><div class="toggle-warning"><i class="ti ti-alert-triangle"></i> Mature content — 18+ only</div></div>
           </div>
           <div class="toggle-switch" id="toggle-gore"></div>
         </div>
         <div class="toggle-row" id="filter-erotica" onclick="toggleFilter('erotica')">
           <div class="toggle-row-left">
             <div class="toggle-icon erotica"><i class="ti ti-heart"></i></div>
-            <div><div class="toggle-label">Erotica</div><div class="toggle-sub">Show stories with explicit sexual content</div><div class="toggle-warning"><i class="ti ti-alert-triangle"></i> Mature content — 18+ only</div></div>
+            <div><div class="toggle-label">Erotica</div><div class="toggle-sub" id="erotica-sub">Show stories with explicit sexual content</div><div class="toggle-warning"><i class="ti ti-alert-triangle"></i> Mature content — 18+ only</div></div>
           </div>
           <div class="toggle-switch" id="toggle-erotica"></div>
+        </div>
+
+        <div id="age-verify-box" style="display:none;background:var(--bg3);border:1px solid var(--accent);border-radius:10px;padding:14px;margin-bottom:8px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;"><i class="ti ti-shield-lock" style="color:var(--accent);"></i> Confirm your age to continue</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">We only ask this once. Your date of birth is never shown on your profile — it's only used to gate mature content, and unlocks automatically the moment you turn 18.</div>
+          <input type="date" id="age-verify-input" class="field-input" style="margin-bottom:8px;"/>
+          <div id="age-verify-error" style="font-size:12px;color:var(--red);margin-bottom:8px;display:none;"></div>
+          <div style="display:flex;gap:8px;">
+            <button class="account-action-btn" onclick="cancelAgeVerification()" style="flex:1;justify-content:center;">Cancel</button>
+            <button class="account-action-btn" onclick="submitAgeVerification()" style="flex:1;justify-content:center;">Confirm</button>
+          </div>
         </div>
 
         <div class="section-divider"></div>
@@ -395,6 +408,13 @@
         </div>
       </div>
 
+      <!-- ── CONTENT WARNINGS ── -->
+      <div class="settings-section collapsed">
+        <div class="section-header" onclick="toggleSection(this)"><i class="ti ti-flag-exclamation section-icon"></i><div class="section-title">Content Warnings</div><i class="ti ti-chevron-down section-toggle-icon"></i></div>
+        <div class="section-desc">Hide stories tagged with specific content warnings — more precise than the broad Gore/Erotica filters above.</div>
+        <div id="warning-chips-container" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+      </div>
+
       <!-- ── 4. TAG PREFERENCES ── -->
       <div class="settings-section collapsed">
         <div class="section-header" onclick="toggleSection(this)"><i class="ti ti-tags section-icon"></i><div class="section-title">Tag Preferences</div><i class="ti ti-chevron-down section-toggle-icon"></i></div>
@@ -413,6 +433,14 @@
       <div class="settings-section collapsed">
         <div class="section-header" onclick="toggleSection(this)"><i class="ti ti-bell section-icon"></i><div class="section-title">Notifications</div><i class="ti ti-chevron-down section-toggle-icon"></i></div>
         <div class="section-desc">Choose which events send you a notification.</div>
+        <div class="toggle-row" id="tr-quiet_mode" onclick="toggleQuietMode()" style="border-color:var(--accent);">
+          <div class="toggle-row-left">
+            <div class="toggle-icon teal"><i class="ti ti-moon"></i></div>
+            <div><div class="toggle-label">Quiet Mode</div><div class="toggle-sub">Temporarily silences all notifications below without changing your individual settings — turn it off any time to get them back exactly as they were</div></div>
+          </div>
+          <div class="toggle-switch" id="ts-quiet_mode"></div>
+        </div>
+        <div class="section-divider"></div>
         <div class="toggle-row active" id="tr-notif-follow" onclick="toggleSetting('notif_follow')">
           <div class="toggle-row-left">
             <div class="toggle-icon teal"><i class="ti ti-user-plus"></i></div>
@@ -566,6 +594,13 @@
               </select>
             </div>
           </div>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label">Pronouns</label>
+              <input class="field-input" type="text" id="field-pronouns" placeholder="e.g. she/her, they/them" maxlength="30" oninput="markChanged()"/>
+            </div>
+            <div class="field-group"></div>
+          </div>
           <!-- ROLE PICKER -->
           <div class="field-group" style="margin-top:4px;">
             <label class="field-label">Account Type <span class="field-hint" style="text-transform:none;letter-spacing:0;font-weight:400;"> — choose everything that applies to you</span></label>
@@ -622,6 +657,15 @@
             <button class="account-action-btn" onclick="signOut()"><i class="ti ti-logout"></i> Sign Out</button>
           </div>
         </div>
+      </div>
+
+      <!-- ── FEEDBACK ── -->
+      <div class="settings-section collapsed">
+        <div class="section-header" onclick="toggleSection(this)"><i class="ti ti-message-report section-icon"></i><div class="section-title">Feedback</div><i class="ti ti-chevron-down section-toggle-icon"></i></div>
+        <div class="section-desc">Found a bug, or have an idea? Send it straight to the team — no need to leave settings.</div>
+        <textarea class="field-input" id="feedback-message" rows="4" placeholder="What's on your mind?" maxlength="2000" style="resize:vertical;margin-bottom:10px;"></textarea>
+        <button class="account-action-btn" id="feedback-submit-btn" onclick="submitFeedback()"><i class="ti ti-send"></i> Send Feedback</button>
+        <div id="feedback-result" style="font-size:13px;margin-top:10px;display:none;"></div>
       </div>
 
       <!-- ── 10. DANGER ZONE ── -->
@@ -754,7 +798,7 @@
       notif_follow: true, notif_chapter: true, notif_comment: true, notif_message: true, notif_announce: false,
       privacy_readinglist: true, privacy_activity: true, privacy_dm: true,
       lang_original: true, lang_strict: false, pref_language: 'any',
-      default_rating_gore: false, default_rating_erotica: false,
+      default_rating_gore: false, default_rating_erotica: false, quiet_mode: false,
       pref_reduced_motion: false, pref_high_contrast: false
     };
 
@@ -889,6 +933,12 @@
       toggleSetting(key);
       applyAccessibilityPrefs();
     }
+    function toggleQuietMode() {
+      settings.quiet_mode = !settings.quiet_mode;
+      document.getElementById('ts-quiet_mode').classList.toggle('on', settings.quiet_mode);
+      document.getElementById('tr-quiet_mode').classList.toggle('active', settings.quiet_mode);
+      markChanged();
+    }
     function applyAccessibilityPrefs() {
       document.documentElement.classList.toggle('ds-reduced-motion', !!settings.pref_reduced_motion);
       document.documentElement.classList.toggle('ds-high-contrast', !!settings.pref_high_contrast);
@@ -898,7 +948,77 @@
     // actually called anywhere once applyAllSettings() took over, so removed.
 
     // ── CONTENT FILTER ─────────────────────────────────────────────
+    // ── AGE GATE ──────────────────────────────────────────────────
+    var myDOB = null; // ISO date string, or null if not on file
+    var pendingRatingToggle = null;
+
+    function myComputedAge() {
+      if (!myDOB) return null;
+      var today = new Date();
+      var dob = new Date(myDOB + 'T00:00:00');
+      var age = today.getFullYear() - dob.getFullYear();
+      var m = today.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+      return age;
+    }
+    function applyAgeGateUI() {
+      var age = myComputedAge();
+      var isMinor = myDOB !== null && age < 18;
+      ['gore','erotica'].forEach(function(key) {
+        var row = document.getElementById('filter-' + key);
+        var sub = document.getElementById(key + '-sub');
+        row.classList.toggle('age-locked', isMinor);
+        if (isMinor) {
+          sub.textContent = (key === 'gore' ? 'Show stories with graphic violence' : 'Show stories with explicit sexual content') + ' — unlocks automatically when you turn 18';
+        } else {
+          sub.textContent = key === 'gore' ? 'Show stories with graphic violence' : 'Show stories with explicit sexual content';
+        }
+      });
+    }
+    function cancelAgeVerification() {
+      document.getElementById('age-verify-box').style.display = 'none';
+      pendingRatingToggle = null;
+    }
+    async function submitAgeVerification() {
+      var val = document.getElementById('age-verify-input').value;
+      var errEl = document.getElementById('age-verify-error');
+      errEl.style.display = 'none';
+      if (!val) { errEl.textContent = 'Please enter your date of birth.'; errEl.style.display = 'block'; return; }
+      var dobDate = new Date(val + 'T00:00:00');
+      var oldest = new Date(); oldest.setFullYear(oldest.getFullYear() - 120);
+      if (isNaN(dobDate.getTime()) || dobDate > new Date() || dobDate < oldest) {
+        errEl.textContent = 'Please enter a valid date of birth.'; errEl.style.display = 'block'; return;
+      }
+      myDOB = val;
+      if (currentSession) {
+        try { await db.from('profiles').update({ date_of_birth: val }).eq('id', currentSession.user.id); } catch(e) {}
+      }
+      document.getElementById('age-verify-box').style.display = 'none';
+      applyAgeGateUI();
+      var age = myComputedAge();
+      if (age < 18) {
+        showToast('Thanks — mature content unlocks automatically on your 18th birthday.', 'ti-cake');
+        pendingRatingToggle = null;
+      } else {
+        showToast('Age confirmed.', 'ti-check');
+        if (pendingRatingToggle) { var t = pendingRatingToggle; pendingRatingToggle = null; toggleFilter(t); }
+      }
+    }
+
     function toggleFilter(key) {
+      // Age gate: turning ON Gore/Erotica requires a verified age of 18+
+      if ((key === 'gore' || key === 'erotica') && !settings['filter_' + key]) {
+        if (myDOB === null) {
+          pendingRatingToggle = key;
+          document.getElementById('age-verify-box').style.display = 'block';
+          document.getElementById('age-verify-box').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+        if (myComputedAge() < 18) {
+          showToast('Mature content unlocks automatically once you turn 18.', 'ti-lock');
+          return;
+        }
+      }
       if ((key === 'gore' || key === 'erotica') && !settings['filter_' + key]) {
         settings.filter_safe = false;
         document.getElementById('toggle-safe').classList.remove('on');
@@ -914,6 +1034,27 @@
       settings['filter_' + key] = !settings['filter_' + key];
       document.getElementById('toggle-' + key).classList.toggle('on', settings['filter_' + key]);
       document.getElementById('filter-' + key).classList.toggle('active', settings['filter_' + key]);
+      markChanged();
+    }
+
+    // ── CONTENT WARNINGS ────────────────────────────────────────────
+    var CONTENT_WARNING_OPTIONS = [
+      'Character Death', 'Self-Harm / Suicide', 'Abuse', 'Substance Abuse',
+      'Body Horror', 'Animal Harm', 'Mental Health Crisis', 'Non-Consent Themes'
+    ];
+    var filteredWarnings = [];
+    function renderContentWarnings() {
+      var container = document.getElementById('warning-chips-container');
+      container.innerHTML = CONTENT_WARNING_OPTIONS.map(function(w) {
+        var active = filteredWarnings.indexOf(w) !== -1;
+        return '<div class="tag-pref-chip' + (active ? ' blocked' : '') + '" onclick="toggleContentWarning(' + "'" + w.replace(/'/g,"\\'") + "'" + ')">' +
+          '<i class="ti ' + (active ? 'ti-eye-off' : 'ti-circle') + '"></i>' + escHtml(w) + '</div>';
+      }).join('');
+    }
+    function toggleContentWarning(w) {
+      var idx = filteredWarnings.indexOf(w);
+      if (idx === -1) filteredWarnings.push(w); else filteredWarnings.splice(idx, 1);
+      renderContentWarnings();
       markChanged();
     }
 
@@ -1278,6 +1419,7 @@
       document.getElementById('field-bio').value = data.bio || '';
       document.getElementById('field-location').value = data.location || '';
       document.getElementById('field-gender').value = data.gender || '';
+      document.getElementById('field-pronouns').value = data.pronouns || '';
       setRoleButtons(data.role || 'Reader');
     }
 
@@ -1534,6 +1676,52 @@
       var expected = (myOriginalUsername || currentSession.user.email || '').toLowerCase();
       document.getElementById('delete-confirm-submit').disabled = val.trim().toLowerCase() !== expected;
     }
+    async function submitFeedback() {
+      if (!currentSession) { showToast('Please log in to send feedback.', 'ti-x'); return; }
+      var msgEl = document.getElementById('feedback-message');
+      var message = msgEl.value.trim();
+      var resultEl = document.getElementById('feedback-result');
+      var btn = document.getElementById('feedback-submit-btn');
+      resultEl.style.display = 'none';
+      if (!message) { showToast('Please write something first.', 'ti-x'); return; }
+
+      btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Sending…';
+
+      try {
+        // 1. Save to the database so it shows up on the admin review page
+        await db.from('feedback').insert({
+          user_id: currentSession.user.id,
+          message: message,
+          page_context: 'settings.html'
+        });
+
+        // 2. Also email it via Web3Forms for an immediate notification
+        try {
+          await fetch('https://api.web3forms.com/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              access_key: '7c5348e7-291b-4149-be36-67172729ef34',
+              subject: 'DawnScribe Feedback',
+              from_name: myOriginalUsername || currentSession.user.email,
+              email: currentSession.user.email,
+              message: message
+            })
+          });
+        } catch(e) {}
+
+        resultEl.style.color = 'var(--green)';
+        resultEl.innerHTML = '<i class="ti ti-circle-check"></i> Thanks — your feedback has been sent.';
+        resultEl.style.display = 'block';
+        msgEl.value = '';
+      } catch(err) {
+        resultEl.style.color = 'var(--red)';
+        resultEl.innerHTML = '<i class="ti ti-alert-circle"></i> Something went wrong. Please try again.';
+        resultEl.style.display = 'block';
+      }
+      btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Send Feedback';
+    }
+
     async function deleteAccount() {
       showToast('Deleting account…', 'ti-loader');
 
@@ -1582,7 +1770,8 @@
         privacy_dm: settings.privacy_dm,
         lang_original: settings.lang_original, lang_strict: settings.lang_strict, pref_language: settings.pref_language,
         default_rating_gore: settings.default_rating_gore, default_rating_erotica: settings.default_rating_erotica,
-        pref_reduced_motion: settings.pref_reduced_motion, pref_high_contrast: settings.pref_high_contrast
+        pref_reduced_motion: settings.pref_reduced_motion, pref_high_contrast: settings.pref_high_contrast,
+        quiet_mode: settings.quiet_mode
       }));
 
       if (currentSession) {
@@ -1607,7 +1796,8 @@
           default_rating_gore: settings.default_rating_gore,
           default_rating_erotica: settings.default_rating_erotica,
           pref_reduced_motion: settings.pref_reduced_motion,
-          pref_high_contrast: settings.pref_high_contrast
+          pref_high_contrast: settings.pref_high_contrast,
+          quiet_mode: settings.quiet_mode
         };
         // Also save profile fields if changed
         var dn = document.getElementById('field-display-name').value.trim();
@@ -1615,11 +1805,14 @@
         var bio = document.getElementById('field-bio').value.trim();
         var loc = document.getElementById('field-location').value.trim();
         var gen = document.getElementById('field-gender').value;
+        var pronouns = document.getElementById('field-pronouns').value.trim();
         if (dn) profileUpdate.display_name = dn;
         if (un) profileUpdate.username = un;
         profileUpdate.bio = bio;
         profileUpdate.location = loc;
         if (gen) profileUpdate.gender = gen;
+        profileUpdate.pronouns = pronouns || null;
+        profileUpdate.filtered_content_warnings = filteredWarnings;
         profileUpdate.role = getSelectedRole();
         var secEmail = document.getElementById('field-secondary-email').value.trim();
         if (secEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(secEmail)) {
@@ -1664,7 +1857,7 @@
       if (reading) { try { var r = JSON.parse(reading); Object.assign(settings, { reading_bg: r.bg||'default', reading_font: r.font||'lato', reading_font_override: !!r.font_override, reading_fontsize: r.fontsize||16, reading_lineheight: r.lineheight||18, reading_width: r.width||650 }); } catch(e){} }
 
       var misc = localStorage.getItem('ds_settings_misc');
-      if (misc) { try { var m = JSON.parse(misc); ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce','privacy_readinglist','privacy_activity','privacy_dm','lang_original','lang_strict','default_rating_gore','default_rating_erotica','pref_reduced_motion','pref_high_contrast'].forEach(function(k){ if (m[k]!==undefined) settings[k]=m[k]; }); if (m.pref_language) settings.pref_language=m.pref_language; } catch(e){} }
+      if (misc) { try { var m = JSON.parse(misc); ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce','privacy_readinglist','privacy_activity','privacy_dm','lang_original','lang_strict','default_rating_gore','default_rating_erotica','pref_reduced_motion','pref_high_contrast','quiet_mode'].forEach(function(k){ if (m[k]!==undefined) settings[k]=m[k]; }); if (m.pref_language) settings.pref_language=m.pref_language; } catch(e){} }
     }
 
     function applyAllSettings() {
@@ -1691,7 +1884,7 @@
       // Toggles
       ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce',
        'privacy_readinglist','privacy_activity','privacy_dm','lang_original','lang_strict',
-       'default_rating_gore','default_rating_erotica','pref_reduced_motion','pref_high_contrast'].forEach(function(k) {
+       'default_rating_gore','default_rating_erotica','pref_reduced_motion','pref_high_contrast','quiet_mode'].forEach(function(k) {
         var ts = document.getElementById('ts-' + k);
         var tr = document.getElementById('tr-' + k);
         if (ts) ts.classList.toggle('on', !!settings[k]);
@@ -1717,6 +1910,7 @@
         if (!session) {
           applyAllSettings();
           renderTagPreferences();
+          renderContentWarnings();
           renderBlockedUsers();
           renderMutedUsers();
           document.getElementById('auth-wall-wrap').style.display = 'block';
@@ -1727,7 +1921,7 @@
         document.getElementById('current-email-display').textContent = session.user.email || '(no email on file)';
 
         var res = await db.from('profiles')
-          .select('display_name,username,bio,location,gender,role,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,pref_story_language,lang_original,lang_strict,secondary_email,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast')
+          .select('display_name,username,bio,location,gender,role,pronouns,date_of_birth,quiet_mode,filtered_content_warnings,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,pref_story_language,lang_original,lang_strict,secondary_email,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast')
           .eq('id', session.user.id)
           .maybeSingle();
 
@@ -1754,6 +1948,7 @@
           if (res.data.default_rating_erotica !== null && res.data.default_rating_erotica !== undefined) settings.default_rating_erotica = res.data.default_rating_erotica;
           if (res.data.pref_reduced_motion !== null && res.data.pref_reduced_motion !== undefined) settings.pref_reduced_motion = res.data.pref_reduced_motion;
           if (res.data.pref_high_contrast  !== null && res.data.pref_high_contrast  !== undefined) settings.pref_high_contrast  = res.data.pref_high_contrast;
+          if (res.data.quiet_mode !== null && res.data.quiet_mode !== undefined) settings.quiet_mode = res.data.quiet_mode;
           // Reading mode: DB is source of truth across devices, also mirrored into
           // localStorage so chapter.html (which reads localStorage) picks it up too
           if (res.data.reading_prefs) {
@@ -1772,11 +1967,17 @@
             localStorage.setItem('ds_tag_prefs', JSON.stringify(tagPrefs));
           }
           document.getElementById('field-secondary-email').value = res.data.secondary_email || '';
+          myDOB = res.data.date_of_birth || null;
+          if (res.data.filtered_content_warnings && Array.isArray(res.data.filtered_content_warnings)) {
+            filteredWarnings = res.data.filtered_content_warnings;
+          }
           loadProfileFields(res.data);
         }
 
         applyAllSettings();
+        applyAgeGateUI();
         renderTagPreferences();
+        renderContentWarnings();
         renderBlockedUsers();
         renderMutedUsers();
         loadMySessions();
@@ -1786,7 +1987,7 @@
       } catch(err) {
         console.error('Settings init error:', err);
         loadFromStorage(); loadTagPrefs();
-        applyAllSettings(); renderTagPreferences(); renderBlockedUsers(); renderMutedUsers();
+        applyAllSettings(); renderTagPreferences(); renderContentWarnings(); renderBlockedUsers(); renderMutedUsers();
         document.getElementById('settings-content').style.display = 'block';
       }
     })();

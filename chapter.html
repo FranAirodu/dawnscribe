@@ -2269,6 +2269,24 @@
         }
       }
 
+      // Reconcile reading-mode prefs from the account (in case they were changed
+      // on another device) — applyReadingSettings() already ran once above using
+      // whatever was cached locally, to avoid a flash of default styling.
+      var myContentPerms = { gore: false, erotica: false };
+      if (currentSession) {
+        try {
+          var { data: rpRow } = await db.from('profiles').select('reading_prefs,settings_filter_gore,settings_filter_erotica').eq('id', currentSession.user.id).maybeSingle();
+          if (rpRow && rpRow.reading_prefs) {
+            localStorage.setItem('ds_reading', JSON.stringify(rpRow.reading_prefs));
+            applyReadingSettings();
+          }
+          if (rpRow) {
+            myContentPerms.gore = !!rpRow.settings_filter_gore;
+            myContentPerms.erotica = !!rpRow.settings_filter_erotica;
+          }
+        } catch(e) {}
+      }
+
       // Load chapter
       var chapResult = await db.from('chapters').select('*').eq('id', chapterId).maybeSingle();
       if (!chapResult.data) { document.getElementById('chapter-title-display').textContent = 'Chapter not found.'; return; }
@@ -2278,6 +2296,23 @@
       // Load work
       var workResult = await db.from('works').select('*').eq('id', chapterData.work_id).maybeSingle();
       workData = workResult.data;
+
+      // Mature content access gate: settings_filter_gore/erotica can only be true
+      // for a verified 18+ account (enforced server-side by a DB trigger, not just
+      // this check) — so this is a real block, not just a feed-hiding preference.
+      if (workData && ((workData.content_rating_gore && !myContentPerms.gore) || (workData.content_rating_erotica && !myContentPerms.erotica))) {
+        document.querySelector('.reader-wrap').innerHTML =
+          '<div style="text-align:center;padding:80px 24px;">' +
+            '<i class="ti ti-shield-lock" style="font-size:48px;color:var(--accent);display:block;margin-bottom:16px;"></i>' +
+            '<div style="font-family:\'Cinzel\',serif;font-size:20px;font-weight:700;color:var(--text);margin-bottom:8px;">This chapter contains restricted content</div>' +
+            '<div style="font-size:14px;color:var(--text3);max-width:420px;margin:0 auto 20px;">This story is marked for mature themes. ' +
+            (currentSession ? 'You can enable access to mature content in your account settings if you\'re 18 or older.' : 'Please sign in and verify your age in settings to view this.') + '</div>' +
+            '<a href="' + (currentSession ? 'settings.html' : 'auth.html') + '" style="background:var(--accent2);color:white;padding:10px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px;">' +
+            (currentSession ? '<i class="ti ti-settings"></i> Go to Settings' : '<i class="ti ti-login"></i> Sign In') + '</a>' +
+          '</div>';
+        return;
+      }
+
       applyDocumentLang(workData && workData.language);
       if (workData) dsTranslateHint.show(document.querySelector('.reader-wrap'), workData.language);
 

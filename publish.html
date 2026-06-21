@@ -572,6 +572,8 @@
           <div class="rating-option gore" id="rating-gore" onclick="toggleRating('gore')"><div class="rating-icon gore"><i class="ti ti-droplet"></i></div><div class="rating-text"><div class="rating-label">Gore</div><div class="rating-sub">Contains graphic violence or disturbing imagery</div></div><div class="checkbox-box"></div></div>
           <div class="rating-option erotica" id="rating-erotica" onclick="toggleRating('erotica')"><div class="rating-icon erotica"><i class="ti ti-heart"></i></div><div class="rating-text"><div class="rating-label">Erotica</div><div class="rating-sub">Contains explicit sexual content — 18+ only</div></div><div class="checkbox-box"></div></div>
         </div>
+        <div style="margin-top:16px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:8px;">Content Warnings <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional — readers can filter these individually)</span></div>
+        <div class="link-type-grid" id="content-warnings-grid"></div>
         </div>
       </div>
 
@@ -841,7 +843,7 @@
       artworkTags.forEach(function(tag) {
         var pill = document.createElement('span');
         pill.className = 'art-tag-pill';
-        pill.innerHTML = esc(tag) + '<button onclick="removeArtTag(\'' + esc(tag).replace(/'/g,"\\'") + '\')">×</button>';
+        pill.innerHTML = escHtml(tag) + '<button onclick="removeArtTag(\'' + escHtml(tag).replace(/'/g,"\\'") + '\')">×</button>';
         wrap.insertBefore(pill, inputEl);
       });
       // Sync into selectedGoldTags so existing checklist/publish logic sees them
@@ -1213,6 +1215,26 @@
     var collabOpen = false;
     var isFanfic = false;
     var ratings = { safe: true, gore: false, erotica: false };
+    // Keep this list identical to CONTENT_WARNING_OPTIONS in settings.html —
+    // readers filter on these exact strings.
+    var CONTENT_WARNING_OPTIONS = [
+      'Character Death', 'Self-Harm / Suicide', 'Abuse', 'Substance Abuse',
+      'Body Horror', 'Animal Harm', 'Mental Health Crisis', 'Non-Consent Themes'
+    ];
+    var selectedContentWarnings = [];
+    function renderContentWarningsPicker() {
+      var el = document.getElementById('content-warnings-grid');
+      if (!el) return;
+      el.innerHTML = CONTENT_WARNING_OPTIONS.map(function(w) {
+        var active = selectedContentWarnings.indexOf(w) !== -1;
+        return '<div class="link-type-card' + (active ? ' selected' : '') + '" onclick="toggleContentWarningPick(' + "'" + w.replace(/'/g,"\\'") + "'" + ')"><div class="link-type-card-title">' + w + '</div></div>';
+      }).join('');
+    }
+    function toggleContentWarningPick(w) {
+      var idx = selectedContentWarnings.indexOf(w);
+      if (idx === -1) selectedContentWarnings.push(w); else selectedContentWarnings.splice(idx, 1);
+      renderContentWarningsPicker();
+    }
     var aiArt = null; // null | 'no' | 'yes'
     var aiIntent = { collab: false, hire: false };
     var quill;
@@ -1458,6 +1480,22 @@
         el.querySelector('.checkbox-box').innerHTML = ratings[k] ? '<i class="ti ti-check"></i>' : '';
       });
       updatePreview();
+    }
+
+    // Pre-fills the content rating picker from the author's saved default
+    // (Settings → Content Filter → "Default Rating for Your Publishes").
+    async function applyDefaultRatingPrefs() {
+      try {
+        var { data } = await db.from('profiles').select('default_rating_gore,default_rating_erotica').eq('id', currentSession.user.id).maybeSingle();
+        if (!data) return;
+        ratings.gore = !!data.default_rating_gore;
+        ratings.erotica = !!data.default_rating_erotica;
+        ratings.safe = !(ratings.gore || ratings.erotica);
+        ['safe','gore','erotica'].forEach(function(k) {
+          var el = document.getElementById('rating-' + k);
+          if (el) { el.classList.toggle('checked', ratings[k]); el.querySelector('.checkbox-box').innerHTML = ratings[k] ? '<i class="ti ti-check"></i>' : ''; }
+        });
+      } catch(e) {}
     }
 
     // ── TAGS ───────────────────────────────────────────────────────
@@ -2183,6 +2221,7 @@
         disclaimer: document.getElementById('field-disclaimer').value,
         isFanfic: isFanfic,
         ratings: ratings,
+        contentWarnings: selectedContentWarnings,
         goldTags: selectedGoldTags,
         silverTags: selectedSilverTags,
         extraTags: selectedExtraTags,
@@ -2221,6 +2260,7 @@
             el.querySelector('.checkbox-box').innerHTML = ratings[k] ? '<i class="ti ti-check"></i>' : '';
           });
         }
+        if (d.contentWarnings) { selectedContentWarnings = d.contentWarnings; renderContentWarningsPicker(); }
 
         // Restore tags
         if (d.goldTags && d.goldTags.length)   { selectedGoldTags   = d.goldTags; }
@@ -2318,6 +2358,7 @@
           banner_url: bannerUrl,
           content_rating_gore: ratings.gore,
           content_rating_erotica: ratings.erotica,
+          content_warnings: JSON.stringify(selectedContentWarnings),
           collab_open: collabOpen,
           disclaimer: document.getElementById('field-disclaimer').value.trim() || null,
           tags_main: JSON.stringify(selectedGoldTags),
@@ -2505,6 +2546,7 @@
       }
       currentSession = session;
       document.getElementById('publish-content').style.display = 'block';
+      applyDefaultRatingPrefs();
 
       // Check URL param — artwork mode
       var urlParams = new URLSearchParams(window.location.search);
@@ -2532,6 +2574,7 @@
       }
 
       renderTagCategories('');
+      renderContentWarningsPicker();
       updatePreview();
       updateChecklist();
 

@@ -171,6 +171,7 @@ function dsApplyAccent(hex) {
       <button class="notif-btn" onclick="dsToggleNotif()">
         <i class="ti ti-bell"></i>
         <span class="notif-badge" id="ds-notif-badge"></span>
+        <i class="ti ti-moon" id="ds-quiet-indicator" title="Quiet Mode is on" style="display:none;position:absolute;top:-2px;right:-2px;font-size:11px;color:var(--accent,#2dd4bf);background:var(--bg2,#1a1a26);border-radius:50%;padding:1px;"></i>
       </button>
       <div class="notif-dropdown" id="notifDropdown">
         <div class="notif-tabs">
@@ -408,8 +409,8 @@ function dsApplyAccent(hex) {
     var badge = document.getElementById('dm-badge');
     if(!btn||!badge) return;
     try {
-      var { data: dmPrefRow } = await db.from('profiles').select('notif_message').eq('id', uid).maybeSingle();
-      if (dmPrefRow && dmPrefRow.notif_message === false) { badge.style.display='none'; btn.classList.remove('has-unread'); return; }
+      var { data: dmPrefRow } = await db.from('profiles').select('notif_message,quiet_mode').eq('id', uid).maybeSingle();
+      if (dmPrefRow && (dmPrefRow.notif_message === false || dmPrefRow.quiet_mode === true)) { badge.style.display='none'; btn.classList.remove('has-unread'); return; }
     } catch(e) {}
     var unreadRes = await (async function(){
       var convRes = await db.from('conversations').select('id').or('participant_a.eq.'+uid+',participant_b.eq.'+uid);
@@ -427,13 +428,22 @@ function dsApplyAccent(hex) {
     // Load this user's own notification preferences once, used to gate each feed below
     var myPrefs = { notif_follow: true, notif_chapter: true, notif_comment: true, notif_message: true, notif_announce: false };
     try {
-      var { data: prefRow } = await db.from('profiles').select('notif_follow,notif_chapter,notif_comment,notif_message,notif_announce').eq('id', uid).maybeSingle();
+      var { data: prefRow } = await db.from('profiles').select('notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,quiet_mode').eq('id', uid).maybeSingle();
       if (prefRow) {
         if (prefRow.notif_follow   !== null && prefRow.notif_follow   !== undefined) myPrefs.notif_follow   = prefRow.notif_follow;
         if (prefRow.notif_chapter  !== null && prefRow.notif_chapter  !== undefined) myPrefs.notif_chapter  = prefRow.notif_chapter;
         if (prefRow.notif_comment  !== null && prefRow.notif_comment  !== undefined) myPrefs.notif_comment  = prefRow.notif_comment;
         if (prefRow.notif_message  !== null && prefRow.notif_message  !== undefined) myPrefs.notif_message  = prefRow.notif_message;
         if (prefRow.notif_announce !== null && prefRow.notif_announce !== undefined) myPrefs.notif_announce = prefRow.notif_announce;
+        // Quiet Mode is a temporary master override — it suppresses everything below
+        // without ever touching the individual saved preferences. Turning it off
+        // in settings restores exactly what was there before.
+        if (prefRow.quiet_mode === true) {
+          myPrefs.notif_follow = false; myPrefs.notif_chapter = false; myPrefs.notif_comment = false;
+          myPrefs.notif_message = false; myPrefs.notif_announce = false;
+        }
+        var quietIndicator = document.getElementById('ds-quiet-indicator');
+        if (quietIndicator) quietIndicator.style.display = prefRow.quiet_mode === true ? 'block' : 'none';
       }
     } catch(e) {}
 

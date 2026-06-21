@@ -158,6 +158,7 @@
     var myContentFilters = { safe: true, gore: false, erotica: false };
     var myBlockedTags = [];
     var myMutedIds = [];
+    var myFilteredWarnings = [];
     var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
 
     const coverColors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa','#fb923c'];
@@ -221,6 +222,7 @@
       if (!allowErotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
       myBlockedTags.forEach(function(tag){ q = q.not('tags_all', 'ilike', '%"' + tag.replace(/"/g,'') + '"%'); });
       if (myMutedIds.length) q = q.not('author_id', 'in', '(' + myMutedIds.join(',') + ')');
+      myFilteredWarnings.forEach(function(w){ q = q.not('content_warnings', 'cs', JSON.stringify([w])); });
       return q;
     }
 
@@ -508,7 +510,7 @@
         var bs = await window.db.auth.getSession();
         if(bs&&bs.data&&bs.data.session) {
           await dsBlock.load(bs.data.session.user.id);
-          var { data: prefRow } = await db.from('profiles').select('settings_filter_safe,settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict').eq('id', bs.data.session.user.id).maybeSingle();
+          var { data: prefRow } = await db.from('profiles').select('settings_filter_safe,settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict,filtered_content_warnings').eq('id', bs.data.session.user.id).maybeSingle();
           if (prefRow) {
             if (prefRow.settings_filter_safe !== null && prefRow.settings_filter_safe !== undefined) myContentFilters.safe = !!prefRow.settings_filter_safe;
             myContentFilters.gore = !!prefRow.settings_filter_gore;
@@ -516,6 +518,7 @@
             if (prefRow.pref_story_language) myLangPrefs.pref_language = prefRow.pref_story_language;
             if (prefRow.lang_original !== null && prefRow.lang_original !== undefined) myLangPrefs.lang_original = prefRow.lang_original;
             if (prefRow.lang_strict !== null && prefRow.lang_strict !== undefined) myLangPrefs.lang_strict = prefRow.lang_strict;
+            if (Array.isArray(prefRow.filtered_content_warnings)) myFilteredWarnings = prefRow.filtered_content_warnings;
           }
           try {
             var { data: muteRows } = await db.from('mutes').select('muted_id').eq('muter_id', bs.data.session.user.id);

@@ -361,6 +361,12 @@
       <div id="reports-list"><div class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...</div></div>
     </div>
 
+    <div class="section">
+      <div class="section-title"><i class="ti ti-message-report"></i> User Feedback</div>
+      <div class="section-sub">Submitted from the Feedback box in Settings.</div>
+      <div id="feedback-list"><div class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...</div></div>
+    </div>
+
     <!-- ── USER MANAGEMENT ──────────────────────────────────────── -->
     <div class="section">
       <div class="section-title"><i class="ti ti-users"></i> User Management</div>
@@ -711,6 +717,51 @@
     });
 
     // ── CONTENT REPORTS ───────────────────────────────────────────
+    async function loadFeedback() {
+      var el = document.getElementById('feedback-list');
+      var result = await db.from('feedback').select('*').order('created_at', { ascending: false }).limit(50);
+      if (result.error) {
+        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-circle-off"></i>No feedback table found yet.</div>';
+        return;
+      }
+      if (!result.data || result.data.length === 0) {
+        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-mood-happy"></i>No feedback yet.</div>';
+        return;
+      }
+      var userIds = Array.from(new Set(result.data.map(function(f){ return f.user_id; }).filter(Boolean)));
+      var profMap = {};
+      if (userIds.length) {
+        var { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', userIds);
+        (profs || []).forEach(function(p){ profMap[p.id] = p; });
+      }
+      el.innerHTML = '';
+      result.data.forEach(function(fb) {
+        var prof = profMap[fb.user_id] || {};
+        var authorName = prof.display_name || prof.username || 'Unknown user';
+        var card = document.createElement('div');
+        card.className = 'report-card' + (fb.status === 'reviewed' ? ' resolved' : '');
+        card.innerHTML =
+          '<div class="report-header">' +
+            '<span class="report-type">' + escHtml(fb.page_context || 'feedback') + '</span>' +
+            (fb.status === 'reviewed' ? '<span style="font-size:11px;color:var(--text3);">Reviewed</span>' : '') +
+          '</div>' +
+          '<div class="report-body">' + escHtml(fb.message || '') + '</div>' +
+          '<div class="report-meta">From @' + escHtml(authorName) + ' · ' + formatDateTime(fb.created_at) + '</div>' +
+          (fb.status !== 'reviewed' ?
+          '<div class="report-actions">' +
+            '<button class="report-btn dismiss"><i class="ti ti-check"></i> Mark Reviewed</button>' +
+          '</div>' : '');
+        if (fb.status !== 'reviewed') {
+          card.querySelector('.dismiss').addEventListener('click', async function() {
+            await db.from('feedback').update({ status: 'reviewed' }).eq('id', fb.id);
+            showToast('Feedback marked reviewed');
+            loadFeedback();
+          });
+        }
+        el.appendChild(card);
+      });
+    }
+
     async function loadReports() {
       var el = document.getElementById('reports-list');
       var result = await db.from('reports').select('*').order('created_at', { ascending: false }).limit(30);
@@ -1032,6 +1083,7 @@
     loadMaintenance();
     renderFeaturedSlots();
     loadReports();
+    loadFeedback();
     loadTags();
     renderAuditLog();
   </script>
