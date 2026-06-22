@@ -5,6 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DawnScribe — Reward Manager</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // Block all rendering until admin check resolves — prevents flash
+    document.documentElement.style.visibility = 'hidden';
+    (async function() {
+      const _db = window.supabase.createClient(
+        'https://cajjyyskpmjnpcxcfeuk.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c'
+      );
+      var session = null;
+      for (var i = 0; i < 5; i++) {
+        var r = await _db.auth.getSession();
+        session = r.data.session;
+        if (session) break;
+        await new Promise(function(res) { setTimeout(res, 350); });
+      }
+      var adminRow = session ? await _db.from('admins').select('id').eq('id', session.user.id).maybeSingle() : null;
+      if (!session || !adminRow || !adminRow.data) {
+        document.documentElement.innerHTML = '<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</body></html>';
+        return;
+      }
+      document.documentElement.style.visibility = '';
+    })();
+  </script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <style>
@@ -139,21 +162,13 @@
     <a class="back-btn" href="WhiteRoomUnbreakable.html"><i class="ti ti-arrow-left"></i> Back to Admin</a>
   </nav>
 
-  <div id="access-gate">
-    <div class="access-denied">
-      <i class="ti ti-lock"></i>
-      <h2>Checking access&hellip;</h2>
-      <p>One moment.</p>
-    </div>
-  </div>
-
-  <div class="page" id="main-content" style="display:none;">
+  <div class="page" id="main-content">
     <h1 class="page-title">Genre <span>Rewards</span></h1>
     <p class="page-sub">Every tag on DawnScribe earns readers points as they read (gold/main tags &times;2, silver/sub tags &times;1 per word). Add cosmetic rewards here &mdash; readers unlock them automatically once they cross the point threshold.</p>
 
     <!-- OVERVIEW -->
     <div class="overview-section" id="overview-section">
-      <div class="overview-header" onclick="toggleOverview()">
+      <div class="overview-header">
         <div class="overview-title"><i class="ti ti-list-details"></i> Configured Rewards <span class="overview-count" id="overview-count">0</span></div>
         <i class="ti ti-chevron-down overview-chevron" id="overview-chevron"></i>
       </div>
@@ -164,10 +179,10 @@
       <!-- TAG SIDEBAR -->
       <div class="tag-sidebar">
         <div class="sort-toggle" id="sort-toggle">
-          <button class="sort-btn active" id="sort-az-btn" onclick="setSortMode('az')">A–Z</button>
-          <button class="sort-btn" id="sort-popular-btn" onclick="setSortMode('popular')">Most Used</button>
+          <button class="sort-btn active" id="sort-az-btn">A–Z</button>
+          <button class="sort-btn" id="sort-popular-btn">Most Used</button>
         </div>
-        <input class="tag-search" id="tag-search" type="text" placeholder="Search tags..." oninput="renderTagList()"/>
+        <input class="tag-search" id="tag-search" type="text" placeholder="Search tags..."/>
         <div class="tag-list" id="tag-list"></div>
       </div>
 
@@ -188,7 +203,6 @@
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
     const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     window.db = db;
-    const ADMIN_UID = '516db718-edd5-4856-9281-2df642d006f5';
 
     const SLOT_ICONS = {
       hat: 'ti-hat-cowboy', hair: 'ti-cut', face: 'ti-mask',
@@ -198,40 +212,19 @@
       companion: 'ti-paw', effect: 'ti-sparkles', background: 'ti-photo'
     };
 
-    // Slot groups for the dropdown — organized by avatar region so
-    // similar layer types are grouped together when picking a slot.
     const SLOT_GROUPS = [
-      { label: 'Head', slots: ['hat','hair','face'] },
-      { label: 'Body', slots: ['outfit','shirt','jacket','gloves'] },
-      { label: 'Lower Body', slots: ['pants','shoes'] },
+      { label: 'Head',        slots: ['hat','hair','face'] },
+      { label: 'Body',        slots: ['outfit','shirt','jacket','gloves'] },
+      { label: 'Lower Body',  slots: ['pants','shoes'] },
       { label: 'Accessories', slots: ['back','neck','accessory'] },
-      { label: 'Scene', slots: ['companion','effect','background'] }
+      { label: 'Scene',       slots: ['companion','effect','background'] }
     ];
 
-    var allTags = [];
+    var allTags    = [];
     var allRewards = {};
-    var tagUsage = {};       // tag -> number of published works using it
-    var sortMode = 'az';     // 'az' | 'popular'
+    var tagUsage   = {};
+    var sortMode   = 'az';
     var selectedTag = null;
-
-    // ── AUTH GATE ───────────────────────────────────────────────
-    async function checkAccess() {
-      var session = null;
-      for (var i = 0; i < 5; i++) {
-        var { data } = await db.auth.getSession();
-        session = data.session;
-        if (session) break;
-        await new Promise(r => setTimeout(r, 350));
-      }
-      if (session && session.user && session.user.id === ADMIN_UID) {
-        document.getElementById('access-gate').style.display = 'none';
-        document.getElementById('main-content').style.display = 'block';
-        init();
-      } else {
-        document.getElementById('access-gate').innerHTML =
-          '<div class="access-denied"><i class="ti ti-lock"></i><h2>Access Denied</h2><p>This page is only available to the site administrator.</p></div>';
-      }
-    }
 
     // ── TOAST ───────────────────────────────────────────────────
     function showToast(msg, icon, isError) {
@@ -249,38 +242,17 @@
       });
     }
 
-    // ── INIT: load all tags + all rewards ─────────────────────────
+    // ── INIT ────────────────────────────────────────────────────
     async function init() {
-      // Load the curated tag vocabulary from publish.html's TAG_CATEGORIES —
-      // this is the same source users pick from when tagging a work, so it
-      // excludes one-off character-name tags that users type in freely.
-      var tagSet = new Set();
-      try {
-        var pubResp = await fetch('publish.html');
-        var pubHtml = await pubResp.text();
-        var startIdx = pubHtml.indexOf('var TAG_CATEGORIES');
-        var braceIdx = pubHtml.indexOf('{', startIdx);
-        var depth = 0, endIdx = braceIdx;
-        for (var k = braceIdx; k < pubHtml.length; k++) {
-          if (pubHtml[k] === '{') depth++;
-          else if (pubHtml[k] === '}') { depth--; if (depth === 0) { endIdx = k + 1; break; } }
-        }
-        var block = pubHtml.slice(braceIdx, endIdx);
-        // Match each category's array, then pull quoted tag strings from it
-        var catRegex = /'((?:[^'\\]|\\.)*)':\s*\[((?:[^\[\]]|\[[^\[\]]*\])*)\]/g;
-        var catMatch;
-        while ((catMatch = catRegex.exec(block)) !== null) {
-          var arr = catMatch[2];
-          var tagRegex = /'((?:[^'\\]|\\.)*)'/g;
-          var tagMatch;
-          while ((tagMatch = tagRegex.exec(arr)) !== null) {
-            tagSet.add(tagMatch[1]);
-          }
-        }
-      } catch (e) {
-        showToast('Could not load tag list from publish.html', 'ti-alert-circle', true);
+      // Bug 3 fix: load tags from the shared DB tags table instead of
+      // scraping publish.html at runtime with fragile regex.
+      var tagsResult = await db.from('tags').select('name').order('name');
+      if (tagsResult.error || !tagsResult.data || tagsResult.data.length === 0) {
+        showToast('Could not load tag list from DB', 'ti-alert-circle', true);
+        allTags = [];
+      } else {
+        allTags = tagsResult.data.map(function(r) { return r.name; });
       }
-      allTags = Array.from(tagSet).sort();
 
       var rewardsResult = await db.from('tag_rewards')
         .select('id, tag, points_required, cosmetic_item_id, cosmetic_items(id,name,description,image_url,slot)')
@@ -292,16 +264,13 @@
         allRewards[r.tag].push(r);
       });
 
-      // Any tag with existing rewards but no longer in TAG_CATEGORIES still
-      // needs to show up so you can see/manage it (e.g. if the tag list changed)
+      // Tags with rewards but not in the DB tag list still surface so you can manage them.
       Object.keys(allRewards).forEach(function(tag) {
-        if (!allTags.includes(tag)) allTags.push(tag);
+        if (allTags.indexOf(tag) === -1) allTags.push(tag);
       });
       allTags.sort();
 
-      // Tag usage counts (how many published works use each tag) — powers
-      // the "Most Used" sort, to prioritize rewards for tags readers
-      // encounter most often.
+      // Tag usage counts for "Most Used" sort
       tagUsage = {};
       var worksResult = await db.from('works').select('tags_all').eq('is_published', true);
       (worksResult.data || []).forEach(function(w) {
@@ -334,19 +303,15 @@
       }
 
       if (sortMode === 'popular') {
-        // Sort all filtered tags by usage count (desc), then alphabetically.
-        // No grouping by reward status in this mode — the point is to see
-        // priority order regardless of what's already configured.
         var sorted = filtered.slice().sort(function(a, b) {
           var diff = (tagUsage[b] || 0) - (tagUsage[a] || 0);
-          if (diff !== 0) return diff;
-          return a.localeCompare(b);
+          return diff !== 0 ? diff : a.localeCompare(b);
         });
         wrap.innerHTML = sorted.map(renderTagItem).join('');
         return;
       }
 
-      var configured = filtered.filter(function(t) { return (allRewards[t] || []).length > 0; });
+      var configured   = filtered.filter(function(t) { return (allRewards[t] || []).length > 0; });
       var unconfigured = filtered.filter(function(t) { return (allRewards[t] || []).length === 0; });
 
       var html = '';
@@ -362,23 +327,28 @@
     }
 
     function renderTagItem(tag) {
-      var count = (allRewards[tag] || []).length;
-      var usage = tagUsage[tag] || 0;
+      var count  = (allRewards[tag] || []).length;
+      var usage  = tagUsage[tag] || 0;
       var active = tag === selectedTag ? ' active' : '';
       var badges = '';
       if (sortMode === 'popular') {
         badges += '<span class="tag-item-usage" title="Published works using this tag">' + usage + ' work' + (usage === 1 ? '' : 's') + '</span>';
       }
-      if (count > 0) {
-        badges += '<span class="tag-item-count">' + count + '</span>';
-      }
-      return '<div class="tag-item' + active + '" onclick="selectTag(\'' + tag.replace(/'/g, "\\'") + '\')">' +
+      if (count > 0) badges += '<span class="tag-item-count">' + count + '</span>';
+      return '<div class="tag-item' + active + '" data-tag="' + escHtml(tag) + '">' +
         '<span class="tag-item-name">' + escHtml(tag) + '</span>' +
         '<span style="display:flex;gap:4px;flex-shrink:0;">' + badges + '</span>' +
       '</div>';
     }
 
-    // ── OVERVIEW SECTION ──────────────────────────────────────────
+    // Use event delegation — no inline onclick
+    document.getElementById('tag-list').addEventListener('click', function(e) {
+      var item = e.target.closest('.tag-item');
+      if (!item) return;
+      selectTag(item.dataset.tag);
+    });
+
+    // ── OVERVIEW ─────────────────────────────────────────────────
     var overviewCollapsed = false;
     function toggleOverview() {
       overviewCollapsed = !overviewCollapsed;
@@ -386,9 +356,17 @@
     }
 
     function renderOverview() {
-      var configuredTags = Object.keys(allRewards).filter(function(t) { return allRewards[t].length > 0; }).sort();
+      var configuredTags = Object.keys(allRewards)
+        .filter(function(t) { return allRewards[t].length > 0; })
+        // Suggestion: sort overview by tag usage count (most popular first)
+        .sort(function(a, b) {
+          var diff = (tagUsage[b] || 0) - (tagUsage[a] || 0);
+          return diff !== 0 ? diff : a.localeCompare(b);
+        });
       var totalRewards = configuredTags.reduce(function(sum, t) { return sum + allRewards[t].length; }, 0);
-      document.getElementById('overview-count').textContent = totalRewards + (totalRewards === 1 ? ' reward' : ' rewards') + ' across ' + configuredTags.length + (configuredTags.length === 1 ? ' tag' : ' tags');
+      document.getElementById('overview-count').textContent =
+        totalRewards + (totalRewards === 1 ? ' reward' : ' rewards') + ' across ' +
+        configuredTags.length + (configuredTags.length === 1 ? ' tag' : ' tags');
 
       var body = document.getElementById('overview-body');
       if (configuredTags.length === 0) {
@@ -398,6 +376,7 @@
 
       body.innerHTML = configuredTags.map(function(tag) {
         var rewards = allRewards[tag];
+        var usage = tagUsage[tag] || 0;
         var rows = rewards.map(function(r) {
           var item = r.cosmetic_items || {};
           return '<div class="overview-item-row">' +
@@ -405,34 +384,99 @@
             '<span class="overview-item-points">' + r.points_required.toLocaleString() + ' pts</span>' +
           '</div>';
         }).join('');
-        return '<div class="overview-group" onclick="selectTag(\'' + tag.replace(/'/g, "\\'") + '\')">' +
-          '<div class="overview-group-head"><span>' + escHtml(tag) + '</span><i class="ti ti-arrow-right"></i></div>' +
+        var usageBadge = usage > 0 ? '<span style="font-size:10px;color:var(--text3);margin-left:6px;">(' + usage + ' work' + (usage === 1 ? '' : 's') + ')</span>' : '';
+        return '<div class="overview-group" data-tag="' + escHtml(tag) + '">' +
+          '<div class="overview-group-head"><span>' + escHtml(tag) + usageBadge + '</span><i class="ti ti-arrow-right"></i></div>' +
           rows +
         '</div>';
       }).join('');
+
+      // Event delegation for overview groups
+      body.querySelectorAll('.overview-group').forEach(function(el) {
+        el.addEventListener('click', function() { selectTag(this.dataset.tag); });
+      });
     }
 
-    // ── SELECT TAG ──────────────────────────────────────────────
+    // ── SELECT TAG ───────────────────────────────────────────────
     function selectTag(tag) {
       selectedTag = tag;
       renderTagList();
       renderDetailPanel();
     }
 
-    // ── DETAIL PANEL ────────────────────────────────────────────
+    // ── DETAIL PANEL ─────────────────────────────────────────────
     function renderDetailPanel() {
       var panel = document.getElementById('detail-panel');
       var rewards = allRewards[selectedTag] || [];
 
       var rewardsHtml = rewards.length === 0
         ? '<div class="no-rewards">No rewards yet for this tag. Add one below.</div>'
-        : '<div class="rewards-table">' + rewards.map(renderRewardRow).join('') + '</div>';
+        : '<div class="rewards-table" id="rewards-table">' + rewards.map(renderRewardRow).join('') + '</div>';
 
       panel.innerHTML =
         '<div class="detail-header"><div class="detail-title">' + escHtml(selectedTag) + '</div></div>' +
-        '<div class="detail-meta">Readers earn points toward this tag whenever they finish a chapter on a work tagged with it &mdash; double if it\'s one of the work\'s main (gold) tags, single if it\'s a secondary (silver) tag.</div>' +
+        '<div class="detail-meta">Readers earn points toward this tag whenever they finish a chapter on a work tagged with it — double if it\'s one of the work\'s main (gold) tags, single if it\'s a secondary (silver) tag.</div>' +
         rewardsHtml +
         renderAddForm();
+
+      // Bug 5 fix: wire delete buttons via event delegation rather than inline onclick
+      var table = panel.querySelector('#rewards-table');
+      if (table) {
+        table.addEventListener('click', function(e) {
+          var btn = e.target.closest('.reward-delete');
+          if (!btn) return;
+          deleteReward(btn.dataset.rewardId, btn.dataset.cosmeticId);
+        });
+      }
+
+      // Wire the add-form interactives
+      var imageInput = document.getElementById('new-item-image');
+      var fileInput  = document.getElementById('new-item-file');
+      var slotSelect = document.getElementById('new-item-slot');
+      var pointsInput = document.getElementById('new-points');
+
+      // Live thumbnail preview — Suggestion: update as URL or slot changes
+      function updatePreview() {
+        var url = imageInput ? imageInput.value.trim() : '';
+        var slot = slotSelect ? slotSelect.value : 'accessory';
+        var icon = SLOT_ICONS[slot] || 'ti-diamond';
+        var preview = document.getElementById('thumb-preview');
+        if (!preview) return;
+        if (url) {
+          preview.innerHTML = '<img src="' + escHtml(url) + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" onerror="this.parentNode.innerHTML=\'<i class=\\\"ti ' + icon + '\\\"></i>\'"/>';
+        } else {
+          preview.innerHTML = '<i class="ti ' + icon + '"></i>';
+        }
+      }
+      if (imageInput) imageInput.addEventListener('input', updatePreview);
+      if (slotSelect) slotSelect.addEventListener('change', updatePreview);
+      updatePreview();
+
+      // Live point estimate — Suggestion: show chapters-needed context
+      function updatePointHint() {
+        var pts = parseInt(pointsInput ? pointsInput.value : '', 10);
+        var hint = document.getElementById('point-estimate');
+        if (!hint) return;
+        if (!pts || pts <= 0) { hint.textContent = ''; return; }
+        var goldChapters   = Math.ceil(pts / 5000);
+        var silverChapters = Math.ceil(pts / 2500);
+        hint.innerHTML = '≈ <b>' + goldChapters.toLocaleString() + '</b> gold-tag chapters or <b>' + silverChapters.toLocaleString() + '</b> silver-tag chapters for a 2,500-word chapter.';
+      }
+      if (pointsInput) pointsInput.addEventListener('input', updatePointHint);
+
+      // File upload preview
+      if (fileInput) {
+        fileInput.addEventListener('change', function() {
+          if (!this.files || !this.files[0]) return;
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            if (imageInput) imageInput.value = '';
+            var preview = document.getElementById('thumb-preview');
+            if (preview) preview.innerHTML = '<img src="' + e.target.result + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:8px;"/>';
+          };
+          reader.readAsDataURL(this.files[0]);
+        });
+      }
     }
 
     function renderRewardRow(r) {
@@ -449,59 +493,107 @@
           '<div class="reward-slot"><i class="ti ' + icon + '"></i> ' + escHtml(item.slot || 'accessory') + '</div>' +
         '</div>' +
         '<div class="reward-points">' + r.points_required.toLocaleString() + '<small>points</small></div>' +
-        '<button class="reward-delete" title="Delete reward" onclick="deleteReward(\'' + r.id + '\')"><i class="ti ti-trash"></i></button>' +
+        // Bug 5 fix: data attributes instead of inline onclick
+        '<button class="reward-delete" title="Delete reward" data-reward-id="' + escHtml(r.id) + '" data-cosmetic-id="' + escHtml(r.cosmetic_item_id) + '"><i class="ti ti-trash"></i></button>' +
       '</div>';
     }
 
     function renderAddForm() {
+      var slotOptions = SLOT_GROUPS.map(function(g) {
+        return '<optgroup label="' + g.label + '">' +
+          g.slots.map(function(s) {
+            return '<option value="' + s + '">' + s.charAt(0).toUpperCase() + s.slice(1) + '</option>';
+          }).join('') +
+        '</optgroup>';
+      }).join('');
+
       return '<div class="form-section-title"><i class="ti ti-plus"></i> Add Reward</div>' +
         '<div class="form-section-sub">Create a new cosmetic item and tie it to a point threshold for this tag.</div>' +
         '<div class="form-grid">' +
-          '<div class="form-group"><label class="form-label">Item Name</label><input class="form-input" id="new-item-name" placeholder="e.g. Survivor\'s Gear"/></div>' +
-          '<div class="form-group"><label class="form-label">Slot</label>' +
-            '<select class="form-select" id="new-item-slot">' +
-              SLOT_GROUPS.map(function(g) {
-                return '<optgroup label="' + g.label + '">' +
-                  g.slots.map(function(s) {
-                    var label = s.charAt(0).toUpperCase() + s.slice(1);
-                    return '<option value="' + s + '">' + label + '</option>';
-                  }).join('') +
-                '</optgroup>';
-              }).join('') +
-            '</select>' +
+          '<div class="form-group"><label class="form-label">Item Name</label>' +
+            '<input class="form-input" id="new-item-name" placeholder="e.g. Survivor\'s Gear"/>' +
           '</div>' +
-          '<div class="form-group full"><label class="form-label">Description</label><textarea class="form-textarea" id="new-item-desc" placeholder="Shown to users when they unlock or hover this item"></textarea></div>' +
-          '<div class="form-group"><label class="form-label">Image URL</label><input class="form-input" id="new-item-image" placeholder="https://..."/></div>' +
-          '<div class="form-group"><label class="form-label">Points Required</label><input class="form-input" type="number" min="1" id="new-points" placeholder="e.g. 10000"/>' +
-            '<div class="points-hint">A reader finishing a <b>2,500-word</b> chapter on a work where this is a <b>gold</b> tag earns <b>5,000</b> points toward it (or <b>2,500</b> if it\'s a silver tag).</div>' +
+          '<div class="form-group"><label class="form-label">Slot</label>' +
+            '<select class="form-select" id="new-item-slot">' + slotOptions + '</select>' +
+          '</div>' +
+          '<div class="form-group full"><label class="form-label">Description</label>' +
+            '<textarea class="form-textarea" id="new-item-desc" placeholder="Shown to users when they unlock or hover this item"></textarea>' +
+          '</div>' +
+          // Suggestion: side-by-side image input + live thumbnail preview
+          '<div class="form-group full">' +
+            '<label class="form-label">Item Image</label>' +
+            '<div style="display:flex;gap:12px;align-items:flex-start;">' +
+              '<div style="flex:1;display:flex;flex-direction:column;gap:8px;">' +
+                '<input class="form-input" id="new-item-image" placeholder="Paste image URL (https://...)"/>' +
+                '<div style="display:flex;align-items:center;gap:10px;">' +
+                  '<span style="font-size:11px;color:var(--text3);">or upload a file</span>' +
+                  '<input type="file" id="new-item-file" accept="image/*" style="font-size:12px;color:var(--text2);"/>' +
+                '</div>' +
+              '</div>' +
+              // Live thumbnail preview box
+              '<div id="thumb-preview" style="width:64px;height:64px;flex-shrink:0;border-radius:8px;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:22px;overflow:hidden;border:1px solid var(--border);"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="form-group"><label class="form-label">Points Required</label>' +
+            '<input class="form-input" type="number" min="1" id="new-points" placeholder="e.g. 10000"/>' +
+            // Suggestion: live chapter-count estimate
+            '<div class="points-hint" id="point-estimate"></div>' +
+            '<div class="points-hint">Gold-tag chapter (2,500 words) = <b>5,000 pts</b>. Silver = <b>2,500 pts</b>.</div>' +
           '</div>' +
         '</div>' +
-        '<button class="save-btn" id="save-reward-btn" onclick="saveReward()"><i class="ti ti-check"></i> Add Reward</button>';
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">' +
+          '<button class="save-btn" id="save-reward-btn"><i class="ti ti-check"></i> Add Reward</button>' +
+          '<button class="save-btn" id="clean-orphans-btn" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:13px;padding:9px 16px;" title="Find and delete cosmetic items with no reward attached"><i class="ti ti-trash"></i> Clean Orphaned Items</button>' +
+        '</div>';
     }
 
-    // ── SAVE / DELETE ───────────────────────────────────────────
-    async function saveReward() {
-      var name = document.getElementById('new-item-name').value.trim();
-      var slot = document.getElementById('new-item-slot').value;
-      var desc = document.getElementById('new-item-desc').value.trim();
-      var image = document.getElementById('new-item-image').value.trim();
-      var points = parseInt(document.getElementById('new-points').value, 10);
+    // Wire save + clean buttons via event delegation on the panel
+    document.getElementById('detail-panel').addEventListener('click', function(e) {
+      if (e.target.closest('#save-reward-btn'))    saveReward();
+      if (e.target.closest('#clean-orphans-btn'))  cleanOrphanedItems();
+    });
 
-      if (!name) { showToast('Item name is required', 'ti-alert-circle', true); return; }
+    // ── SAVE REWARD ─────────────────────────────────────────────
+    async function saveReward() {
+      var name     = document.getElementById('new-item-name').value.trim();
+      var slot     = document.getElementById('new-item-slot').value;
+      var desc     = document.getElementById('new-item-desc').value.trim();
+      var imageUrl = document.getElementById('new-item-image').value.trim();
+      var fileInput = document.getElementById('new-item-file');
+      var points   = parseInt(document.getElementById('new-points').value, 10);
+
+      if (!name)              { showToast('Item name is required', 'ti-alert-circle', true); return; }
       if (!points || points <= 0) { showToast('Enter a valid point threshold', 'ti-alert-circle', true); return; }
+
+      // Suggestion: warn if this exact threshold already exists for this tag
+      var existing = (allRewards[selectedTag] || []).find(function(r) { return r.points_required === points; });
+      if (existing) {
+        var item = existing.cosmetic_items || {};
+        if (!confirm('There\'s already a reward at ' + points.toLocaleString() + ' points for this tag ("' + (item.name || 'Untitled') + '"). Add another one at the same threshold anyway?')) return;
+      }
 
       var btn = document.getElementById('save-reward-btn');
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Saving...';
 
       try {
+        // Handle file upload — upload to cosmetic-assets bucket and get a public URL
+        if (fileInput && fileInput.files && fileInput.files[0]) {
+          var file = fileInput.files[0];
+          var ext  = file.name.split('.').pop();
+          var path = 'items/' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + ext;
+          var uploadResult = await db.storage.from('cosmetic-assets').upload(path, file, { upsert: false });
+          if (uploadResult.error) throw new Error('Image upload failed: ' + uploadResult.error.message);
+          var urlResult = db.storage.from('cosmetic-assets').getPublicUrl(path);
+          imageUrl = urlResult.data.publicUrl;
+        }
+
         var itemResult = await db.from('cosmetic_items').insert({
           name: name,
           description: desc || null,
-          image_url: image || null,
+          image_url: imageUrl || null,
           slot: slot
         }).select().single();
-
         if (itemResult.error) throw itemResult.error;
 
         var rewardResult = await db.from('tag_rewards').insert({
@@ -509,7 +601,6 @@
           points_required: points,
           cosmetic_item_id: itemResult.data.id
         }).select('id, tag, points_required, cosmetic_item_id, cosmetic_items(id,name,description,image_url,slot)').single();
-
         if (rewardResult.error) throw rewardResult.error;
 
         if (!allRewards[selectedTag]) allRewards[selectedTag] = [];
@@ -527,13 +618,24 @@
       }
     }
 
-    async function deleteReward(rewardId) {
+    // ── DELETE REWARD ─────────────────────────────────────────────
+    // Bug 2 fix: also delete the cosmetic_items row if no other tag_reward
+    // references it — prevents orphan items from accumulating in the DB and
+    // polluting the avatar gacha pool.
+    async function deleteReward(rewardId, cosmeticItemId) {
       if (!confirm('Delete this reward? Users who already unlocked the item will keep it, but no one new will unlock it.')) return;
 
       var result = await db.from('tag_rewards').delete().eq('id', rewardId);
       if (result.error) {
         showToast(result.error.message || 'Failed to delete', 'ti-alert-circle', true);
         return;
+      }
+
+      // Check if any other tag_reward still references this cosmetic item
+      var otherRefs = await db.from('tag_rewards').select('id', { count: 'exact', head: true }).eq('cosmetic_item_id', cosmeticItemId);
+      if ((otherRefs.count || 0) === 0) {
+        // Safe to delete the cosmetic item itself
+        await db.from('cosmetic_items').delete().eq('id', cosmeticItemId);
       }
 
       allRewards[selectedTag] = (allRewards[selectedTag] || []).filter(function(r) { return r.id !== rewardId; });
@@ -545,7 +647,40 @@
       renderOverview();
     }
 
-    checkAccess();
+    // ── CLEAN ORPHANED ITEMS ──────────────────────────────────────
+    // Suggestion: find cosmetic_items rows with no tag_rewards reference and
+    // remove them. Clears out any items that leaked via the old delete bug.
+    async function cleanOrphanedItems() {
+      var allItemsRes   = await db.from('cosmetic_items').select('id');
+      var linkedRes     = await db.from('tag_rewards').select('cosmetic_item_id');
+      if (allItemsRes.error || linkedRes.error) {
+        showToast('Error checking for orphans', 'ti-alert-circle', true);
+        return;
+      }
+      var linkedIds = new Set((linkedRes.data || []).map(function(r) { return r.cosmetic_item_id; }));
+      var orphans   = (allItemsRes.data || []).filter(function(i) { return !linkedIds.has(i.id); });
+      if (orphans.length === 0) {
+        showToast('No orphaned items found — all clean!', 'ti-check');
+        return;
+      }
+      if (!confirm('Found ' + orphans.length + ' orphaned cosmetic item' + (orphans.length === 1 ? '' : 's') + ' with no reward attached. Delete them all?')) return;
+      var ids = orphans.map(function(i) { return i.id; });
+      var del = await db.from('cosmetic_items').delete().in('id', ids);
+      if (del.error) {
+        showToast('Error deleting orphans: ' + del.error.message, 'ti-alert-circle', true);
+      } else {
+        showToast('Cleaned up ' + orphans.length + ' orphaned item' + (orphans.length === 1 ? '' : 's') + '.', 'ti-trash');
+      }
+    }
+
+    // ── SORT / SEARCH ─────────────────────────────────────────────
+    document.getElementById('sort-az-btn').addEventListener('click', function() { setSortMode('az'); });
+    document.getElementById('sort-popular-btn').addEventListener('click', function() { setSortMode('popular'); });
+    document.getElementById('tag-search').addEventListener('input', renderTagList);
+    document.getElementById('overview-section').querySelector('.overview-header').addEventListener('click', toggleOverview);
+
+    // ── KICKOFF ───────────────────────────────────────────────────
+    init();
   </script>
 </body>
 </html>
