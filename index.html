@@ -2058,6 +2058,31 @@
       document.getElementById('poll-show-results-btn').style.display = 'none';
     }
 
+    // ── MAINTENANCE MODE CHECK ────────────────────────────────────
+    // Only show the maintenance page to non-admin visitors. Admins
+    // (in the admins table) can always access the site normally.
+    async function checkMaintenanceMode() {
+      var res = await db.from('site_settings').select('value').eq('key', 'maintenance_mode').maybeSingle();
+      var isOn = res.data ? (res.data.value === true || res.data.value === 'true') : false;
+      if (!isOn) return;
+      // Check if the current user is an admin — if so, skip the maintenance page
+      var sess = await db.auth.getSession();
+      if (sess.data && sess.data.session) {
+        var adminCheck = await db.from('admins').select('id').eq('id', sess.data.session.user.id).maybeSingle();
+        if (adminCheck.data) return; // admin — let them through
+      }
+      // Show maintenance overlay for everyone else
+      document.body.innerHTML = [
+        '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;',
+        'height:100vh;background:#0a0a0f;color:#f1f0ff;font-family:Lato,sans-serif;text-align:center;padding:24px;">',
+        '<div style="font-family:Cinzel,serif;font-size:28px;color:#2dd4bf;margin-bottom:16px;">DawnScribe</div>',
+        '<div style="font-size:18px;font-weight:700;margin-bottom:8px;">We\'re doing some maintenance</div>',
+        '<div style="font-size:14px;color:#9b9bc0;max-width:400px;">The site will be back up shortly. Thank you for your patience.</div>',
+        '</div>'
+      ].join('');
+    }
+
+    checkMaintenanceMode();
     loadAnnouncement();
     loadPoll();
 

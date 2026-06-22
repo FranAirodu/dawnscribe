@@ -1920,6 +1920,26 @@
   ]
 };
 
+    // ── TAG LOADING (DB-first with hardcoded fallback) ────────────
+    // Try to load tags from the shared DB table. If the DB fetch fails
+    // (e.g. offline, table missing), fall back to the hardcoded list above.
+    async function loadTagCategoriesFromDB() {
+      var result = await db.from('tags').select('name,category').order('category').order('name');
+      if (result.error || !result.data || result.data.length === 0) {
+        // Fall back to hardcoded TAG_CATEGORIES
+        return;
+      }
+      // Rebuild TAG_CATEGORIES from DB rows
+      var fresh = {};
+      result.data.forEach(function(row) {
+        if (!fresh[row.category]) fresh[row.category] = [];
+        fresh[row.category].push(row.name);
+      });
+      // Replace the global (don't reassign const — overwrite keys)
+      Object.keys(TAG_CATEGORIES).forEach(function(k) { delete TAG_CATEGORIES[k]; });
+      Object.keys(fresh).forEach(function(k) { TAG_CATEGORIES[k] = fresh[k]; });
+    }
+
     function renderTagCategories(filter) {
       var wrap = document.getElementById('tag-categories-wrap');
       wrap.innerHTML = '';
@@ -2576,7 +2596,12 @@
         }
       }
 
-      renderTagCategories('');
+      // Load tags from DB (replaces hardcoded TAG_CATEGORIES where possible)
+      loadTagCategoriesFromDB().then(function() {
+        renderTagCategories('');
+      }).catch(function() {
+        renderTagCategories(''); // fallback to hardcoded on any error
+      });
       renderContentWarningsPicker();
       updatePreview();
       updateChecklist();

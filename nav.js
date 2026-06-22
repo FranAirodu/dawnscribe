@@ -824,7 +824,18 @@ function dsApplyAccent(hex) {
       if(username) document.getElementById('dd-profile-link').href = 'profile.html?user='+username;
 
       // Always fetch profile by uid — metadata may be missing/stale
-      var res = await db.from('profiles').select('avatar_url,display_name,username,id').eq('id',session.user.id).maybeSingle();
+      var res = await db.from('profiles').select('avatar_url,display_name,username,id,account_status').eq('id',session.user.id).maybeSingle();
+
+      // ── BAN CHECK ────────────────────────────────────────────────
+      // This is the authoritative site-wide enforcement of the banned state.
+      // account_status is set by admins via WhiteRoom and is never overwritten
+      // by the user's own Settings save.
+      if (res && res.data && res.data.account_status === 'banned') {
+        await db.auth.signOut();
+        window.location.href = 'auth.html?reason=banned';
+        return;
+      }
+
       if(res && !res.error && res.data && !username){
         username = res.data.username;
         if(username){

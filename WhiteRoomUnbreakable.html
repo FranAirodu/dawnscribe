@@ -6,15 +6,21 @@
   <title>DawnScribe — Admin</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    // Block all rendering until admin check completes.
+    // The <style> above keeps the body hidden; we reveal it only on success.
+    document.documentElement.style.visibility = 'hidden';
     (async function() {
       const _db = window.supabase.createClient(
         'https://cajjyyskpmjnpcxcfeuk.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c'
       );
       var session = (await _db.auth.getSession()).data.session;
-      if (!session || session.user.id !== '516db718-edd5-4856-9281-2df642d006f5') {
-        document.documentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</div>';
+      var adminRes = session ? await _db.from('admins').select('id').eq('id', session.user.id).maybeSingle() : null;
+      if (!session || !adminRes || !adminRes.data) {
+        document.documentElement.innerHTML = '<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</body></html>';
+        return;
       }
+      document.documentElement.style.visibility = '';
     })();
   </script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
@@ -464,8 +470,11 @@
   <script>
     const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    // OWNER_ID kept as a fallback for modal "is this my own account" check.
+    // Actual access control is enforced by the admins table + RLS, not this string.
     const OWNER_ID = '516db718-edd5-4856-9281-2df642d006f5';
     const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    var currentAdminId = OWNER_ID; // will be overwritten from session in init
 
     // ── HELPERS ───────────────────────────────────────────────────
     function escHtml(str) {
@@ -490,31 +499,34 @@
     }
 
     // ── AUDIT LOG ─────────────────────────────────────────────────
-    function auditLog(action, icon) {
-      var log = JSON.parse(localStorage.getItem('ds_audit_log') || '[]');
-      log.unshift({ action: action, icon: icon || 'ti-edit', time: new Date().toISOString() });
-      if (log.length > 50) log = log.slice(0, 50);
-      localStorage.setItem('ds_audit_log', JSON.stringify(log));
+    async function auditLog(action, icon) {
+      // Write to DB (server-side, survives browser clearing, supports multiple admins)
+      await db.from('admin_audit_log').insert({
+        admin_id: currentAdminId,
+        action: action,
+        icon: icon || 'ti-edit'
+      });
       renderAuditLog();
     }
-    function renderAuditLog() {
-      var log = JSON.parse(localStorage.getItem('ds_audit_log') || '[]');
+    async function renderAuditLog() {
       var el = document.getElementById('audit-log-list');
+      var result = await db.from('admin_audit_log').select('*').order('created_at', { ascending: false }).limit(50);
+      var log = (result.data || []);
       if (!log.length) {
         el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0;">No actions recorded yet.</div>';
         return;
       }
       el.innerHTML = log.slice(0, 20).map(function(item) {
         return '<div class="audit-item">' +
-          '<div class="audit-icon"><i class="ti ' + item.icon + '"></i></div>' +
+          '<div class="audit-icon"><i class="ti ' + escHtml(item.icon) + '"></i></div>' +
           '<div><div class="audit-text">' + escHtml(item.action) + '</div>' +
-          '<div class="audit-time">' + formatDateTime(item.time) + '</div></div>' +
+          '<div class="audit-time">' + formatDateTime(item.created_at) + '</div></div>' +
           '</div>';
       }).join('');
     }
-    document.getElementById('clear-audit-btn').addEventListener('click', function() {
+    document.getElementById('clear-audit-btn').addEventListener('click', async function() {
       if (confirm('Clear the entire audit log?')) {
-        localStorage.removeItem('ds_audit_log');
+        await db.from('admin_audit_log').delete().neq('id', 0); // delete all
         renderAuditLog();
         showToast('Audit log cleared', 'ti-trash');
       }
@@ -526,8 +538,8 @@
       var [totalUsers, newUsers, bannedUsers, mods, follows, reports, works] = await Promise.all([
         db.from('profiles').select('id', { count: 'exact', head: true }),
         db.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', weekAgo),
-        db.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'banned'),
-        db.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'moderator'),
+        db.from('profiles').select('id', { count: 'exact', head: true }).eq('account_status', 'banned'),
+        db.from('profiles').select('id', { count: 'exact', head: true }).eq('is_moderator', true),
         db.from('follows').select('id', { count: 'exact', head: true }),
         db.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'open'),
         db.from('works').select('id', { count: 'exact', head: true })
@@ -542,8 +554,9 @@
     }
 
     // ── MAINTENANCE MODE ──────────────────────────────────────────
-    function loadMaintenance() {
-      var isOn = localStorage.getItem('ds_maintenance') === 'true';
+    async function loadMaintenance() {
+      var res = await db.from('site_settings').select('value').eq('key', 'maintenance_mode').maybeSingle();
+      var isOn = res.data ? (res.data.value === true || res.data.value === 'true') : false;
       document.getElementById('maintenance-toggle').checked = isOn;
       updateMaintenanceUI(isOn);
     }
@@ -552,9 +565,9 @@
       var w = document.getElementById('maintenance-warning');
       isOn ? w.classList.add('show') : w.classList.remove('show');
     }
-    document.getElementById('maintenance-toggle').addEventListener('change', function() {
+    document.getElementById('maintenance-toggle').addEventListener('change', async function() {
       var isOn = this.checked;
-      localStorage.setItem('ds_maintenance', isOn ? 'true' : 'false');
+      await db.from('site_settings').upsert({ key: 'maintenance_mode', value: isOn, updated_at: new Date().toISOString() });
       updateMaintenanceUI(isOn);
       showToast(isOn ? 'Maintenance mode ON' : 'Maintenance mode OFF', isOn ? 'ti-tools' : 'ti-check');
       auditLog(isOn ? 'Turned ON maintenance mode' : 'Turned OFF maintenance mode', 'ti-tools');
@@ -689,8 +702,9 @@
     });
 
     // ── FEATURED WORKS ────────────────────────────────────────────
-    function renderFeaturedSlots() {
-      var saved = JSON.parse(localStorage.getItem('ds_featured_works') || '["","","","","",""]');
+    async function renderFeaturedSlots() {
+      var res = await db.from('site_settings').select('value').eq('key', 'featured_works').maybeSingle();
+      var saved = (res.data && Array.isArray(res.data.value)) ? res.data.value : ['','','','','',''];
       var wrap = document.getElementById('featured-slots');
       wrap.innerHTML = '';
       for (var i = 0; i < 6; i++) {
@@ -708,12 +722,15 @@
         })(i);
       }
     }
-    document.getElementById('save-featured-btn').addEventListener('click', function() {
+    document.getElementById('save-featured-btn').addEventListener('click', async function() {
       var ids = [];
       document.querySelectorAll('.slot-input').forEach(function(inp) { ids.push(inp.value.trim()); });
-      localStorage.setItem('ds_featured_works', JSON.stringify(ids));
-      showToast('Featured works saved!');
-      auditLog('Updated featured works slots', 'ti-star');
+      var btn = this;
+      btn.textContent = 'Saving...'; btn.disabled = true;
+      var result = await db.from('site_settings').upsert({ key: 'featured_works', value: ids, updated_at: new Date().toISOString() });
+      if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); }
+      else { showToast('Featured works saved!'); auditLog('Updated featured works slots', 'ti-star'); }
+      btn.innerHTML = '<i class="ti ti-check"></i> Save Featured'; btn.disabled = false;
     });
 
     // ── CONTENT REPORTS ───────────────────────────────────────────
@@ -813,9 +830,17 @@
 
     // ── USER MANAGEMENT ──────────────────────────────────────────
     var currentModalUser = null;
-    function roleBadge(role) {
-      var r = role || 'user';
-      return '<span class="user-role-badge ' + r + '">' + r + '</span>';
+    var userSearchOffset = 0;
+    var userSearchPageSize = 20;
+    var userSearchLastQuery = '';
+    var userSearchTotal = 0;
+
+    function roleBadge(user) {
+      // Prioritise moderation state over creative role for badge display
+      if (user.account_status === 'banned') return '<span class="user-role-badge banned">banned</span>';
+      if (user.is_moderator) return '<span class="user-role-badge moderator">moderator</span>';
+      var r = user.role || 'user';
+      return '<span class="user-role-badge user">' + escHtml(r) + '</span>';
     }
     function renderUserCard(user) {
       var card = document.createElement('div');
@@ -824,14 +849,15 @@
         ? '<img class="user-avatar" src="' + escHtml(user.avatar_url) + '" alt="avatar"/>'
         : '<div class="user-avatar-placeholder"><i class="ti ti-user"></i></div>';
       card.innerHTML = avatarHtml +
-        '<div class="user-info"><div class="user-name">@' + escHtml(user.username || '—') + roleBadge(user.role) + '</div>' +
+        '<div class="user-info"><div class="user-name">@' + escHtml(user.username || '—') + roleBadge(user) + '</div>' +
         '<div class="user-meta">' + escHtml(user.display_name || '') + ' · Joined ' + formatDate(user.created_at) + '</div></div>' +
         '<div class="user-actions"><button class="action-btn"><i class="ti ti-eye"></i> View</button></div>';
       card.querySelector('.action-btn').addEventListener('click', function(e) { e.stopPropagation(); openUserModal(user); });
       card.addEventListener('click', function() { openUserModal(user); });
       return card;
     }
-    async function searchUsers() {
+    async function searchUsers(offset) {
+      offset = offset || 0;
       var query = document.getElementById('user-search-input').value.trim();
       var resultsEl = document.getElementById('user-results');
       var countEl = document.getElementById('user-results-count');
@@ -839,22 +865,48 @@
         resultsEl.innerHTML = '<div class="no-results"><i class="ti ti-user-search"></i>Search for a user above to get started.</div>';
         countEl.style.display = 'none'; return;
       }
-      resultsEl.innerHTML = '<div class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Searching…</div>';
-      countEl.style.display = 'none';
-      var result = await db.from('profiles').select('*').or('username.ilike.%' + query + '%,display_name.ilike.%' + query + '%').order('created_at', { ascending: false }).limit(30);
-      if (result.error) { resultsEl.innerHTML = '<div class="no-results"><i class="ti ti-alert-triangle"></i>Error: ' + escHtml(result.error.message) + '</div>'; return; }
-      if (!result.data || result.data.length === 0) { resultsEl.innerHTML = '<div class="no-results"><i class="ti ti-mood-empty"></i>No users found.</div>'; return; }
-      countEl.textContent = result.data.length + ' result' + (result.data.length !== 1 ? 's' : '') + ' for "' + query + '"';
+      if (offset === 0) {
+        resultsEl.innerHTML = '<div class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Searching…</div>';
+        countEl.style.display = 'none';
+        userSearchLastQuery = query;
+        userSearchOffset = 0;
+      }
+      // Use separate ilike calls to avoid raw .or() string injection
+      var likePattern = '%' + query.replace(/%/g, '').replace(/_/g, '\\_') + '%';
+      var [r1, r2] = await Promise.all([
+        db.from('profiles').select('*', { count: 'exact' }).ilike('username', likePattern).order('created_at', { ascending: false }).range(offset, offset + userSearchPageSize - 1),
+        db.from('profiles').select('*', { count: 'exact' }).ilike('display_name', likePattern).order('created_at', { ascending: false }).range(offset, offset + userSearchPageSize - 1)
+      ]);
+      if (r1.error && r2.error) { resultsEl.innerHTML = '<div class="no-results"><i class="ti ti-alert-triangle"></i>Error: ' + escHtml(r1.error.message) + '</div>'; return; }
+      // Merge and deduplicate
+      var merged = [];
+      var seen = {};
+      ((r1.data || []).concat(r2.data || [])).forEach(function(u) { if (!seen[u.id]) { seen[u.id] = true; merged.push(u); } });
+      var total = (r1.count || 0) + (r2.count || 0);
+      if (merged.length === 0 && offset === 0) { resultsEl.innerHTML = '<div class="no-results"><i class="ti ti-mood-empty"></i>No users found.</div>'; return; }
+      if (offset === 0) resultsEl.innerHTML = '';
+      countEl.textContent = 'Showing results for "' + escHtml(query) + '"';
       countEl.style.display = 'block';
-      resultsEl.innerHTML = '';
-      result.data.forEach(function(user) { resultsEl.appendChild(renderUserCard(user)); });
+      merged.forEach(function(user) { resultsEl.appendChild(renderUserCard(user)); });
+      // Remove old load-more button if present
+      var old = document.getElementById('user-load-more');
+      if (old) old.remove();
+      if (merged.length >= userSearchPageSize) {
+        var btn = document.createElement('button');
+        btn.id = 'user-load-more';
+        btn.className = 'save-btn';
+        btn.style.cssText = 'margin:12px auto;display:block;padding:8px 24px;font-size:13px;';
+        btn.innerHTML = '<i class="ti ti-chevron-down"></i> Load more';
+        btn.addEventListener('click', function() { searchUsers(offset + userSearchPageSize); });
+        resultsEl.after(btn);
+      }
     }
-    document.getElementById('user-search-btn').addEventListener('click', searchUsers);
-    document.getElementById('user-search-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') searchUsers(); });
+    document.getElementById('user-search-btn').addEventListener('click', function() { searchUsers(0); });
+    document.getElementById('user-search-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') searchUsers(0); });
 
     function openUserModal(user) {
       currentModalUser = user;
-      var isOwner = user.id === OWNER_ID;
+      var isOwner = user.id === currentAdminId;
       var avatarWrap = document.getElementById('modal-avatar-wrap');
       avatarWrap.innerHTML = user.avatar_url
         ? '<img class="modal-avatar" src="' + escHtml(user.avatar_url) + '" alt="avatar"/>'
@@ -862,7 +914,10 @@
       document.getElementById('modal-username').textContent = '@' + (user.username || '—');
       document.getElementById('modal-display-name').textContent = user.display_name || 'No display name';
       document.getElementById('modal-user-id').textContent = user.id;
-      document.getElementById('modal-role').textContent = user.role || 'user';
+      // Show creative role + account status separately
+      var statusLabel = user.account_status === 'banned' ? ' ⚠ BANNED' : '';
+      var modLabel = user.is_moderator ? ' (Moderator)' : '';
+      document.getElementById('modal-role').textContent = (user.role || 'Reader') + modLabel + statusLabel;
       document.getElementById('modal-joined').textContent = formatDate(user.created_at);
       var bioWrap = document.getElementById('modal-bio-wrap');
       if (user.bio) { document.getElementById('modal-bio').textContent = user.bio; bioWrap.style.display = 'block'; } else { bioWrap.style.display = 'none'; }
@@ -873,49 +928,72 @@
       if (isOwner) {
         actionsEl.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:13px;padding:8px;">This is your own account — no actions available.</div>';
       } else {
-        var role = user.role || 'user';
+        var isBanned = user.account_status === 'banned';
+        var isMod = !!user.is_moderator;
+
         var visitBtn = document.createElement('button');
         visitBtn.className = 'modal-action-btn';
         visitBtn.innerHTML = '<i class="ti ti-external-link"></i> Visit Profile';
         visitBtn.addEventListener('click', function() { window.open('profile.html?id=' + user.id, '_blank'); });
         actionsEl.appendChild(visitBtn);
-        if (role !== 'moderator' && role !== 'banned') {
+
+        if (!isMod && !isBanned) {
           var modBtn = document.createElement('button');
           modBtn.className = 'modal-action-btn gold';
           modBtn.innerHTML = '<i class="ti ti-shield"></i> Promote to Moderator';
-          modBtn.addEventListener('click', function() { setUserRole(user, 'moderator', 'Promoted to moderator'); });
+          modBtn.addEventListener('click', function() {
+            if (confirm('Promote @' + user.username + ' to Moderator?')) { updateUserModStatus(user, true, 'Promoted to moderator'); }
+          });
           actionsEl.appendChild(modBtn);
         }
-        if (role === 'moderator') {
+        if (isMod) {
           var demoteBtn = document.createElement('button');
           demoteBtn.className = 'modal-action-btn';
           demoteBtn.innerHTML = '<i class="ti ti-shield-off"></i> Remove Moderator Role';
-          demoteBtn.addEventListener('click', function() { setUserRole(user, 'user', 'Moderator role removed'); });
+          demoteBtn.addEventListener('click', function() {
+            if (confirm('Remove moderator role from @' + user.username + '?')) { updateUserModStatus(user, false, 'Moderator role removed from @' + user.username); }
+          });
           actionsEl.appendChild(demoteBtn);
         }
-        if (role !== 'banned') {
+        if (!isBanned) {
           var banBtn = document.createElement('button');
           banBtn.className = 'modal-action-btn red';
           banBtn.innerHTML = '<i class="ti ti-ban"></i> Ban User';
           banBtn.addEventListener('click', function() {
-            if (confirm('Ban @' + user.username + '? They will lose access to their account.')) { setUserRole(user, 'banned', '@' + user.username + ' has been banned'); }
+            if (confirm('Ban @' + user.username + '?\n\nThis will set their account_status to "banned". They will be blocked site-wide from reading/posting.')) {
+              updateUserStatus(user, 'banned', '@' + user.username + ' has been banned');
+            }
           });
           actionsEl.appendChild(banBtn);
         }
-        if (role === 'banned') {
+        if (isBanned) {
           var unbanBtn = document.createElement('button');
           unbanBtn.className = 'modal-action-btn green';
           unbanBtn.innerHTML = '<i class="ti ti-circle-check"></i> Unban User';
-          unbanBtn.addEventListener('click', function() { setUserRole(user, 'user', '@' + user.username + ' has been unbanned'); });
+          unbanBtn.addEventListener('click', function() {
+            if (confirm('Unban @' + user.username + '? They will regain full site access.')) {
+              updateUserStatus(user, 'active', '@' + user.username + ' has been unbanned');
+            }
+          });
           actionsEl.appendChild(unbanBtn);
         }
       }
       document.getElementById('user-modal').classList.add('open');
     }
-    async function setUserRole(user, role, successMsg) {
-      var result = await db.from('profiles').update({ role: role }).eq('id', user.id);
+
+    // Bug 1 fix: Use account_status (not role) for banning so it can never
+    // be overwritten by the user simply saving their Settings page.
+    async function updateUserStatus(user, status, successMsg) {
+      var result = await db.from('profiles').update({ account_status: status }).eq('id', user.id);
       if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); }
-      else { showToast(successMsg); auditLog(successMsg + ' (@' + user.username + ')', 'ti-user'); closeUserModal(); searchUsers(); loadStats(); }
+      else { showToast(successMsg); auditLog(successMsg, 'ti-user'); closeUserModal(); searchUsers(0); loadStats(); }
+    }
+    // Bug 1 fix: Use is_moderator (not role) so elevated status is separate from
+    // the creative role column that users can freely change in Settings.
+    async function updateUserModStatus(user, isMod, successMsg) {
+      var result = await db.from('profiles').update({ is_moderator: isMod }).eq('id', user.id);
+      if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); }
+      else { showToast(successMsg); auditLog(successMsg + ' (@' + user.username + ')', 'ti-shield'); closeUserModal(); searchUsers(0); loadStats(); }
     }
     function closeUserModal() {
       document.getElementById('user-modal').classList.remove('open');
@@ -924,168 +1002,211 @@
     document.getElementById('modal-close-btn').addEventListener('click', closeUserModal);
     document.getElementById('user-modal').addEventListener('click', function(e) { if (e.target === this) closeUserModal(); });
 
-    // ── TAG MANAGEMENT ────────────────────────────────────────────
-    function loadTags() {
-      var tags = JSON.parse(localStorage.getItem('ds_tags') || JSON.stringify([
-      // ── CORE GENRES ──
-      "Fantasy","Dark Fantasy","High Fantasy","Low Fantasy","Urban Fantasy","Science Fantasy",
-      "Sci-Fi","Horror","Romance","Drama","Comedy","Mystery","Thriller","Action","Adventure",
-      "Historical","Literary Fiction","Mythology","Folklore","Fairy Tale",
-
-      // ── ANIME / MANGA NATIVE ──
-      "Isekai","Reverse Isekai","Reincarnation","Second Life","Transmigration",
-      "Shounen","Shoujo","Seinen","Josei","Kodomomuke",
-      "Mecha","Super Robot","Real Robot",
-      "Magical Girl","Mahou Shoujo",
-      "Harem","Reverse Harem","Otome","Villainess","Otome Game",
-      "School Life","Academy","School Battle","Club Activities",
-      "Slice of Life","Iyashikei","Healing","Cozy","Wholesome","Fluffy",
-      "Ecchi","Fan Service",
-      "Battle Shounen","Power System","Tournament Arc",
-
-      // ── CULTIVATION / EASTERN FANTASY ──
-      "Xianxia","Xuanhuan","Wuxia","Cultivation","Martial Arts",
-      "Qi","Immortal","Demon Cultivation","Sword Saint","Body Tempering",
-      "Ancient China","Ancient East","Court Drama","Political Intrigue","Imperial Harem",
-      "Sect","Clan","Bloodline","Spirit Beasts","Pill Refining","Array Master","Weapon Forging",
-
-      // ── SYSTEM / GAMELIT ──
-      "LitRPG","GameLit","Dungeon","Dungeon Master","Dungeon Core",
-      "System","Status Screen","Level Up","Skill Tree","Class System",
-      "Tower Climbing","Regression","Loop","Time Loop","Second Chance",
-      "Monster Tamer","Summoner","Necromancer","Healer","Assassin","Tank","Mage",
-
-      // ── SUPERNATURAL & PARANORMAL ──
-      "Supernatural","Paranormal","Occult","Exorcism",
-      "Vampires","Werewolves","Witches","Demons","Angels","Devils","Fallen Angels",
-      "Ghosts","Spirits","Yokai","Shinigami","Fae","Elves","Dwarves","Mermaids",
-      "Shapeshifters","Beastmen","Half-Bloods","Hybrids",
-
-      // ── HORROR & DARK ──
-      "Psychological Horror","Supernatural Horror","Survival Horror","Cosmic Horror",
-      "Body Horror","Gore","Disturbing","Grimdark","Dark","Tragedy","Existential",
-      "Gothic","Gothic Romance","Eldritch","Lovecraftian",
-
-      // ── SCI-FI SUBGENRES ──
-      "Cyberpunk","Steampunk","Solarpunk","Biopunk","Dieselpunk","Atompunk",
-      "Space Opera","Hard Sci-Fi","Soft Sci-Fi","Military Sci-Fi","Space Exploration",
-      "Post-Apocalyptic","Dystopian","Utopian","Climate Fiction","Alien Contact",
-      "AI","Virtual Reality","Simulation","Transhumanism","Genetic Engineering",
-      "Time Travel","Alternate History","Parallel Worlds","Multiverse",
-
-      // ── ROMANCE SUBGENRES ──
-      "Slow Burn","Enemies to Lovers","Forbidden Love","Arranged Marriage",
-      "Love Triangle","Childhood Friends","Fake Dating","Boss x Employee",
-      "Age Gap","Interspecies Romance","Human x Monster","Omegaverse",
-      "Angst","Hurt/Comfort","Fluff","One-Sided Love","Unrequited",
-      "Yuri","Yaoi","BL","GL","Straight","Poly",
-
-      // ── HYBRID / CROSSGENRE ──
-      "Science Fantasy","Romantic Fantasy","Romantic Comedy","Romantic Thriller",
-      "Dark Romance","Horror Romance","Comedy Horror","Action Romance",
-      "Fantasy Mystery","Sci-Fi Mystery","Historical Romance","Historical Mystery",
-      "Progression Fantasy","Epic Fantasy","Portal Fantasy","Gaslamp Fantasy",
-      "Mythpunk","Silkpunk","Weird Fiction","New Weird","Slipstream",
-
-      // ── ACTION & ADVENTURE ──
-      "War","Military","Mercenary","Guild","Bounty Hunter","Vigilante",
-      "Heist","Survival","Wilderness","Apocalypse","Zombie","Pandemic",
-      "Pirates","Sailors","Explorers","Treasure Hunt",
-
-      // ── PSYCHOLOGICAL & LITERARY ──
-      "Psychological","Mind Games","Unreliable Narrator","Non-Linear","Multiple POV",
-      "Philosophical","Social Commentary","Political","Satire","Absurdist",
-      "Character Study","Coming of Age","Identity","Self-Discovery","Redemption",
-      "Trauma","Grief","Mental Health","Addiction","Recovery",
-
-      // ── FOUND FAMILY & RELATIONSHIPS ──
-      "Found Family","Friendship","Rivalry","Brotherhood","Sisterhood",
-      "Master and Disciple","Mentor","Chosen One","Anti-Hero","Villain Protagonist",
-      "Mob Protagonist","Overpowered","Underdog","Genius","Hidden Identity",
-
-      // ── SETTING-BASED ──
-      "Feudal Japan","Ancient Greece","Ancient Rome","Viking","Medieval Europe",
-      "Victorian","Renaissance","Wild West","Modern Day","Near Future","Far Future",
-      "Post-War","Cold War","Underground","City","Countryside","Island","Desert","Arctic",
-      "Afterlife","Heaven","Hell","Purgatory","Spirit World","Dream World","Pocket Dimension",
-
-      // ── FORMAT & STRUCTURE ──
-      "Short Story","Anthology","Episodic","Arc-Based","Serial",
-      "Epistolary","Diary","Found Footage","Script Style","Poetry Prose",
-
-      // ── IDENTITY & REPRESENTATION ──
-      "LGBTQ+","Trans","Non-Binary","Asexual","Bisexual","Gay","Lesbian",
-      "Disability Rep","Neurodivergent","POC Protagonist","Cultural",
-
-      // ── MATURE ──
-      "Mature","Dark Themes","Erotica","BDSM","Dark Romance","Explicit Violence"
-    ]));
-      renderTags(tags);
+    // ── TAG MANAGEMENT (DB-backed) ─────────────────────────────────
+    var tagSearchFilter = '';
+    async function loadTags(filter) {
+      filter = filter || '';
+      tagSearchFilter = filter;
+      var wrap = document.getElementById('tags-wrap');
+      wrap.innerHTML = '<span style="color:var(--text3);font-size:13px;">Loading tags…</span>';
+      var q = db.from('tags').select('*').order('category').order('name');
+      if (filter) q = q.ilike('name', '%' + filter.replace(/%/g, '').replace(/_/g, '\\_') + '%');
+      var result = await q;
+      if (result.error) { wrap.innerHTML = '<span style="color:var(--red);">Error loading tags: ' + escHtml(result.error.message) + '</span>'; return; }
+      renderTags(result.data || []);
     }
     function renderTags(tags) {
       var wrap = document.getElementById('tags-wrap');
       wrap.innerHTML = '';
-      tags.forEach(function(tag) {
-        var chip = document.createElement('div');
-        chip.className = 'tag-chip';
-        chip.innerHTML = escHtml(tag) + '<button title="Remove tag"><i class="ti ti-x"></i></button>';
-        chip.querySelector('button').addEventListener('click', function() {
-          var current = JSON.parse(localStorage.getItem('ds_tags') || '[]');
-          var updated = current.filter(function(t) { return t !== tag; });
-          localStorage.setItem('ds_tags', JSON.stringify(updated));
-          auditLog('Removed tag: "' + tag + '"', 'ti-tag');
-          renderTags(updated);
-          showToast('Tag removed');
+      if (!tags.length) {
+        wrap.innerHTML = '<span style="color:var(--text3);font-size:13px;font-style:italic;">No tags found.</span>';
+        return;
+      }
+      // Group by category for readability
+      var grouped = {};
+      tags.forEach(function(t) {
+        if (!grouped[t.category]) grouped[t.category] = [];
+        grouped[t.category].push(t);
+      });
+      Object.keys(grouped).forEach(function(cat) {
+        var header = document.createElement('div');
+        header.style.cssText = 'width:100%;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-top:12px;margin-bottom:4px;';
+        header.textContent = cat;
+        wrap.appendChild(header);
+        grouped[cat].forEach(function(tag) {
+          var chip = document.createElement('div');
+          chip.className = 'tag-chip';
+          chip.innerHTML = escHtml(tag.name) + '<button title="Remove tag"><i class="ti ti-x"></i></button>';
+          chip.querySelector('button').addEventListener('click', async function() {
+            if (!confirm('Remove tag "' + tag.name + '"?\n\nThis will remove it from the available tag list. Existing works that already have this tag will not be affected.')) return;
+            var res = await db.from('tags').delete().eq('id', tag.id);
+            if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); return; }
+            auditLog('Removed tag: "' + tag.name + '"', 'ti-tag');
+            showToast('Tag removed');
+            loadTags(tagSearchFilter);
+          });
+          wrap.appendChild(chip);
         });
-        wrap.appendChild(chip);
       });
     }
-    document.getElementById('add-tag-btn').addEventListener('click', function() {
+    document.getElementById('add-tag-btn').addEventListener('click', async function() {
       var input = document.getElementById('tag-input');
       var val = input.value.trim();
       if (!val) { showToast('Enter a tag name first', 'ti-alert-triangle'); return; }
-      var current = JSON.parse(localStorage.getItem('ds_tags') || '[]');
-      if (current.includes(val)) { showToast('Tag already exists', 'ti-alert-triangle'); return; }
-      current.push(val);
-      localStorage.setItem('ds_tags', JSON.stringify(current));
-      input.value = '';
-      auditLog('Added tag: "' + val + '"', 'ti-tag');
-      renderTags(current);
-      showToast('Tag added!');
+      var btn = this; btn.disabled = true;
+      var result = await db.from('tags').insert({ name: val, category: 'General' });
+      if (result.error) {
+        showToast(result.error.message.includes('unique') ? 'Tag already exists' : 'Error: ' + result.error.message, 'ti-alert-triangle');
+      } else {
+        input.value = '';
+        auditLog('Added tag: "' + val + '"', 'ti-tag');
+        showToast('Tag added!');
+        loadTags(tagSearchFilter);
+      }
+      btn.disabled = false;
     });
     document.getElementById('tag-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') document.getElementById('add-tag-btn').click(); });
 
-    // ── NOTIFICATION BLAST ────────────────────────────────────────
-    document.getElementById('send-blast-btn').addEventListener('click', async function() {
-      var msg = document.getElementById('blast-message').value.trim();
-      if (!msg) { showToast('Write a message first', 'ti-alert-triangle'); return; }
-      if (!confirm('Send this notification to ALL users?\n\n"' + msg + '"')) return;
-      this.textContent = 'Sending...'; this.disabled = true;
-      // Insert into a notifications table — each user's feed will pick it up
-      // Using a global broadcast row with user_id = null means "for everyone"
-      var result = await db.from('notifications').insert({ user_id: null, message: msg, type: 'blast', is_read: false });
+    // ── REPORTS / FEEDBACK PAGINATION ─────────────────────────────
+    var reportOffset = 0, feedbackOffset = 0;
+    var pageSize = 20;
+
+    // Wrap loadReports/loadFeedback to support pagination
+    var _origLoadReports = loadReports;
+    async function loadReports(offset) {
+      offset = offset || 0;
+      reportOffset = offset;
+      var el = document.getElementById('reports-list');
+      var result = await db.from('reports').select('*').order('created_at', { ascending: false }).range(offset, offset + pageSize - 1);
       if (result.error) {
-        // Table may not exist yet
-        showToast('notifications table not found yet', 'ti-alert-triangle');
-      } else {
-        showToast('Blast sent to all users!');
-        auditLog('Sent notification blast: "' + msg.slice(0,40) + (msg.length>40?'…':'') + '"', 'ti-bell-ringing');
-        document.getElementById('blast-message').value = '';
-        document.getElementById('blast-chars').textContent = '0/200';
+        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-circle-off"></i>No reports table found yet.</div>';
+        return;
       }
-      this.innerHTML = '<i class="ti ti-send"></i> Send to All Users'; this.disabled = false;
-    });
+      if (!result.data || result.data.length === 0) {
+        if (offset === 0) el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-mood-happy"></i>No open reports. All clear!</div>';
+        return;
+      }
+      if (offset === 0) el.innerHTML = '';
+      result.data.forEach(function(report) {
+        var card = document.createElement('div');
+        card.className = 'report-card' + (report.status === 'resolved' ? ' resolved' : '');
+        var typeClass = report.reason === 'spam' ? 'spam' : report.reason === 'other' ? 'other' : '';
+        card.innerHTML =
+          '<div class="report-header">' +
+            '<span class="report-type ' + typeClass + '">' + escHtml(report.reason || 'violation') + '</span>' +
+            (report.status === 'resolved' ? '<span style="font-size:11px;color:var(--text3);">Resolved</span>' : '') +
+          '</div>' +
+          '<div class="report-body">' + escHtml(report.description || 'No description provided.') + '</div>' +
+          '<div class="report-meta">Reported by user · ' + formatDateTime(report.created_at) + ' · Content ID: <code style="background:var(--bg4);padding:1px 5px;border-radius:3px;">' + escHtml(report.content_id || '—') + '</code></div>' +
+          (report.status !== 'resolved' ?
+          '<div class="report-actions">' +
+            '<button class="report-btn dismiss"><i class="ti ti-check"></i> Dismiss</button>' +
+            '<button class="report-btn remove"><i class="ti ti-trash"></i> Remove Content</button>' +
+          '</div>' : '');
+        if (report.status !== 'resolved') {
+          card.querySelector('.dismiss').addEventListener('click', async function() {
+            await db.from('reports').update({ status: 'resolved' }).eq('id', report.id);
+            showToast('Report dismissed'); auditLog('Dismissed report #' + report.id, 'ti-check');
+            loadReports(0); loadStats();
+          });
+          card.querySelector('.remove').addEventListener('click', async function() {
+            if (confirm('Mark report resolved and remove this content?')) {
+              await db.from('reports').update({ status: 'resolved' }).eq('id', report.id);
+              showToast('Content removed & report resolved', 'ti-trash');
+              auditLog('Removed content for report #' + report.id, 'ti-trash');
+              loadReports(0); loadStats();
+            }
+          });
+        }
+        el.appendChild(card);
+      });
+      var oldBtn = document.getElementById('reports-load-more');
+      if (oldBtn) oldBtn.remove();
+      if (result.data.length >= pageSize) {
+        var btn = document.createElement('button');
+        btn.id = 'reports-load-more';
+        btn.className = 'save-btn';
+        btn.style.cssText = 'margin:12px auto;display:block;padding:8px 24px;font-size:13px;';
+        btn.innerHTML = '<i class="ti ti-chevron-down"></i> Load more';
+        btn.addEventListener('click', function() { loadReports(offset + pageSize); });
+        el.after(btn);
+      }
+    }
+
+    async function loadFeedback(offset) {
+      offset = offset || 0;
+      feedbackOffset = offset;
+      var el = document.getElementById('feedback-list');
+      var result = await db.from('feedback').select('*').order('created_at', { ascending: false }).range(offset, offset + pageSize - 1);
+      if (result.error) {
+        if (offset === 0) el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-circle-off"></i>No feedback table found yet.</div>';
+        return;
+      }
+      if (!result.data || result.data.length === 0) {
+        if (offset === 0) el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-mood-happy"></i>No feedback yet.</div>';
+        return;
+      }
+      var userIds = Array.from(new Set(result.data.map(function(f){ return f.user_id; }).filter(Boolean)));
+      var profMap = {};
+      if (userIds.length) {
+        var { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', userIds);
+        (profs || []).forEach(function(p){ profMap[p.id] = p; });
+      }
+      if (offset === 0) el.innerHTML = '';
+      result.data.forEach(function(fb) {
+        var prof = profMap[fb.user_id] || {};
+        var authorName = prof.display_name || prof.username || 'Unknown user';
+        var card = document.createElement('div');
+        card.className = 'report-card' + (fb.status === 'reviewed' ? ' resolved' : '');
+        card.innerHTML =
+          '<div class="report-header">' +
+            '<span class="report-type">' + escHtml(fb.page_context || 'feedback') + '</span>' +
+            (fb.status === 'reviewed' ? '<span style="font-size:11px;color:var(--text3);">Reviewed</span>' : '') +
+          '</div>' +
+          '<div class="report-body">' + escHtml(fb.message || '') + '</div>' +
+          '<div class="report-meta">From @' + escHtml(authorName) + ' · ' + formatDateTime(fb.created_at) + '</div>' +
+          (fb.status !== 'reviewed' ?
+          '<div class="report-actions">' +
+            '<button class="report-btn dismiss"><i class="ti ti-check"></i> Mark Reviewed</button>' +
+          '</div>' : '');
+        if (fb.status !== 'reviewed') {
+          card.querySelector('.dismiss').addEventListener('click', async function() {
+            await db.from('feedback').update({ status: 'reviewed' }).eq('id', fb.id);
+            showToast('Feedback marked reviewed');
+            loadFeedback(0);
+          });
+        }
+        el.appendChild(card);
+      });
+      var oldBtn = document.getElementById('feedback-load-more');
+      if (oldBtn) oldBtn.remove();
+      if (result.data.length >= pageSize) {
+        var btn = document.createElement('button');
+        btn.id = 'feedback-load-more';
+        btn.className = 'save-btn';
+        btn.style.cssText = 'margin:12px auto;display:block;padding:8px 24px;font-size:13px;';
+        btn.innerHTML = '<i class="ti ti-chevron-down"></i> Load more';
+        btn.addEventListener('click', function() { loadFeedback(offset + pageSize); });
+        el.after(btn);
+      }
+    }
 
     // ── INIT ──────────────────────────────────────────────────────
-    loadCurrent();
-    loadAnnouncementHistory();
-    loadStats();
-    loadMaintenance();
-    renderFeaturedSlots();
-    loadReports();
-    loadFeedback();
-    loadTags();
-    renderAuditLog();
+    (async function init() {
+      // Get session for audit log attribution
+      var sess = await db.auth.getSession();
+      if (sess.data && sess.data.session) currentAdminId = sess.data.session.user.id;
+
+      loadCurrent();
+      loadAnnouncementHistory();
+      loadStats();
+      loadMaintenance();
+      renderFeaturedSlots();
+      loadReports(0);
+      loadFeedback(0);
+      loadTags();
+      renderAuditLog();
+    })();
   </script>
 </body>
 </html>
