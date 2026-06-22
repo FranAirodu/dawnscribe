@@ -36,6 +36,26 @@ if (!window.dsSpoiler) {
   };
 }
 
+// Checks whether "right now" falls inside the user's Quiet Hours window,
+// handling overnight ranges (e.g. 22:00 -> 08:00) correctly.
+function dsIsWithinQuietHours(prefRow) {
+  if (!prefRow || prefRow.quiet_hours_enabled !== true) return false;
+  var start = prefRow.quiet_hours_start || '22:00';
+  var end = prefRow.quiet_hours_end || '08:00';
+  var now = new Date();
+  var nowMins = now.getHours() * 60 + now.getMinutes();
+  var sParts = start.split(':'); var eParts = end.split(':');
+  var startMins = (parseInt(sParts[0],10)||0) * 60 + (parseInt(sParts[1],10)||0);
+  var endMins = (parseInt(eParts[0],10)||0) * 60 + (parseInt(eParts[1],10)||0);
+  if (startMins === endMins) return false;
+  if (startMins < endMins) return nowMins >= startMins && nowMins < endMins;
+  // Overnight window (e.g. 22:00 -> 08:00) wraps past midnight
+  return nowMins >= startMins || nowMins < endMins;
+}
+function dsIsQuiet(prefRow) {
+  return !!(prefRow && (prefRow.quiet_mode === true || dsIsWithinQuietHours(prefRow)));
+}
+
 function dsApplyAccent(hex) {
   var existing = document.getElementById('ds-accent-override');
   if (existing) existing.remove();
@@ -409,8 +429,8 @@ function dsApplyAccent(hex) {
     var badge = document.getElementById('dm-badge');
     if(!btn||!badge) return;
     try {
-      var { data: dmPrefRow } = await db.from('profiles').select('notif_message,quiet_mode').eq('id', uid).maybeSingle();
-      if (dmPrefRow && (dmPrefRow.notif_message === false || dmPrefRow.quiet_mode === true)) { badge.style.display='none'; btn.classList.remove('has-unread'); return; }
+      var { data: dmPrefRow } = await db.from('profiles').select('notif_message,quiet_mode,quiet_hours_enabled,quiet_hours_start,quiet_hours_end').eq('id', uid).maybeSingle();
+      if (dmPrefRow && (dmPrefRow.notif_message === false || dsIsQuiet(dmPrefRow))) { badge.style.display='none'; btn.classList.remove('has-unread'); return; }
     } catch(e) {}
     var unreadRes = await (async function(){
       var convRes = await db.from('conversations').select('id').or('participant_a.eq.'+uid+',participant_b.eq.'+uid);
@@ -428,22 +448,23 @@ function dsApplyAccent(hex) {
     // Load this user's own notification preferences once, used to gate each feed below
     var myPrefs = { notif_follow: true, notif_chapter: true, notif_comment: true, notif_message: true, notif_announce: false };
     try {
-      var { data: prefRow } = await db.from('profiles').select('notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,quiet_mode').eq('id', uid).maybeSingle();
+      var { data: prefRow } = await db.from('profiles').select('notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,quiet_mode,quiet_hours_enabled,quiet_hours_start,quiet_hours_end').eq('id', uid).maybeSingle();
       if (prefRow) {
         if (prefRow.notif_follow   !== null && prefRow.notif_follow   !== undefined) myPrefs.notif_follow   = prefRow.notif_follow;
         if (prefRow.notif_chapter  !== null && prefRow.notif_chapter  !== undefined) myPrefs.notif_chapter  = prefRow.notif_chapter;
         if (prefRow.notif_comment  !== null && prefRow.notif_comment  !== undefined) myPrefs.notif_comment  = prefRow.notif_comment;
         if (prefRow.notif_message  !== null && prefRow.notif_message  !== undefined) myPrefs.notif_message  = prefRow.notif_message;
         if (prefRow.notif_announce !== null && prefRow.notif_announce !== undefined) myPrefs.notif_announce = prefRow.notif_announce;
-        // Quiet Mode is a temporary master override — it suppresses everything below
-        // without ever touching the individual saved preferences. Turning it off
-        // in settings restores exactly what was there before.
-        if (prefRow.quiet_mode === true) {
+        // Quiet Mode / Quiet Hours are temporary master overrides — they suppress
+        // everything below without ever touching the individual saved preferences.
+        // Turning them off restores exactly what was there before.
+        var isQuietNow = dsIsQuiet(prefRow);
+        if (isQuietNow) {
           myPrefs.notif_follow = false; myPrefs.notif_chapter = false; myPrefs.notif_comment = false;
           myPrefs.notif_message = false; myPrefs.notif_announce = false;
         }
         var quietIndicator = document.getElementById('ds-quiet-indicator');
-        if (quietIndicator) quietIndicator.style.display = prefRow.quiet_mode === true ? 'block' : 'none';
+        if (quietIndicator) quietIndicator.style.display = isQuietNow ? 'block' : 'none';
       }
     } catch(e) {}
 

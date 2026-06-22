@@ -1774,6 +1774,21 @@
         quiet_mode: settings.quiet_mode
       }));
 
+      // Re-validate the session right before writing to Supabase. `currentSession`
+      // was only captured once at page load — if this tab has been open a while
+      // and the access token expired since, that stale value would otherwise
+      // silently fail the write with an RLS error. getSession() also transparently
+      // refreshes an expired-but-refreshable token, so most of the time this just
+      // quietly fixes itself.
+      var hadSessionAtLoad = !!currentSession;
+      var sessionRes = await db.auth.getSession();
+      currentSession = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+
+      if (hadSessionAtLoad && !currentSession) {
+        showToast('Your session has expired — please sign in again to save these changes to your account.', 'ti-x');
+        return;
+      }
+
       if (currentSession) {
         // Save core settings to Supabase profiles table
         var profileUpdate = {

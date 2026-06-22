@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Browse</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <script src="spoilerUtils.js"></script>
+  <script src="accessibilityPrefs.js"></script>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;display:flex;flex-direction:column;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:16px;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;flex-shrink:0;}
+    .logo span{color:var(--text);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;flex-shrink:0;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    .page{max-width:1100px;margin:0 auto;padding:32px 24px 60px;width:100%;}
+    .page-header{margin-bottom:24px;display:flex;align-items:center;gap:12px;}
+    .page-header i{font-size:26px;color:var(--accent);}
+    .page-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--text);}
+    .page-title span{color:var(--accent);}
+    .page-subtitle{font-size:13px;color:var(--text3);margin-top:2px;}
+
+    .results-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .result-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;gap:16px;align-items:flex-start;transition:border-color 0.2s;text-decoration:none;color:inherit;}
+    .result-card:hover{border-color:rgba(45,212,191,0.3);}
+    .result-cover{width:80px;height:110px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:white;overflow:hidden;}
+    .result-cover img{width:80px;height:110px;border-radius:8px;object-fit:cover;display:block;}
+    .result-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;}
+    .result-title{font-size:14px;font-weight:700;color:var(--text);}
+    .result-sub{font-size:11px;color:var(--text3);}
+    .result-flavor{font-size:12px;color:var(--text2);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+    .result-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;}
+    .result-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);}
+    .warn-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#f87171;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);border-radius:20px;padding:1px 7px;}
+
+    .state-wrap{text-align:center;padding:60px 24px;}
+    .state-icon{font-size:40px;color:var(--text3);margin-bottom:16px;}
+    .state-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;}
+    .state-body{font-size:14px;color:var(--text3);max-width:360px;margin:0 auto 24px;}
+    .state-btn{display:inline-flex;align-items:center;gap:7px;background:var(--accent2);color:white;padding:10px 22px;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700;transition:all 0.2s;}
+    .state-btn:hover{background:var(--accent);color:var(--bg);}
+
+    .artwork-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+    .artwork-bubble{display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;text-decoration:none;color:inherit;transition:border-color 0.2s;}
+    .artwork-bubble:hover{border-color:rgba(45,212,191,0.35);}
+    .artwork-thumb{width:100%;aspect-ratio:3/4;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;color:white;overflow:hidden;border-radius:0;}
+    .artwork-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+    .artwork-info{min-width:0;padding:12px 14px;display:flex;flex-direction:column;gap:4px;}
+    .artwork-title{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .artwork-artist{font-size:11px;color:var(--accent);}
+    .artwork-artist:hover{text-decoration:underline;}
+    .artwork-flavor{font-size:12px;color:var(--text2);line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px;}
+    .artwork-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;}
+    @media(max-width:1000px){.artwork-grid{grid-template-columns:1fr 1fr;}}
+    @media(max-width:700px){.artwork-grid{grid-template-columns:1fr;}.results-grid{grid-template-columns:1fr;}}
+
+    .load-more-wrap{text-align:center;margin-top:24px;}
+    .load-more-btn{background:transparent;border:1px solid var(--border);border-radius:9px;padding:10px 28px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .load-more-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    .view-toggle{display:flex;gap:4px;margin-left:auto;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:3px;}
+    .view-toggle-btn{background:none;border:none;border-radius:6px;padding:6px 12px;color:var(--text3);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.15s;}
+    .view-toggle-btn.active{background:var(--bg2);color:var(--accent);}
+    .view-toggle-btn:hover{color:var(--accent);}
+
+    .list-view{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+    .list-row{display:flex;align-items:center;gap:14px;padding:12px 16px;background:var(--bg2);border-bottom:1px solid var(--border);text-decoration:none;color:inherit;transition:background 0.15s;}
+    .list-view a.list-row:last-child{border-bottom:none;}
+    .list-row:hover{background:var(--bg3);}
+    .list-row-thumb{width:36px;height:50px;border-radius:5px;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:white;overflow:hidden;}
+    .list-row-thumb img{width:36px;height:50px;object-fit:cover;display:block;}
+    .list-row-body{flex:1;min-width:0;}
+    .list-row-title{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .list-row-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
+    .list-row-tag{font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;background:var(--bg4);color:var(--text3);}
+    .list-row-meta{flex-shrink:0;text-align:right;font-size:11px;color:var(--text3);white-space:nowrap;padding-left:12px;}
+    .list-row-meta a{color:var(--accent);text-decoration:none;}
+    @media(max-width:640px){.list-row-tags{display:none;}.list-row-meta{font-size:10px;}}
+
+    footer{background:var(--bg2);border-top:1px solid var(--border);padding:28px;text-align:center;color:var(--text3);font-size:13px;margin-top:auto;}
+  </style>
+</head>
+<body>
+
+  <nav style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </nav>
+
+  <div class="page">
+    <div class="page-header">
+      <i class="ti ti-list-details" id="page-icon"></i>
+      <div>
+        <div class="page-title" id="page-title">Browse</div>
+        <div class="page-subtitle" id="page-subtitle">Loading…</div>
+      </div>
+      <div class="view-toggle" id="view-toggle" style="display:none;">
+        <button class="view-toggle-btn" id="view-btn-bubble" onclick="setViewMode('bubble')"><i class="ti ti-layout-grid"></i> Bubble</button>
+        <button class="view-toggle-btn" id="view-btn-list" onclick="setViewMode('list')"><i class="ti ti-list"></i> List</button>
+      </div>
+    </div>
+    <div id="results-container">
+      <div class="state-wrap"><div class="state-icon"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div></div>
+    </div>
+    <div class="load-more-wrap" id="load-more-wrap" style="display:none;">
+      <button class="load-more-btn" onclick="loadMore()"><i class="ti ti-chevron-down"></i> Load more</button>
+    </div>
+  </div>
+
+  <footer>&copy; 2026 DawnScribe. All rights reserved.</footer>
+
+  <script src="blockUtils.js"></script>
+  <script>
+    const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+    window.db = db;
+
+    const PAGE_SIZE = 20;
+    var offset = 0;
+    var totalCount = null;
+    var section = new URLSearchParams(window.location.search).get('section') || 'new-novels';
+    var myUid = null;
+    var NOVEL_SECTIONS = ['new-novels', 'featured-novels', 'followed-chapters'];
+    var viewMode = localStorage.getItem('ds_browse_view_mode') || 'bubble';
+
+    var myContentFilters = { safe: true, gore: false, erotica: false };
+    var myFilteredWarnings = [];
+    var myMutedIds = [];
+    var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
+
+    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function timeAgo(s) {
+      if (!s) return '';
+      var d = Math.floor((Date.now() - new Date(s)) / 1000);
+      if (d < 60) return 'just now';
+      if (d < 3600) return Math.floor(d/60) + 'm ago';
+      if (d < 86400) return Math.floor(d/3600) + 'h ago';
+      if (d < 2592000) return Math.floor(d/86400) + 'd ago';
+      return Math.floor(d/2592000) + 'mo ago';
+    }
+    const coverColors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa','#fb923c'];
+    function coverColor(id) { return coverColors[Math.abs((id||'').toString().split('').reduce(function(a,c){return a+c.charCodeAt(0);},0)) % coverColors.length]; }
+
+    var SECTION_META = {
+      'new-novels':        { title: 'New Novels', sub: 'The latest novels published on DawnScribe.', icon: 'ti-sparkles' },
+      'featured-novels':   { title: 'Featured Novels', sub: 'Top-rated novels on DawnScribe.', icon: 'ti-star' },
+      'new-art':           { title: 'New Artwork', sub: 'The latest artwork uploaded to DawnScribe.', icon: 'ti-sparkles' },
+      'featured-art':      { title: 'Featured Artwork', sub: 'Top-rated artwork on DawnScribe.', icon: 'ti-star' },
+      'followed-chapters': { title: 'New Chapters', sub: 'New chapters from novels you follow.', icon: 'ti-bell' },
+      'followed-art':      { title: 'New Art From Followed Artists', sub: 'New artwork from artists you follow.', icon: 'ti-palette' }
+    };
+
+    function applyContentFilters(q) {
+      var allowGore = myContentFilters.gore && !myContentFilters.safe;
+      var allowErotica = myContentFilters.erotica && !myContentFilters.safe;
+      if (!allowGore) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
+      if (!allowErotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
+      myFilteredWarnings.forEach(function(w){ q = q.not('content_warnings', 'cs', JSON.stringify([w])); });
+      if (myMutedIds.length) q = q.not('author_id', 'in', '(' + myMutedIds.join(',') + ')');
+      return q;
+    }
+    function applyLanguageFilters(q) {
+      if (!myLangPrefs.lang_original) q = q.eq('is_fan_translation', false);
+      if (myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any') q = q.eq('language', myLangPrefs.pref_language);
+      return q;
+    }
+    function contentWarningBadge(w) {
+      var warnGore = w.content_rating_gore && (myContentFilters.safe || !myContentFilters.gore);
+      var warnErotica = w.content_rating_erotica && (myContentFilters.safe || !myContentFilters.erotica);
+      if (!warnGore && !warnErotica) return '';
+      var label = warnGore && warnErotica ? 'Gore & Erotica' : (warnGore ? 'Gore' : 'Erotica');
+      return ' <span class="warn-badge" title="Flagged for mature content"><i class="ti ti-alert-triangle"></i> ' + label + '</span>';
+    }
+
+    function renderNovelCard(w, profileMap) {
+      var prof = profileMap[w.author_id] || {};
+      var author = prof.display_name || prof.username || 'Unknown';
+      var authorHandle = prof.username || '';
+      var color = coverColor(w.id);
+      var letter = (w.title || '?')[0].toUpperCase();
+      var coverHtml = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt="cover"/>' : letter;
+      var tags = [];
+      if (w.tags_main) { try { tags = JSON.parse(w.tags_main).slice(0,3); } catch(e) {} }
+      var tagHtml = tags.map(function(t){ return '<span class="result-tag">' + esc(t) + '</span>'; }).join('');
+      return '<a class="result-card" href="story.html?id=' + w.id + '">'
+        + '<div class="result-cover" style="background:' + color + ';">' + coverHtml + '</div>'
+        + '<div class="result-body">'
+        + '<div class="result-title">' + esc(w.title) + contentWarningBadge(w) + '</div>'
+        + '<div class="result-sub">by <a href="profile.html?user=' + esc(authorHandle) + '" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none;">' + esc(author) + '</a>' + (w.created_at ? ' · <i class="ti ti-clock" style="font-size:10px;"></i> ' + timeAgo(w.created_at) : '') + '</div>'
+        + (w.synopsis ? '<div class="result-flavor">' + esc(w.synopsis) + '</div>' : '')
+        + (tagHtml ? '<div class="result-tags">' + tagHtml + '</div>' : '')
+        + '</div></a>';
+    }
+    function renderArtCard(w, profileMap) {
+      var prof = profileMap[w.author_id] || {};
+      var author = prof.display_name || prof.username || 'Unknown';
+      var authorHandle = prof.username || '';
+      var color = coverColor(w.id);
+      var letter = (w.title || '?')[0].toUpperCase();
+      var thumbHtml = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt="' + esc(w.title) + '"/>' : letter;
+      return '<a class="artwork-bubble" href="artwork.html?id=' + w.id + '">'
+        + '<div class="artwork-thumb" style="background:' + color + ';">' + thumbHtml + '</div>'
+        + '<div class="artwork-info">'
+        + '<div class="artwork-title">' + esc(w.title) + '</div>'
+        + '<a class="artwork-artist" href="profile.html?user=' + esc(authorHandle) + '" onclick="event.stopPropagation()">by ' + esc(author) + '</a>'
+        + (w.created_at ? '<div class="result-sub"><i class="ti ti-clock" style="font-size:10px;"></i> ' + timeAgo(w.created_at) + '</div>' : '')
+        + (w.synopsis ? '<div class="artwork-flavor">' + esc(w.synopsis) + '</div>' : '')
+        + (contentWarningBadge(w) ? '<div class="artwork-meta">' + contentWarningBadge(w) + '</div>' : '')
+        + '</div></a>';
+    }
+    function renderChapterCard(ch, workMap, profileMap) {
+      var w = workMap[ch.work_id] || {};
+      var prof = profileMap[w.author_id] || {};
+      var author = prof.display_name || prof.username || 'Unknown';
+      var color = coverColor(w.id || ch.id);
+      var letter = (w.title || '?')[0].toUpperCase();
+      var coverHtml = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt="cover"/>' : letter;
+      return '<a class="result-card" href="chapter.html?id=' + ch.id + '">'
+        + '<div class="result-cover" style="background:' + color + ';">' + coverHtml + '</div>'
+        + '<div class="result-body">'
+        + '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">Ch.' + (ch.chapter_number||'') + '</span>'
+        + '<div class="result-title">' + esc(ch.title || w.title || 'Untitled') + '</div>'
+        + '<div class="result-sub">' + esc(w.title || '') + ' · by ' + esc(author) + (ch.created_at ? ' · <i class="ti ti-clock" style="font-size:10px;"></i> ' + timeAgo(ch.created_at) : '') + '</div>'
+        + '</div></a>';
+    }
+
+    function renderNovelListRow(w, profileMap) {
+      var prof = profileMap[w.author_id] || {};
+      var author = prof.display_name || prof.username || 'Unknown';
+      var authorHandle = prof.username || '';
+      var color = coverColor(w.id);
+      var letter = (w.title || '?')[0].toUpperCase();
+      var coverHtml = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt="cover"/>' : letter;
+      var tags = [];
+      if (w.tags_main) { try { tags = JSON.parse(w.tags_main).slice(0,4); } catch(e) {} }
+      var tagHtml = tags.map(function(t){ return '<span class="list-row-tag">' + esc(t) + '</span>'; }).join('');
+      return '<a class="list-row" href="story.html?id=' + w.id + '">'
+        + '<div class="list-row-thumb" style="background:' + color + ';">' + coverHtml + '</div>'
+        + '<div class="list-row-body">'
+        + '<div class="list-row-title">' + esc(w.title) + contentWarningBadge(w) + '</div>'
+        + (tagHtml ? '<div class="list-row-tags">' + tagHtml + '</div>' : '')
+        + '</div>'
+        + '<div class="list-row-meta">' + (w.chapters_count ? w.chapters_count + ' ch · ' : '')
+          + '<a href="profile.html?user=' + esc(authorHandle) + '" onclick="event.stopPropagation()">' + esc(author) + '</a>'
+          + (w.created_at ? '<br>' + timeAgo(w.created_at) : '')
+        + '</div></a>';
+    }
+    function renderChapterListRow(ch, workMap, profileMap) {
+      var w = workMap[ch.work_id] || {};
+      var prof = profileMap[w.author_id] || {};
+      var author = prof.display_name || prof.username || 'Unknown';
+      var color = coverColor(w.id || ch.id);
+      var letter = (w.title || '?')[0].toUpperCase();
+      var coverHtml = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt="cover"/>' : letter;
+      return '<a class="list-row" href="chapter.html?id=' + ch.id + '">'
+        + '<div class="list-row-thumb" style="background:' + color + ';">' + coverHtml + '</div>'
+        + '<div class="list-row-body">'
+        + '<div class="list-row-title" style="font-weight:400;color:var(--text2);font-size:12px;">' + esc(w.title || '') + '</div>'
+        + '<div class="list-row-title">Ch.' + (ch.chapter_number||'') + ': ' + esc(ch.title || 'Untitled') + '</div>'
+        + '</div>'
+        + '<div class="list-row-meta">by ' + esc(author) + (ch.created_at ? '<br>' + timeAgo(ch.created_at) : '') + '</div></a>';
+    }
+
+    async function fetchProfiles(authorIds) {
+      var profileMap = {};
+      var ids = Array.from(new Set(authorIds.filter(Boolean)));
+      if (!ids.length) return profileMap;
+      var { data } = await db.from('profiles').select('id,username,display_name').in('id', ids);
+      (data || []).forEach(function(p){ profileMap[p.id] = p; });
+      return profileMap;
+    }
+
+    var cachedFollowedWorkIds = null;
+    async function getFollowedWorkIds() {
+      if (cachedFollowedWorkIds) return cachedFollowedWorkIds;
+      if (!myUid) { cachedFollowedWorkIds = []; return []; }
+      var { data } = await db.from('work_follows').select('work_id').eq('user_id', myUid);
+      cachedFollowedWorkIds = (data||[]).map(function(r){ return r.work_id; });
+      return cachedFollowedWorkIds;
+    }
+    var cachedFollowedAuthorIds = null;
+    async function getFollowedAuthorIds() {
+      if (cachedFollowedAuthorIds) return cachedFollowedAuthorIds;
+      if (!myUid) { cachedFollowedAuthorIds = []; return []; }
+      var { data } = await db.from('follows').select('following_id').eq('follower_id', myUid);
+      cachedFollowedAuthorIds = (data||[]).map(function(r){ return r.following_id; });
+      return cachedFollowedAuthorIds;
+    }
+
+    async function fetchPage() {
+      if (section === 'new-novels' || section === 'featured-novels') {
+        var q = db.from('works').select('id,title,cover_url,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,chapters_count', { count: 'exact' })
+          .eq('type','novel').eq('is_published',true);
+        q = applyContentFilters(q); q = applyLanguageFilters(q);
+        q = q.order(section === 'new-novels' ? 'created_at' : 'rating', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
+        var { data, count, error } = await q;
+        if (error) throw error;
+        var profileMap = await fetchProfiles((data||[]).map(function(w){ return w.author_id; }));
+        var useList = viewMode === 'list' && NOVEL_SECTIONS.indexOf(section) !== -1;
+        return {
+          items: data || [], count: count,
+          html: (data||[]).map(function(w){ return useList ? renderNovelListRow(w, profileMap) : renderNovelCard(w, profileMap); }),
+          grid: useList ? 'list-view' : 'results-grid'
+        };
+      }
+      if (section === 'new-art' || section === 'featured-art') {
+        var q2 = db.from('works').select('id,title,cover_url,synopsis,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at', { count: 'exact' })
+          .eq('type','artwork').eq('is_published',true);
+        q2 = applyContentFilters(q2);
+        q2 = q2.order(section === 'new-art' ? 'created_at' : 'rating', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
+        var res2 = await q2;
+        if (res2.error) throw res2.error;
+        var profileMap2 = await fetchProfiles((res2.data||[]).map(function(w){ return w.author_id; }));
+        return { items: res2.data || [], count: res2.count, html: (res2.data||[]).map(function(w){ return renderArtCard(w, profileMap2); }), grid: 'artwork-grid' };
+      }
+      if (section === 'followed-chapters') {
+        var workIds = await getFollowedWorkIds();
+        if (!workIds.length) return { items: [], count: 0, html: [], grid: 'results-grid' };
+        var chQ = db.from('chapters').select('id,work_id,chapter_number,title,created_at', { count: 'exact' })
+          .in('work_id', workIds).eq('status','published').order('created_at',{ascending:false}).range(offset, offset + PAGE_SIZE - 1);
+        var chRes = await chQ;
+        if (chRes.error) throw chRes.error;
+        var chData = chRes.data || [];
+        var chWorkIds = Array.from(new Set(chData.map(function(c){ return c.work_id; })));
+        var workMap = {};
+        if (chWorkIds.length) {
+          var { data: works } = await db.from('works').select('id,title,cover_url,author_id').in('id', chWorkIds);
+          (works||[]).forEach(function(w){ workMap[w.id] = w; });
+        }
+        chData = chData.filter(function(c){
+          var w = workMap[c.work_id];
+          if (!w) return true;
+          if (myMutedIds.indexOf(w.author_id) !== -1) return false;
+          try { if (window.dsBlock && dsBlock.either(w.author_id)) return false; } catch(e) {}
+          return true;
+        });
+        var profileMap3 = await fetchProfiles(Object.keys(workMap).map(function(k){ return workMap[k].author_id; }));
+        var useListCh = viewMode === 'list';
+        return {
+          items: chData, count: chRes.count,
+          html: chData.map(function(c){ return useListCh ? renderChapterListRow(c, workMap, profileMap3) : renderChapterCard(c, workMap, profileMap3); }),
+          grid: useListCh ? 'list-view' : 'results-grid'
+        };
+      }
+      if (section === 'followed-art') {
+        var authorIds = await getFollowedAuthorIds();
+        if (!authorIds.length) return { items: [], count: 0, html: [], grid: 'artwork-grid' };
+        var artQ = db.from('works').select('id,title,cover_url,synopsis,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at', { count: 'exact' })
+          .eq('type','artwork').eq('is_published',true).in('author_id', authorIds)
+          .order('created_at',{ascending:false}).range(offset, offset + PAGE_SIZE - 1);
+        var artRes = await artQ;
+        if (artRes.error) throw artRes.error;
+        var items4 = (artRes.data||[]).filter(function(w){
+          if (myMutedIds.indexOf(w.author_id) !== -1) return false;
+          try { if (window.dsBlock && dsBlock.either(w.author_id)) return false; } catch(e) {}
+          return true;
+        });
+        var profileMap4 = await fetchProfiles(items4.map(function(w){ return w.author_id; }));
+        return { items: items4, count: artRes.count, html: items4.map(function(w){ return renderArtCard(w, profileMap4); }), grid: 'artwork-grid' };
+      }
+      return { items: [], count: 0, html: [], grid: 'results-grid' };
+    }
+
+    async function loadPage(reset) {
+      if (reset) {
+        offset = 0; totalCount = null;
+        document.getElementById('results-container').innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div></div>';
+        document.getElementById('load-more-wrap').style.display = 'none';
+      }
+      try {
+        var result = await fetchPage();
+        totalCount = result.count;
+        offset += result.items.length;
+
+        var container = document.getElementById('results-container');
+        if (reset) {
+          if (!result.items.length) {
+            container.innerHTML = '<div class="state-wrap">'
+              + '<div class="state-icon"><i class="ti ti-mood-empty"></i></div>'
+              + '<div class="state-title">Nothing here yet</div>'
+              + '<div class="state-body">' + (section.indexOf('followed') === 0 ? 'Follow some authors or stories to see them here.' : 'Check back soon — new content is added often.') + '</div>'
+              + '<a class="state-btn" href="index.html"><i class="ti ti-compass"></i> Browse DawnScribe</a>'
+              + '</div>';
+            document.getElementById('load-more-wrap').style.display = 'none';
+            return;
+          }
+          container.innerHTML = '<div class="' + result.grid + '" id="results-grid"></div>';
+        }
+        var grid = document.getElementById('results-grid');
+        result.html.forEach(function(h){
+          var temp = document.createElement('div');
+          temp.innerHTML = h;
+          if (temp.firstElementChild) grid.appendChild(temp.firstElementChild);
+        });
+
+        var hasMore = totalCount !== null ? offset < totalCount : result.items.length === PAGE_SIZE;
+        document.getElementById('load-more-wrap').style.display = hasMore ? 'block' : 'none';
+      } catch(e) {
+        console.error('Browse load error:', e);
+        document.getElementById('results-container').innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-alert-circle"></i></div><div class="state-title">Something went wrong</div><div class="state-body">Please try refreshing the page.</div></div>';
+      }
+    }
+    function loadMore() { loadPage(false); }
+
+    function setViewMode(mode) {
+      viewMode = mode;
+      localStorage.setItem('ds_browse_view_mode', mode);
+      document.getElementById('view-btn-bubble').classList.toggle('active', mode === 'bubble');
+      document.getElementById('view-btn-list').classList.toggle('active', mode === 'list');
+      loadPage(true);
+    }
+    function syncViewToggleUI() {
+      var toggle = document.getElementById('view-toggle');
+      var isNovelSection = NOVEL_SECTIONS.indexOf(section) !== -1;
+      toggle.style.display = isNovelSection ? 'flex' : 'none';
+      if (!isNovelSection) viewMode = 'bubble'; // art sections always use the gallery layout
+      document.getElementById('view-btn-bubble').classList.toggle('active', viewMode === 'bubble');
+      document.getElementById('view-btn-list').classList.toggle('active', viewMode === 'list');
+    }
+
+    (async function init() {
+      var meta = SECTION_META[section] || SECTION_META['new-novels'];
+      document.getElementById('page-title').textContent = meta.title;
+      document.getElementById('page-subtitle').textContent = meta.sub;
+      document.getElementById('page-icon').className = 'ti ' + meta.icon;
+      document.title = 'DawnScribe — ' + meta.title;
+
+      try {
+        var sessionRes = await db.auth.getSession();
+        var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        if (session) {
+          myUid = session.user.id;
+          await dsBlock.load(myUid);
+          var { data: prefRow } = await db.from('profiles').select('settings_filter_safe,settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict,filtered_content_warnings').eq('id', myUid).maybeSingle();
+          if (prefRow) {
+            if (prefRow.settings_filter_safe !== null && prefRow.settings_filter_safe !== undefined) myContentFilters.safe = !!prefRow.settings_filter_safe;
+            myContentFilters.gore = !!prefRow.settings_filter_gore;
+            myContentFilters.erotica = !!prefRow.settings_filter_erotica;
+            if (prefRow.pref_story_language) myLangPrefs.pref_language = prefRow.pref_story_language;
+            if (prefRow.lang_original !== null && prefRow.lang_original !== undefined) myLangPrefs.lang_original = prefRow.lang_original;
+            if (prefRow.lang_strict !== null && prefRow.lang_strict !== undefined) myLangPrefs.lang_strict = prefRow.lang_strict;
+            if (Array.isArray(prefRow.filtered_content_warnings)) myFilteredWarnings = prefRow.filtered_content_warnings;
+          }
+          var { data: muteRows } = await db.from('mutes').select('muted_id').eq('muter_id', myUid);
+          myMutedIds = (muteRows||[]).map(function(r){ return r.muted_id; });
+        }
+      } catch(e) {}
+
+      syncViewToggleUI();
+      loadPage(true);
+    })();
+  </script>
+<script src="nav.js"></script>
+</body>
+</html>

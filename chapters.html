@@ -375,6 +375,7 @@
         <button class="tb-extra-btn" onclick="openPollModal()"><i class="ti ti-chart-bar"></i> Add Poll</button>
         <button class="tb-extra-btn" id="schedule-toggle" onclick="toggleSchedule()"><i class="ti ti-calendar-clock"></i> Schedule</button>
         <button class="tb-extra-btn" onclick="openRevisionHistory()"><i class="ti ti-history"></i> History</button>
+        <button class="tb-extra-btn" id="comments-open-toggle" onclick="toggleChapterComments()"><i class="ti ti-message-circle"></i> Comments: Open</button>
         <div class="export-menu-wrap">
           <button class="tb-extra-btn" onclick="toggleExportMenu()"><i class="ti ti-download"></i> Export</button>
           <div class="export-menu" id="export-menu">
@@ -557,6 +558,8 @@
   var workId = null;
   var workData = null;
   var currentSession = null;
+  var myDefaultCommentsOpen = true;
+  var currentChapterCommentsOpen = true;
   var quill = null;
   var chapterCount = 0;
   var editingChapterId = null;
@@ -611,6 +614,8 @@
     document.getElementById('author-note-top-wrap').style.display = 'none';
     document.getElementById('author-note-bottom-wrap').style.display = 'none';
     document.getElementById('note-top-toggle').classList.remove('active');
+    currentChapterCommentsOpen = myDefaultCommentsOpen;
+    setCommentsToggleUI();
     document.getElementById('note-bottom-toggle').classList.remove('active');
     document.getElementById('schedule-wrap').style.display = 'none';
     document.getElementById('schedule-toggle').classList.remove('active');
@@ -730,6 +735,8 @@
     document.getElementById('author-note-bottom-wrap').style.display = hasBottomNote ? 'flex' : 'none';
     document.getElementById('note-top-toggle').classList.toggle('active', hasTopNote);
     document.getElementById('note-bottom-toggle').classList.toggle('active', hasBottomNote);
+    currentChapterCommentsOpen = ch.comments_open !== false;
+    setCommentsToggleUI();
 
     // ── Schedule ──
     if (ch.status === 'scheduled' && ch.scheduled_for) {
@@ -789,6 +796,11 @@
     if (!res.data) { document.getElementById('work-title-el').textContent = 'Work not found or access denied.'; return; }
     workData = res.data;
 
+    try {
+      var { data: prefRow } = await db.from('profiles').select('default_comments_open').eq('id', currentSession.user.id).maybeSingle();
+      myDefaultCommentsOpen = prefRow && prefRow.default_comments_open !== false;
+    } catch(e) { myDefaultCommentsOpen = true; }
+
     var coverEl = document.getElementById('work-cover-el');
     if (workData.cover_url) {
       coverEl.outerHTML = '<img class="work-header-cover" id="work-cover-el" src="'+workData.cover_url+'" alt="cover"/>';
@@ -808,6 +820,18 @@
       document.getElementById('link-novel-card').style.display = 'block';
       await lnInit();
     }
+  }
+
+  function setCommentsToggleUI() {
+    var btn = document.getElementById('comments-open-toggle');
+    btn.innerHTML = currentChapterCommentsOpen
+      ? '<i class="ti ti-message-circle"></i> Comments: Open'
+      : '<i class="ti ti-message-circle-off"></i> Comments: Closed';
+    btn.classList.toggle('active', !currentChapterCommentsOpen);
+  }
+  function toggleChapterComments() {
+    currentChapterCommentsOpen = !currentChapterCommentsOpen;
+    setCommentsToggleUI();
   }
 
   async function loadChapters() {
@@ -1048,7 +1072,8 @@
     var payload = {
       title: title, content: content, word_count: wordCount, status: finalStatus,
       author_note_top: noteTop || null, author_note_bottom: noteBottom || null,
-      scheduled_for: scheduledFor, updated_at: new Date().toISOString()
+      scheduled_for: scheduledFor, updated_at: new Date().toISOString(),
+      comments_open: currentChapterCommentsOpen
     };
 
     var res;

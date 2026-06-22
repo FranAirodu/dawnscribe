@@ -494,6 +494,7 @@
         <div class="info-card"><div class="info-label"><i class="ti ti-clock"></i> Last active</div><div class="info-value">Today</div></div>
         <div class="info-card"><div class="info-label"><i class="ti ti-map-pin"></i> Location</div><div class="info-value" id="info-location">São Paulo, Brazil</div></div>
         <div class="info-card"><div class="info-label"><i class="ti ti-gender-bigender"></i> Gender</div><div class="info-value muted" id="info-gender">Not specified</div></div>
+        <div class="info-card"><div class="info-label"><i class="ti ti-message-2"></i> Pronouns</div><div class="info-value muted" id="info-pronouns">Not specified</div></div>
         <div class="info-card"><div class="info-label"><i class="ti ti-feather"></i> Role</div><div class="info-value" id="info-role">Writer &amp; Artist</div></div>
         <div class="info-card"><div class="info-label"><i class="ti ti-language"></i> Language</div><div class="info-value" id="info-language">English, Portuguese</div></div>
         <div class="info-card" style="grid-column:span 2;"><div class="info-label"><i class="ti ti-link"></i> Links</div><div id="info-links" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;"></div></div>
@@ -714,9 +715,10 @@
             resolvedUsername = res.data.username || null;
           }
         }
-        if (profileData) { applyProfileData(profileData, resolvedUsername); }
+        var isOwnerNow = !!(session && profileData && session.user.id === profileData.id);
+        if (profileData) { applyProfileData(profileData, resolvedUsername, isOwnerNow); }
         if (profileData && profileData.id) { loadStats(profileData.id); }
-        var isOwner = !!(session && profileData && session.user.id === profileData.id);
+        var isOwner = isOwnerNow;
         if (isOwner) {
           await setOwner(true, session, profileData);
           renderAnnouncements(true);
@@ -776,13 +778,18 @@
       }
     })();
 
-    function applyProfileData(data, username) {
+    function applyProfileData(data, username, isOwner) {
       if (data.display_name) { document.getElementById('display-name').textContent = data.display_name; }
       var handle = '@' + (data.username || username || 'user') + (data.role ? ' · ' + data.role : '');
       document.getElementById('display-handle').textContent = handle;
       if (data.bio) { document.getElementById('bio-text').textContent = data.bio; }
-      if (data.location) { document.getElementById('info-location').textContent = data.location; document.getElementById('info-location').classList.remove('muted'); }
-      if (data.gender) { document.getElementById('info-gender').textContent = data.gender.charAt(0).toUpperCase() + data.gender.slice(1); document.getElementById('info-gender').classList.remove('muted'); }
+      if (data.location && (isOwner || data.show_location !== false)) { document.getElementById('info-location').textContent = data.location; document.getElementById('info-location').classList.remove('muted'); }
+      if (data.gender && (isOwner || data.show_gender !== false)) { document.getElementById('info-gender').textContent = data.gender.charAt(0).toUpperCase() + data.gender.slice(1); document.getElementById('info-gender').classList.remove('muted'); }
+      var pronounsEl = document.getElementById('info-pronouns');
+      if (pronounsEl) {
+        if (data.pronouns && (isOwner || data.show_pronouns !== false)) { pronounsEl.textContent = data.pronouns; pronounsEl.classList.remove('muted'); pronounsEl.closest('.info-card').style.display = ''; }
+        else { pronounsEl.closest('.info-card').style.display = 'none'; }
+      }
       if (data.role) { document.getElementById('info-role').textContent = data.role; }
       if (data.language) { document.getElementById('info-language').textContent = data.language; }
       if (data.created_at) { document.getElementById('info-joined').textContent = new Date(data.created_at).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}); }
