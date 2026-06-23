@@ -288,6 +288,24 @@
 
     /* LAYOUT CUSTOMIZATION */
     .layout-customize-row { display: flex; justify-content: flex-end; padding: 0 48px 8px; }
+    /* ── CONTINUE READING ── */
+    .continue-reading-section { display: none; } /* shown by JS when data loads */
+    .continue-card { position: relative; flex-shrink: 0; width: 120px; cursor: pointer; border-radius: 10px; overflow: hidden; background: var(--bg3); border: 1px solid var(--border); transition: transform 0.2s, border-color 0.2s; text-decoration: none; display: flex; flex-direction: column; }
+    .continue-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+    .continue-cover { width: 100%; aspect-ratio: 2/3; background: var(--bg4); display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 22px; font-weight: 700; color: var(--text2); background-size: cover; background-position: center; position: relative; }
+    .continue-progress-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: rgba(0,0,0,0.4); }
+    .continue-progress-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+    .continue-card-body { padding: 6px 8px 8px; flex: 1; }
+    .continue-card-title { font-size: 11px; font-weight: 700; color: var(--text); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 3px; }
+    .continue-card-ch { font-size: 10px; color: var(--accent); font-weight: 700; }
+    /* ── EMPTY STATE CARDS (rows 0 & 1 for logged-out/no-follows) ── */
+    .empty-state-card { flex-shrink: 0; width: 140px; background: var(--bg3); border: 1px dashed var(--border); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px 12px; text-align: center; color: var(--text3); font-size: 11px; min-height: 180px; }
+    .empty-state-card i { font-size: 28px; color: var(--text3); opacity: 0.5; }
+    .empty-state-card a { color: var(--accent); font-weight: 700; text-decoration: none; }
+    .empty-state-card a:hover { text-decoration: underline; }
+    /* ── SIDEBAR SKELETON ── */
+    @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+    .sidebar-skel { height: 72px; border-radius: 10px; background: linear-gradient(90deg,var(--bg3) 25%,var(--bg4) 50%,var(--bg3) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; margin-bottom: 6px; }
     .layout-customize-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--bg2); border: 1px solid var(--border); color: var(--text2); font-size: 12px; font-weight: 700; padding: 8px 14px; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
     .layout-customize-btn:hover { border-color: var(--accent); color: var(--accent); }
     .home-section.section-hidden { display: none; }
@@ -439,7 +457,7 @@
     <div class="nav-left">
       <a class="logo" href="index.html"><span>Dawn</span>Scribe</a>
       <div class="nav-btn-group">
-        <button class="btn btn-primary" id="publish-btn" style="display:none;" onclick="window.location.href='creator.html'"><i class="ti ti-pencil"></i> Publish</button>
+        <button class="btn btn-primary" id="publish-btn" style="display:none;" onclick="window.location.href='publish.html'"><i class="ti ti-pencil"></i> Publish</button>
         <button class="btn btn-primary" id="showcase-btn" style="display:none;" onclick="openShowcase()"><i class="ti ti-photo"></i> Showcase</button>
       </div>
     </div>
@@ -461,7 +479,7 @@
       <div class="notif-wrap">
         <button class="notif-btn" onclick="toggleNotif()">
           <i class="ti ti-bell"></i>
-          <span class="notif-badge">5</span>
+          <span class="notif-badge" id="notif-badge" style="display:none;"></span>
         </button>
         <div class="notif-dropdown" id="notifDropdown">
           <div class="notif-tabs">
@@ -686,6 +704,20 @@
           <button class="layout-customize-btn" onclick="openLayoutModal()"><i class="ti ti-layout-grid"></i> Customize Layout</button>
         </div>
 
+        <!-- CONTINUE READING — shown only when user has in-progress works, moveable via Customize Layout -->
+        <div class="home-section continue-reading-section" data-section-id="cr" id="home-section-cr">
+          <div class="scroll-label">
+            <i class="ti ti-bookmark"></i>
+            <span class="label-accent">Continue</span>
+            <span class="label-white">Reading</span>
+          </div>
+          <div class="scroll-row-wrap" id="continue-reading-wrap">
+            <button class="scroll-nav-btn scroll-nav-left" onclick="scrollRow('cr',-300)"><i class="ti ti-chevron-left"></i></button>
+            <div class="scroll-row" id="row-cr"><div class="scroll-track" id="track-cr" style="display:flex;gap:10px;padding:8px 48px;"></div></div>
+            <button class="scroll-nav-btn scroll-nav-right" onclick="scrollRow('cr',300)"><i class="ti ti-chevron-right"></i></button>
+          </div>
+        </div>
+
         <div class="home-section" data-section-id="0" id="home-section-0">
         <div class="scroll-label" onclick="toggleRow(0)">
           <i class="ti ti-bell"></i>
@@ -798,15 +830,15 @@
         <button class="sidebar-tab" onclick="switchSidebar('updates')"><i class="ti ti-bell"></i> Updates</button>
       </div>
       <div class="sidebar-panel active" id="panel-collabs">
-        <div class="sidebar-feed" id="sidebar-feed-collabs"><div style="padding:20px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
+        <div class="sidebar-feed" id="sidebar-feed-collabs"><div style="padding:10px 12px;display:flex;flex-direction:column;gap:6px;"><div class="sidebar-skel"></div><div class="sidebar-skel"></div><div class="sidebar-skel"></div></div></div>
         <a class="view-all-btn" href="activity.html#collabs"><i class="ti ti-users"></i> View all collabs <i class="ti ti-arrow-right"></i></a>
       </div>
       <div class="sidebar-panel" id="panel-comments">
-        <div class="sidebar-feed" id="sidebar-feed-comments"><div style="padding:20px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
+        <div class="sidebar-feed" id="sidebar-feed-comments"><div style="padding:10px 12px;display:flex;flex-direction:column;gap:6px;"><div class="sidebar-skel"></div><div class="sidebar-skel"></div><div class="sidebar-skel"></div></div></div>
         <a class="view-all-btn" href="activity.html#comments"><i class="ti ti-message-circle"></i> View all comments <i class="ti ti-arrow-right"></i></a>
       </div>
       <div class="sidebar-panel" id="panel-updates">
-        <div class="sidebar-feed" id="sidebar-feed-updates"><div style="padding:20px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
+        <div class="sidebar-feed" id="sidebar-feed-updates"><div style="padding:10px 12px;display:flex;flex-direction:column;gap:6px;"><div class="sidebar-skel"></div><div class="sidebar-skel"></div><div class="sidebar-skel"></div></div></div>
         <a class="view-all-btn" href="activity.html#updates"><i class="ti ti-bell"></i> View all updates <i class="ti ti-arrow-right"></i></a>
       </div>
     </aside>
@@ -843,8 +875,19 @@
 
     /* ── DM BUTTON (LIVE) ──────────────────────────────────────────── */
     async function loadDmPreview(uid){
-      var unreadRes = await db.from('messages').select('id').is('read_at',null).neq('sender_id',uid);
-      var count = (unreadRes.data||[]).length;
+      // Bug 2 fix: first get conversations the user is part of, then count
+      // unread messages within those — never expose other users' message counts
+      var convRes = await db.from('conversations').select('id')
+        .or('participant_a.eq.' + uid + ',participant_b.eq.' + uid);
+      var convIds = (convRes.data||[]).map(function(c){ return c.id; });
+      var count = 0;
+      if (convIds.length) {
+        var unreadRes = await db.from('messages').select('id', { count: 'exact', head: true })
+          .in('conversation_id', convIds)
+          .is('read_at', null)
+          .neq('sender_id', uid);
+        count = unreadRes.count || 0;
+      }
       var btn = document.getElementById('dm-btn');
       var badge = document.getElementById('dm-badge');
       if(!btn || !badge) return;
@@ -1088,7 +1131,7 @@
       } catch(e) {}
 
       var unreadCount=unreadNovels+unreadArtists+unreadComments+unreadActivity;
-      var notifBadge=document.querySelector('.notif-badge');
+      var notifBadge=document.getElementById('notif-badge');
       if(unreadCount>0){notifBadge.textContent=Math.min(unreadCount,99);notifBadge.style.display='flex';}
       else{notifBadge.style.display='none';}
       function setTabBadge(tabId,count){var btn=document.getElementById(tabId);if(!btn)return;var ex=btn.querySelector('.notif-tab-badge');if(ex)ex.remove();if(count>0){var b=document.createElement('span');b.className='notif-tab-badge';b.textContent=Math.min(count,99);btn.appendChild(b);}}
@@ -1108,7 +1151,7 @@
       var tabBtn = document.getElementById('notif-tab-' + tab);
       if(tabBtn){ var b=tabBtn.querySelector('.notif-tab-badge'); if(b) b.remove(); }
       var total = document.querySelectorAll('.notif-item.unread').length;
-      var badge = document.querySelector('.notif-badge');
+      var badge = document.getElementById('notif-badge');
       if(total===0) badge.style.display='none';
       else{ badge.textContent=Math.min(total,99); badge.style.display='flex'; }
     }
@@ -1248,6 +1291,55 @@
     }
 
     /* ── SIDEBAR PANELS (LIVE) ──────────────────────────────────── */
+    /* ── CONTINUE READING ───────────────────────────────────────── */
+    async function loadContinueReading(uid) {
+      var section = document.getElementById('home-section-cr');
+      var track   = document.getElementById('track-cr');
+      if (!section || !track) return;
+      try {
+        var res = await db.rpc('get_continue_reading', { p_user_id: uid, p_limit: 8 });
+        if (res.error || !res.data || !res.data.length) {
+          // Hide the section if it was previously shown (e.g. user finished all books)
+          if (section) section.style.display = 'none';
+          return;
+        }
+        var rows = res.data;
+        // Fetch author profiles
+        var authorIds = [...new Set(rows.map(function(r){ return r.author_id; }).filter(Boolean))];
+        var profMap = {};
+        if (authorIds.length) {
+          var pr = await db.from('profiles').select('id,username,display_name').in('id', authorIds);
+          (pr.data||[]).forEach(function(p){ profMap[p.id] = p; });
+        }
+        track.innerHTML = '';
+        rows.forEach(function(item) {
+          var pct = item.chapters_count > 0 ? Math.min(100, Math.round((item.chapter_number / item.chapters_count) * 100)) : 0;
+          var prof = profMap[item.author_id] || {};
+          var authorName = prof.display_name || prof.username || '';
+          var card = document.createElement('a');
+          card.className = 'continue-card';
+          card.href = 'chapter.html?id=' + item.chapter_id;
+          card.title = item.title || '';
+          var coverStyle = '';
+          if (item.cover_url) {
+            coverStyle = 'background-image:url(' + esc(item.cover_url) + ');color:transparent;';
+          }
+          card.innerHTML =
+            '<div class="continue-cover ' + (item.cover_url ? '' : coverColor(item.work_id)) + '" style="' + coverStyle + '">' +
+              (item.cover_url ? '' : esc(coverLetter(item.title))) +
+              '<div class="continue-progress-bar"><div class="continue-progress-fill" style="width:' + pct + '%;"></div></div>' +
+            '</div>' +
+            '<div class="continue-card-body">' +
+              '<div class="continue-card-title">' + esc(item.title || 'Untitled') + '</div>' +
+              '<div class="continue-card-ch"><i class="ti ti-bookmark" style="font-size:9px;"></i> Ch.' + item.chapter_number + (item.chapters_count ? ' / ' + item.chapters_count : '') + '</div>' +
+              (authorName ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;">' + esc(authorName) + '</div>' : '') +
+            '</div>';
+          track.appendChild(card);
+        });
+        section.style.display = '';
+      } catch(e) { /* silently skip — not critical */ }
+    }
+
     async function loadSidebarCollabs(){
       var feed = document.getElementById('sidebar-feed-collabs');
       feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div>';
@@ -1628,10 +1720,16 @@
             var p0=ch.authorProf; return { id:ch.work_id, title:w?w.title:'?', cover:w?w.cover_url:null, href:'chapter.html?id='+ch.id, rating:w?parseFloat(w.rating)||0:0, chapterNumber:ch.chapter_number, chapterTitle:ch.title, chapterTime:ch.created_at, readerChapter:ch.readerChapter, authorName:p0?(p0.display_name||p0.username||null):null, authorUsername:p0?p0.username:null };
           });
         } else {
-          row0track.innerHTML='<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Follow some stories to see new chapters here.</div>';
+          row0track.innerHTML='<div style="padding:8px 48px;display:flex;gap:12px;">' +
+            '<div class="empty-state-card"><i class="ti ti-books"></i><div>Follow stories to see new chapters here</div><a href="search.html?type=titles">Browse Novels →</a></div>' +
+            '<div class="empty-state-card"><i class="ti ti-bell"></i><div>New chapters from authors you follow will appear here</div></div>' +
+          '</div>';
         }
       } else {
-        row0track.innerHTML='<div style="padding:8px 48px;color:var(--text3);font-size:12px;"><a href="auth.html" style="color:var(--accent);">Sign in</a> to see chapters from followed stories.</div>';
+        row0track.innerHTML='<div style="padding:8px 48px;display:flex;gap:12px;">' +
+          '<div class="empty-state-card"><i class="ti ti-bookmark"></i><div>Your followed story updates appear here</div><a href="auth.html">Sign in →</a></div>' +
+          '<div class="empty-state-card"><i class="ti ti-bell"></i><div>Track your reading progress across all stories</div></div>' +
+        '</div>';
       }
 
       // Build collab work ID set — needed by all rows
@@ -1682,10 +1780,16 @@
             var p1=r1ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'artwork.html?id='+w.id, authorName:p1?(p1.display_name||p1.username||null):null, authorUsername:p1?p1.username:null, isCollab:!!collabWorkIds.has(w.id) };
           });
         } else {
-          row1track.innerHTML='<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Follow some artists to see their work here.</div>';
+          row1track.innerHTML='<div style="padding:8px 48px;display:flex;gap:12px;">' +
+            '<div class="empty-state-card"><i class="ti ti-palette"></i><div>Follow artists to see their latest work here</div><a href="search.html?type=artists">Browse Artists →</a></div>' +
+            '<div class="empty-state-card"><i class="ti ti-photo-star"></i><div>New artwork from creators you follow will appear here</div></div>' +
+          '</div>';
         }
       } else {
-        row1track.innerHTML='<div style="padding:8px 48px;color:var(--text3);font-size:12px;"><a href="auth.html" style="color:var(--accent);">Sign in</a> to see art from followed artists.</div>';
+        row1track.innerHTML='<div style="padding:8px 48px;display:flex;gap:12px;">' +
+          '<div class="empty-state-card"><i class="ti ti-palette"></i><div>Art from artists you follow appears here</div><a href="auth.html">Sign in →</a></div>' +
+          '<div class="empty-state-card"><i class="ti ti-photo-star"></i><div>Discover and follow your favourite creators</div></div>' +
+        '</div>';
       }
 
       // Row 2: Featured novels (admin-marked or highest rated)
@@ -1865,12 +1969,19 @@
       styleEl.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
       document.head.appendChild(styleEl);
 
-      var sessionRes = await db.auth.getSession();
-      var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+      var session = null;
+      for (var _i = 0; _i < 5; _i++) {
+        var sessionRes = await db.auth.getSession();
+        session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        if (session) break;
+        await new Promise(function(r){ setTimeout(r, 350); });
+      }
       var uid = session ? session.user.id : null;
       if(session){ await dsBlock.load(uid); }
       if(session){ loadAvatarWidget(uid); }
       dsInitLayoutCustomization(uid);
+      // Suggestion 2: load Continue Reading for signed-in users
+      if(uid){ loadContinueReading(uid); }
 
       // Load public data regardless of auth
       Promise.all([
@@ -1971,7 +2082,7 @@
       } else {
         // Hide DM and notif badges for logged-out users
         document.querySelector('.dm-badge').style.display='none';
-        document.querySelector('.notif-badge').style.display='none';
+        document.getElementById('notif-badge').style.display='none';
         document.getElementById('dm-preview-list').innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><a href="auth.html" style="color:var(--accent);">Sign in</a> to see messages.</div>';
         document.getElementById('notif-feed-novels').innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><a href="auth.html" style="color:var(--accent);">Sign in</a> to see notifications.</div>';
         document.getElementById('notif-feed-artists').innerHTML = document.getElementById('notif-feed-novels').innerHTML;
@@ -2013,23 +2124,20 @@
         btn.textContent = opt.option_text;
         btn.addEventListener('click', async function() {
           var previousVoteId = localStorage.getItem('voted-poll-' + poll.id);
-          if (previousVoteId === opt.id) { return; }
+          if (previousVoteId === opt.id) return;
           optionsEl.querySelectorAll('.poll-option-btn').forEach(function(b) { b.disabled = true; b.style.opacity = '0.5'; });
-          if (previousVoteId) {
-            var prevFresh = await db.from('poll_options').select('vote_count').eq('id', previousVoteId).single();
-            var prevCount = prevFresh.data ? Math.max(0, prevFresh.data.vote_count - 1) : 0;
-            await db.from('poll_options').update({ vote_count: prevCount }).eq('id', previousVoteId);
-          }
-          var fresh = await db.from('poll_options').select('vote_count').eq('id', opt.id).single();
-          var latestCount = fresh.data ? fresh.data.vote_count : 0;
-          await db.from('poll_options').update({ vote_count: latestCount + 1 }).eq('id', opt.id);
+          // Bug 3 fix: atomic increment/decrement via RPC — no read-then-write race condition
+          var voteRes = await db.rpc('cast_poll_vote', {
+            p_poll_id:       poll.id,
+            p_new_option_id: opt.id,
+            p_old_option_id: previousVoteId || null
+          });
           localStorage.setItem('voted-poll-' + poll.id, opt.id);
           optionsEl.querySelectorAll('.poll-option-btn').forEach(function(b) {
             b.disabled = false; b.style.opacity = ''; b.classList.remove('voted');
             if (b.dataset.id === opt.id) { b.classList.add('voted'); }
           });
-          var updated = await db.from('poll_options').select('*').eq('poll_id', poll.id);
-          if (updated.data) { renderPollResults(updated.data); }
+          if (voteRes.data) { renderPollResults(voteRes.data); }
         });
         optionsEl.appendChild(btn);
       });
@@ -2038,11 +2146,17 @@
         document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
       };
       document.getElementById('poll-show-results-btn').onclick = async function() {
-        var updated = await db.from('poll_options').select('*').eq('poll_id', poll.id);
-        if (updated.data) { renderPollResults(updated.data); }
+        var res = await db.from('poll_options').select('*').eq('poll_id', poll.id);
+        if (res.data) { renderPollResults(res.data); }
       };
       document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
       document.getElementById('poll-banner').style.display = 'block';
+      // Suggestion 4 fix: if user already voted, show results immediately so they
+      // can see their previous choice highlighted without having to click "Show results"
+      if (votedId) {
+        var initialRes = await db.from('poll_options').select('*').eq('poll_id', poll.id);
+        if (initialRes.data) { renderPollResults(initialRes.data); }
+      }
     }
 
     function renderPollResults(options) {
@@ -2200,6 +2314,9 @@
           .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
           .limit(4);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No authors found.'); return; }
+        // Suggestion 3: filter out blocked users using the already-loaded block list
+        data = data.filter(function(p){ return !isHiddenAuthor(p.id); });
+        if (!data.length) { srchShowEmpty(previewId, 'No authors found.'); return; }
         var html = '<div class="search-preview-label">Authors</div>';
         data.forEach(function(p) {
           var name = p.display_name || p.username;
@@ -2273,6 +2390,9 @@
           .ilike('role', '%Artist%')
           .limit(4);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No artists found.'); return; }
+        // Suggestion 3: filter blocked artists
+        data = data.filter(function(p){ return !isHiddenAuthor(p.id); });
+        if (!data.length) { srchShowEmpty(previewId, 'No artists found.'); return; }
         var html = '<div class="search-preview-label">Artists</div>';
         data.forEach(function(p) {
           var name = p.display_name || p.username;
@@ -2404,14 +2524,17 @@
        in localStorage and synced to profiles.homepage_section_order
        so it follows them across devices. */
     var DS_SECTION_LABELS = {
-      '0': { icon: 'ti-bell', text: 'New Chapters from Followed Novels' },
-      '1': { icon: 'ti-palette', text: 'New Art from Followed Artists' },
-      '2': { icon: 'ti-flame', text: 'Featured Novels' },
-      '3': { icon: 'ti-palette', text: 'Featured Artwork' },
-      '4': { icon: 'ti-sparkles', text: 'New Novels' },
-      '5': { icon: 'ti-photo-star', text: 'New Artwork' }
+      'cr': { icon: 'ti-bookmark', text: 'Continue Reading' },
+      '0':  { icon: 'ti-bell',       text: 'New Chapters from Followed Novels' },
+      '1':  { icon: 'ti-palette',    text: 'New Art from Followed Artists' },
+      '2':  { icon: 'ti-flame',      text: 'Featured Novels' },
+      '3':  { icon: 'ti-palette',    text: 'Featured Artwork' },
+      '4':  { icon: 'ti-sparkles',   text: 'New Novels' },
+      '5':  { icon: 'ti-photo-star', text: 'New Artwork' }
     };
-    var DS_DEFAULT_ORDER = ['0','1','2','3','4','5'];
+    // 'cr' is last by default — users can move it anywhere
+    var DS_DEFAULT_ORDER = ['0','1','2','3','4','5','cr'];
+    var DS_ALL_SECTION_IDS = ['0','1','2','3','4','5','cr'];
     var dsLayoutOrder = null;   // array of section ids, in display order
     var dsLayoutHidden = {};    // { sectionId: true } for hidden sections
     var dsLayoutDragSrc = null;
@@ -2430,15 +2553,18 @@
     function dsApplyLayout(layout) {
       if (!layout || !layout.order) return;
       dsLayoutOrder = layout.order.slice();
+      // Back-fill 'cr' for users who have an old saved layout without it
+      if (dsLayoutOrder.indexOf('cr') === -1) dsLayoutOrder.push('cr');
       dsLayoutHidden = layout.hidden || {};
-      // Re-append sections to the DOM in the saved order
-      var container = document.getElementById('home-section-0').parentNode;
+      // Re-append sections in saved order using the banner-scroll-wrap as the stable container
+      var container = document.querySelector('.banner-scroll-wrap');
+      if (!container) return;
       dsLayoutOrder.forEach(function(id) {
         var el = document.getElementById('home-section-' + id);
         if (el) container.appendChild(el);
       });
-      // Apply hidden state
-      DS_DEFAULT_ORDER.forEach(function(id) {
+      // Apply hidden state for all known sections
+      DS_ALL_SECTION_IDS.forEach(function(id) {
         var el = document.getElementById('home-section-' + id);
         if (!el) return;
         el.classList.toggle('section-hidden', !!dsLayoutHidden[id]);
@@ -2468,6 +2594,8 @@
       } catch(e) { /* keep whatever we had cached/default */ }
 
       if (!dsLayoutOrder) dsLayoutOrder = DS_DEFAULT_ORDER.slice();
+      // Always ensure 'cr' is in the order (back-compat with old saved layouts)
+      if (dsLayoutOrder.indexOf('cr') === -1) dsLayoutOrder.push('cr');
     }
 
     function openLayoutModal() {
@@ -2482,10 +2610,11 @@
         item.className = 'layout-item' + (hidden ? ' is-hidden' : '');
         item.setAttribute('draggable', 'true');
         item.dataset.sectionId = id;
+        var subText = id === 'cr' ? '<span style="font-size:10px;color:var(--text3);margin-left:4px;">— only shows when you have books in progress</span>' : '';
         item.innerHTML =
           '<i class="ti ti-grip-vertical drag-grip"></i>' +
           '<i class="ti ' + label.icon + '"></i>' +
-          '<span class="layout-item-label">' + label.text + '</span>' +
+          '<span class="layout-item-label">' + label.text + subText + '</span>' +
           '<button class="layout-item-toggle" onclick="dsToggleLayoutItemHidden(\'' + id + '\')" title="' + (hidden ? 'Show section' : 'Hide section') + '"><i class="ti ' + (hidden ? 'ti-eye-off' : 'ti-eye') + '"></i></button>';
         list.appendChild(item);
       });
@@ -2509,7 +2638,7 @@
     }
 
     function resetLayoutOrder() {
-      dsLayoutOrder = DS_DEFAULT_ORDER.slice();
+      dsLayoutOrder = DS_DEFAULT_ORDER.slice(); // includes 'cr'
       dsLayoutHidden = {};
       openLayoutModal();
     }
@@ -2534,8 +2663,8 @@
       } catch(e) { /* localStorage already has it — DB sync can retry next visit */ }
     }
 
-    // Drag-to-reorder within the modal list
-    document.addEventListener('DOMContentLoaded', function() {
+    // Wire drag-to-reorder directly — DOM is already loaded at this point
+    (function() {
       var list = document.getElementById('layout-modal-list');
       if (!list) return;
       list.addEventListener('dragstart', function(e) {
@@ -2775,19 +2904,22 @@
             }
           } catch(e) {}
         }
-        /* Admin link for site owner only */
-        if (session.user.id === '516db718-edd5-4856-9281-2df642d006f5') {
-          var menu = document.querySelector('.user-dropdown-menu');
-          var divider = document.createElement('div');
-          divider.className = 'user-dropdown-divider';
-          var adminLink = document.createElement('a');
-          adminLink.className = 'user-dropdown-item';
-          adminLink.href = 'WhiteRoomUnbreakable.html';
-          adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>';
-          var signOutBtn = menu.querySelector('.signout-btn');
-          menu.insertBefore(divider, signOutBtn);
-          menu.insertBefore(adminLink, signOutBtn);
-        }
+        /* Admin link — check admins table instead of hardcoding UID */
+        try {
+          var adminCheck = await db.from('admins').select('id').eq('id', session.user.id).maybeSingle();
+          if (adminCheck.data) {
+            var menu = document.querySelector('.user-dropdown-menu');
+            var divider = document.createElement('div');
+            divider.className = 'user-dropdown-divider';
+            var adminLink = document.createElement('a');
+            adminLink.className = 'user-dropdown-item';
+            adminLink.href = 'WhiteRoomUnbreakable.html';
+            adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>';
+            var signOutBtn = menu.querySelector('.signout-btn');
+            menu.insertBefore(divider, signOutBtn);
+            menu.insertBefore(adminLink, signOutBtn);
+          }
+        } catch(e) {}
       } catch(err) { console.warn('User nav:', err); }
     })();
 
@@ -2924,9 +3056,16 @@
           results.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:6px 0;">No novels found.</div>';
           return;
         }
+        // Bug 4 fix: fetch author profiles separately (no FK join available)
+        var authorIds = res.data.map(function(w){ return w.author_id; }).filter(Boolean);
+        var profMap = {};
+        if (authorIds.length) {
+          var profRes = await db.from('profiles').select('id,username,display_name').in('id', authorIds);
+          (profRes.data||[]).forEach(function(p){ profMap[p.id] = p; });
+        }
         res.data.forEach(function(work){
-          var prof = work.profiles;
-          var authorName = prof?(prof.display_name||prof.username||'Unknown'):'Unknown';
+          var prof = profMap[work.author_id] || {};
+          var authorName = prof.display_name || prof.username || 'Unknown';
           var row = document.createElement('div');
           row.className = 'sc-search-result';
           row.innerHTML =
@@ -2984,8 +3123,10 @@
         if(!session) throw new Error('Not logged in');
         var uid = session.user.id;
 
-        // Upload image to Supabase Storage
-        var ext = scImageFile.name.split('.').pop().toLowerCase();
+        // Bug 6 fix: derive extension from MIME type, not filename
+        var SAFE_IMG_EXTS = { 'image/png':'png', 'image/jpeg':'jpg', 'image/webp':'webp', 'image/gif':'gif' };
+        var ext = SAFE_IMG_EXTS[scImageFile.type];
+        if (!ext) throw new Error('Unsupported image type. Please upload a PNG, JPG, WebP, or GIF.');
         var path = 'artwork/' + uid + '/' + Date.now() + '.' + ext;
         var uploadRes = await db.storage.from('covers').upload(path, scImageFile, { upsert: false });
         if(uploadRes.error) throw uploadRes.error;
