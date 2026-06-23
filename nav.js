@@ -942,21 +942,89 @@ function dsApplyAccent(hex) {
           }
           await dsLoadNotifications(uid2);
           await dsLoadDmBadge(uid2);
+
+          // ── LOGIN BADGE TRIGGERS ──────────────────────────────
+          // Run silently in background — never block nav or show toasts here.
+          // Pages can listen for 'ds-badge-unlocked' to show their own toasts.
+          (async function() {
+            try {
+              // Veteran: advances automatically based on account age
+              var vetResult = await db.rpc('award_veteran_badge', { p_user_id: uid2 });
+              if (vetResult.data && vetResult.data.newly_unlocked &&
+                  vetResult.data.newly_unlocked.length > 0) {
+                window.dispatchEvent(new CustomEvent('ds-badge-unlocked', {
+                  detail: { results: [vetResult.data] }
+                }));
+              }
+            } catch(e) {}
+
+            try {
+              // Rising: recount followers in case follows happened while away
+              await db.rpc('award_rising_badge', { p_user_id: uid2 });
+            } catch(e) {}
+
+            try {
+              // check_special_badges: Pioneer, Renaissance, Silent Reader,
+              // Curator, Homecoming — all idempotent and safe to run every login
+              var specialResults = await db.rpc('check_special_badges', { p_user_id: uid2 });
+              if (specialResults.data && specialResults.data.length > 0) {
+                window.dispatchEvent(new CustomEvent('ds-badge-unlocked', {
+                  detail: { results: specialResults.data }
+                }));
+              }
+            } catch(e) {}
+          })();
         }
       }
-      // Admin link
-      if(session.user.id==='516db718-edd5-4856-9281-2df642d006f5'){
-        var menu=document.querySelector('.user-dropdown-menu');
-        if(menu){
-          var div2=document.createElement('div'); div2.className='user-dropdown-divider';
-          var adminLink=document.createElement('a'); adminLink.className='user-dropdown-item'; adminLink.href='WhiteRoomUnbreakable.html';
-          adminLink.innerHTML='<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>';
-          var signOutBtn=menu.querySelector('.signout-btn');
-          menu.insertBefore(div2,signOutBtn); menu.insertBefore(adminLink,signOutBtn);
+
+      // Admin link — check admins table, not hardcoded UID
+      try {
+        var adminCheck = await db.from('admins').select('id')
+          .eq('id', session.user.id).maybeSingle();
+        if (adminCheck.data) {
+          var menu = document.querySelector('.user-dropdown-menu');
+          if (menu) {
+            var div2 = document.createElement('div'); div2.className = 'user-dropdown-divider';
+            var adminLink = document.createElement('a'); adminLink.className = 'user-dropdown-item';
+            adminLink.href = 'WhiteRoomUnbreakable.html';
+            adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>';
+            var signOutBtn = menu.querySelector('.signout-btn');
+            menu.insertBefore(div2, signOutBtn);
+            menu.insertBefore(adminLink, signOutBtn);
+          }
         }
-      }
+      } catch(e) {}
     } catch(err){ console.warn('DS nav:', err); }
   })();
+
+  // ── BADGE UNLOCK EVENT LISTENER ──────────────────────────────
+  // Dispatched by nav.js badge triggers and by any page's badge RPC calls.
+  // Pages that have a showToast function will show the toast automatically.
+  // Pages without it (or that want custom handling) can override this listener.
+  window.addEventListener('ds-badge-unlocked', function(e) {
+    var results = (e.detail && e.detail.results) || [];
+    if (!results.length) return;
+    // Only show toasts if a showToast function is available on this page
+    if (typeof window.showToast !== 'function') return;
+    results.forEach(function(r, i) {
+      var msg = null;
+      if (r.awarded && r.badge_slug) {
+        msg = '🏅 Badge unlocked: ' + r.badge_slug.replace(/_/g,' ') + '!';
+      } else if (r.newly_unlocked && r.newly_unlocked.length > 0) {
+        r.newly_unlocked.forEach(function(tier, j) {
+          setTimeout(function() {
+            window.showToast(
+              '🏅 ' + (r.badge_slug || 'badge').replace(/_/g,' ') +
+              ' — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP',
+              'ti-award'
+            );
+          }, (i + j + 1) * 700);
+        });
+        return;
+      }
+      if (msg) setTimeout(function(){ window.showToast(msg, 'ti-award'); }, (i + 1) * 700);
+    });
+  });
 
   // Live-update ember count when embers are awarded elsewhere on the page
   window.addEventListener('ds-embers-awarded', function(e){

@@ -1127,6 +1127,33 @@
     var savedChapterId = editingChapterId || (res.data && res.data.id);
     if (savedChapterId) await ctSaveChapterCharacters(savedChapterId, workId);
 
+    // ── AUTHOR BADGE AWARDS ──────────────────────────────────────
+    // Only fire on actual publish, not drafts or scheduled saves.
+    // Silent autosaves also skipped to avoid noise.
+    if (!silent && finalStatus === 'published' && currentSession) {
+      try {
+        var { data: chBadges } = await db.rpc('award_chapter_publish_badges', {
+          p_user_id: currentSession.user.id,
+          p_work_id: workId
+        });
+        if (chBadges && chBadges.length > 0) {
+          chBadges.forEach(function(r, i) {
+            if (r.newly_unlocked && r.newly_unlocked.length > 0) {
+              r.newly_unlocked.forEach(function(tier, j) {
+                setTimeout(function() {
+                  showToast(
+                    '🏅 ' + (r.badge_slug === 'storyteller' ? 'Storyteller' : 'Prolific')
+                    + ' — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP',
+                    'ti-award'
+                  );
+                }, (i + j + 1) * 800);
+              });
+            }
+          });
+        }
+      } catch(e) {} // never block the save flow
+    }
+
     if (!silent) { setModeAdd(); await loadChapters(); }
   }
 
@@ -1385,6 +1412,12 @@
     var { error } = await db.from('chapter_polls').insert(payload);
     if (error) { showToast('Error: ' + error.message, 'ti-x'); return; }
     showToast('Poll added!', 'ti-chart-bar');
+
+    // Pollster badge — tiered, +1 per poll created
+    if (currentSession) {
+      try { await db.rpc('award_pollster_badge', { p_user_id: currentSession.user.id }); } catch(e) {}
+    }
+
     closePollModal();
 
     var { data: polls } = await db.from('chapter_polls').select('*').eq('chapter_id', editingChapterId);

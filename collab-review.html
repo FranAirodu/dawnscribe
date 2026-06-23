@@ -407,6 +407,24 @@
         + '</div>';
     }
 
+    function showBadgeToasts(badgeResults) {
+      if (!badgeResults || !badgeResults.length) return;
+      badgeResults.forEach(function(r, i) {
+        var msg = null;
+        if (r.awarded) {
+          msg = '🏅 Badge unlocked: ' + (r.badge_slug || '') + '!';
+        } else if (r.newly_unlocked && r.newly_unlocked.length > 0) {
+          r.newly_unlocked.forEach(function(tier, j) {
+            setTimeout(function() {
+              showToast('🏅 ' + (r.badge_slug || 'badge') + ' — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP', 'ti-award');
+            }, (i + j + 1) * 700);
+          });
+          return;
+        }
+        if (msg) setTimeout(function(){ showToast(msg, 'ti-award'); }, (i + 1) * 700);
+      });
+    }
+
     // ── APPROVE
     async function confirmApprove(){
       var btn = document.getElementById('approve-btn');
@@ -429,6 +447,14 @@
             }
           } catch(e){}
         }
+        // ── BADGE AWARDS: fan art approved ─────────────────────────
+        try {
+          var { data: fanBadges } = await db.rpc('award_fanart_approved_badges', {
+            p_artist_id: collabData.artist_id,
+            p_author_id: session.user.id
+          });
+          showBadgeToasts(fanBadges);
+        } catch(e) {}
         showToast('Fan art approved!', 'ti-check');
         setTimeout(function(){ window.location.href = 'story.html?id=' + novelData.id; }, 1500);
         return;
@@ -450,6 +476,14 @@
           }
         } catch(e){}
       }
+      // ── BADGE AWARDS: artwork collab approved ──────────────────
+      try {
+        var { data: collabBadges } = await db.rpc('award_artwork_collab_approved_badges', {
+          p_artist_id: session.user.id,           // artwork owner who approved
+          p_author_id: collabData.author_id        // story author whose work was accepted
+        });
+        showBadgeToasts(collabBadges);
+      } catch(e) {}
       showToast('Story approved and published!', 'ti-check');
       setTimeout(function(){ window.location.href = 'artwork.html?id=' + artworkData.id; }, 1500);
     }

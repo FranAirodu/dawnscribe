@@ -704,6 +704,17 @@
             user_id: session.user.id,
             reaction: emoji
           }, { onConflict: 'work_id,user_id' });
+          // Only award on new reaction, not on change/remove
+          // Reactor: person giving the reaction
+          // Beloved: artwork owner receiving it
+          if (!prev) {
+            try {
+              await db.rpc('award_reactor_badge', { p_user_id: session.user.id });
+              if (workData && workData.author_id && workData.author_id !== session.user.id) {
+                await db.rpc('award_beloved_badge', { p_work_owner_id: workData.author_id });
+              }
+            } catch(e) {}
+          }
         }
       } catch(e){
         myReaction = prev;
@@ -1059,6 +1070,23 @@
         }); } catch(e){}
         }
       }
+      // ── BADGE AWARDS ──────────────────────────────────────
+      try {
+        var { data: cmtBadges } = await db.rpc('award_comment_badges', { p_user_id: session.user.id });
+        if (cmtBadges) {
+          cmtBadges.forEach(function(r, i) {
+            var msg = r.awarded ? '🏅 First Voice badge unlocked!'
+              : (r.newly_unlocked && r.newly_unlocked.length > 0
+                ? '🏅 Commentator — ' + r.newly_unlocked[0].gem_name + '! +' + r.newly_unlocked[0].xp_reward + ' XP'
+                : null);
+            if (msg) setTimeout(function(){ showToast(msg, 'ti-award'); }, (i + 1) * 600);
+          });
+        }
+        // Beloved badge for the artwork owner (reactions on their work)
+        if (workData && workData.author_id && workData.author_id !== session.user.id) {
+          await db.rpc('award_beloved_badge', { p_work_owner_id: workData.author_id });
+        }
+      } catch(e) {}
     }
 
     // ── RELATED
@@ -1177,6 +1205,26 @@
       if(card) card.remove();
       updateApprovalCount(-1);
       showToast('Collab approved! Story is now live.', 'ti-check');
+
+      // ── BADGE AWARDS: inline collab approved ──────────────
+      try {
+        var { data: collabBadges } = await db.rpc('award_artwork_inline_collab_badges', {
+          p_artist_id: session.user.id,
+          p_author_id: authorId
+        });
+        if (collabBadges && collabBadges.length > 0) {
+          collabBadges.forEach(function(r, i) {
+            if (r.newly_unlocked && r.newly_unlocked.length > 0) {
+              r.newly_unlocked.forEach(function(tier, j) {
+                setTimeout(function() {
+                  showToast('🏅 ' + (r.badge_slug || 'badge') + ' — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP', 'ti-award');
+                }, (i + j + 1) * 700);
+              });
+            }
+          });
+        }
+      } catch(e) {}
+
       // Refresh the collab novels panel
       var section = document.getElementById('collab-novels-section');
       if(section){ section.style.display = 'none'; section.innerHTML = '<div class="collab-novels-label"><i class="ti ti-book-heart"></i> Stories Inspired by This Artwork</div><div id="collab-novels-list"></div>'; }

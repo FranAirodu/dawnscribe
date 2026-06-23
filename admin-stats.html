@@ -149,6 +149,10 @@
     /* ── S4: Works filter wraps as flex ── */
     #works-filter-wrap{display:none;gap:4px;}
     #works-filter-wrap.visible{display:flex;}
+
+    /* ── S5: Work cover thumbnail in Works tab ── */
+    .work-cover-thumb{width:34px;height:46px;border-radius:5px;object-fit:cover;background:var(--bg4);flex-shrink:0;border:1px solid var(--border);}
+    .work-cover-placeholder{width:34px;height:46px;border-radius:5px;background:var(--bg4);flex-shrink:0;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:13px;color:var(--text3);}
   </style>
 </head>
 <body>
@@ -171,6 +175,7 @@
           <button class="chart-toggle-btn active" id="ctog-signups" onclick="switchChart('signups')">Signups</button>
           <button class="chart-toggle-btn" id="ctog-works" onclick="switchChart('works')">Works</button>
           <button class="chart-toggle-btn" id="ctog-chapters" onclick="switchChart('chapters')">Chapters</button>
+          <button class="chart-toggle-btn" id="ctog-follows" onclick="switchChart('follows')">Follows</button>
         </div>
       </div>
       <div class="chart-bars" id="chart-bars"></div>
@@ -187,7 +192,7 @@
       <!-- S1: Export CSV -->
       <button class="toolbar-extra-btn" onclick="exportCsv()" title="Export current tab to CSV"><i class="ti ti-download"></i> CSV</button>
       <!-- S4: Works type filter (shown only on works tab) -->
-      <div id="works-filter-wrap" style="display:none;gap:4px;display:none;">
+      <div id="works-filter-wrap">
         <button class="chart-toggle-btn active" id="wf-all"     onclick="setWorksFilter('all')">All</button>
         <button class="chart-toggle-btn" id="wf-novel"   onclick="setWorksFilter('novel')">Novels</button>
         <button class="chart-toggle-btn" id="wf-artwork" onclick="setWorksFilter('artwork')">Artwork</button>
@@ -213,7 +218,8 @@
   </div>
 
   <script>
-    const db = window.db;
+    // db is assigned by the auth guard script above via window.db
+    // We reference window.db directly in all calls below to avoid timing issues
     const PAGE_SIZE = 25;
 
     // ── TAB DEFINITIONS ──────────────────────────────────────────
@@ -398,10 +404,15 @@
     // ── LOAD TAB ─────────────────────────────────────────────────
     async function loadTab(tabId) {
       showLoading();
-      sortCol = null; sortDir = 'asc'; // reset sort on tab change
-      // S2: chart visibility
+      sortCol = null; sortDir = 'asc';
+      // S1: chart shown on all tabs, with sensible default type per tab
       var chartWrap = document.getElementById('chart-wrap');
-      chartWrap.classList.toggle('visible', tabId === 'users');
+      chartWrap.classList.add('visible');
+      var defaultChartType = tabId === 'works' || tabId === 'most-followed' ? 'works'
+        : tabId === 'follows' || tabId === 'work-follows' ? 'follows'
+        : 'signups';
+      // Only switch chart type automatically when entering a tab (not when user has manually toggled)
+      if (activeChart !== defaultChartType) switchChart(defaultChartType);
       // S4: works type filter visibility
       var wfWrap = document.getElementById('works-filter-wrap');
       if (wfWrap) wfWrap.classList.toggle('visible', tabId === 'works');
@@ -418,7 +429,7 @@
 
     // ── USERS ────────────────────────────────────────────────────
     async function loadUsers() {
-      var result = await db.from('profiles')
+      var result = await window.db.from('profiles')
         .select('id,username,display_name,avatar_url,account_status,is_moderator,created_at')
         .order('created_at', { ascending: false }).limit(500);
       var users = result.data || [];
@@ -428,7 +439,7 @@
       var userIds = users.map(function(u){ return u.id; });
       var activeMap = {};
       try {
-        var actRes = await db.from('reading_progress')
+        var actRes = await window.db.from('reading_progress')
           .select('user_id,updated_at')
           .in('user_id', userIds)
           .order('updated_at', { ascending: false })
@@ -438,10 +449,7 @@
         });
       } catch(e) {}
 
-      // S2: build signup sparkline (last 12 weeks) — async, runs in background
-      activeChart = 'signups';
-      document.querySelectorAll('.chart-toggle-btn').forEach(function(b){ b.classList.toggle('active', b.id === 'ctog-signups'); });
-      renderChartForType('signups');
+      // Chart already managed by loadTab — no need to re-trigger here
 
       allRows = users.map(function(u) {
         var badge = statusBadge(u);
@@ -468,17 +476,6 @@
             '</div>'
         };
       });
-            '<div class="row-card clickable" onclick="window.open(\'profile.html?id=' + u.id + '\',\'_blank\')">' +
-              avatarHtml(u) +
-              '<div class="row-info">' +
-                '<div class="row-title">' + escHtml(u.display_name || u.username || 'Unnamed') + ' ' + badge + '</div>' +
-                '<div class="row-meta">@' + escHtml(u.username || '—') + ' &middot; Joined ' + timeAgo(u.created_at) + '</div>' +
-                '<div class="row-meta" style="margin-top:2px;display:flex;align-items:center;">' + activeMeta + '</div>' +
-              '</div>' +
-              renderUserActions(u) +
-            '</div>'
-        };
-      });
       applyFilterAndRender();
     }
 
@@ -487,18 +484,20 @@
     function renderUserActions(u) {
       var isBanned = u.account_status === 'banned';
       var isMod    = !!u.is_moderator;
-      // Escape single quotes in username so inline onclick strings don't break
+      var isAdmin  = adminIds.has(u.id); // Bug 4 fix: admins don't get mod buttons
       var safeUser = (u.username || 'user').replace(/'/g, "\\'");
       var html = '<div class="row-actions" onclick="event.stopPropagation();">';
-      if (isBanned) {
-        html += '<button class="act-btn success" onclick="unbanUser(\'' + u.id + '\',\'' + safeUser + '\')"><i class="ti ti-user-check"></i> Unban</button>';
-      } else {
-        html += '<button class="act-btn danger" onclick="banUser(\'' + u.id + '\',\'' + safeUser + '\')"><i class="ti ti-user-off"></i> Ban</button>';
-      }
-      if (isMod) {
-        html += '<button class="act-btn gold" onclick="setMod(\'' + u.id + '\',false,\'' + safeUser + '\')"><i class="ti ti-shield-off"></i> Remove Mod</button>';
-      } else if (!isBanned) {
-        html += '<button class="act-btn gold" onclick="setMod(\'' + u.id + '\',true,\'' + safeUser + '\')"><i class="ti ti-shield"></i> Make Mod</button>';
+      if (!isAdmin) {
+        if (isBanned) {
+          html += '<button class="act-btn success" onclick="unbanUser(\'' + u.id + '\',\'' + safeUser + '\')"><i class="ti ti-user-check"></i> Unban</button>';
+        } else {
+          html += '<button class="act-btn danger" onclick="banUser(\'' + u.id + '\',\'' + safeUser + '\')"><i class="ti ti-user-off"></i> Ban</button>';
+        }
+        if (isMod) {
+          html += '<button class="act-btn gold" onclick="setMod(\'' + u.id + '\',false,\'' + safeUser + '\')"><i class="ti ti-shield-off"></i> Remove Mod</button>';
+        } else if (!isBanned) {
+          html += '<button class="act-btn gold" onclick="setMod(\'' + u.id + '\',true,\'' + safeUser + '\')"><i class="ti ti-shield"></i> Make Mod</button>';
+        }
       }
       html += '<a class="act-btn" href="profile.html?id=' + u.id + '" target="_blank"><i class="ti ti-external-link"></i></a>';
       html += '</div>';
@@ -507,7 +506,7 @@
 
     async function banUser(uid, username) {
       if (!confirm('Ban @' + username + '? They will not be able to log in.')) return;
-      var res = await db.from('profiles').update({ account_status: 'banned' }).eq('id', uid);
+      var res = await window.db.from('profiles').update({ account_status: 'banned' }).eq('id', uid);
       if (res.error) { showToast('Error: ' + res.error.message); return; }
       showToast('@' + username + ' has been banned.');
       patchUserRow(uid, { account_status: 'banned' });
@@ -515,7 +514,7 @@
 
     async function unbanUser(uid, username) {
       if (!confirm('Unban @' + username + '?')) return;
-      var res = await db.from('profiles').update({ account_status: 'active' }).eq('id', uid);
+      var res = await window.db.from('profiles').update({ account_status: 'active' }).eq('id', uid);
       if (res.error) { showToast('Error: ' + res.error.message); return; }
       showToast('@' + username + ' has been unbanned.');
       patchUserRow(uid, { account_status: 'active' });
@@ -524,7 +523,7 @@
     async function setMod(uid, promote, username) {
       var action = promote ? 'promote @' + username + ' to moderator' : 'remove moderator from @' + username;
       if (!confirm('Are you sure you want to ' + action + '?')) return;
-      var res = await db.from('profiles').update({ is_moderator: promote }).eq('id', uid);
+      var res = await window.db.from('profiles').update({ is_moderator: promote }).eq('id', uid);
       if (res.error) { showToast('Error: ' + res.error.message); return; }
       showToast('@' + username + (promote ? ' is now a moderator.' : ' is no longer a moderator.'));
       patchUserRow(uid, { is_moderator: promote });
@@ -543,9 +542,10 @@
           _userData: u,
           _activeMeta: activeMeta,
           _searchText: row._searchText,
+          _sortVals: { name: (u.display_name || u.username || '').toLowerCase(), joined: u.created_at || '', active: row._sortVals ? (row._sortVals.active || '') : '' },
           _csvRow: '"' + (u.display_name||'').replace(/"/g,'""') + '","' + (u.username||'') + '","' + (u.account_status||'active') + '","' + (u.created_at||'') + '"',
           _html:
-            '<div class="row-card clickable" onclick="window.open(\'profile.html?id=' + u.id + '\',\'_blank\')">' +
+            '<div class="row-card" onclick="openUserDetail(\'' + u.id + '\')" style="cursor:pointer;">' +
               avatarHtml(u) +
               '<div class="row-info">' +
                 '<div class="row-title">' + escHtml(u.display_name || u.username || 'Unnamed') + ' ' + badge + '</div>' +
@@ -569,14 +569,14 @@
 
     // ── WORKS ────────────────────────────────────────────────────
     async function loadWorks() {
-      var worksResult = await db.from('works')
-        .select('id,title,author_id,status,type,is_published,chapters_count,created_at')
+      var worksResult = await window.db.from('works')
+        .select('id,title,cover_url,author_id,status,type,is_published,chapters_count,created_at')
         .order('created_at', { ascending: false }).limit(500);
       var works = worksResult.data || [];
       if (!works.length) { showEmpty('No works posted yet.'); return; }
 
       var authorIds = Array.from(new Set(works.map(function(w){ return w.author_id; }).filter(Boolean)));
-      var authRes = authorIds.length ? await db.from('profiles').select('id,username,display_name').in('id', authorIds) : { data: [] };
+      var authRes = authorIds.length ? await window.db.from('profiles').select('id,username,display_name').in('id', authorIds) : { data: [] };
       var authors = {};
       (authRes.data || []).forEach(function(a){ authors[a.id] = a; });
 
@@ -587,6 +587,9 @@
         var typeBadge = w.type === 'artwork' ? '<span class="row-badge artwork">Artwork</span>' : '';
         // S4 fix: link artwork to artwork.html, novels to story.html
         var href = w.type === 'artwork' ? 'artwork.html?id=' + w.id : 'story.html?id=' + w.id;
+        var coverHtml = w.cover_url
+          ? '<img class="work-cover-thumb" src="' + escHtml(w.cover_url) + '" alt=""/>'
+          : '<div class="work-cover-placeholder">' + escHtml((w.title||'?').charAt(0)) + '</div>';
         return {
           _searchText: ((w.title || '') + ' ' + authorName).toLowerCase(),
           _workType: w.type || 'novel',
@@ -594,6 +597,7 @@
           _csvRow: '"' + (w.title||'').replace(/"/g,'""') + '","' + authorName.replace(/"/g,'""') + '","' + (w.type||'') + '","' + (w.is_published?'published':'draft') + '","' + (w.created_at||'') + '"',
           _html:
             '<div class="row-card clickable" onclick="window.open(\'' + href + '\',\'_blank\')">' +
+              coverHtml +
               '<div class="row-info">' +
                 '<div class="row-title">' + escHtml(w.title || 'Untitled') + ' ' + pubBadge + typeBadge + '</div>' +
                 '<div class="row-meta">by ' + escHtml(authorName) + ' &middot; ' + (w.type === 'novel' ? (w.chapters_count || 0) + ' ch &middot; ' : '') + timeAgo(w.created_at) + '</div>' +
@@ -607,9 +611,9 @@
 
     // ── REPORTS ──────────────────────────────────────────────────
     async function loadReports() {
-      var result = await db.from('reports')
+      var result = await window.db.from('reports')
         .select('id,content_id,content_type,reason,description,status,created_at,reporter_id')
-        .eq('status', 'open').order('created_at', { ascending: false });
+        .eq('status', 'open').order('created_at', { ascending: false }).limit(200);
       var reports = result.data || [];
       if (!reports.length) { showEmpty('No open reports. All clear! 🎉'); return; }
 
@@ -617,7 +621,7 @@
       var reporterIds = Array.from(new Set(reports.map(function(r){ return r.reporter_id; }).filter(Boolean)));
       var reporterMap = {};
       if (reporterIds.length) {
-        var rRes = await db.from('profiles').select('id,username,display_name').in('id', reporterIds);
+        var rRes = await window.db.from('profiles').select('id,username,display_name').in('id', reporterIds);
         (rRes.data||[]).forEach(function(p){ reporterMap[p.id] = p; });
       }
 
@@ -639,6 +643,7 @@
           : '';
         return {
           _searchText: ((r.reason || '') + ' ' + (r.description || '')).toLowerCase(),
+          _reportId: r.id,
           _csvRow: '"' + (r.reason||'').replace(/"/g,'""') + '","' + (r.description||'').replace(/"/g,'""') + '","' + (r.created_at||'') + '"',
           _html:
             '<div class="row-card">' +
@@ -662,7 +667,7 @@
 
     // ── BANNED / MODERATORS ───────────────────────────────────────
     async function loadProfilesByStatus(role, emptyMsg) {
-      var query = db.from('profiles').select('id,username,display_name,avatar_url,account_status,is_moderator,created_at');
+      var query = window.db.from('profiles').select('id,username,display_name,avatar_url,account_status,is_moderator,created_at');
       if (role === 'banned')    query = query.eq('account_status', 'banned');
       if (role === 'moderator') query = query.eq('is_moderator', true);
       var result = await query.order('created_at', { ascending: false }).limit(500);
@@ -693,7 +698,7 @@
 
     // ── USER FOLLOWS ──────────────────────────────────────────────
     async function loadFollows() {
-      var result = await db.from('follows')
+      var result = await window.db.from('follows')
         .select('id,follower_id,following_id,created_at')
         .order('created_at', { ascending: false }).limit(500);
       var follows = result.data || [];
@@ -702,7 +707,7 @@
       var ids = new Set();
       follows.forEach(function(f){ ids.add(f.follower_id); ids.add(f.following_id); });
       var idList = Array.from(ids).filter(Boolean);
-      var profRes = idList.length ? await db.from('profiles').select('id,username,display_name,avatar_url').in('id', idList) : { data: [] };
+      var profRes = idList.length ? await window.db.from('profiles').select('id,username,display_name,avatar_url').in('id', idList) : { data: [] };
       var profiles = {};
       (profRes.data || []).forEach(function(p){ profiles[p.id] = p; });
 
@@ -717,9 +722,9 @@
           _html:
             '<div class="row-card">' +
               '<div class="follow-pair">' +
-                '<a class="follow-name-link" href="profile.html?id=' + f.follower_id + '" target="_blank">' + avatarHtml(follower, 'row-avatar') + escHtml(fn) + '</a>' +
+                '<span class="follow-name-link" onclick="openUserDetail(\'' + f.follower_id + '\')" style="cursor:pointer;">' + avatarHtml(follower, 'row-avatar') + escHtml(fn) + '</span>' +
                 '<span class="follow-arrow"><i class="ti ti-arrow-right"></i> follows</span>' +
-                '<a class="follow-name-link" href="profile.html?id=' + f.following_id + '" target="_blank">' + avatarHtml(following, 'row-avatar') + escHtml(gn) + '</a>' +
+                '<span class="follow-name-link" onclick="openUserDetail(\'' + f.following_id + '\')" style="cursor:pointer;">' + avatarHtml(following, 'row-avatar') + escHtml(gn) + '</span>' +
               '</div>' +
               '<div class="row-meta" style="flex-shrink:0;">' + timeAgo(f.created_at) + '</div>' +
             '</div>'
@@ -730,7 +735,7 @@
 
     // ── WORK FOLLOWS (S6 new tab) ─────────────────────────────────
     async function loadWorkFollows() {
-      var result = await db.from('work_follows')
+      var result = await window.db.from('work_follows')
         .select('id,user_id,work_id,created_at')
         .order('created_at', { ascending: false }).limit(500);
       var wf = result.data || [];
@@ -739,8 +744,8 @@
       var userIds = Array.from(new Set(wf.map(function(r){ return r.user_id; }).filter(Boolean)));
       var workIds = Array.from(new Set(wf.map(function(r){ return r.work_id; }).filter(Boolean)));
       var [profRes, worksRes] = await Promise.all([
-        userIds.length ? db.from('profiles').select('id,username,display_name,avatar_url').in('id', userIds) : { data: [] },
-        workIds.length ? db.from('works').select('id,title,cover_url,type').in('id', workIds) : { data: [] }
+        userIds.length ? window.db.from('profiles').select('id,username,display_name,avatar_url').in('id', userIds) : { data: [] },
+        workIds.length ? window.db.from('works').select('id,title,cover_url,type').in('id', workIds) : { data: [] }
       ]);
       var profiles = {};
       (profRes.data  || []).forEach(function(p){ profiles[p.id] = p; });
@@ -763,7 +768,7 @@
             '<div class="row-card">' +
               avatarHtml(user) +
               '<div class="row-info">' +
-                '<div class="row-title"><a href="profile.html?id=' + r.user_id + '" target="_blank" style="color:var(--text);text-decoration:none;">' + escHtml(un) + '</a></div>' +
+                '<div class="row-title"><span onclick="openUserDetail(\'' + r.user_id + '\')" style="color:var(--text);cursor:pointer;font-weight:700;">' + escHtml(un) + '</span></div>' +
                 '<div class="row-meta">is following</div>' +
               '</div>' +
               '<span class="follow-arrow" style="flex-shrink:0;padding:0 8px;"><i class="ti ti-arrow-right"></i></span>' +
@@ -781,7 +786,7 @@
     // ── S3: MOST FOLLOWED WORKS ───────────────────────────────────
     async function loadMostFollowed() {
       // Bug 1 fix: DB-side aggregation via RPC — no more fetching every row
-      var result = await db.rpc('get_most_followed_works', { p_limit: 100 });
+      var result = await window.db.rpc('get_most_followed_works', { p_limit: 100 });
       var ranked = result.data || [];
       if (!ranked.length) { showEmpty('No work follows yet.'); return; }
 
@@ -789,9 +794,9 @@
       var countMap = {};
       ranked.forEach(function(r){ countMap[r.work_id] = Number(r.follow_count); });
 
-      var worksRes = await db.from('works').select('id,title,cover_url,type,author_id,is_published,chapters_count').in('id', topIds);
+      var worksRes = await window.db.from('works').select('id,title,cover_url,type,author_id,is_published,chapters_count').in('id', topIds);
       var authorIds = Array.from(new Set((worksRes.data||[]).map(function(w){ return w.author_id; }).filter(Boolean)));
-      var profRes = authorIds.length ? await db.from('profiles').select('id,username,display_name').in('id', authorIds) : { data: [] };
+      var profRes = authorIds.length ? await window.db.from('profiles').select('id,username,display_name').in('id', authorIds) : { data: [] };
       var works = {}; (worksRes.data||[]).forEach(function(w){ works[w.id] = w; });
       var profs = {}; (profRes.data||[]).forEach(function(p){ profs[p.id] = p; });
 
@@ -829,20 +834,34 @@
     // ── S4: REPORT ACTIONS ────────────────────────────────────────
     async function resolveReport(reportId) {
       if (!confirm('Mark this report as resolved?')) return;
-      var res = await db.from('reports').update({ status: 'resolved' }).eq('id', reportId);
+      var res = await window.db.from('reports').update({ status: 'resolved' }).eq('id', reportId);
       if (res.error) { showToast('Error: ' + res.error.message); return; }
       showToast('Report marked as resolved.');
-      loadReports();
-      loadCounts();
+      removeReportRow(reportId);
     }
 
     async function dismissReport(reportId) {
       if (!confirm('Dismiss this report? It will be marked as closed with no action.')) return;
-      var res = await db.from('reports').update({ status: 'dismissed' }).eq('id', reportId);
+      var res = await window.db.from('reports').update({ status: 'dismissed' }).eq('id', reportId);
       if (res.error) { showToast('Error: ' + res.error.message); return; }
       showToast('Report dismissed.');
-      loadReports();
-      loadCounts();
+      removeReportRow(reportId);
+    }
+
+    // S3: remove report row immediately client-side instead of full refetch
+    function removeReportRow(reportId) {
+      allRows = allRows.filter(function(r){ return r._reportId !== reportId; });
+      filteredRows = filteredRows.filter(function(r){ return r._reportId !== reportId; });
+      if (filteredRows.length === 0) {
+        showEmpty('No open reports. All clear! 🎉');
+      } else {
+        renderPage();
+      }
+      // Update the reports count badge
+      if (tabCounts.reports > 0) {
+        tabCounts.reports--;
+        renderTabs();
+      }
     }
 
     // ── S1: CSV EXPORT ────────────────────────────────────────────
@@ -885,13 +904,13 @@
     // ── TAB COUNTS ───────────────────────────────────────────────
     async function loadCounts() {
       var [users, works, reports, banned, mods, follows, workFollows] = await Promise.all([
-        db.from('profiles').select('id', { count: 'exact', head: true }),
-        db.from('works').select('id', { count: 'exact', head: true }),
-        db.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'open'),
-        db.from('profiles').select('id', { count: 'exact', head: true }).eq('account_status', 'banned'),
-        db.from('profiles').select('id', { count: 'exact', head: true }).eq('is_moderator', true),
-        db.from('follows').select('id', { count: 'exact', head: true }),
-        db.from('work_follows').select('id', { count: 'exact', head: true })
+        window.db.from('profiles').select('id', { count: 'exact', head: true }),
+        window.db.from('works').select('id', { count: 'exact', head: true }),
+        window.db.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+        window.db.from('profiles').select('id', { count: 'exact', head: true }).eq('account_status', 'banned'),
+        window.db.from('profiles').select('id', { count: 'exact', head: true }).eq('is_moderator', true),
+        window.db.from('follows').select('id', { count: 'exact', head: true }),
+        window.db.from('work_follows').select('id', { count: 'exact', head: true })
       ]);
       tabCounts = {
         users:           users.count        ?? 0,
@@ -928,16 +947,15 @@
     function switchChart(type) {
       activeChart = type;
       document.querySelectorAll('.chart-toggle-btn').forEach(function(b){ b.classList.toggle('active', b.id === 'ctog-' + type); });
-      var titles = { signups: 'New signups — last 12 weeks', works: 'New works — last 12 weeks', chapters: 'New chapters — last 12 weeks' };
+      var titles = {
+        signups:  'New signups — last 12 weeks',
+        works:    'New works — last 12 weeks',
+        chapters: 'New chapters — last 12 weeks',
+        follows:  'New follows — last 12 weeks'
+      };
       document.getElementById('chart-title').textContent = titles[type] || '';
       renderChartForType(type);
     }
-
-    var chartRpcMap = {
-      signups:  { rpc: 'get_signup_counts_by_week',  table: 'profiles' },
-      works:    { rpc: 'get_works_counts_by_week',   table: 'works'    },
-      chapters: { rpc: 'get_chapters_counts_by_week',table: 'chapters' }
-    };
 
     async function renderChartForType(type) {
       var barsEl = document.getElementById('chart-bars');
@@ -953,8 +971,10 @@
       try {
         // All three chart types use the same weekly aggregation RPC pattern
         var rpcName = type === 'signups' ? 'get_signup_counts_by_week'
-          : type === 'works' ? 'get_works_counts_by_week' : 'get_chapters_counts_by_week';
-        var res = await db.rpc(rpcName, { p_weeks: 12 });
+          : type === 'works'   ? 'get_works_counts_by_week'
+          : type === 'follows' ? 'get_follows_counts_by_week'
+          : 'get_chapters_counts_by_week';
+        var res = await window.db.rpc(rpcName, { p_weeks: 12 });
         (res.data || []).forEach(function(row) {
           var rowWeek = (row.week_start || '').slice(0, 10);
           for (var b = 0; b < buckets.length; b++) {
@@ -979,15 +999,8 @@
         var btn = document.getElementById('wf-' + t);
         if (btn) btn.classList.toggle('active', t === type);
       });
-      if (type === 'all') {
-        filteredRows = allRows.filter(function(r){ return !searchTerm || (r._searchText||'').includes(searchTerm); });
-      } else {
-        filteredRows = allRows.filter(function(r){
-          return r._workType === type && (!searchTerm || (r._searchText||'').includes(searchTerm));
-        });
-      }
       currentPage = 1;
-      renderPage();
+      applyFilterAndRender(); // applyFilterAndRender already handles worksTypeFilter
     }
 
     // ── S5: USER DETAIL PANEL ────────────────────────────────────
@@ -997,9 +1010,9 @@
       document.getElementById('user-detail-content').innerHTML = '<div class="loading-note"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading…</div>';
 
       var [profRes, worksRes, followsRes] = await Promise.all([
-        db.from('profiles').select('id,username,display_name,bio,avatar_url,account_status,is_moderator,created_at,location,pronouns,secondary_email,prestige_xp,prestige_tier').eq('id', uid).single(),
-        db.from('works').select('id', { count: 'exact', head: true }).eq('author_id', uid),
-        db.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', uid)
+        window.db.from('profiles').select('id,username,display_name,bio,avatar_url,account_status,is_moderator,created_at,location,pronouns,prestige_xp,prestige_tier').eq('id', uid).single(),
+        window.db.from('works').select('id', { count: 'exact', head: true }).eq('author_id', uid),
+        window.db.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', uid)
       ]);
       var u = profRes.data;
       if (!u) { document.getElementById('user-detail-content').innerHTML = '<div class="empty-note">User not found.</div>'; return; }
@@ -1017,7 +1030,8 @@
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:10px;">' +
           detailRow('ti-calendar', 'Joined', timeAgo(u.created_at)) +
-          detailRow('ti-books', 'Works Published', String(worksRes.count || 0)) +
+          detailRow('ti-books', 'Works Published', String(worksRes.count || 0) +
+            (worksRes.count > 0 ? ' <a onclick="closeUserDetail();selectTab(\'works\');setTimeout(function(){document.getElementById(\'search-input\').value=\'' + escHtml(u.username||'') + '\';onSearchInput();},300);" style="color:var(--accent);font-size:11px;cursor:pointer;margin-left:6px;text-decoration:none;"><i class=\'ti ti-arrow-right\' style=\'font-size:10px;\'></i> View</a>' : '')) +
           detailRow('ti-heart', 'Followers', String(followsRes.count || 0)) +
           detailRow('ti-diamond', 'Prestige XP', (u.prestige_xp || 0).toLocaleString() + ' XP &middot; Tier ' + (u.prestige_tier || 1)) +
           (u.location ? detailRow('ti-map-pin', 'Location', u.location) : '') +
@@ -1060,12 +1074,14 @@
     // Load admin IDs for badge display, then proceed
     (async function() {
       try {
-        var aRes = await db.from('admins').select('id');
+        var aRes = await window.db.from('admins').select('id');
         (aRes.data||[]).forEach(function(a){ adminIds.add(a.id); });
       } catch(e) {}
       renderTabs();
       loadCounts();
       loadTab(activeTab);
+      // S4: refresh tab counts every 60 seconds so badges stay accurate
+      setInterval(function() { loadCounts(); }, 60000);
     })();
   </script>
 </body>

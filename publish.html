@@ -2500,12 +2500,43 @@
 
         if (isArtworkMode) {
           showToast('Artwork posted!', 'ti-photo');
+          // ── CANVAS BADGE ───────────────────────────────────
+          try { await db.rpc('award_canvas_badge', { p_user_id: userId }); } catch(e) {}
           setTimeout(function(){ window.location.href = 'artwork.html?id=' + workId; }, 1500);
+
         } else if (storyCollabMode) {
           showToast('Proposal sent! Waiting for artist approval.', 'ti-clock');
+          // No publish badges for collab submissions — they aren't live yet
           setTimeout(function(){ window.location.href = 'creator.html'; }, 1800);
+
         } else {
           showToast('Story published!', 'ti-rocket');
+          // ── NOVEL PUBLISH BADGES ────────────────────────────
+          try {
+            var novelStatus = document.getElementById('field-status').value;
+            var { data: pubBadges } = await db.rpc('award_novel_publish_badges', {
+              p_user_id:    userId,
+              p_work_id:    workId,
+              p_word_count: wordCount || 0,
+              p_status:     novelStatus
+            });
+            if (pubBadges && pubBadges.length > 0) {
+              pubBadges.forEach(function(r, i) {
+                var msg = r.awarded
+                  ? '🏅 ' + (r.badge_slug === 'first_word' ? 'First Word badge unlocked!' : 'Badge unlocked: ' + r.badge_slug + '!')
+                  : (r.newly_unlocked && r.newly_unlocked.length > 0
+                      ? '🏅 ' + (r.badge_slug || 'badge') + ' — ' + r.newly_unlocked[0].gem_name + '! +' + r.newly_unlocked[0].xp_reward + ' XP'
+                      : null);
+                if (msg) setTimeout(function(){ showToast(msg, 'ti-award'); }, (i + 1) * 800);
+              });
+            }
+          } catch(e) {}
+
+          // ── CO-AUTHOR BADGE ─────────────────────────────────
+          if (coauthors.length) {
+            try { await db.rpc('award_coauthor_badges', { p_work_id: workId }); } catch(e) {}
+          }
+
           setTimeout(function(){ window.location.href = 'story.html?id=' + workId; }, 1500);
         }
 

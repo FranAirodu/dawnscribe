@@ -304,6 +304,31 @@
     /* ACTIVITY */
     .activity-layout{display:grid;grid-template-columns:1fr 1fr;gap:32px;}
     @media(max-width:640px){.activity-layout{grid-template-columns:1fr;}}
+
+    /* ── BADGE DISPLAY ── */
+    .badges-section-title{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--text);margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}
+    .badges-section-title i{color:var(--accent);}
+    .badges-category{margin-bottom:32px;}
+    .badges-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;}
+    .badge-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;transition:border-color 0.2s;position:relative;}
+    .badge-card:hover{border-color:rgba(45,212,191,0.3);}
+    .badge-card.earned{border-color:rgba(45,212,191,0.25);background:linear-gradient(135deg,var(--bg2),var(--bg3));}
+    .badge-card.locked{opacity:0.45;filter:grayscale(0.6);}
+    .badge-icon-wrap{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;}
+    .badge-name{font-size:12px;font-weight:700;color:var(--text);line-height:1.3;}
+    .badge-gem{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-top:2px;}
+    .badge-desc{font-size:10px;color:var(--text3);line-height:1.4;}
+    .badge-progress-wrap{width:100%;margin-top:2px;}
+    .badge-progress-bar{height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;}
+    .badge-progress-fill{height:100%;border-radius:2px;transition:width 0.4s;}
+    .badge-progress-label{font-size:9px;color:var(--text3);margin-top:3px;text-align:right;}
+    .badge-special-star{position:absolute;top:8px;right:8px;font-size:11px;color:#f59e0b;}
+    .badges-empty{text-align:center;padding:48px 24px;color:var(--text3);}
+    .badges-empty i{font-size:36px;display:block;margin-bottom:10px;}
+    .badge-filter-wrap{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px;}
+    .badge-filter-btn{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:700;color:var(--text3);cursor:pointer;font-family:'Lato',sans-serif;transition:all 0.15s;}
+    .badge-filter-btn:hover{color:var(--text2);}
+    .badge-filter-btn.active{background:rgba(45,212,191,0.12);border-color:var(--accent);color:var(--accent);}
     .activity-col-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border);}
     .activity-col-title i{color:var(--accent);}
     .activity-item{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;transition:border-color 0.2s;}
@@ -469,6 +494,7 @@
     <div class="profile-tabs">
       <button class="profile-tab active" data-tab="works" onclick="switchTab(this)"><i class="ti ti-layout-grid"></i> Works</button>
       <button class="profile-tab" data-tab="collabs" onclick="switchTab(this)"><i class="ti ti-writing" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Collabs</span></button>
+      <button class="profile-tab" data-tab="badges" onclick="switchTab(this)"><i class="ti ti-award"></i> Badges</button>
       <button class="profile-tab" data-tab="info" onclick="switchTab(this)"><i class="ti ti-id-badge"></i> Info</button>
       <button class="profile-tab" data-tab="reading" onclick="switchTab(this)"><i class="ti ti-books"></i> Reading List</button>
       <button class="profile-tab" data-tab="artists" onclick="switchTab(this)"><i class="ti ti-brush"></i> Artist List</button>
@@ -484,6 +510,13 @@
     <div class="tab-panel" id="panel-collabs">
       <div id="collabs-panel-content">
         <div style="font-size:13px;color:var(--text3);padding:24px 0;text-align:center;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading…</div>
+      </div>
+    </div>
+
+    <!-- BADGES -->
+    <div class="tab-panel" id="panel-badges">
+      <div id="badges-container">
+        <div style="font-size:13px;color:var(--text3);padding:24px 0;text-align:center;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading badges…</div>
       </div>
     </div>
 
@@ -617,6 +650,11 @@
       btn.classList.add('active');
       var panel = document.getElementById('panel-' + name);
       if (panel) { panel.classList.add('active'); }
+      // Lazy-load badges on first open
+      if (name === 'badges' && !panel.dataset.loaded && currentProfileId) {
+        panel.dataset.loaded = '1';
+        loadBadgesTab(currentProfileId);
+      }
     }
 
     /* ── OWNER VISIBILITY ───────────────────────────────────────── */
@@ -1490,6 +1528,13 @@ async function toggleFollow() {
       setFollowUI(true);
       showToast('Now following!', 'ti-bell');
       loadStats(currentProfileId);
+      // Rising badge — awarded to the person being followed (not the follower)
+      try {
+        var { data: risingRes } = await db.rpc('award_rising_badge', {
+          p_user_id: currentProfileId
+        });
+        // No toast here — the badge is for the other person, not the viewer
+      } catch(e) {}
       // Notify the followed user, respecting their notification preference
       try {
         var wantsNotif = !profileData || profileData.notif_follow !== false;
@@ -2249,6 +2294,167 @@ async function handleFriendBtn() {
       _artEditModal.addEventListener('click', function(e) {
         if (e.target === this) closeArtworkEdit();
       });
+    }
+
+    // ── BADGE TAB ─────────────────────────────────────────────────
+    var BADGE_CATEGORY_LABELS = {
+      reading:   { label: 'Reading',        icon: 'ti-book'        },
+      author:    { label: 'Author',          icon: 'ti-feather'     },
+      artist:    { label: 'Artist',          icon: 'ti-palette'     },
+      community: { label: 'Community',       icon: 'ti-messages'    },
+      social:    { label: 'Social',          icon: 'ti-users'       },
+      character: { label: 'Character',       icon: 'ti-masks-theater'},
+      ember:     { label: 'Ember & Avatar',  icon: 'ti-flame'       },
+      special:   { label: 'Special',         icon: 'ti-star'        }
+    };
+    var CATEGORY_ORDER = ['reading','author','artist','community','social','character','ember','special'];
+
+    var _badgesLoaded = false;
+    var _allBadgeDefs = null;
+    var _activeBadgeFilter = 'all';
+
+    async function loadBadgesTab(profileId) {
+      var container = document.getElementById('badges-container');
+      if (!container) return;
+
+      try {
+        // Fetch badge definitions + this user's progress in parallel
+        var [defsRes, progressRes] = await Promise.all([
+          db.rpc('get_badge_definitions'),
+          db.rpc('get_user_badges', { p_user_id: profileId })
+        ]);
+
+        var defs     = defsRes.data    || [];
+        var progress = progressRes.data || [];
+
+        // Build a map of badge progress by slug
+        var progressMap = {};
+        progress.forEach(function(p) { progressMap[p.slug] = p; });
+
+        // Group by category
+        var byCategory = {};
+        defs.forEach(function(d) {
+          if (!byCategory[d.category]) byCategory[d.category] = [];
+          byCategory[d.category].push(d);
+        });
+
+        // Count earned badges for the filter buttons
+        var totalEarned = progress.filter(function(p){ return p.current_tier > 0; }).length;
+
+        // Build filter bar
+        var filterHtml =
+          '<div class="badge-filter-wrap">' +
+          '<button class="badge-filter-btn active" data-filter="all" onclick="filterBadges(this)">All (' + defs.length + ')</button>' +
+          '<button class="badge-filter-btn" data-filter="earned" onclick="filterBadges(this)">Earned (' + totalEarned + ')</button>' +
+          CATEGORY_ORDER.filter(function(c){ return byCategory[c]; }).map(function(c) {
+            var cat = BADGE_CATEGORY_LABELS[c] || { label: c, icon: 'ti-award' };
+            var count = byCategory[c].length;
+            return '<button class="badge-filter-btn" data-filter="' + c + '" onclick="filterBadges(this)">' +
+              '<i class="ti ' + cat.icon + '"></i> ' + cat.label + ' (' + count + ')</button>';
+          }).join('') +
+          '</div>';
+
+        // Build badge cards grouped by category
+        var sectionsHtml = CATEGORY_ORDER.filter(function(c){ return byCategory[c]; }).map(function(c) {
+          var cat = BADGE_CATEGORY_LABELS[c] || { label: c, icon: 'ti-award' };
+          var cardsHtml = byCategory[c].map(function(badge) {
+            return renderBadgeCard(badge, progressMap[badge.slug] || null);
+          }).join('');
+          return '<div class="badges-category" data-category="' + c + '">' +
+            '<div class="badges-section-title"><i class="ti ' + cat.icon + '"></i> ' + cat.label + '</div>' +
+            '<div class="badges-grid">' + cardsHtml + '</div>' +
+          '</div>';
+        }).join('');
+
+        container.innerHTML = filterHtml + sectionsHtml;
+        _allBadgeDefs = defs;
+        _badgesLoaded = true;
+
+      } catch(e) {
+        container.innerHTML = '<div class="badges-empty"><i class="ti ti-alert-circle"></i><p>Could not load badges.</p></div>';
+      }
+    }
+
+    function renderBadgeCard(badge, progress) {
+      var tier       = progress ? progress.current_tier     : 0;
+      var prog       = progress ? progress.current_progress : 0;
+      var gemName    = progress ? (progress.gem_name || 'Coal') : 'Coal';
+      var gemColor   = progress ? (progress.gem_color || '#6b7280') : '#6b7280';
+      var nextThresh = progress ? progress.next_threshold : null;
+      var earned     = tier > 0;
+
+      // Find max threshold from tiers array
+      var tiers = badge.tiers || [];
+      var maxThresh = tiers.length > 0 ? tiers[tiers.length - 1].threshold : 1;
+      var isMaxed   = tier >= tiers.length && tiers.length > 0;
+
+      // Progress bar percentage
+      var pct = 0;
+      if (isMaxed) {
+        pct = 100;
+      } else if (nextThresh && nextThresh > 0) {
+        // Find previous tier threshold
+        var prevThresh = tier > 0 && tiers[tier - 1] ? tiers[tier - 1].threshold : 0;
+        pct = Math.min(100, Math.round(((prog - prevThresh) / (nextThresh - prevThresh)) * 100));
+      }
+
+      var iconBg = earned
+        ? 'background:' + gemColor + '22;color:' + gemColor + ';'
+        : 'background:var(--bg4);color:var(--text3);';
+
+      var gemHtml = earned
+        ? '<div class="badge-gem" style="background:' + gemColor + '22;color:' + gemColor + ';">' + escHtml(gemName) + '</div>'
+        : '';
+
+      var progressHtml = !badge.is_one_time && !isMaxed && nextThresh
+        ? '<div class="badge-progress-wrap">' +
+            '<div class="badge-progress-bar"><div class="badge-progress-fill" style="width:' + pct + '%;background:' + (earned ? gemColor : 'var(--text3)') + ';"></div></div>' +
+            '<div class="badge-progress-label">' + Number(prog).toLocaleString() + ' / ' + Number(nextThresh).toLocaleString() + '</div>' +
+          '</div>'
+        : (isMaxed ? '<div style="font-size:9px;color:' + gemColor + ';margin-top:3px;font-weight:700;">✦ MAX</div>' : '');
+
+      var specialStar = badge.category === 'special' && earned
+        ? '<div class="badge-special-star"><i class="ti ti-star-filled"></i></div>'
+        : '';
+
+      return '<div class="badge-card ' + (earned ? 'earned' : 'locked') + '" title="' + escHtml(badge.description) + '">' +
+        specialStar +
+        '<div class="badge-icon-wrap" style="' + iconBg + '">' +
+          '<i class="ti ' + escHtml(badge.icon) + '"></i>' +
+        '</div>' +
+        '<div class="badge-name">' + escHtml(badge.name) + '</div>' +
+        gemHtml +
+        '<div class="badge-desc">' + escHtml(badge.description) + '</div>' +
+        progressHtml +
+      '</div>';
+    }
+
+    function filterBadges(btn) {
+      var filter = btn.getAttribute('data-filter');
+      _activeBadgeFilter = filter;
+      document.querySelectorAll('.badge-filter-btn').forEach(function(b) {
+        b.classList.toggle('active', b.getAttribute('data-filter') === filter);
+      });
+      document.querySelectorAll('.badges-category').forEach(function(section) {
+        var cat = section.getAttribute('data-category');
+        if (filter === 'all' || filter === 'earned' || filter === cat) {
+          section.style.display = '';
+        } else {
+          section.style.display = 'none';
+        }
+      });
+      // For 'earned' filter, also hide individual unlocked cards
+      if (filter === 'earned') {
+        document.querySelectorAll('.badge-card.locked').forEach(function(c){ c.style.display = 'none'; });
+        document.querySelectorAll('.badge-card.earned').forEach(function(c){ c.style.display = ''; });
+        // Hide empty sections
+        document.querySelectorAll('.badges-category').forEach(function(s) {
+          var visible = s.querySelectorAll('.badge-card.earned');
+          s.style.display = visible.length > 0 ? '' : 'none';
+        });
+      } else {
+        document.querySelectorAll('.badge-card').forEach(function(c){ c.style.display = ''; });
+      }
     }
 
   </script>

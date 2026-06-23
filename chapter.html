@@ -738,6 +738,14 @@
       state.myVote = state.selected.slice();
 
       showToast('Vote recorded!', 'ti-check');
+
+      // ── VOTER BADGE ───────────────────────────────────────
+      // Only award on a new vote (myVote was null before this vote)
+      if (currentSession) {
+        try {
+          await db.rpc('award_poll_vote_badge', { p_user_id: currentSession.user.id });
+        } catch(e) {} // non-critical
+      }
       renderPoll(pos);
     }
 
@@ -1012,6 +1020,39 @@
               }
             } catch(e) {
               // Non-critical — don't interrupt the reading flow if this fails
+            }
+
+            // ── BADGE AWARDS ─────────────────────────────────────────
+            // Award all reading-related badges in one RPC call.
+            // Runs after everything else so it never blocks the reading flow.
+            try {
+              var { data: badgeResults } = await db.rpc('award_chapter_read_badges', {
+                p_user_id:    currentSession.user.id,
+                p_chapter_id: chapterData.id,
+                p_work_id:    workData.id,
+                p_created_at: chapterData.created_at || null
+              });
+              if (badgeResults && badgeResults.length > 0) {
+                badgeResults.forEach(function(result, i) {
+                  if (result.newly_unlocked && result.newly_unlocked.length > 0) {
+                    result.newly_unlocked.forEach(function(tier, j) {
+                      setTimeout(function() {
+                        showToast(
+                          '🏅 Badge tier unlocked: ' + (result.badge_slug || '') + ' — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP',
+                          'ti-award'
+                        );
+                      }, (i + j + 1) * 700);
+                    });
+                  } else if (result.awarded) {
+                    // One-time special badge
+                    setTimeout(function() {
+                      showToast('🏅 Special badge unlocked: ' + (result.badge_slug || '') + '!', 'ti-award');
+                    }, (i + 1) * 700);
+                  }
+                });
+              }
+            } catch(e) {
+              // Non-critical — badge awards never block reading
             }
           } else {
             showToast('Chapter complete! +1 reading progress', 'ti-circle-check');

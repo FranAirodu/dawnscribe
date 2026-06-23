@@ -1041,6 +1041,8 @@
         await db.from('work_follows').insert({ user_id: currentSession.user.id, work_id: workData.id });
         isFollowingWork = true;
         showToast('Added to Following Titles!', 'ti-bookmark-filled');
+        // Following Stories badge
+        try { await db.rpc('award_following_stories_badge', { p_user_id: currentSession.user.id }); } catch(e) {}
       }
       renderActions();
     }
@@ -1149,6 +1151,20 @@
       });
       if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
       showToast('Review posted!');
+      // Critic (first review) + Reviewer (tiered) badges
+      try {
+        var { data: badgeRes } = await db.rpc('award_review_badges', { p_user_id: currentSession.user.id });
+        if (badgeRes) {
+          badgeRes.forEach(function(r, i) {
+            var msg = r.awarded
+              ? '🏅 Badge unlocked: ' + (r.badge_slug || 'critic') + '!'
+              : (r.newly_unlocked && r.newly_unlocked.length > 0
+                  ? '🏅 Reviewer — ' + r.newly_unlocked[0].gem_name + '! +' + r.newly_unlocked[0].xp_reward + ' XP'
+                  : null);
+            if (msg) setTimeout(function(){ showToast(msg, 'ti-award'); }, (i + 1) * 600);
+          });
+        }
+      } catch(e) {}
       loadReviews();
     }
 
@@ -1175,7 +1191,23 @@
       if(!fc.data){ showToast('No chapters found to comment on.','ti-alert-circle'); return; }
       var result=await db.from('chapter_comments').insert({chapter_id:fc.data.id,user_id:currentSession.user.id,content:content});
       if(result.error){ showToast('Error: '+result.error.message,'ti-x'); return; }
-      document.getElementById('comment-input').value=''; showToast('Comment posted!'); loadComments();
+      document.getElementById('comment-input').value='';
+      showToast('Comment posted!');
+      // First Voice (one-time) + Commentator (tiered) badges
+      try {
+        var { data: cmtBadge } = await db.rpc('award_comment_badges', { p_user_id: currentSession.user.id });
+        if (cmtBadge) {
+          cmtBadge.forEach(function(r, i) {
+            var msg = r.awarded
+              ? '🏅 Badge unlocked: First Voice!'
+              : (r.newly_unlocked && r.newly_unlocked.length > 0
+                  ? '🏅 Commentator — ' + r.newly_unlocked[0].gem_name + '! +' + r.newly_unlocked[0].xp_reward + ' XP'
+                  : null);
+            if (msg) setTimeout(function(){ showToast(msg, 'ti-award'); }, (i + 1) * 600);
+          });
+        }
+      } catch(e) {}
+      loadComments();
     }
 
 
@@ -1295,6 +1327,29 @@
       if (!localStorage.getItem(viewKey)) {
         localStorage.setItem(viewKey, '1');
         await db.from('works').update({ views: (workData.views || 0) + 1 }).eq('id', workId);
+      }
+
+      // ── STORY VIEW BADGES ──────────────────────────────────────
+      // Novel Finisher, Long Road, Opening Night — checked on every
+      // story page visit for logged-in non-owner readers.
+      var isReader = currentSession && workData && currentSession.user.id !== workData.author_id;
+      if (isReader && workData.type === 'novel') {
+        try {
+          var { data: storyBadges } = await db.rpc('award_story_view_badges', {
+            p_user_id: currentSession.user.id,
+            p_work_id: workData.id
+          });
+          if (storyBadges && storyBadges.length > 0) {
+            storyBadges.forEach(function(r, i) {
+              var msg = r.awarded
+                ? '🏅 Badge unlocked: ' + (r.badge_slug || '') + '!'
+                : (r.newly_unlocked && r.newly_unlocked.length > 0
+                    ? '🏅 ' + (r.badge_slug || '') + ' — ' + r.newly_unlocked[0].gem_name + '! +' + r.newly_unlocked[0].xp_reward + ' XP'
+                    : null);
+              if (msg) setTimeout(function(){ showToast(msg, 'ti-award'); }, (i + 1) * 800);
+            });
+          }
+        } catch(e) {} // never block page load
       }
     })();
 
