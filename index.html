@@ -1586,8 +1586,10 @@
 
     /* ── SCROLL ROWS (LIVE) ─────────────────────────────────────── */
     async function loadScrollRows(uid){
-      // Load this viewer's content filter + language preferences
-      var myContentFilters = { safe: true, gore: false, erotica: false };
+      // Load this viewer's content filter + language preferences.
+      // safe/gore/erotica flags mean "filter OUT this content when true".
+      // Default to false (show everything) so content loads even without a profile.
+      var myContentFilters = { safe: false, gore: false, erotica: false };
       var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
       if (uid) {
         try {
@@ -1602,13 +1604,13 @@
           }
         } catch(e) {}
       }
-      // Safe is the master switch: when on, gore AND erotica are both hidden no
-      // matter what — closes the edge case where all three toggles end up off.
+      // safe=true means master "hide everything sensitive".
+      // gore=true means "filter out gore". erotica=true means "filter out erotica".
       function applyContentFilters(q) {
-        var allowGore = myContentFilters.gore && !myContentFilters.safe;
-        var allowErotica = myContentFilters.erotica && !myContentFilters.safe;
-        if (!allowGore) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
-        if (!allowErotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
+        var blockGore    = myContentFilters.safe || myContentFilters.gore;
+        var blockErotica = myContentFilters.safe || myContentFilters.erotica;
+        if (blockGore)    q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
+        if (blockErotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
         return q;
       }
 
@@ -2116,31 +2118,58 @@
       document.getElementById('poll-question-text').textContent = poll.question;
       var optionsEl = document.getElementById('poll-options');
       optionsEl.innerHTML = '';
-      var votedId = localStorage.getItem('voted-poll-' + poll.id);
-      optsResult.data.forEach(function(opt) {
-        var btn = document.createElement('button');
-        btn.className = 'poll-option-btn' + (votedId === opt.id ? ' voted' : '');
-        btn.dataset.id = opt.id;
-        btn.textContent = opt.option_text;
-        btn.addEventListener('click', async function() {
-          var previousVoteId = localStorage.getItem('voted-poll-' + poll.id);
-          if (previousVoteId === opt.id) return;
-          optionsEl.querySelectorAll('.poll-option-btn').forEach(function(b) { b.disabled = true; b.style.opacity = '0.5'; });
-          // Bug 3 fix: atomic increment/decrement via RPC — no read-then-write race condition
-          var voteRes = await db.rpc('cast_poll_vote', {
-            p_poll_id:       poll.id,
-            p_new_option_id: opt.id,
-            p_old_option_id: previousVoteId || null
-          });
-          localStorage.setItem('voted-poll-' + poll.id, opt.id);
-          optionsEl.querySelectorAll('.poll-option-btn').forEach(function(b) {
-            b.disabled = false; b.style.opacity = ''; b.classList.remove('voted');
-            if (b.dataset.id === opt.id) { b.classList.add('voted'); }
-          });
-          if (voteRes.data) { renderPollResults(voteRes.data); }
+
+      // Only registered users can vote
+      var sessionRes = await db.auth.getSession();
+      var pollUser = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+      var votedId = pollUser ? localStorage.getItem('voted-poll-' + poll.id) : null;
+
+      if (!pollUser) {
+        // Logged-out: show options as disabled with a sign-in prompt
+        optsResult.data.forEach(function(opt) {
+          var btn = document.createElement('button');
+          btn.className = 'poll-option-btn';
+          btn.textContent = opt.option_text;
+          btn.disabled = true;
+          btn.style.opacity = '0.45';
+          btn.title = 'Sign in to vote';
+          optionsEl.appendChild(btn);
         });
-        optionsEl.appendChild(btn);
-      });
+        var prompt = document.createElement('div');
+        prompt.style.cssText = 'font-size:12px;color:var(--text3);margin-top:8px;';
+        prompt.innerHTML = '<a href="auth.html" style="color:var(--accent);font-weight:700;">Sign in</a> to cast your vote.';
+        optionsEl.appendChild(prompt);
+      } else {
+        optsResult.data.forEach(function(opt) {
+          var btn = document.createElement('button');
+          btn.className = 'poll-option-btn' + (votedId === opt.id ? ' voted' : '');
+          btn.dataset.id = opt.id;
+          btn.textContent = opt.option_text;
+          btn.addEventListener('click', async function() {
+            var previousVoteId = localStorage.getItem('voted-poll-' + poll.id);
+            if (previousVoteId === opt.id) return;
+            optionsEl.querySelectorAll('.poll-option-btn').forEach(function(b) { b.disabled = true; b.style.opacity = '0.5'; });
+            var voteRes = await db.rpc('cast_poll_vote', {
+              p_poll_id:       poll.id,
+              p_new_option_id: opt.id,
+              p_old_option_id: previousVoteId || null
+            });
+            if (voteRes.error) {
+              // RPC rejected (e.g. not signed in) — re-enable buttons and show message
+              optionsEl.querySelectorAll('.poll-option-btn').forEach(function(b) { b.disabled = false; b.style.opacity = ''; });
+              return;
+            }
+            localStorage.setItem('voted-poll-' + poll.id, opt.id);
+            optionsEl.querySelectorAll('.poll-option-btn').forEach(function(b) {
+              b.disabled = false; b.style.opacity = ''; b.classList.remove('voted');
+              if (b.dataset.id === opt.id) { b.classList.add('voted'); }
+            });
+            if (voteRes.data) { renderPollResults(voteRes.data); }
+          });
+          optionsEl.appendChild(btn);
+        });
+      }
+
       document.getElementById('poll-close-results').onclick = function() {
         document.getElementById('poll-results').classList.remove('show');
         document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
@@ -2151,8 +2180,7 @@
       };
       document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
       document.getElementById('poll-banner').style.display = 'block';
-      // Suggestion 4 fix: if user already voted, show results immediately so they
-      // can see their previous choice highlighted without having to click "Show results"
+      // If user already voted, show results immediately
       if (votedId) {
         var initialRes = await db.from('poll_options').select('*').eq('poll_id', poll.id);
         if (initialRes.data) { renderPollResults(initialRes.data); }

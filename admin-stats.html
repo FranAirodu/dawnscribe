@@ -7,13 +7,22 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     (async function() {
-      const _db = window.supabase.createClient(
+      window.db = window.supabase.createClient(
         'https://cajjyyskpmjnpcxcfeuk.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c'
       );
-      var session = (await _db.auth.getSession()).data.session;
-      if (!session || session.user.id !== '516db718-edd5-4856-9281-2df642d006f5') {
-        document.documentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</div>';
+      var session = null;
+      for (var i = 0; i < 5; i++) {
+        var r = await window.db.auth.getSession();
+        session = r.data.session;
+        if (session) break;
+        await new Promise(function(res) { setTimeout(res, 350); });
+      }
+      var adminRow = session ? await window.db.from('admins').select('id').eq('id', session.user.id).maybeSingle() : null;
+      if (!session || !adminRow || !adminRow.data) {
+        document.documentElement.style.visibility = '';
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</div>';
+        return;
       }
     })();
   </script>
@@ -33,36 +42,44 @@
     .logo span{color:var(--text);}
     .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
     .back-btn:hover{border-color:var(--accent);color:var(--accent);}
-
-    .page{max-width:900px;margin:0 auto;padding:40px 24px 80px;}
+    .page{max-width:960px;margin:0 auto;padding:40px 24px 80px;}
     .page-title{font-family:'Cinzel',serif;font-size:26px;font-weight:700;color:var(--text);margin-bottom:6px;}
     .page-title span{color:var(--accent);}
     .page-sub{font-size:14px;color:var(--text3);margin-bottom:28px;}
 
-    /* ── TABS ─────────────────────────────────────────────── */
-    .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:24px;border-bottom:1px solid var(--border);padding-bottom:0;}
-    .tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:10px 16px;font-size:13px;font-weight:700;color:var(--text3);cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.15s;font-family:'Lato',sans-serif;}
+    /* ── TABS ── */
+    .tabs{display:flex;gap:0;flex-wrap:wrap;margin-bottom:0;border-bottom:1px solid var(--border);}
+    .tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:11px 16px;font-size:13px;font-weight:700;color:var(--text3);cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.15s;font-family:'Lato',sans-serif;white-space:nowrap;}
     .tab-btn:hover{color:var(--text2);}
     .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
     .tab-count{background:var(--bg3);border-radius:10px;padding:1px 7px;font-size:11px;color:var(--text3);}
     .tab-btn.active .tab-count{background:rgba(45,212,191,0.12);color:var(--accent);}
+    .tab-count.has-alert{background:rgba(248,113,113,0.15);color:var(--red);}
 
-    /* ── LIST ─────────────────────────────────────────────── */
-    .list-wrap{display:flex;flex-direction:column;gap:10px;}
+    /* ── TOOLBAR (search + pagination) ── */
+    .list-toolbar{display:flex;align-items:center;gap:10px;margin:16px 0 12px;flex-wrap:wrap;}
+    .search-input{flex:1;min-width:180px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px 8px 34px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;transition:border-color 0.2s;}
+    .search-input:focus{border-color:var(--accent);}
+    .search-wrap{position:relative;flex:1;min-width:180px;}
+    .search-wrap i{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px;pointer-events:none;}
+    .page-info{font-size:12px;color:var(--text3);white-space:nowrap;}
+    .pag-btn{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:6px 12px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:4px;transition:all 0.15s;}
+    .pag-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+    .pag-btn:disabled{opacity:0.35;cursor:default;}
+
+    /* ── ROW CARDS ── */
+    .list-wrap{display:flex;flex-direction:column;gap:8px;}
     .loading-note,.empty-note{font-size:13px;color:var(--text3);text-align:center;padding:40px 0;}
     .loading-note i{display:block;margin-bottom:8px;font-size:22px;}
-
-    .row-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:14px;transition:border-color 0.15s;}
+    .row-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:12px;transition:border-color 0.15s;}
     .row-card.clickable{cursor:pointer;}
-    .row-card.clickable:hover{border-color:rgba(45,212,191,0.25);}
-
-    .row-avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--bg4);flex-shrink:0;border:2px solid var(--border);}
-    .row-avatar-placeholder{width:40px;height:40px;border-radius:50%;background:var(--bg4);flex-shrink:0;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:16px;}
-
+    .row-card.clickable:hover{border-color:rgba(45,212,191,0.3);}
+    .row-avatar{width:38px;height:38px;border-radius:50%;object-fit:cover;background:var(--bg4);flex-shrink:0;border:2px solid var(--border);}
+    .row-avatar-placeholder{width:38px;height:38px;border-radius:50%;background:var(--bg4);flex-shrink:0;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:15px;}
     .row-info{flex:1;min-width:0;}
-    .row-title{font-weight:700;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .row-title{font-weight:700;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
     .row-meta{font-size:12px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-
+    .row-actions{display:flex;gap:6px;flex-shrink:0;align-items:center;}
     .row-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:0.5px;flex-shrink:0;}
     .row-badge.admin{background:rgba(245,158,11,0.15);color:var(--gold);}
     .row-badge.moderator{background:rgba(45,212,191,0.12);color:var(--accent);}
@@ -71,22 +88,34 @@
     .row-badge.published{background:rgba(52,211,153,0.12);color:var(--green);}
     .row-badge.draft{background:rgba(155,155,192,0.1);color:var(--text3);}
     .row-badge.open{background:rgba(248,113,113,0.12);color:var(--red);}
-
+    .row-badge.artwork{background:rgba(245,158,11,0.1);color:var(--gold);}
     .row-arrow-link{display:flex;align-items:center;gap:6px;color:var(--text3);font-size:12px;flex-shrink:0;text-decoration:none;transition:color 0.15s;}
     .row-arrow-link:hover{color:var(--accent);}
-
     .follow-pair{display:flex;align-items:center;gap:10px;flex:1;min-width:0;flex-wrap:wrap;}
     .follow-name-link{color:var(--text);font-weight:700;font-size:13px;text-decoration:none;display:flex;align-items:center;gap:6px;min-width:0;}
     .follow-name-link:hover{color:var(--accent);}
-    .follow-name-link .row-avatar,.follow-name-link .row-avatar-placeholder{width:28px;height:28px;font-size:12px;}
-    .follow-arrow{color:var(--text3);font-size:13px;flex-shrink:0;}
+    .follow-name-link .row-avatar,.follow-name-link .row-avatar-placeholder{width:26px;height:26px;font-size:11px;}
+    .follow-arrow{color:var(--text3);font-size:12px;flex-shrink:0;}
+
+    /* ── ACTION BUTTONS ── */
+    .act-btn{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:4px;transition:all 0.15s;white-space:nowrap;}
+    .act-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .act-btn.danger{color:var(--red);}
+    .act-btn.danger:hover{border-color:var(--red);background:rgba(248,113,113,0.08);}
+    .act-btn.success{color:var(--green);}
+    .act-btn.success:hover{border-color:var(--green);background:rgba(52,211,153,0.08);}
+    .act-btn.gold{color:var(--gold);}
+    .act-btn.gold:hover{border-color:var(--gold);background:rgba(245,158,11,0.08);}
+
+    /* ── WORK FOLLOWS (S6 new tab) ── */
+    .work-follow-cover{width:34px;height:46px;border-radius:5px;object-fit:cover;background:var(--bg4);flex-shrink:0;border:1px solid var(--border);}
+    .work-follow-cover-placeholder{width:34px;height:46px;border-radius:5px;background:var(--bg4);flex-shrink:0;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;font-family:'Cinzel',serif;}
 
     footer{background:var(--bg2);border-top:1px solid var(--border);padding:24px;text-align:center;color:var(--text3);font-size:13px;}
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
-
   <nav>
     <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
     <a class="back-btn" href="WhiteRoomUnbreakable.html"><i class="ti ti-arrow-left"></i> Back to Admin</a>
@@ -94,9 +123,18 @@
 
   <div class="page">
     <h1 class="page-title">Site <span>Statistics</span></h1>
-    <p class="page-sub">Detailed breakdowns behind each number on the admin dashboard. Click any user or work to open it.</p>
+    <p class="page-sub">Detailed breakdowns behind each number on the admin dashboard. Click any row to open it, or use the action buttons to manage users.</p>
 
     <div class="tabs" id="tabs"></div>
+    <div class="list-toolbar" id="list-toolbar" style="display:none;">
+      <div class="search-wrap">
+        <i class="ti ti-search"></i>
+        <input class="search-input" id="search-input" type="text" placeholder="Filter…" oninput="onSearchInput()"/>
+      </div>
+      <span class="page-info" id="page-info"></span>
+      <button class="pag-btn" id="pag-prev" onclick="changePage(-1)" disabled><i class="ti ti-chevron-left"></i> Prev</button>
+      <button class="pag-btn" id="pag-next" onclick="changePage(1)">Next <i class="ti ti-chevron-right"></i></button>
+    </div>
     <div class="list-wrap" id="list-wrap">
       <div class="loading-note"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i>Loading...</div>
     </div>
@@ -105,24 +143,28 @@
   <footer>&copy; 2026 DawnScribe. Admin panel.</footer>
 
   <script>
-    const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
-    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    window.db = db;
+    const db = window.db;
+    const PAGE_SIZE = 25;
 
+    // ── TAB DEFINITIONS ──────────────────────────────────────────
     const TABS = [
-      { id: 'users',  label: 'Users',      icon: 'ti-users' },
-      { id: 'works',  label: 'Works',      icon: 'ti-books' },
-      { id: 'reports', label: 'Open Reports', icon: 'ti-flag' },
-      { id: 'banned', label: 'Banned',     icon: 'ti-user-off' },
-      { id: 'mods',   label: 'Moderators', icon: 'ti-shield' },
-      { id: 'follows', label: 'Follows',   icon: 'ti-heart' }
+      { id: 'users',        label: 'Users',          icon: 'ti-users'      },
+      { id: 'works',        label: 'Works',          icon: 'ti-books'      },
+      { id: 'reports',      label: 'Open Reports',   icon: 'ti-flag'       },
+      { id: 'banned',       label: 'Banned',         icon: 'ti-user-off'   },
+      { id: 'mods',         label: 'Moderators',     icon: 'ti-shield'     },
+      { id: 'follows',      label: 'Follows',        icon: 'ti-heart'      },
+      { id: 'work-follows', label: 'Work Follows',   icon: 'ti-bookmark'   }
     ];
 
-    var activeTab = 'users';
-    var tabCounts = {};
-    var profileCache = {}; // id -> profile row, for resolving follow pairs
+    var activeTab   = 'users';
+    var tabCounts   = {};
+    var currentPage = 1;
+    var allRows     = [];   // full loaded dataset for current tab
+    var filteredRows = [];  // after client-side search filter
+    var searchTerm  = '';
 
+    // ── HELPERS ──────────────────────────────────────────────────
     function escHtml(s) {
       return (s || '').replace(/[&<>"']/g, function(c) {
         return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
@@ -130,11 +172,12 @@
     }
 
     function timeAgo(dateStr) {
+      if (!dateStr) return '—';
       var diff = Date.now() - new Date(dateStr).getTime();
       var days = Math.floor(diff / 86400000);
       if (days === 0) return 'Today';
       if (days === 1) return 'Yesterday';
-      if (days < 30) return days + 'd ago';
+      if (days < 30)  return days + 'd ago';
       var months = Math.floor(days / 30);
       if (months < 12) return months + 'mo ago';
       return Math.floor(months / 12) + 'y ago';
@@ -142,194 +185,409 @@
 
     function avatarHtml(user, cls) {
       cls = cls || 'row-avatar';
-      var placeholderCls = cls === 'row-avatar' ? 'row-avatar-placeholder' : cls + '-placeholder';
-      if (user && user.avatar_url) {
-        return '<img class="' + cls + '" src="' + escHtml(user.avatar_url) + '" alt=""/>';
-      }
+      if (user && user.avatar_url) return '<img class="' + cls + '" src="' + escHtml(user.avatar_url) + '" alt=""/>';
       var initial = user && (user.display_name || user.username) ? (user.display_name || user.username).charAt(0).toUpperCase() : '?';
-      return '<div class="' + (placeholderCls.includes('placeholder') ? placeholderCls : cls + '-placeholder') + '">' + initial + '</div>';
+      return '<div class="' + cls + '-placeholder">' + initial + '</div>';
     }
 
-    function roleBadge(role) {
-      var r = role || 'user';
-      var label = r.charAt(0).toUpperCase() + r.slice(1);
-      var cls = ['admin','moderator','banned'].includes(r) ? r : 'user';
-      return '<span class="row-badge ' + cls + '">' + escHtml(label) + '</span>';
+    function statusBadge(u) {
+      // S3 fix: read account_status and is_moderator, not role
+      if (u.account_status === 'banned') return '<span class="row-badge banned">Banned</span>';
+      if (u.is_moderator) return '<span class="row-badge moderator">Moderator</span>';
+      return '<span class="row-badge user">User</span>';
     }
 
-    // ── TABS ──────────────────────────────────────────────────────
+    function showLoading() {
+      document.getElementById('list-wrap').innerHTML = '<div class="loading-note"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i>Loading...</div>';
+      document.getElementById('list-toolbar').style.display = 'none';
+    }
+    function showEmpty(msg) {
+      document.getElementById('list-wrap').innerHTML = '<div class="empty-note"><i class="ti ti-mood-empty" style="font-size:24px;display:block;margin-bottom:8px;"></i>' + escHtml(msg) + '</div>';
+      document.getElementById('list-toolbar').style.display = 'none';
+    }
+
+    // ── SEARCH & PAGINATION ──────────────────────────────────────
+    function onSearchInput() {
+      searchTerm = document.getElementById('search-input').value.trim().toLowerCase();
+      currentPage = 1;
+      applyFilterAndRender();
+    }
+
+    function changePage(dir) {
+      var totalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
+      currentPage = Math.max(1, Math.min(totalPages, currentPage + dir));
+      renderPage();
+    }
+
+    function applyFilterAndRender() {
+      if (!searchTerm) {
+        filteredRows = allRows.slice();
+      } else {
+        filteredRows = allRows.filter(function(r) {
+          // Each row has a 'searchText' property set when loaded
+          return (r._searchText || '').includes(searchTerm);
+        });
+      }
+      currentPage = 1;
+      renderPage();
+    }
+
+    function renderPage() {
+      var total = filteredRows.length;
+      var totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      currentPage = Math.min(currentPage, totalPages);
+      var start = (currentPage - 1) * PAGE_SIZE;
+      var pageRows = filteredRows.slice(start, start + PAGE_SIZE);
+
+      document.getElementById('list-toolbar').style.display = 'flex';
+      document.getElementById('page-info').textContent =
+        total === 0 ? 'No results' :
+        total <= PAGE_SIZE ? total + ' result' + (total === 1 ? '' : 's') :
+        (start + 1) + '–' + Math.min(start + PAGE_SIZE, total) + ' of ' + total;
+      document.getElementById('pag-prev').disabled = currentPage <= 1;
+      document.getElementById('pag-next').disabled = currentPage >= totalPages;
+
+      if (pageRows.length === 0) {
+        document.getElementById('list-wrap').innerHTML = '<div class="empty-note">No results match your search.</div>';
+        return;
+      }
+
+      document.getElementById('list-wrap').innerHTML = pageRows.map(function(r) { return r._html; }).join('');
+    }
+
+    // ── TABS ─────────────────────────────────────────────────────
     function renderTabs() {
       document.getElementById('tabs').innerHTML = TABS.map(function(t) {
         var active = t.id === activeTab ? ' active' : '';
-        var count = tabCounts[t.id] !== undefined ? '<span class="tab-count">' + tabCounts[t.id] + '</span>' : '';
-        return '<button class="tab-btn' + active + '" onclick="selectTab(\'' + t.id + '\')"><i class="ti ' + t.icon + '"></i> ' + t.label + ' ' + count + '</button>';
+        var cnt = tabCounts[t.id];
+        var alertCls = (t.id === 'reports' && cnt > 0) ? ' has-alert' : '';
+        var countHtml = cnt !== undefined
+          ? '<span class="tab-count' + alertCls + '">' + cnt + '</span>' : '';
+        return '<button class="tab-btn' + active + '" onclick="selectTab(\'' + t.id + '\')"><i class="ti ' + t.icon + '"></i> ' + t.label + ' ' + countHtml + '</button>';
       }).join('');
     }
 
     function selectTab(tabId) {
       activeTab = tabId;
+      currentPage = 1;
+      searchTerm = '';
+      var si = document.getElementById('search-input');
+      if (si) si.value = '';
+      allRows = []; filteredRows = [];
       renderTabs();
       loadTab(tabId);
+      // Update URL without reload for deep-linking
+      try { history.replaceState(null, '', '?tab=' + tabId); } catch(e) {}
     }
 
-    function showLoading() {
-      document.getElementById('list-wrap').innerHTML = '<div class="loading-note"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i>Loading...</div>';
-    }
-    function showEmpty(msg) {
-      document.getElementById('list-wrap').innerHTML = '<div class="empty-note">' + escHtml(msg) + '</div>';
-    }
-
-    // ── LOAD TAB DATA ────────────────────────────────────────────
+    // ── LOAD TAB ─────────────────────────────────────────────────
     async function loadTab(tabId) {
       showLoading();
-      if (tabId === 'users') return loadUsers();
-      if (tabId === 'works') return loadWorks();
-      if (tabId === 'reports') return loadReports();
-      if (tabId === 'banned') return loadProfilesByRole('banned', 'No banned users.');
-      if (tabId === 'mods') return loadProfilesByRole('moderator', 'No moderators yet.');
-      if (tabId === 'follows') return loadFollows();
+      if (tabId === 'users')        return loadUsers();
+      if (tabId === 'works')        return loadWorks();
+      if (tabId === 'reports')      return loadReports();
+      if (tabId === 'banned')       return loadProfilesByStatus('banned',    'No banned users.');
+      if (tabId === 'mods')         return loadProfilesByStatus('moderator', 'No moderators yet.');
+      if (tabId === 'follows')      return loadFollows();
+      if (tabId === 'work-follows') return loadWorkFollows();
     }
 
     // ── USERS ────────────────────────────────────────────────────
     async function loadUsers() {
-      var result = await db.from('profiles').select('id,username,display_name,avatar_url,role,created_at').order('created_at', { ascending: false });
+      var result = await db.from('profiles')
+        .select('id,username,display_name,avatar_url,account_status,is_moderator,created_at')
+        .order('created_at', { ascending: false }).limit(500);
       var users = result.data || [];
-      if (users.length === 0) { showEmpty('No users found.'); return; }
+      if (!users.length) { showEmpty('No users found.'); return; }
 
-      document.getElementById('list-wrap').innerHTML = users.map(function(u) {
-        return '<div class="row-card clickable" onclick="window.open(\'profile.html?id=' + u.id + '\', \'_blank\')">' +
-          avatarHtml(u) +
-          '<div class="row-info">' +
-            '<div class="row-title">' + escHtml(u.display_name || u.username || 'Unnamed') + ' ' + roleBadge(u.role) + '</div>' +
-            '<div class="row-meta">@' + escHtml(u.username || 'unknown') + ' &middot; Joined ' + timeAgo(u.created_at) + '</div>' +
-          '</div>' +
-          '<span class="row-arrow-link"><i class="ti ti-external-link"></i></span>' +
-        '</div>';
-      }).join('');
+      allRows = users.map(function(u) {
+        var badge = statusBadge(u);
+        return {
+          _searchText: ((u.display_name || '') + ' ' + (u.username || '')).toLowerCase(),
+          _html:
+            '<div class="row-card clickable" onclick="window.open(\'profile.html?id=' + u.id + '\',\'_blank\')">' +
+              avatarHtml(u) +
+              '<div class="row-info">' +
+                '<div class="row-title">' + escHtml(u.display_name || u.username || 'Unnamed') + ' ' + badge + '</div>' +
+                '<div class="row-meta">@' + escHtml(u.username || '—') + ' &middot; Joined ' + timeAgo(u.created_at) + '</div>' +
+              '</div>' +
+              renderUserActions(u) +
+            '</div>'
+        };
+      });
+      applyFilterAndRender();
+    }
+
+    function renderUserActions(u) {
+      var isBanned = u.account_status === 'banned';
+      var isMod    = !!u.is_moderator;
+      var html = '<div class="row-actions" onclick="event.stopPropagation();">';
+      if (isBanned) {
+        html += '<button class="act-btn success" onclick="unbanUser(\'' + u.id + '\',\'' + escHtml(u.username||'user') + '\')"><i class="ti ti-user-check"></i> Unban</button>';
+      } else {
+        html += '<button class="act-btn danger" onclick="banUser(\'' + u.id + '\',\'' + escHtml(u.username||'user') + '\')"><i class="ti ti-user-off"></i> Ban</button>';
+      }
+      if (isMod) {
+        html += '<button class="act-btn gold" onclick="setMod(\'' + u.id + '\',false,\'' + escHtml(u.username||'user') + '\')"><i class="ti ti-shield-off"></i> Remove Mod</button>';
+      } else if (!isBanned) {
+        html += '<button class="act-btn gold" onclick="setMod(\'' + u.id + '\',true,\'' + escHtml(u.username||'user') + '\')"><i class="ti ti-shield"></i> Make Mod</button>';
+      }
+      html += '<a class="act-btn" href="profile.html?id=' + u.id + '" target="_blank"><i class="ti ti-external-link"></i></a>';
+      html += '</div>';
+      return html;
+    }
+
+    async function banUser(uid, username) {
+      if (!confirm('Ban @' + username + '? They will not be able to log in.')) return;
+      var res = await db.from('profiles').update({ account_status: 'banned' }).eq('id', uid);
+      if (res.error) { alert('Error: ' + res.error.message); return; }
+      showToast('@' + username + ' has been banned.');
+      loadUsers();
+    }
+
+    async function unbanUser(uid, username) {
+      if (!confirm('Unban @' + username + '?')) return;
+      var res = await db.from('profiles').update({ account_status: 'active' }).eq('id', uid);
+      if (res.error) { alert('Error: ' + res.error.message); return; }
+      showToast('@' + username + ' has been unbanned.');
+      loadUsers();
+    }
+
+    async function setMod(uid, promote, username) {
+      var action = promote ? 'promote @' + username + ' to moderator' : 'remove moderator from @' + username;
+      if (!confirm('Are you sure you want to ' + action + '?')) return;
+      var res = await db.from('profiles').update({ is_moderator: promote }).eq('id', uid);
+      if (res.error) { alert('Error: ' + res.error.message); return; }
+      showToast('@' + username + (promote ? ' is now a moderator.' : ' is no longer a moderator.'));
+      loadUsers();
     }
 
     // ── WORKS ────────────────────────────────────────────────────
     async function loadWorks() {
-      var worksResult = await db.from('works').select('id,title,author_id,status,type,is_published,chapters_count,created_at').order('created_at', { ascending: false });
+      var worksResult = await db.from('works')
+        .select('id,title,author_id,status,type,is_published,chapters_count,created_at')
+        .order('created_at', { ascending: false }).limit(500);
       var works = worksResult.data || [];
-      if (works.length === 0) { showEmpty('No works posted yet.'); return; }
+      if (!works.length) { showEmpty('No works posted yet.'); return; }
 
-      var authorIds = Array.from(new Set(works.map(function(w) { return w.author_id; }).filter(Boolean)));
-      var authorsResult = authorIds.length > 0
-        ? await db.from('profiles').select('id,username,display_name').in('id', authorIds)
-        : { data: [] };
+      var authorIds = Array.from(new Set(works.map(function(w){ return w.author_id; }).filter(Boolean)));
+      var authRes = authorIds.length ? await db.from('profiles').select('id,username,display_name').in('id', authorIds) : { data: [] };
       var authors = {};
-      (authorsResult.data || []).forEach(function(a) { authors[a.id] = a; });
+      (authRes.data || []).forEach(function(a){ authors[a.id] = a; });
 
-      document.getElementById('list-wrap').innerHTML = works.map(function(w) {
+      allRows = works.map(function(w) {
         var author = authors[w.author_id];
         var authorName = author ? (author.display_name || author.username) : 'Unknown';
         var pubBadge = w.is_published ? '<span class="row-badge published">Published</span>' : '<span class="row-badge draft">Draft</span>';
-        return '<div class="row-card clickable" onclick="window.open(\'story.html?id=' + w.id + '\', \'_blank\')">' +
-          '<div class="row-info">' +
-            '<div class="row-title">' + escHtml(w.title || 'Untitled') + ' ' + pubBadge + '</div>' +
-            '<div class="row-meta">by ' + escHtml(authorName) + ' &middot; ' + escHtml(w.type || 'novel') + ' &middot; ' + (w.chapters_count || 0) + ' chapter' + (w.chapters_count === 1 ? '' : 's') + ' &middot; ' + timeAgo(w.created_at) + '</div>' +
-          '</div>' +
-          '<span class="row-arrow-link"><i class="ti ti-external-link"></i></span>' +
-        '</div>';
-      }).join('');
+        var typeBadge = w.type === 'artwork' ? '<span class="row-badge artwork">Artwork</span>' : '';
+        // S4 fix: link artwork to artwork.html, novels to story.html
+        var href = w.type === 'artwork' ? 'artwork.html?id=' + w.id : 'story.html?id=' + w.id;
+        return {
+          _searchText: ((w.title || '') + ' ' + authorName).toLowerCase(),
+          _html:
+            '<div class="row-card clickable" onclick="window.open(\'' + href + '\',\'_blank\')">' +
+              '<div class="row-info">' +
+                '<div class="row-title">' + escHtml(w.title || 'Untitled') + ' ' + pubBadge + typeBadge + '</div>' +
+                '<div class="row-meta">by ' + escHtml(authorName) + ' &middot; ' + (w.type === 'novel' ? (w.chapters_count || 0) + ' ch &middot; ' : '') + timeAgo(w.created_at) + '</div>' +
+              '</div>' +
+              '<span class="row-arrow-link"><i class="ti ti-external-link"></i></span>' +
+            '</div>'
+        };
+      });
+      applyFilterAndRender();
     }
 
     // ── REPORTS ──────────────────────────────────────────────────
     async function loadReports() {
-      var result = await db.from('reports').select('id,content_id,reason,description,status,created_at').eq('status', 'open').order('created_at', { ascending: false });
+      var result = await db.from('reports')
+        .select('id,content_id,content_type,reason,description,status,created_at')
+        .eq('status', 'open').order('created_at', { ascending: false });
       var reports = result.data || [];
-      if (reports.length === 0) { showEmpty('No open reports. All clear!'); return; }
+      if (!reports.length) { showEmpty('No open reports. All clear! 🎉'); return; }
 
-      document.getElementById('list-wrap').innerHTML = reports.map(function(r) {
-        return '<div class="row-card">' +
-          '<div class="row-info">' +
-            '<div class="row-title">' + escHtml(r.reason || 'No reason given') + ' <span class="row-badge open">Open</span></div>' +
-            '<div class="row-meta">' + escHtml(r.description || 'No description') + '</div>' +
-            '<div class="row-meta">Content ID: ' + escHtml(r.content_id || '—') + ' &middot; ' + timeAgo(r.created_at) + '</div>' +
-          '</div>' +
-        '</div>';
-      }).join('');
+      allRows = reports.map(function(r) {
+        var contentType = (r.content_type || '').toLowerCase();
+        var href = '';
+        if (contentType === 'work' || contentType === 'novel')      href = 'story.html?id='   + r.content_id;
+        else if (contentType === 'artwork')                          href = 'artwork.html?id=' + r.content_id;
+        else if (contentType === 'chapter')                          href = 'chapter.html?id=' + r.content_id;
+        else if (contentType === 'profile' || contentType === 'user') href = 'profile.html?id=' + r.content_id;
+        var contentLink = r.content_id
+          ? (href ? '<a href="' + href + '" target="_blank" style="color:var(--accent);font-size:11px;text-decoration:none;"><i class="ti ti-external-link"></i> View ' + escHtml(contentType || 'content') + '</a>'
+                  : '<span style="font-size:11px;color:var(--text3);">ID: ' + escHtml(r.content_id) + '</span>')
+          : '';
+        return {
+          _searchText: ((r.reason || '') + ' ' + (r.description || '')).toLowerCase(),
+          _html:
+            '<div class="row-card">' +
+              '<div class="row-info">' +
+                '<div class="row-title">' + escHtml(r.reason || 'No reason given') + ' <span class="row-badge open">Open</span></div>' +
+                '<div class="row-meta">' + escHtml((r.description || 'No description').slice(0, 120)) + '</div>' +
+                '<div class="row-meta" style="margin-top:4px;">' + contentLink + (contentLink ? ' &middot; ' : '') + timeAgo(r.created_at) + '</div>' +
+              '</div>' +
+            '</div>'
+        };
+      });
+      applyFilterAndRender();
     }
 
-    // ── BANNED / MODERATORS (filtered profiles) ───────────────────
-    async function loadProfilesByRole(role, emptyMsg) {
-      var result = await db.from('profiles').select('id,username,display_name,avatar_url,role,created_at').eq('role', role).order('created_at', { ascending: false });
+    // ── BANNED / MODERATORS ───────────────────────────────────────
+    async function loadProfilesByStatus(role, emptyMsg) {
+      var query = db.from('profiles').select('id,username,display_name,avatar_url,account_status,is_moderator,created_at');
+      if (role === 'banned')    query = query.eq('account_status', 'banned');
+      if (role === 'moderator') query = query.eq('is_moderator', true);
+      var result = await query.order('created_at', { ascending: false });
       var users = result.data || [];
-      if (users.length === 0) { showEmpty(emptyMsg); return; }
+      if (!users.length) { showEmpty(emptyMsg); return; }
 
-      document.getElementById('list-wrap').innerHTML = users.map(function(u) {
-        return '<div class="row-card clickable" onclick="window.open(\'profile.html?id=' + u.id + '\', \'_blank\')">' +
-          avatarHtml(u) +
-          '<div class="row-info">' +
-            '<div class="row-title">' + escHtml(u.display_name || u.username || 'Unnamed') + ' ' + roleBadge(u.role) + '</div>' +
-            '<div class="row-meta">@' + escHtml(u.username || 'unknown') + ' &middot; Joined ' + timeAgo(u.created_at) + '</div>' +
-          '</div>' +
-          '<span class="row-arrow-link"><i class="ti ti-external-link"></i></span>' +
-        '</div>';
-      }).join('');
+      allRows = users.map(function(u) {
+        return {
+          _searchText: ((u.display_name || '') + ' ' + (u.username || '')).toLowerCase(),
+          _html:
+            '<div class="row-card">' +
+              avatarHtml(u) +
+              '<div class="row-info">' +
+                '<div class="row-title">' + escHtml(u.display_name || u.username || 'Unnamed') + ' ' + statusBadge(u) + '</div>' +
+                '<div class="row-meta">@' + escHtml(u.username || '—') + ' &middot; Joined ' + timeAgo(u.created_at) + '</div>' +
+              '</div>' +
+              renderUserActions(u) +
+            '</div>'
+        };
+      });
+      applyFilterAndRender();
     }
 
-    // ── FOLLOWS ──────────────────────────────────────────────────
+    // ── USER FOLLOWS ──────────────────────────────────────────────
     async function loadFollows() {
-      var result = await db.from('follows').select('id,follower_id,following_id,created_at').order('created_at', { ascending: false });
+      var result = await db.from('follows')
+        .select('id,follower_id,following_id,created_at')
+        .order('created_at', { ascending: false }).limit(500);
       var follows = result.data || [];
-      if (follows.length === 0) { showEmpty('No follow relationships yet.'); return; }
+      if (!follows.length) { showEmpty('No follow relationships yet.'); return; }
 
       var ids = new Set();
-      follows.forEach(function(f) { ids.add(f.follower_id); ids.add(f.following_id); });
+      follows.forEach(function(f){ ids.add(f.follower_id); ids.add(f.following_id); });
       var idList = Array.from(ids).filter(Boolean);
-      var profilesResult = idList.length > 0
-        ? await db.from('profiles').select('id,username,display_name,avatar_url').in('id', idList)
-        : { data: [] };
+      var profRes = idList.length ? await db.from('profiles').select('id,username,display_name,avatar_url').in('id', idList) : { data: [] };
       var profiles = {};
-      (profilesResult.data || []).forEach(function(p) { profiles[p.id] = p; });
+      (profRes.data || []).forEach(function(p){ profiles[p.id] = p; });
 
-      document.getElementById('list-wrap').innerHTML = follows.map(function(f) {
-        var follower = profiles[f.follower_id];
-        var following = profiles[f.following_id];
-        var followerName = follower ? (follower.display_name || follower.username) : 'Unknown';
-        var followingName = following ? (following.display_name || following.username) : 'Unknown';
-        return '<div class="row-card">' +
-          '<div class="follow-pair">' +
-            '<a class="follow-name-link" href="profile.html?id=' + f.follower_id + '" target="_blank">' + avatarHtml(follower, 'row-avatar') + escHtml(followerName) + '</a>' +
-            '<span class="follow-arrow"><i class="ti ti-arrow-right"></i> follows</span>' +
-            '<a class="follow-name-link" href="profile.html?id=' + f.following_id + '" target="_blank">' + avatarHtml(following, 'row-avatar') + escHtml(followingName) + '</a>' +
-          '</div>' +
-          '<div class="row-meta" style="flex-shrink:0;">' + timeAgo(f.created_at) + '</div>' +
-        '</div>';
-      }).join('');
+      allRows = follows.map(function(f) {
+        var follower  = profiles[f.follower_id]  || {};
+        var following = profiles[f.following_id] || {};
+        var fn = follower.display_name  || follower.username  || 'Unknown';
+        var gn = following.display_name || following.username || 'Unknown';
+        return {
+          _searchText: (fn + ' ' + gn).toLowerCase(),
+          _html:
+            '<div class="row-card">' +
+              '<div class="follow-pair">' +
+                '<a class="follow-name-link" href="profile.html?id=' + f.follower_id + '" target="_blank">' + avatarHtml(follower, 'row-avatar') + escHtml(fn) + '</a>' +
+                '<span class="follow-arrow"><i class="ti ti-arrow-right"></i> follows</span>' +
+                '<a class="follow-name-link" href="profile.html?id=' + f.following_id + '" target="_blank">' + avatarHtml(following, 'row-avatar') + escHtml(gn) + '</a>' +
+              '</div>' +
+              '<div class="row-meta" style="flex-shrink:0;">' + timeAgo(f.created_at) + '</div>' +
+            '</div>'
+        };
+      });
+      applyFilterAndRender();
     }
 
-    // ── COUNTS (for tab badges) ─────────────────────────────────
+    // ── WORK FOLLOWS (S6 new tab) ─────────────────────────────────
+    async function loadWorkFollows() {
+      var result = await db.from('work_follows')
+        .select('id,user_id,work_id,created_at')
+        .order('created_at', { ascending: false }).limit(500);
+      var wf = result.data || [];
+      if (!wf.length) { showEmpty('No work follows yet.'); return; }
+
+      var userIds = Array.from(new Set(wf.map(function(r){ return r.user_id; }).filter(Boolean)));
+      var workIds = Array.from(new Set(wf.map(function(r){ return r.work_id; }).filter(Boolean)));
+      var [profRes, worksRes] = await Promise.all([
+        userIds.length ? db.from('profiles').select('id,username,display_name,avatar_url').in('id', userIds) : { data: [] },
+        workIds.length ? db.from('works').select('id,title,cover_url,type').in('id', workIds) : { data: [] }
+      ]);
+      var profiles = {};
+      (profRes.data  || []).forEach(function(p){ profiles[p.id] = p; });
+      var works = {};
+      (worksRes.data || []).forEach(function(w){ works[w.id] = w; });
+
+      allRows = wf.map(function(r) {
+        var user = profiles[r.user_id] || {};
+        var work = works[r.work_id]   || {};
+        var un = user.display_name || user.username || 'Unknown';
+        var wt = work.title || 'Unknown Work';
+        var href = work.type === 'artwork' ? 'artwork.html?id=' + r.work_id : 'story.html?id=' + r.work_id;
+        var coverHtml = work.cover_url
+          ? '<img class="work-follow-cover" src="' + escHtml(work.cover_url) + '" alt=""/>'
+          : '<div class="work-follow-cover-placeholder">' + escHtml(wt.charAt(0)) + '</div>';
+        return {
+          _searchText: (un + ' ' + wt).toLowerCase(),
+          _html:
+            '<div class="row-card">' +
+              avatarHtml(user) +
+              '<div class="row-info">' +
+                '<div class="row-title"><a href="profile.html?id=' + r.user_id + '" target="_blank" style="color:var(--text);text-decoration:none;">' + escHtml(un) + '</a></div>' +
+                '<div class="row-meta">is following</div>' +
+              '</div>' +
+              '<span class="follow-arrow" style="flex-shrink:0;padding:0 8px;"><i class="ti ti-arrow-right"></i></span>' +
+              coverHtml +
+              '<div class="row-info">' +
+                '<div class="row-title"><a href="' + href + '" target="_blank" style="color:var(--text);text-decoration:none;">' + escHtml(wt) + '</a></div>' +
+                '<div class="row-meta">' + escHtml(work.type || 'work') + ' &middot; ' + timeAgo(r.created_at) + '</div>' +
+              '</div>' +
+            '</div>'
+        };
+      });
+      applyFilterAndRender();
+    }
+
+    // ── TAB COUNTS ───────────────────────────────────────────────
     async function loadCounts() {
-      var [users, works, reports, banned, mods, follows] = await Promise.all([
+      var [users, works, reports, banned, mods, follows, workFollows] = await Promise.all([
         db.from('profiles').select('id', { count: 'exact', head: true }),
         db.from('works').select('id', { count: 'exact', head: true }),
         db.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'open'),
-        db.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'banned'),
-        db.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'moderator'),
-        db.from('follows').select('id', { count: 'exact', head: true })
+        db.from('profiles').select('id', { count: 'exact', head: true }).eq('account_status', 'banned'),
+        db.from('profiles').select('id', { count: 'exact', head: true }).eq('is_moderator', true),
+        db.from('follows').select('id', { count: 'exact', head: true }),
+        db.from('work_follows').select('id', { count: 'exact', head: true })
       ]);
       tabCounts = {
-        users: users.count ?? 0,
-        works: works.count ?? 0,
-        reports: reports.count ?? 0,
-        banned: banned.count ?? 0,
-        mods: mods.count ?? 0,
-        follows: follows.count ?? 0
+        users:        users.count        ?? 0,
+        works:        works.count        ?? 0,
+        reports:      reports.count      ?? 0,
+        banned:       banned.count       ?? 0,
+        mods:         mods.count         ?? 0,
+        follows:      follows.count      ?? 0,
+        'work-follows': workFollows.count ?? 0
       };
       renderTabs();
     }
 
-    // ── INIT ─────────────────────────────────────────────────────
-    // Read ?tab= from URL so admin cards can deep-link to a specific tab
-    var params = new URLSearchParams(window.location.search);
-    var initialTab = params.get('tab');
-    if (initialTab && TABS.some(function(t) { return t.id === initialTab; })) {
-      activeTab = initialTab;
+    // ── TOAST ────────────────────────────────────────────────────
+    var _toastTimer = null;
+    function showToast(msg) {
+      var t = document.getElementById('toast');
+      if (!t) {
+        t = document.createElement('div');
+        t.id = 'toast';
+        t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 18px;font-size:13px;color:var(--text);z-index:9999;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,0.4);transition:opacity 0.3s;';
+        t.innerHTML = '<i class="ti ti-check" style="color:var(--accent);"></i><span></span>';
+        document.body.appendChild(t);
+      }
+      t.querySelector('span').textContent = msg;
+      t.style.opacity = '1';
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(function(){ t.style.opacity = '0'; }, 3000);
     }
 
+    // ── INIT ─────────────────────────────────────────────────────
+    var params = new URLSearchParams(window.location.search);
+    var initialTab = params.get('tab');
+    if (initialTab && TABS.some(function(t){ return t.id === initialTab; })) {
+      activeTab = initialTab;
+    }
     renderTabs();
     loadCounts();
     loadTab(activeTab);
