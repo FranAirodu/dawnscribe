@@ -174,6 +174,21 @@
 
     /* BOTTOM COMMENTS */
     .bottom-section{border-top:1px solid var(--border);padding-top:32px;margin-bottom:40px;}
+    /* PRESTIGE FARMING FLAG */
+    .flag-story-wrap{display:flex;justify-content:center;padding:16px 0 8px;margin-bottom:8px;}
+    .flag-story-btn{background:none;border:1px solid rgba(248,113,113,0.2);border-radius:8px;padding:7px 16px;color:var(--text3);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .flag-story-btn:hover{border-color:rgba(248,113,113,0.6);color:var(--red);}
+    .flag-story-btn.already-flagged{border-color:rgba(248,113,113,0.4);color:rgba(248,113,113,0.5);cursor:default;pointer-events:none;}
+    .flag-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;align-items:center;justify-content:center;}
+    .flag-modal-overlay.show{display:flex;}
+    .flag-modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);}
+    .flag-modal h3{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+    .flag-modal p{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:16px;}
+    .flag-modal-note{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:9px 12px;font-size:11px;color:var(--gold);margin-bottom:18px;line-height:1.6;}
+    .flag-modal-btns{display:flex;gap:8px;justify-content:flex-end;}
+    .flag-modal-cancel{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 16px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
+    .flag-modal-submit{background:none;border:1px solid rgba(248,113,113,0.5);border-radius:8px;padding:8px 16px;color:var(--red);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .flag-modal-submit:hover{background:rgba(248,113,113,0.1);}
     .bottom-section-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:16px;display:flex;align-items:center;gap:7px;}
     .bottom-section-title i{color:var(--accent);}
     .comment-card{background:var(--bg2);border-radius:10px;padding:14px;margin-bottom:10px;}
@@ -493,6 +508,11 @@
     <!-- CHARACTER TITLES VOTING -->
     <div class="section" id="character-titles-section" style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:24px;display:none;"></div>
 
+    <!-- PRESTIGE FARMING FLAG -->
+    <div class="flag-story-wrap" id="flag-story-wrap" style="display:none;">
+      <button class="flag-story-btn" id="flag-story-btn" onclick="openFlagModal()"><i class="ti ti-flag"></i> Not a real story (prestige farming)</button>
+    </div>
+
     <!-- BOTTOM COMMENTS -->
     <div class="bottom-section">
       <div class="bottom-section-title"><i class="ti ti-message-circle"></i> Chapter Comments</div>
@@ -500,6 +520,19 @@
       <div id="chapter-comment-form"></div>
     </div>
 
+  </div>
+
+  <!-- PRESTIGE FARMING FLAG MODAL -->
+  <div class="flag-modal-overlay" id="flag-modal-overlay">
+    <div class="flag-modal">
+      <h3><i class="ti ti-flag" style="color:var(--red);font-size:18px;"></i> Report: Not a Real Story</h3>
+      <p>Flag this story if the content appears to be nonsense, placeholder text, a blank page, or is clearly written just to farm word count for prestige medals — not as genuine creative writing.</p>
+      <div class="flag-modal-note"><i class="ti ti-info-circle"></i> Your report is anonymous. If 3 readers flag this story, it goes to admin for review. False reports are a violation of community guidelines.</div>
+      <div class="flag-modal-btns">
+        <button class="flag-modal-cancel" onclick="closeFlagModal()">Cancel</button>
+        <button class="flag-modal-submit" onclick="submitPrestigeFarmingReport()"><i class="ti ti-flag"></i> Submit Report</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -2423,6 +2456,11 @@
         document.getElementById('edit-chapter-btn').classList.add('visible');
       }
 
+      // Show prestige farming flag button for non-owners who are logged in
+      if (!isOwner && currentSession) {
+        initPrestigeFarmingFlag(chapterData.work_id, currentSession.user.id);
+      }
+
       // AUTHOR'S NOTE — top note shows above the content for everyone.
       // Bottom note and poll show in the full-view block below (owner + already-read).
       renderAuthorNote('top', chapterData.author_note_top);
@@ -2465,7 +2503,7 @@
       var ctSection = document.getElementById('character-titles-section');
       if (ctSection && chapterData && workData) {
         ctSection.style.display = 'block';
-        await CharacterTitles.renderVotingSection(ctSection, chapterData.id, workData.id, currentSession);
+        await CharacterTitles.renderVotingSection(ctSection, chapterData.id, workData.id, currentSession, isOwner);
         if (!ctSection.innerHTML.trim()) ctSection.style.display = 'none';
       }
     })();
@@ -2832,6 +2870,56 @@
     function updateEchoHint(msg) {
       var el = document.getElementById('echo-hint');
       if (el) el.textContent = msg;
+    }
+
+    // ── PRESTIGE FARMING FLAG ────────────────────────────────────
+    var _flagWorkId = null;
+    var _flagUserId = null;
+
+    async function initPrestigeFarmingFlag(workId, userId) {
+      _flagWorkId = workId;
+      _flagUserId = userId;
+      var wrap = document.getElementById('flag-story-wrap');
+      var btn = document.getElementById('flag-story-btn');
+      if (!wrap || !btn) return;
+      // Check if this user already flagged this work
+      var existing = await db.from('reports')
+        .select('id').eq('content_id', workId).eq('reporter_id', userId).eq('reason', 'prestige_farming').maybeSingle();
+      if (existing.data) {
+        btn.classList.add('already-flagged');
+        btn.innerHTML = '<i class="ti ti-flag-check"></i> Already reported';
+      }
+      wrap.style.display = 'flex';
+    }
+
+    function openFlagModal() {
+      var btn = document.getElementById('flag-story-btn');
+      if (btn && btn.classList.contains('already-flagged')) return;
+      document.getElementById('flag-modal-overlay').classList.add('show');
+    }
+    function closeFlagModal() {
+      document.getElementById('flag-modal-overlay').classList.remove('show');
+    }
+
+    async function submitPrestigeFarmingReport() {
+      if (!_flagWorkId || !_flagUserId) return;
+      closeFlagModal();
+      // Check for duplicate (safety guard)
+      var existing = await db.from('reports')
+        .select('id').eq('content_id', _flagWorkId).eq('reporter_id', _flagUserId).eq('reason', 'prestige_farming').maybeSingle();
+      if (existing.data) { showToast('You already reported this story.', 'ti-info-circle'); return; }
+      var res = await db.from('reports').insert({
+        content_id: _flagWorkId,
+        content_type: 'work',
+        reason: 'prestige_farming',
+        description: 'Reader flagged this story as not genuine writing — possibly nonsense or blank content posted to farm prestige medals.',
+        reporter_id: _flagUserId,
+        status: 'open'
+      });
+      if (res.error) { showToast('Error submitting report.', 'ti-x'); return; }
+      var btn = document.getElementById('flag-story-btn');
+      if (btn) { btn.classList.add('already-flagged'); btn.innerHTML = '<i class="ti ti-flag-check"></i> Report submitted'; }
+      showToast('Report submitted. Thank you.', 'ti-check');
     }
 
   </script>

@@ -385,6 +385,13 @@
       </div>
     </div>
 
+    <!-- ── PRESTIGE FARMING REPORTS ─────────────────────────────── -->
+    <div class="section" id="sec-prestige-farming" data-tab="moderation">
+      <div class="section-title"><i class="ti ti-trophy-off"></i> Prestige Farming Reports</div>
+      <div class="section-sub">Stories flagged by readers as not genuine writing (blank pages, nonsense, or padding to farm word count medals). Stories with 3+ reports are highlighted for action.</div>
+      <div id="prestige-farming-list"><div class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...</div></div>
+    </div>
+
     <!-- ── CONTENT REPORTS ───────────────────────────────────────── -->
     <div class="section" id="sec-reports" data-tab="moderation">
       <div class="section-title"><i class="ti ti-flag"></i> Content Reports</div>
@@ -1257,9 +1264,135 @@
       renderFeaturedSlots();
       loadReports(0);
       loadFeedback(0);
+      loadPrestigeFarmingReports();
       loadTags();
       renderAuditLog();
     })();
+
+    // ── PRESTIGE FARMING REPORTS ──────────────────────────────────
+    async function loadPrestigeFarmingReports() {
+      var el = document.getElementById('prestige-farming-list');
+      if (!el) return;
+      var result = await db.from('reports')
+        .select('*')
+        .eq('reason', 'prestige_farming')
+        .eq('status', 'open')
+        .order('created_at', { ascending: false });
+      if (result.error) {
+        el.innerHTML = '<div class="no-results"><i class="ti ti-circle-off"></i> Could not load prestige farming reports.</div>';
+        return;
+      }
+      if (!result.data || !result.data.length) {
+        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-mood-happy"></i> No prestige farming reports. All clear!</div>';
+        return;
+      }
+      // Group by work (content_id)
+      var grouped = {};
+      result.data.forEach(function(r) {
+        if (!grouped[r.content_id]) grouped[r.content_id] = [];
+        grouped[r.content_id].push(r);
+      });
+      // Fetch work titles for all grouped work IDs
+      var workIds = Object.keys(grouped);
+      var worksRes = await db.from('works').select('id,title,author_id').in('id', workIds);
+      var workMap = {};
+      (worksRes.data || []).forEach(function(w) { workMap[w.id] = w; });
+      // Fetch author usernames
+      var authorIds = (worksRes.data || []).map(function(w){ return w.author_id; }).filter(Boolean);
+      var authorMap = {};
+      if (authorIds.length) {
+        var aRes = await db.from('profiles').select('id,username,display_name').in('id', authorIds);
+        (aRes.data || []).forEach(function(p){ authorMap[p.id] = p; });
+      }
+      // Sort: most reports first
+      var sorted = workIds.sort(function(a,b){ return grouped[b].length - grouped[a].length; });
+      el.innerHTML = '';
+      sorted.forEach(function(workId) {
+        var reports = grouped[workId];
+        var count = reports.length;
+        var work = workMap[workId] || {};
+        var author = work.author_id ? (authorMap[work.author_id] || {}) : {};
+        var authorName = author.display_name || author.username || 'Unknown';
+        var isHot = count >= 3;
+        var card = document.createElement('div');
+        card.className = 'report-card' + (isHot ? ' flagged-hot' : '');
+        card.style.cssText = isHot
+          ? 'border-color:rgba(248,113,113,0.4);background:rgba(248,113,113,0.04);'
+          : '';
+        card.innerHTML =
+          '<div class="report-header">' +
+            '<span class="report-type' + (isHot ? '' : ' other') + '" style="' + (isHot ? 'background:rgba(248,113,113,0.15);color:var(--red);border-color:rgba(248,113,113,0.3);' : '') + '">' +
+              (isHot ? '<i class="ti ti-alert-triangle"></i> ' : '') +
+              count + ' Report' + (count !== 1 ? 's' : '') +
+            '</span>' +
+            (isHot ? '<span style="font-size:11px;font-weight:700;color:var(--red);">⚠ Threshold reached — review required</span>' : '') +
+          '</div>' +
+          '<div class="report-body">' +
+            '<strong>' + escHtml(work.title || 'Unknown Story') + '</strong>' +
+            ' by <a href="profile.html?id=' + escHtml(work.author_id || '') + '" target="_blank" style="color:var(--accent);text-decoration:none;">@' + escHtml(authorName) + '</a>' +
+          '</div>' +
+          '<div class="report-meta">' +
+            '<a href="story.html?id=' + escHtml(workId) + '" target="_blank" style="color:var(--accent);font-size:11px;text-decoration:none;"><i class="ti ti-external-link"></i> View Story</a>' +
+            ' · Latest report: ' + formatDateTime(reports[0].created_at) +
+          '</div>' +
+          '<div class="report-actions">' +
+            '<button class="report-btn dismiss pf-dismiss"><i class="ti ti-check"></i> Dismiss All</button>' +
+            '<button class="report-btn remove pf-warn"><i class="ti ti-alert-triangle"></i> Warn Author</button>' +
+            '<button class="report-btn remove pf-delete" style="background:rgba(248,113,113,0.12);"><i class="ti ti-trash"></i> Delete Story</button>' +
+          '</div>';
+
+        // Dismiss all reports for this work
+        card.querySelector('.pf-dismiss').addEventListener('click', async function() {
+          for (var i = 0; i < reports.length; i++) {
+            await db.from('reports').update({ status: 'resolved' }).eq('id', reports[i].id);
+          }
+          showToast('All reports for this story dismissed.', 'ti-check');
+          auditLog('Dismissed prestige farming reports for work ' + workId, 'ti-check');
+          loadPrestigeFarmingReports(); loadStats();
+        });
+
+        // Warn author (send notification + resolve reports)
+        card.querySelector('.pf-warn').addEventListener('click', async function() {
+          if (!work.author_id) { showToast('No author found.', 'ti-x'); return; }
+          if (!confirm('Send a warning notification to @' + authorName + ' for prestige farming?')) return;
+          await db.from('notifications').insert({
+            user_id: work.author_id,
+            type: 'admin_warning',
+            message: 'Warning: Your story "' + (work.title || 'Untitled') + '" has been flagged by multiple readers as not genuine writing. Posting placeholder or nonsense content to farm prestige medals violates community guidelines. Further violations may result in removal of your account.'
+          });
+          for (var i = 0; i < reports.length; i++) {
+            await db.from('reports').update({ status: 'resolved' }).eq('id', reports[i].id);
+          }
+          showToast('Warning sent to @' + authorName, 'ti-alert-triangle');
+          auditLog('Warned author @' + authorName + ' for prestige farming on work ' + workId, 'ti-alert-triangle');
+          loadPrestigeFarmingReports(); loadStats();
+        });
+
+        // Delete story + warn author + resolve reports
+        card.querySelector('.pf-delete').addEventListener('click', async function() {
+          if (!confirm('DELETE "' + (work.title || 'Untitled') + '" and warn the author? This cannot be undone.')) return;
+          // Send warning notification
+          if (work.author_id) {
+            await db.from('notifications').insert({
+              user_id: work.author_id,
+              type: 'admin_warning',
+              message: 'Your story "' + (work.title || 'Untitled') + '" has been removed by an admin for prestige farming — posting non-genuine content to accumulate word count medals. This is a violation of DawnScribe\'s community guidelines.'
+            });
+          }
+          // Delete the work
+          await db.from('works').delete().eq('id', workId);
+          // Resolve all reports
+          for (var i = 0; i < reports.length; i++) {
+            await db.from('reports').update({ status: 'resolved' }).eq('id', reports[i].id);
+          }
+          showToast('Story deleted and author warned.', 'ti-trash');
+          auditLog('Deleted prestige farming story "' + (work.title||'Untitled') + '" by @' + authorName, 'ti-trash');
+          loadPrestigeFarmingReports(); loadStats();
+        });
+
+        el.appendChild(card);
+      });
+    }
 
     // ── ADMIN TAB NAVIGATION ─────────────────────────────────────
     function switchAdminTab(tab) {

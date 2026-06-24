@@ -99,7 +99,7 @@ window.CharacterTitles = (function() {
   // ══════════════════════════════════════════════════════════════
   // RENDER — VOTING UI (shown at end of chapter)
   // ══════════════════════════════════════════════════════════════
-  async function renderVotingSection(container, chapterId, workId, session) {
+  async function renderVotingSection(container, chapterId, workId, session, isOwner) {
     container.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text3);"><i class="ti ti-loader-2" style="font-size:24px;animation:spin 1s linear infinite;"></i></div>';
 
     var characters = await loadChapterCharacters(chapterId);
@@ -120,7 +120,11 @@ window.CharacterTitles = (function() {
     header.className = 'ct-section-header';
     header.innerHTML =
       '<div class="ct-section-title"><i class="ti ti-crown"></i> Character Titles</div>' +
-      '<div class="ct-section-sub">Give each character a title based on their performance this chapter. One vote per character — permanent.</div>';
+      '<div class="ct-section-sub">' +
+        (isOwner
+          ? 'Readers vote to give your characters titles. Authors cannot vote on or suggest songs for their own characters.'
+          : 'Give each character a title based on their performance this chapter. One vote per character — permanent.') +
+      '</div>';
     container.appendChild(header);
 
     // Character cards
@@ -145,11 +149,13 @@ window.CharacterTitles = (function() {
           imgHtml +
           '<div class="ct-char-info">' +
             '<div class="ct-char-name">' + esc(char.name) + '</div>' +
-            (hasVoted
-              ? '<div class="ct-voted-badge"><i class="ti ti-check"></i> You voted: <strong>' + esc(myVoteTitle ? myVoteTitle.title : '?') + '</strong></div>'
-              : (session
-                  ? '<div class="ct-char-prompt">Pick a title for this chapter</div>'
-                  : '<div class="ct-char-prompt"><a href="auth.html" style="color:var(--accent);">Sign in</a> to vote</div>')) +
+            (isOwner
+              ? '<div class="ct-char-prompt" style="color:var(--text3);font-size:11px;font-style:italic;">Authors cannot vote on their own characters</div>'
+              : (hasVoted
+                  ? '<div class="ct-voted-badge"><i class="ti ti-check"></i> You voted: <strong>' + esc(myVoteTitle ? myVoteTitle.title : '?') + '</strong></div>'
+                  : (session
+                      ? '<div class="ct-char-prompt">Pick a title for this chapter</div>'
+                      : '<div class="ct-char-prompt"><a href="auth.html" style="color:var(--accent);">Sign in</a> to vote</div>'))) +
           '</div>' +
           '<button class="ct-results-toggle" data-char="'+char.id+'" onclick="CharacterTitles.toggleResults(this)">' +
             '<i class="ti ti-chart-bar"></i> Results' +
@@ -165,8 +171,8 @@ window.CharacterTitles = (function() {
 
       card.appendChild(resultsDiv);
 
-      // Suggest a Song button — on the card directly, visible to logged-in users
-      if (session) {
+      // Suggest a Song button — hidden for story owner
+      if (session && !isOwner) {
         (function(cid, cname, wid, uid) {
           var songBtn = document.createElement('button');
           songBtn.className = 'ct-suggest-song-btn ct-suggest-song-inline';
@@ -179,8 +185,8 @@ window.CharacterTitles = (function() {
         })(char.id, char.name, workId, userId);
       }
 
-      // Title picker (only if not yet voted and logged in)
-      if (!hasVoted && session) {
+      // Title picker (only if not yet voted, logged in, and NOT the owner)
+      if (!hasVoted && session && !isOwner) {
         var picker = buildTitlePicker(char.id, chapterId, workId, userId, titles, card, container, titleMap, voteCounts);
         card.appendChild(picker);
       }
@@ -188,8 +194,8 @@ window.CharacterTitles = (function() {
       container.appendChild(card);
     });
 
-    // Suggest a title link
-    if (session) {
+    // Suggest a title link — hidden for owner
+    if (session && !isOwner) {
       var suggest = document.createElement('div');
       suggest.className = 'ct-suggest-wrap';
       suggest.innerHTML =
