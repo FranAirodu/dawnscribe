@@ -362,6 +362,28 @@
 
   // ── IMAGE UPLOAD INTERNALS ────────────────────────────────────────────────
 
+  // Resize image to fit within maxW x maxH before uploading (never enlarges)
+  function _resizeImage(file, maxW, maxH) {
+    return new Promise(function(resolve) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var img = new Image();
+        img.onload = function() {
+          var w = img.width, h = img.height;
+          if (w <= maxW && h <= maxH) { resolve(file); return; }
+          var scale = Math.min(maxW / w, maxH / h);
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(w * scale);
+          canvas.height = Math.round(h * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(function(blob) { resolve(blob || file); }, 'image/jpeg', 0.82);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function _handleImageUpload(file, context) {
     if (!file || !_db) return;
     var allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -376,9 +398,15 @@
     var btn = document.getElementById('ct-img-btn-' + context);
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>'; }
     try {
-      var ext = file.name.split('.').pop() || 'jpg';
+      // Resize to max 800x800 before uploading (skip GIFs — canvas kills animation)
+      var uploadFile = file;
+      if (file.type !== 'image/gif') {
+        uploadFile = await _resizeImage(file, 800, 800);
+      }
+      var ext = file.type === 'image/gif' ? 'gif' : 'jpg';
       var path = 'comments/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
-      var { error } = await _db.storage.from(IMAGE_BUCKET).upload(path, file, { upsert: false });
+      var contentType = file.type === 'image/gif' ? 'image/gif' : 'image/jpeg';
+      var { error } = await _db.storage.from(IMAGE_BUCKET).upload(path, uploadFile, { upsert: false, contentType: contentType });
       if (error) throw error;
       var url = _db.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
       _pendingImage[context] = url;
