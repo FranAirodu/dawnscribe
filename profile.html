@@ -461,14 +461,10 @@
       <div class="prestige-header">
         <span class="prestige-title"><i class="ti ti-award" style="color:#f59e0b;margin-right:6px;"></i>Prestige</span>
         <span class="prestige-hint owner-only" id="prestige-hint-el">— drag to reorder</span>
+        <a href="#" id="prestige-see-all" onclick="switchTab(document.querySelector('[data-tab=badges]'));return false;" style="font-size:11px;color:var(--accent);text-decoration:none;margin-left:8px;display:none;">See all →</a>
       </div>
       <div class="badge-row" id="badge-row">
-        <div class="badge badge-gold" data-id="1"><i class="ti ti-star"></i> Early Adopter</div>
-        <div class="badge badge-teal" data-id="2"><i class="ti ti-book"></i> Published Author</div>
-        <div class="badge badge-pink" data-id="3"><i class="ti ti-palette"></i> Verified Artist</div>
-        <div class="badge badge-purple" data-id="4"><i class="ti ti-users"></i> 1k Followers</div>
-        <div class="badge badge-red" data-id="5"><i class="ti ti-flame"></i> Top Creator</div>
-        <div class="badge badge-green" data-id="6"><i class="ti ti-award"></i> Collab Champion</div>
+        <div style="font-size:12px;color:var(--text3);padding:4px 0;">Loading badges…</div>
       </div>
     </div>
   </div>
@@ -701,11 +697,7 @@
         visitorEls[i].style.display = isOwner ? 'none' : '';
       }
       if (isOwner) {
-        var badges = document.querySelectorAll('.badge');
-        for (var i = 0; i < badges.length; i++) {
-          badges[i].setAttribute('draggable', 'true');
-          badges[i].classList.add('draggable');
-        }
+        // Badges are wired for drag after loadPrestigePills builds them
       }
     }
 
@@ -756,6 +748,7 @@
         var isOwnerNow = !!(session && profileData && session.user.id === profileData.id);
         if (profileData) { applyProfileData(profileData, resolvedUsername, isOwnerNow); }
         if (profileData && profileData.id) { loadStats(profileData.id); }
+        if (profileData && profileData.id) { loadPrestigePills(profileData.id, isOwnerNow); }
         var isOwner = isOwnerNow;
         if (isOwner) {
           await setOwner(true, session, profileData);
@@ -2454,6 +2447,79 @@ async function handleFriendBtn() {
         });
       } else {
         document.querySelectorAll('.badge-card').forEach(function(c){ c.style.display = ''; });
+      }
+    }
+
+    // ── PRESTIGE PILLS ────────────────────────────────────────────
+    var _prestigePillOrder = null;
+
+    async function loadPrestigePills(profileId, isOwner) {
+      var row = document.getElementById('badge-row');
+      var seeAll = document.getElementById('prestige-see-all');
+      if (!row) return;
+      try {
+        var res = await db.rpc('get_user_badges', { p_user_id: profileId });
+        var allBadges = (res.data || []).filter(function(b){ return b.current_tier > 0; });
+        if (!allBadges.length) {
+          row.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0;">No badges earned yet.</div>';
+          return;
+        }
+        // Sort: special first, then by tier desc
+        allBadges.sort(function(a, b) {
+          if (a.category === 'special' && b.category !== 'special') return -1;
+          if (b.category === 'special' && a.category !== 'special') return 1;
+          return b.current_tier - a.current_tier;
+        });
+        // Restore saved display order if available
+        var orderKey = 'ds_prestige_order_' + profileId;
+        var savedOrder = null;
+        try { savedOrder = JSON.parse(localStorage.getItem(orderKey)); } catch(e) {}
+        var displayed = allBadges.slice(0, 8);
+        if (savedOrder && savedOrder.length) {
+          var slugMap = {};
+          allBadges.forEach(function(b){ slugMap[b.slug] = b; });
+          var reordered = [];
+          savedOrder.forEach(function(slug) {
+            if (slugMap[slug]) reordered.push(slugMap[slug]);
+          });
+          allBadges.forEach(function(b) {
+            if (!savedOrder.includes(b.slug) && reordered.length < 8) reordered.push(b);
+          });
+          displayed = reordered.slice(0, 8);
+        }
+        if (allBadges.length > 8 && seeAll) seeAll.style.display = '';
+        row.innerHTML = displayed.map(function(b) {
+          var gc = b.gem_color || '#6b7280';
+          return '<div class="badge" data-slug="' + escHtml(b.slug) + '" style="background:' + gc + '18;color:' + gc + ';border-color:' + gc + '44;" title="' + escHtml(b.description) + '">' +
+            '<i class="ti ' + escHtml(b.icon) + '"></i> ' + escHtml(b.name) +
+            (b.is_one_time ? '' : ' <span style="font-size:9px;opacity:0.75;">' + escHtml(b.gem_name) + '</span>') +
+          '</div>';
+        }).join('');
+        if (isOwner) {
+          var dragSrc = null;
+          row.querySelectorAll('.badge').forEach(function(pill) {
+            pill.setAttribute('draggable','true'); pill.classList.add('draggable');
+            pill.addEventListener('dragstart', function(e){ dragSrc=this; this.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+            pill.addEventListener('dragover',  function(e){ e.preventDefault(); this.classList.add('drag-over'); });
+            pill.addEventListener('dragleave', function(){ this.classList.remove('drag-over'); });
+            pill.addEventListener('drop', function(e){
+              e.stopPropagation();
+              if (dragSrc !== this) {
+                var rect = this.getBoundingClientRect();
+                row.insertBefore(dragSrc, e.clientX > rect.left + rect.width/2 ? this.nextSibling : this);
+                var order = Array.from(row.querySelectorAll('.badge')).map(function(el){ return el.dataset.slug; });
+                try { localStorage.setItem(orderKey, JSON.stringify(order)); } catch(err) {}
+              }
+              this.classList.remove('drag-over');
+            });
+            pill.addEventListener('dragend', function(){
+              this.classList.remove('dragging');
+              row.querySelectorAll('.badge').forEach(function(b){ b.classList.remove('drag-over'); });
+            });
+          });
+        }
+      } catch(e) {
+        row.innerHTML = '<div style="font-size:12px;color:var(--text3);">Could not load badges.</div>';
       }
     }
 
