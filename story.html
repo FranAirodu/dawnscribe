@@ -490,9 +490,10 @@
         <div id="comments-list"></div>
         <div class="comment-input-wrap" id="comment-input-wrap" style="display:none;">
           <textarea class="comment-textarea" id="comment-input" placeholder="Leave a comment…" maxlength="1000"></textarea>
-          <div style="display:flex;gap:8px;">
-            <button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById('comment-input'))"><i class="ti ti-eye-off"></i> Spoiler</button>
-            <button class="comment-submit" onclick="submitComment()"><i class="ti ti-send"></i> Post</button>
+          <div class="ct-preview-area" id="ct-preview-story"></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;" id="story-comment-toolbar-row">
+            <span id="story-comment-toolbar-placeholder"></span>
+            <button class="comment-submit" onclick="submitComment()" style="margin-left:auto;"><i class="ti ti-send"></i> Post</button>
           </div>
         </div>
         <div id="comment-login-prompt" style="font-size:13px;color:var(--text3);margin-top:10px;display:none;">
@@ -584,10 +585,16 @@
             <div class="collab-detail-inspo" id="collab-detail-inspo" style="display:none;"></div>
           </div>
           <div class="collab-detail-comments" id="collab-detail-comments"></div>
-          <div class="collab-comment-input-row" id="collab-comment-input-row" style="display:none;">
-            <textarea class="collab-comment-input" id="collab-comment-input" placeholder="Leave a comment…" rows="1" maxlength="500"></textarea>
-            <button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById('collab-comment-input'))"><i class="ti ti-eye-off"></i></button>
-            <button class="collab-comment-post-btn" id="collab-comment-post-btn"><i class="ti ti-send"></i> Post</button>
+          <div class="collab-comment-input-row" id="collab-comment-input-row" style="display:none;flex-direction:column;gap:6px;">
+            <textarea class="collab-comment-input" id="collab-comment-input" placeholder="Leave a comment…" rows="2" maxlength="500"></textarea>
+            <div class="ct-preview-area" id="ct-preview-collab"></div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+              <button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById('collab-comment-input'))"><i class="ti ti-eye-off"></i></button>
+              <button type="button" class="ct-btn" onclick="CommentToolbar&&CommentToolbar.openGif('collab')" title="GIF"><i class="ti ti-gif"></i> GIF</button>
+              <button type="button" class="ct-btn" onclick="CommentToolbar&&CommentToolbar.openEmoji('collab-comment-input','collab')" title="Emoji"><i class="ti ti-mood-smile"></i></button>
+              <button type="button" class="ct-btn" onclick="CommentToolbar&&CommentToolbar.openImage('collab','collab-comment-input')" title="Image"><i class="ti ti-photo"></i></button>
+              <button class="collab-comment-post-btn" id="collab-comment-post-btn" style="margin-left:auto;"><i class="ti ti-send"></i> Post</button>
+            </div>
           </div>
         </div>
       </div>
@@ -609,6 +616,7 @@
     var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
     var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
     var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    document.addEventListener('DOMContentLoaded', function() { if (window.CommentToolbar) CommentToolbar.init(db); });
     var currentSession = null;
     var workData = null;
     var allChapters = [];
@@ -1181,17 +1189,31 @@
       var listEl=document.getElementById('comments-list'); listEl.innerHTML='';
       if(!comments.length){ listEl.innerHTML='<div class="empty-state"><i class="ti ti-message-off"></i>No comments yet.</div>'; }
       else { comments.forEach(function(c){ var p=c.profiles||{}; listEl.innerHTML+='<div class="comment-card"><div class="comment-header"><div class="comment-avatar">'+(p.avatar_url?'<img src="'+escHtml(p.avatar_url)+'" alt=""/>':'<i class="ti ti-user"></i>')+'</div><div class="comment-name">'+escHtml(p.display_name||p.username||'User')+'</div><div class="comment-date" style="margin-left:auto;">'+timeAgo(c.created_at)+'</div></div><div class="comment-text">'+dsSpoiler.render(escHtml(c.content))+'</div></div>'; }); }
-      if(currentSession){ document.getElementById('comment-input-wrap').style.display='flex'; } else { document.getElementById('comment-login-prompt').style.display='block'; }
+      if(currentSession){
+        document.getElementById('comment-input-wrap').style.display='flex';
+        // Inject CommentToolbar into the toolbar row
+        var placeholder = document.getElementById('story-comment-toolbar-placeholder');
+        if (placeholder && window.CommentToolbar) {
+          placeholder.outerHTML = CommentToolbar.renderToolbar({ context: 'story', textareaId: 'comment-input' });
+        }
+      } else { document.getElementById('comment-login-prompt').style.display='block'; }
     }
 
     async function submitComment() {
-      var content = document.getElementById('comment-input').value.trim();
-      if (!content) return;
+      var input = document.getElementById('comment-input');
+      var content = input.value.trim();
+      var pendingGif = window.CommentToolbar ? CommentToolbar.getPendingGif('story') : null;
+      var pendingImg = window.CommentToolbar ? CommentToolbar.getPendingImage('story') : null;
+      if (!content && !pendingGif && !pendingImg) return;
       var fc=await db.from('chapters').select('id').eq('work_id',workData.id).order('chapter_number',{ascending:true}).limit(1).maybeSingle();
       if(!fc.data){ showToast('No chapters found to comment on.','ti-alert-circle'); return; }
-      var result=await db.from('chapter_comments').insert({chapter_id:fc.data.id,user_id:currentSession.user.id,content:content});
+      var insertData = {chapter_id:fc.data.id,user_id:currentSession.user.id,content:content};
+      if (pendingGif) insertData.gif_url = pendingGif;
+      if (pendingImg) insertData.image_url = pendingImg;
+      var result=await db.from('chapter_comments').insert(insertData);
       if(result.error){ showToast('Error: '+result.error.message,'ti-x'); return; }
-      document.getElementById('comment-input').value='';
+      input.value='';
+      if (window.CommentToolbar) CommentToolbar.clearAttachments('story');
       showToast('Comment posted!');
       // First Voice (one-time) + Commentator (tiered) badges
       try {
@@ -1574,11 +1596,20 @@
 
     async function postCollabComment() {
       if(!currentSession||!activeCollabId) return;
-      var input=document.getElementById('collab-comment-input'); var text=input.value.trim(); if(!text) return;
+      var input=document.getElementById('collab-comment-input');
+      var text=input.value.trim();
+      var pendingGif = window.CommentToolbar ? CommentToolbar.getPendingGif('collab') : null;
+      var pendingImg = window.CommentToolbar ? CommentToolbar.getPendingImage('collab') : null;
+      if(!text && !pendingGif && !pendingImg) return;
       var btn=document.getElementById('collab-comment-post-btn'); btn.disabled=true;
-      var { error }=await db.from('collab_comments').insert({collab_id:activeCollabId,user_id:currentSession.user.id,content:text});
+      var insertData = {collab_id:activeCollabId,user_id:currentSession.user.id,content:text};
+      if (pendingGif) insertData.gif_url = pendingGif;
+      if (pendingImg) insertData.image_url = pendingImg;
+      var { error }=await db.from('collab_comments').insert(insertData);
       btn.disabled=false; if(error){ showToast('Could not post comment.','ti-x'); return; }
-      input.value=''; loadCollabComments(activeCollabId);
+      input.value='';
+      if (window.CommentToolbar) CommentToolbar.clearAttachments('collab');
+      loadCollabComments(activeCollabId);
     }
 
     async function deleteCollabComment(cmId,cardEl) {
@@ -1678,6 +1709,7 @@
   </footer>
 
 <script src="characterTitles.js"></script>
+<script src="commentToolbar.js"></script>
 <script src="footer.js"></script>
 <script src="nav.js"></script>
 </body>

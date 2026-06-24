@@ -374,6 +374,7 @@
     const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
     const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
     const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+    document.addEventListener('DOMContentLoaded', function() { if (window.CommentToolbar) CommentToolbar.init(db); });
     window.db = db;
 
     // ── EMOJI DATA
@@ -602,9 +603,10 @@
           + '<div id="comments-list"></div>'
           + '<div class="comment-input-wrap" id="comment-input-wrap" style="display:none;">'
             + '<textarea class="comment-textarea" id="comment-input" placeholder="Leave a comment…" maxlength="1000"></textarea>'
-            + '<div style="display:flex;gap:8px;align-items:center;">'
-              + '<button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById(\'comment-input\'))"><i class="ti ti-eye-off"></i> Spoiler</button>'
-              + '<button class="comment-submit" onclick="submitComment()"><i class="ti ti-send"></i> Post</button>'
+            + '<div class="ct-preview-area" id="ct-preview-artwork"></div>'
+            + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+              + '<span id="artwork-comment-toolbar-placeholder"></span>'
+              + '<button class="comment-submit" onclick="submitComment()" style="margin-left:auto;"><i class="ti ti-send"></i> Post</button>'
             + '</div>'
           + '</div>'
           + '<div class="comment-login-note" id="comment-login-note"><a href="auth.html">Log in</a> to leave a comment.</div>'
@@ -626,6 +628,10 @@
         document.getElementById('comment-login-note').innerHTML = '<i class="ti ti-message-circle-off"></i> Comments are closed for this piece.';
       } else {
         document.getElementById('comment-input-wrap').style.display = 'flex';
+        var placeholder = document.getElementById('artwork-comment-toolbar-placeholder');
+        if (placeholder && window.CommentToolbar) {
+          placeholder.outerHTML = CommentToolbar.renderToolbar({ context: 'artwork', textareaId: 'comment-input' });
+        }
       }
     }
 
@@ -870,45 +876,49 @@
       parentCard.dataset.replyOpen = '1';
       var wrap = document.createElement('div');
       wrap.className = 'reply-input-wrap';
+      var replyCtx = 'reply-' + parentId;
       wrap.innerHTML =
-        '<textarea class="reply-textarea" placeholder="Replying to ' + esc(parentName) + '…" maxlength="1000"></textarea>'
+        '<textarea class="reply-textarea" id="reply-ta-' + parentId + '" placeholder="Replying to ' + esc(parentName) + '…" maxlength="1000"></textarea>'
+        + '<div class="ct-preview-area" id="ct-preview-' + replyCtx + '"></div>'
         + '<div class="reply-actions">'
-          + '<button class="spoiler-btn" type="button" style="margin-right:auto;"><i class="ti ti-eye-off"></i> Spoiler</button>'
-          + '<button class="reply-cancel-btn">Cancel</button>'
+          + (window.CommentToolbar ? CommentToolbar.renderToolbar({ context: replyCtx, textareaId: 'reply-ta-' + parentId }) : '')
+          + '<button class="reply-cancel-btn" style="margin-left:auto;">Cancel</button>'
           + '<button class="reply-submit-btn"><i class="ti ti-send"></i> Post Reply</button>'
         + '</div>';
       parentCard.appendChild(wrap);
       wrap.querySelector('.reply-textarea').focus();
-      wrap.querySelector('.spoiler-btn').addEventListener('click', function(){
-        dsSpoiler.wrapSelection(wrap.querySelector('.reply-textarea'));
-      });
       wrap.querySelector('.reply-cancel-btn').addEventListener('click', function(){
+        if (window.CommentToolbar) CommentToolbar.clearAttachments(replyCtx);
         wrap.remove(); parentCard.dataset.replyOpen = '0';
       });
       wrap.querySelector('.reply-submit-btn').addEventListener('click', function(){
-        submitReply(parentId, wrap, parentCard);
+        submitReply(parentId, replyCtx, wrap, parentCard);
       });
     }
 
-    async function submitReply(parentId, wrap, parentCard){
+    async function submitReply(parentId, replyCtx, wrap, parentCard){
       var ta = wrap.querySelector('.reply-textarea');
       var text = ta.value.trim();
-      if(!text) return;
+      var pendingGif = window.CommentToolbar ? CommentToolbar.getPendingGif(replyCtx) : null;
+      var pendingImg = window.CommentToolbar ? CommentToolbar.getPendingImage(replyCtx) : null;
+      if(!text && !pendingGif && !pendingImg) return;
       var btn = wrap.querySelector('.reply-submit-btn');
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';
 
-      var { data: inserted, error } = await db.from('artwork_comments').insert({
-        work_id: workId,
+      var insertData = { work_id: workId,
         user_id: session.user.id,
         content: text,
         parent_id: parentId
-      }).select().single();
+      };
+      if (pendingGif) insertData.gif_url = pendingGif;
+      if (pendingImg) insertData.image_url = pendingImg;
+      var { data: inserted, error } = await db.from('artwork_comments').insert(insertData).select().single();
 
       btn.disabled = false;
       btn.innerHTML = '<i class="ti ti-send"></i> Post Reply';
       if(error){ showToast('Failed to post reply.', 'ti-alert-circle'); return; }
-
+      if (window.CommentToolbar) CommentToolbar.clearAttachments(replyCtx);
       wrap.remove();
       parentCard.dataset.replyOpen = '0';
 
@@ -1026,21 +1036,24 @@
     async function submitComment(){
       var input = document.getElementById('comment-input');
       var commentContent = input.value.trim();
-      if(!commentContent || !session) return;
+      var pendingGif = window.CommentToolbar ? CommentToolbar.getPendingGif('artwork') : null;
+      var pendingImg = window.CommentToolbar ? CommentToolbar.getPendingImage('artwork') : null;
+      if((!commentContent && !pendingGif && !pendingImg) || !session) return;
       var btn = document.querySelector('.comment-submit');
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';
 
-      var { data: inserted, error } = await db.from('artwork_comments').insert({
-        work_id: workId,
-        user_id: session.user.id,
-        content: commentContent
-      }).select().single();
+      var insertData = { work_id: workId, user_id: session.user.id, content: commentContent };
+      if (pendingGif) insertData.gif_url = pendingGif;
+      if (pendingImg) insertData.image_url = pendingImg;
+
+      var { data: inserted, error } = await db.from('artwork_comments').insert(insertData).select().single();
 
       btn.disabled = false;
       btn.innerHTML = '<i class="ti ti-send"></i> Post';
       if(error){ showToast('Failed to post comment.', 'ti-alert-circle'); return; }
       input.value = '';
+      if (window.CommentToolbar) CommentToolbar.clearAttachments('artwork');
       showToast('Comment posted!', 'ti-check');
 
       // Append new comment immediately to the DOM
@@ -1593,6 +1606,7 @@
 
     init();
   </script>
+<script src="commentToolbar.js"></script>
 <script src="footer.js"></script>
 <script src="nav.js"></script>
 </body>
