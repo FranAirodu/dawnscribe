@@ -369,6 +369,10 @@
     .ql-snow.ql-toolbar button:hover .ql-stroke,.ql-snow.ql-toolbar button.ql-active .ql-stroke{stroke:var(--accent);}
     .ql-snow.ql-toolbar button:hover .ql-fill,.ql-snow.ql-toolbar button.ql-active .ql-fill{fill:var(--accent);}
 
+    /* CHAR COUNTER */
+    .char-counter{font-size:10px;color:var(--text3);text-align:right;margin-top:3px;transition:color 0.2s;}
+    .char-counter.near-limit{color:var(--gold);}
+    .char-counter.at-limit{color:var(--red);font-weight:700;}
     /* TOAST */
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:600;pointer-events:none;}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
@@ -590,6 +594,7 @@
 
     var currentSession = null;
     var chapterData = null;
+    var _cachedMyProfile = null; // cached current user's profile to avoid repeated fetches
     var workData = null;
     var allChapters = [];
     var pages = []; window.pages = pages;
@@ -613,7 +618,19 @@
       if (code && valid.indexOf(code) !== -1) document.documentElement.lang = code;
     }
     function formatDate(s){ if(!s) return '—'; return new Date(s).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
-    function timeAgo(s){ var d=Math.floor((Date.now()-new Date(s))/1000); if(d<60) return 'just now'; if(d<3600) return Math.floor(d/60)+'m ago'; if(d<86400) return Math.floor(d/3600)+'h ago'; if(d<2592000) return Math.floor(d/86400)+'d ago'; if(d<31536000) return Math.floor(d/2592000)+'mo ago'; return Math.floor(d/31536000)+'y ago'; }
+    function timeAgo(s) {
+      var d = Math.floor((Date.now() - new Date(s)) / 1000);
+      if (d < 60) return 'just now';
+      if (d < 3600) return Math.floor(d/60) + 'm ago';
+      if (d < 86400) return Math.floor(d/3600) + 'h ago';
+      var days = Math.floor(d / 86400);
+      if (days < 32) return days + 'd ago';
+      // Use real calendar month diff instead of fixed 30-day buckets
+      var now = new Date(), then = new Date(s);
+      var months = (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth());
+      if (months < 12) return months + 'mo ago';
+      return Math.floor(months / 12) + 'y ago';
+    }
     function getChapterId(){ return new URLSearchParams(window.location.search).get('id'); }
 
     // ── AUTHOR'S NOTE ───────────────────────────────────────────
@@ -836,6 +853,51 @@
       t.querySelector('i').className='ti '+(icon||'ti-check');
       t.classList.add('show');
       setTimeout(function(){ t.classList.remove('show'); },2800);
+    }
+
+    // ── UNDO DELETE TOAST ────────────────────────────────────────
+    var _undoDeleteTimer = null;
+    var _undoDeleteFn = null;
+    function showDeleteUndo(msg, undoCallback) {
+      // Clear any previous undo
+      if (_undoDeleteTimer) { clearTimeout(_undoDeleteTimer); _undoDeleteTimer = null; _undoDeleteFn = null; }
+      var t = document.getElementById('toast');
+      var span = document.getElementById('toast-msg');
+      t.querySelector('i').className = 'ti ti-trash';
+      t.classList.remove('error');
+      // Build message with undo button
+      span.innerHTML = escHtml(msg) + ' <button id="undo-del-btn" style="margin-left:8px;background:rgba(45,212,191,0.15);border:1px solid var(--accent);border-radius:5px;padding:2px 8px;color:var(--accent);font-size:11px;font-weight:700;font-family:Lato,sans-serif;cursor:pointer;">Undo</button>';
+      t.classList.add('show');
+      _undoDeleteFn = undoCallback;
+      document.getElementById('undo-del-btn').onclick = function(e) {
+        e.stopPropagation();
+        clearTimeout(_undoDeleteTimer); _undoDeleteTimer = null;
+        t.classList.remove('show');
+        span.textContent = '';
+        if (_undoDeleteFn) { _undoDeleteFn(); _undoDeleteFn = null; }
+      };
+      _undoDeleteTimer = setTimeout(function() {
+        t.classList.remove('show');
+        _undoDeleteFn = null;
+        _undoDeleteTimer = null;
+      }, 4000);
+    }
+
+    // ── CHAR COUNTER HELPER ───────────────────────────────────────
+    function attachCharCounter(textareaEl, maxLen) {
+      if (!textareaEl || textareaEl.dataset.charCounter) return;
+      textareaEl.dataset.charCounter = '1';
+      var counter = document.createElement('div');
+      counter.className = 'char-counter';
+      var update = function() {
+        var remaining = maxLen - textareaEl.value.length;
+        counter.textContent = remaining + ' / ' + maxLen;
+        counter.classList.toggle('near-limit', remaining <= Math.round(maxLen * 0.15) && remaining > 0);
+        counter.classList.toggle('at-limit', remaining <= 0);
+      };
+      update();
+      textareaEl.addEventListener('input', update);
+      textareaEl.parentNode.insertBefore(counter, textareaEl.nextSibling);
     }
 
     // ── READING SETTINGS ─────────────────────────────────────────
@@ -1386,8 +1448,11 @@
         var prefCol = (type === 'echo') ? 'notif_echo' : 'notif_comment';
         var { data: pref } = await db.from('profiles').select(prefCol).eq('id', workData.author_id).maybeSingle();
         if (pref && pref[prefCol] === false) return;
-        var { data: me } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
-        var myName = me ? (me.display_name || me.username || 'Someone') : 'Someone';
+        if (!_cachedMyProfile) {
+          var { data: me } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
+          _cachedMyProfile = me || {};
+        }
+        var myName = (_cachedMyProfile.display_name || _cachedMyProfile.username || 'Someone');
         await db.from('notifications').insert(Object.assign({
           user_id: workData.author_id,
           type: type,
@@ -1404,8 +1469,11 @@
       try {
         var { data: pref } = await db.from('profiles').select('notif_comment').eq('id', userId).maybeSingle();
         if (pref && pref.notif_comment === false) return;
-        var { data: me } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
-        var myName = me ? (me.display_name || me.username || 'Someone') : 'Someone';
+        if (!_cachedMyProfile) {
+          var { data: me } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
+          _cachedMyProfile = me || {};
+        }
+        var myName = (_cachedMyProfile.display_name || _cachedMyProfile.username || 'Someone');
         await db.from('notifications').insert({
           user_id: userId,
           type: type,
@@ -1419,6 +1487,7 @@
 
     // ── PARAGRAPH COMMENTS ────────────────────────────────────────
     var paraVoteCache = {}; // { commentId: 'up'|'down'|null }
+    var paraCommentCountCache = null; // cached paragraph comment counts — fetched once per chapter load
 
     window.openParaPanel = function openParaPanel(idx, quotedText) {
       activeParaIndex = idx;
@@ -1550,6 +1619,7 @@
         document.getElementById('para-comment-input').addEventListener('keydown', function(e){
           if (e.key === 'Enter' && !e.shiftKey) submitParaComment();
         });
+        attachCharCounter(document.getElementById('para-comment-input'), 500);
       } else {
         footer.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0;"><a href="auth.html" style="color:var(--accent);">Sign in</a> to leave a comment.</div>';
       }
@@ -1707,13 +1777,16 @@
     function toggleParaReplyBox(parentId, parentCard, parentName) {
       var existing = parentCard.querySelector('.para-reply-input-wrap');
       if (existing) { existing.remove(); return; }
+      var replyCtxId = 'para-reply-' + parentId;
       var wrap = document.createElement('div');
       wrap.className = 'para-reply-input-wrap';
       wrap.innerHTML =
         '<textarea class="para-reply-ta" placeholder="Replying to ' + escHtml(parentName) + '…" maxlength="500"></textarea>' +
+        '<div class="ct-preview-area" id="ct-preview-' + replyCtxId + '"></div>' +
         '<div class="para-reply-actions">' +
-          '<button class="spoiler-btn" type="button" style="margin-right:auto;"><i class="ti ti-eye-off"></i> Spoiler</button>' +
-          '<button class="para-reply-cancel">Cancel</button>' +
+          '<button class="spoiler-btn" type="button"><i class="ti ti-eye-off"></i> Spoiler</button>' +
+          (window.CommentToolbar ? '<button class="ct-btn" type="button"><i class="ti ti-gif"></i> GIF</button>' : '') +
+          '<button class="para-reply-cancel" style="margin-left:auto;">Cancel</button>' +
           '<button class="para-reply-submit"><i class="ti ti-send"></i> Reply</button>' +
         '</div>';
       var repliesList = parentCard.querySelector('.para-replies-list');
@@ -1722,29 +1795,43 @@
       wrap.querySelector('.spoiler-btn').addEventListener('click', function(){
         dsSpoiler.wrapSelection(wrap.querySelector('.para-reply-ta'));
       });
-      wrap.querySelector('.para-reply-cancel').addEventListener('click', function(){ wrap.remove(); });
+      var gifBtn = wrap.querySelector('.ct-btn');
+      if (gifBtn && window.CommentToolbar) {
+        gifBtn.addEventListener('click', function(){ CommentToolbar.openGif(replyCtxId); });
+      }
+      wrap.querySelector('.para-reply-cancel').addEventListener('click', function(){
+        if (window.CommentToolbar) CommentToolbar.clearAttachments(replyCtxId);
+        wrap.remove();
+      });
       wrap.querySelector('.para-reply-submit').addEventListener('click', function(){
-        submitParaReply(parentId, wrap, parentCard);
+        submitParaReply(parentId, wrap, parentCard, replyCtxId);
       });
     }
 
-    async function submitParaReply(parentId, wrap, parentCard) {
+    async function submitParaReply(parentId, wrap, parentCard, replyCtxId) {
       var ta = wrap.querySelector('.para-reply-ta');
       var text = ta.value.trim();
-      if (!text) return;
+      var pendingGif = (replyCtxId && window.CommentToolbar) ? CommentToolbar.getPendingGif(replyCtxId) : null;
+      var pendingImg = (replyCtxId && window.CommentToolbar) ? CommentToolbar.getPendingImage(replyCtxId) : null;
+      if (!text && !pendingGif && !pendingImg) return;
       var btn = wrap.querySelector('.para-reply-submit');
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';
 
-      var { data: inserted, error } = await db.from('paragraph_comments').insert({
+      var insertData = {
         chapter_id: chapterData.id,
         paragraph_index: activeParaIndex,
         user_id: currentSession.user.id,
         content: text,
         parent_id: parentId
-      }).select().single();
+      };
+      if (pendingGif) insertData.gif_url = pendingGif;
+      if (pendingImg) insertData.image_url = pendingImg;
+
+      var { data: inserted, error } = await db.from('paragraph_comments').insert(insertData).select().single();
 
       if (error) { showToast('Error: ' + error.message, 'ti-x'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Reply'; return; }
+      if (replyCtxId && window.CommentToolbar) CommentToolbar.clearAttachments(replyCtxId);
 
       // Award prestige XP for engagement (silently — no user-facing details)
       if (workData && currentSession.user.id !== workData.author_id) {
@@ -1817,20 +1904,34 @@
     }
 
     async function deleteParaComment(commentId, cardEl) {
-      cardEl.style.opacity = '0.4';
+      // Soft-hide and give a 4s undo window before committing to DB
+      cardEl.style.opacity = '0.35';
+      cardEl.style.pointerEvents = 'none';
+      var undone = false;
+      showDeleteUndo('Comment deleted.', function() {
+        undone = true;
+        cardEl.style.opacity = '';
+        cardEl.style.pointerEvents = '';
+      });
+      await new Promise(function(res){ setTimeout(res, 4100); }); // wait for undo window
+      if (undone) return;
       var { error } = await db.from('paragraph_comments').delete()
         .eq('id', commentId).eq('user_id', currentSession.user.id);
       if (error) {
+        if (!isOwner) { cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.','ti-x'); return; }
         var { error: e2 } = await db.from('paragraph_comments').delete().eq('id', commentId);
-        if (e2) { cardEl.style.opacity='1'; showToast('Could not delete.','ti-x'); return; }
+        if (e2) { cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.','ti-x'); return; }
       }
       cardEl.style.transition = 'opacity 0.3s';
       setTimeout(function(){ cardEl.remove(); }, 300);
-      showToast('Comment deleted.', 'ti-trash');
       if (activeParaIndex !== null) updateParaBubbleCount(activeParaIndex, -1);
     }
 
     function updateParaBubbleCount(idx, delta) {
+      // Keep cache in sync so page turns still show the right count
+      if (paraCommentCountCache) {
+        paraCommentCountCache[idx] = Math.max(0, (paraCommentCountCache[idx] || 0) + delta);
+      }
       var bubble = document.querySelector('.para-comment-bubble[data-idx="'+idx+'"]');
       if (!bubble) return;
       var countEl = bubble.querySelector('.bubble-count');
@@ -1856,19 +1957,20 @@
       var content = document.getElementById('page-content');
       var paras = content.querySelectorAll('p, h1, h2, h3, blockquote');
 
-      // Fetch comment counts for this page's paragraphs
-      var startIdx = currentPage * WORDS_PER_PAGE; // rough offset — we track by absolute paragraph index
-      // Re-index from the actual DOM position relative to full chapter
-      // Use data-para-abs set during paginate
+      // Use cached paragraph comment counts (fetched once at chapter load, not on every page turn)
       var countMap = {};
-      if (chapterData) {
+      if (paraCommentCountCache) {
+        countMap = paraCommentCountCache;
+      } else if (chapterData) {
         var cr = await db.from('paragraph_comments')
           .select('paragraph_index')
           .eq('chapter_id', chapterData.id)
           .is('parent_id', null);
+        countMap = {};
         (cr.data||[]).forEach(function(c){
           countMap[c.paragraph_index] = (countMap[c.paragraph_index]||0) + 1;
         });
+        paraCommentCountCache = countMap;
       }
 
       paras.forEach(function(p, i) {
@@ -2026,28 +2128,36 @@
       var { data: myProfile } = await db.from('profiles')
         .select('id,username,display_name,avatar_url').eq('id', currentSession.user.id).maybeSingle();
       if(myProfile) profMap[myProfile.id] = myProfile;
-      var isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
       repliesList.appendChild(buildChapterCommentCard(inserted, profMap, isOwner, true));
       showToast('Reply posted!', 'ti-check');
     }
 
     async function deleteChapterComment(commentId, cardEl){
       if(!currentSession) return;
-      cardEl.style.opacity = '0.4';
+      cardEl.style.opacity = '0.35';
+      cardEl.style.pointerEvents = 'none';
+      var undone = false;
+      showDeleteUndo('Comment deleted.', function() {
+        undone = true;
+        cardEl.style.opacity = '';
+        cardEl.style.pointerEvents = '';
+      });
+      await new Promise(function(res){ setTimeout(res, 4100); });
+      if (undone) return;
       var { error } = await db.from('chapter_comments').delete()
         .eq('id', commentId).eq('user_id', currentSession.user.id);
       if(error){
+        if (!isOwner) { cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.','ti-x'); return; }
         var { error: err2 } = await db.from('chapter_comments').delete().eq('id', commentId);
-        if(err2){ cardEl.style.opacity = '1'; showToast('Could not delete.', 'ti-x'); return; }
+        if(err2){ cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.', 'ti-x'); return; }
       }
       cardEl.remove();
-      showToast('Comment deleted.', 'ti-trash');
     }
 
     async function loadChapterComments() {
       // Fetch all comments for this chapter (top-level + replies)
       var result = await db.from('chapter_comments')
-        .select('id, content, created_at, user_id, parent_id, gif_url, image_url')
+        .select('id, content, created_at, user_id, parent_id, gif_url, image_url, upvotes, downvotes')
         .eq('chapter_id', chapterData.id)
         .order('created_at', { ascending: true });
 
@@ -2065,7 +2175,6 @@
           var profRes = await db.from('profiles').select('id,username,display_name,avatar_url').in('id', allIds);
           (profRes.data||[]).forEach(function(p){ profileMap[p.id] = p; });
         }
-        var isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
         var topLevel = comments.filter(function(c){ return !c.parent_id; });
         var replies   = comments.filter(function(c){ return !!c.parent_id; });
         var replyMap  = {};
@@ -2104,6 +2213,7 @@
             + '<button class="comment-submit" onclick="submitChapterComment()"><i class="ti ti-send"></i> Post Comment</button>'
           + '</div>'
           + '</div>';
+        attachCharCounter(document.getElementById('chapter-comment-input'), 1000);
       } else {
         formEl.innerHTML = '<div class="login-prompt"><a href="auth.html">Sign in</a> to leave a comment.</div>';
       }
@@ -2144,7 +2254,6 @@
       var { data: myProfile } = await db.from('profiles')
         .select('id,username,display_name,avatar_url').eq('id', currentSession.user.id).maybeSingle();
       var profMap = {}; if(myProfile) profMap[myProfile.id] = myProfile;
-      var isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
       if(listEl) listEl.appendChild(buildChapterCommentCard(inserted, profMap, isOwner, false));
     }
 
@@ -2248,7 +2357,7 @@
     var spTab = 'toc';
     var spComments = [];
     var spMyVotes = {}; // commentId -> 'up'|'down'
-    var spCommentSort = 'grouped'; // 'grouped' | 'recent' | 'best'
+    var spCommentSort = (function(){ try { var s = localStorage.getItem('ds_comment_sort'); return (s==='recent'||s==='best'||s==='grouped') ? s : 'grouped'; } catch(e){ return 'grouped'; } })(); // 'grouped' | 'recent' | 'best'
     var _spEchoClickHandler = null; // stored so it can be removed when leaving Echoes tab
 
     window.spOpen = function spOpen(tab) {
@@ -2293,6 +2402,9 @@
       });
       var commentsClosed = chapterData && chapterData.comments_open === false;
       document.getElementById('sp-comment-wrap').style.display = (tab === 'comments' && currentSession && !commentsClosed) ? 'block' : 'none';
+      if (tab === 'comments' && currentSession && !commentsClosed) {
+        setTimeout(function(){ attachCharCounter(document.getElementById('sp-comment-input'), 1000); }, 0);
+      }
       if (tab === 'toc') spRenderToc();
       else if (tab === 'comments') spRenderComments();
       else if (tab === 'echoes') spRenderEchoes();
@@ -2394,6 +2506,11 @@
         }
         var bestPara    = sortByBest(spComments.filter(function(c){ return c._type === 'para'; }));
         var bestChapter = sortByBest(spComments.filter(function(c){ return c._type === 'chapter'; }));
+        // Check if any comment actually has votes yet
+        var anyVotes = spComments.some(function(c){ return (c.upvotes||0) > 0; });
+        if (!anyVotes) {
+          html += '<div style="padding:10px 16px 4px;font-size:11px;color:var(--text3);font-style:italic;display:flex;align-items:center;gap:5px;"><i class="ti ti-thumb-up" style="font-size:12px;"></i>No votes yet — be the first to like a comment!</div>';
+        }
         if (bestPara.length) {
           html += sectionDivider('Paragraph Comments', 'ti-indent-increase');
           html += bestPara.map(renderComment).join('');
@@ -2434,13 +2551,16 @@
 
     window.spSetCommentSort = function(mode) {
       spCommentSort = mode;
+      try { localStorage.setItem('ds_comment_sort', mode); } catch(e) {}
       spRenderComments();
     };
 
     async function handleSpThumbVote(commentId, commentType, btnEl) {
       if (!currentSession) { showToast('Sign in to vote', 'ti-lock'); return; }
+      if (btnEl.disabled) return; // guard against rapid double-clicks
+      btnEl.disabled = true;
       var comment = spComments.find(function(c){ return c.id === commentId; });
-      if (!comment) return;
+      if (!comment) { btnEl.disabled = false; return; }
       // Authors can't vote on their own comments
       if (comment.user_id === currentSession.user.id) { showToast('You can\'t vote on your own comment', 'ti-info-circle'); return; }
 
@@ -2469,6 +2589,7 @@
       if (countEl) countEl.textContent = newUps;
       var isVoted = spMyVotes[commentId] === 'up';
       btnEl.style.color = isVoted ? 'var(--accent)' : 'var(--text3)';
+      btnEl.disabled = false;
     }
 
     function spRenderEchoes() {
@@ -2541,6 +2662,11 @@
 
     async function spLoadComments() {
       if (!chapterData) return;
+      // Show spinner immediately while fetching
+      if (spIsOpen && spTab === 'comments') {
+        var body = document.getElementById('sp-body');
+        if (body) body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text3);font-size:13px;"><i class="ti ti-loader-2" style="font-size:22px;display:block;margin-bottom:8px;animation:spin 1s linear infinite;"></i>Loading comments…</div>';
+      }
       var { data: cc } = await db.from('chapter_comments')
         .select('id,content,created_at,user_id,gif_url,image_url,upvotes,downvotes')
         .eq('chapter_id', chapterData.id).is('parent_id', null)
@@ -2602,7 +2728,7 @@
       var insertData = {chapter_id:chapterData.id, user_id:currentSession.user.id, content:text};
       if (pendingGif) insertData.gif_url = pendingGif;
       if (pendingImg) insertData.image_url = pendingImg;
-      var { error } = await db.from('chapter_comments').insert(insertData);
+      var { data: inserted, error } = await db.from('chapter_comments').insert(insertData).select().single();
       if (error) { showToast('Could not post.','ti-x'); return; }
       input.value = '';
       if (window.CommentToolbar) CommentToolbar.clearAttachments('sp'); else gifClear('sp');
@@ -2614,7 +2740,18 @@
 
       // Notify author
       await notifyAuthor('chapter_comment', '{name} commented on a chapter in "{title}"');
-      await spLoadComments();
+      // Optimistically append to spComments and re-render instead of full reload
+      if (inserted) {
+        var { data: myP } = await db.from('profiles').select('id,username,display_name,avatar_url').eq('id', currentSession.user.id).maybeSingle();
+        inserted._type = 'chapter';
+        inserted.profiles = myP || {};
+        inserted.upvotes = 0;
+        inserted.downvotes = 0;
+        spComments.push(inserted);
+        var ct = document.getElementById('sp-comment-count');
+        if (ct) ct.textContent = spComments.length;
+        if (spIsOpen && spTab === 'comments') spRenderComments();
+      }
     }
 
     document.addEventListener('click', function(e) {
@@ -2651,7 +2788,8 @@
       var myContentPerms = { gore: false, erotica: false };
       if (currentSession) {
         try {
-          var { data: rpRow } = await db.from('profiles').select('reading_prefs,settings_filter_gore,settings_filter_erotica').eq('id', currentSession.user.id).maybeSingle();
+          var { data: rpRow } = await db.from('profiles').select('reading_prefs,settings_filter_gore,settings_filter_erotica,display_name,username').eq('id', currentSession.user.id).maybeSingle();
+          if (rpRow) _cachedMyProfile = { display_name: rpRow.display_name, username: rpRow.username };
           if (rpRow && rpRow.reading_prefs) {
             localStorage.setItem('ds_reading', JSON.stringify(rpRow.reading_prefs));
             applyReadingSettings();
@@ -2711,6 +2849,10 @@
 
       // Check ownership
       isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
+      paraVoteCache = {}; // clear stale votes from any previous chapter in same session
+      spMyVotes = {};
+      paraCommentCountCache = null; // clear para comment count cache for new chapter
+      _cachedMyProfile = null; // clear profile cache for new session context
 
       // ── ACCESS GUARD ──────────────────────────────────────────
       // Block access to locked chapters unless owner
