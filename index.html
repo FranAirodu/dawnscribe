@@ -957,13 +957,24 @@
           .eq('type','artwork').in('author_id',followedIds)
           .order('created_at',{ascending:false}).limit(8);
         artistNotifs = artRes.data||[];
-        // Also include collab artworks where the artist is someone we follow
+        // Also include collab artworks where the artist (artwork owner) is someone we follow
         try {
+          // artwork_collabs has no artist_id — get artwork owner from works table instead
           var collabArtRes2 = await db.from('artwork_collabs')
-            .select('artwork_id, artist_id').in('artist_id', followedIds).eq('status','approved');
+            .select('artwork_id').eq('status','approved');
+          var allCollabArtIds2 = (collabArtRes2.data||[]).map(function(r){ return r.artwork_id; });
           var collabArtistMap2 = {};
-          (collabArtRes2.data||[]).forEach(function(r){ collabArtistMap2[r.artwork_id] = r.artist_id; });
-          var collabArtIds2 = [...new Set((collabArtRes2.data||[]).map(function(r){ return r.artwork_id; }))];
+          var collabArtIds2 = [];
+          if(allCollabArtIds2.length){
+            var collabArtWorksRes = await db.from('works')
+              .select('id,author_id').in('id',allCollabArtIds2);
+            (collabArtWorksRes.data||[]).forEach(function(w){
+              if(followedIds.includes(w.author_id)){
+                collabArtistMap2[w.id] = w.author_id;
+                collabArtIds2.push(w.id);
+              }
+            });
+          }
           if(collabArtIds2.length){
             var collabWorksRes2 = await db.from('works')
               .select('id,title,type,created_at,author_id,cover_url').eq('type','artwork').in('id',collabArtIds2);
@@ -1753,14 +1764,22 @@
             .select('id,title,cover_url,author_id,created_at').eq('type','artwork').in('author_id',fuIds)
             .order('created_at',{ascending:false}).limit(30);
           var r1Items = artRes.data||[];
-          // Also include collab artworks where the artist is someone we follow
+          // Also include collab artworks where the artist (artwork owner) is someone we follow
           try {
             var collabArtRes = await db.from('artwork_collabs')
-              .select('artwork_id, artist_id').in('artist_id', fuIds).eq('status','approved');
-            var collabArtIds = [...new Set((collabArtRes.data||[]).map(function(r){ return r.artwork_id; }))];
-            // Map artist_id per artwork for credit
+              .select('artwork_id').eq('status','approved');
+            var allCollabArtIds = (collabArtRes.data||[]).map(function(r){ return r.artwork_id; });
+            var collabArtIds = [];
             var collabArtistMap = {};
-            (collabArtRes.data||[]).forEach(function(r){ collabArtistMap[r.artwork_id] = r.artist_id; });
+            if(allCollabArtIds.length){
+              var collabOwnerRes = await db.from('works').select('id,author_id').in('id',allCollabArtIds);
+              (collabOwnerRes.data||[]).forEach(function(w){
+                if(fuIds.includes(w.author_id)){
+                  collabArtIds.push(w.id);
+                  collabArtistMap[w.id] = w.author_id;
+                }
+              });
+            }
             if(collabArtIds.length){
               var collabWorksRes = await db.from('works')
                 .select('id,title,cover_url,author_id,created_at').eq('type','artwork').in('id',collabArtIds);
@@ -2119,9 +2138,14 @@
       var optionsEl = document.getElementById('poll-options');
       optionsEl.innerHTML = '';
 
-      // Only registered users can vote
-      var sessionRes = await db.auth.getSession();
-      var pollUser = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+      // Wait for session to hydrate (same retry pattern used sitewide)
+      var pollUser = null;
+      for (var _pi = 0; _pi < 5; _pi++) {
+        var sessionRes = await db.auth.getSession();
+        pollUser = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        if (pollUser) break;
+        await new Promise(function(r){ setTimeout(r, 350); });
+      }
       var votedId = pollUser ? localStorage.getItem('voted-poll-' + poll.id) : null;
 
       if (!pollUser) {
@@ -2145,6 +2169,8 @@
           btn.className = 'poll-option-btn' + (votedId === opt.id ? ' voted' : '');
           btn.dataset.id = opt.id;
           btn.textContent = opt.option_text;
+          // If already voted, buttons are hidden — results show instead
+          if (votedId) { btn.style.display = 'none'; }
           btn.addEventListener('click', async function() {
             var previousVoteId = localStorage.getItem('voted-poll-' + poll.id);
             if (previousVoteId === opt.id) return;
@@ -2178,12 +2204,15 @@
         var res = await db.from('poll_options').select('*').eq('poll_id', poll.id);
         if (res.data) { renderPollResults(res.data); }
       };
-      document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
       document.getElementById('poll-banner').style.display = 'block';
-      // If user already voted, show results immediately
+
+      // Already voted — skip the vote buttons entirely, go straight to results
       if (votedId) {
+        document.getElementById('poll-show-results-btn').style.display = 'none';
         var initialRes = await db.from('poll_options').select('*').eq('poll_id', poll.id);
         if (initialRes.data) { renderPollResults(initialRes.data); }
+      } else {
+        document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
       }
     }
 
