@@ -170,6 +170,26 @@
     .add-chapter-btn{background:rgba(45,212,191,0.08);border:1px dashed rgba(45,212,191,0.3);border-radius:10px;padding:11px;width:100%;color:var(--accent);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all 0.2s;margin-top:8px;}
     .add-chapter-btn:hover{background:rgba(45,212,191,0.14);border-color:var(--accent);}
 
+    /* COMPLETED STORY */
+    .completed-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);color:var(--green);letter-spacing:0.3px;}
+    .btn-complete-story{background:transparent;border:1px solid rgba(52,211,153,0.35);border-radius:8px;padding:7px 14px;color:var(--green);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .btn-complete-story:hover{background:rgba(52,211,153,0.1);border-color:var(--green);}
+    .add-chapter-btn.disabled{opacity:0.35;cursor:not-allowed;pointer-events:none;}
+    /* COMPLETE CONFIRM MODAL */
+    .complete-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;align-items:center;justify-content:center;}
+    .complete-modal-overlay.show{display:flex;}
+    .complete-modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;max-width:440px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);}
+    .complete-modal-icon{font-size:42px;color:var(--green);margin-bottom:16px;}
+    .complete-modal h3{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:10px;}
+    .complete-modal p{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:20px;}
+    .complete-modal-warn{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--gold);margin-bottom:22px;text-align:left;line-height:1.6;}
+    .complete-modal-warn i{margin-right:5px;}
+    .complete-modal-btns{display:flex;gap:10px;justify-content:center;}
+    .complete-modal-cancel{background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 20px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .complete-modal-cancel:hover{border-color:var(--red);color:var(--red);}
+    .complete-modal-confirm{background:var(--accent2);border:none;border-radius:9px;padding:10px 22px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .complete-modal-confirm:hover{background:var(--green);}
+
     /* DRAG REORDER */
     .chapter-row{cursor:grab;}
     .chapter-row.dragging{opacity:0.4;}
@@ -277,6 +297,7 @@
       <div class="work-header-title" id="work-title-el">Loading…</div>
       <div class="work-header-meta" id="work-meta-el"></div>
     </div>
+    <div id="complete-story-area" style="flex-shrink:0;margin-left:auto;"></div>
   </div>
 
   <!-- LINKED NOVELS MANAGEMENT -->
@@ -653,6 +674,30 @@
     await loadChapters();
   }
 
+  function openCompleteModal1() {
+    document.getElementById('complete-modal-1').classList.add('show');
+  }
+  function openCompleteModal2() {
+    document.getElementById('complete-modal-1').classList.remove('show');
+    document.getElementById('complete-modal-2').classList.add('show');
+  }
+  function closeCompleteModal(step) {
+    document.getElementById('complete-modal-' + step).classList.remove('show');
+  }
+  async function confirmMarkComplete() {
+    document.getElementById('complete-modal-2').classList.remove('show');
+    var res = await db.from('works').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', workId);
+    if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); return; }
+    workData.status = 'completed';
+    // Swap button for badge
+    var area = document.getElementById('complete-story-area');
+    area.innerHTML = '<div class="completed-badge"><i class="ti ti-flag-check"></i> Completed</div>';
+    // Lock Add Chapter button
+    var addBtn = document.querySelector('.add-chapter-btn');
+    if (addBtn) { addBtn.classList.add('disabled'); addBtn.title = 'This story is completed — no new chapters can be added.'; }
+    showToast('Story marked as completed!', 'ti-trophy');
+  }
+
   var panelCollapsed = false;
   function toggleChapterPanel() {
     panelCollapsed = !panelCollapsed;
@@ -811,6 +856,17 @@
     document.getElementById('work-meta-el').innerHTML =
       '<span><i class="ti ti-calendar" style="font-size:11px;"></i> Created ' + formatDate(workData.created_at) + '</span>' +
       '<span><i class="ti ti-refresh" style="font-size:11px;"></i> Updated ' + formatDate(workData.updated_at) + '</span>';
+
+    // Render completed state in header
+    var area = document.getElementById('complete-story-area');
+    if (workData.status === 'completed') {
+      area.innerHTML = '<div class="completed-badge"><i class="ti ti-flag-check"></i> Completed</div>';
+      // Lock out adding new chapters
+      var addBtn = document.querySelector('.add-chapter-btn');
+      if (addBtn) { addBtn.classList.add('disabled'); addBtn.title = 'This story is completed — no new chapters can be added.'; }
+    } else if (workData.type !== 'artwork') {
+      area.innerHTML = '<button class="btn-complete-story" onclick="openCompleteModal1()"><i class="ti ti-flag-check"></i> Mark as Completed</button>';
+    }
 
     await loadChapters();
     initEditor();
@@ -1643,6 +1699,38 @@
   }
 
 </script>
+<!-- COMPLETE STORY — STEP 1 MODAL -->
+<div class="complete-modal-overlay" id="complete-modal-1">
+  <div class="complete-modal">
+    <div class="complete-modal-icon"><i class="ti ti-flag-check"></i></div>
+    <h3>Mark Story as Completed?</h3>
+    <p>This will mark your story as <strong>completed</strong> on DawnScribe, making it eligible for the <em>Completed Novels</em> prestige medal.</p>
+    <div class="complete-modal-warn">
+      <i class="ti ti-alert-triangle"></i><strong>Important:</strong> Once marked as completed, you will no longer be able to add new chapters. You can still edit existing chapters at any time.
+    </div>
+    <div class="complete-modal-btns">
+      <button class="complete-modal-cancel" onclick="closeCompleteModal(1)">Cancel</button>
+      <button class="complete-modal-confirm" onclick="openCompleteModal2()"><i class="ti ti-arrow-right"></i> Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- COMPLETE STORY — STEP 2 MODAL (final confirmation) -->
+<div class="complete-modal-overlay" id="complete-modal-2">
+  <div class="complete-modal">
+    <div class="complete-modal-icon" style="color:var(--gold);"><i class="ti ti-trophy"></i></div>
+    <h3>Are You Absolutely Sure?</h3>
+    <p>This is your final confirmation. Your story will be locked to new chapters <strong>permanently</strong>. You can edit chapters but cannot add more.</p>
+    <div class="complete-modal-warn">
+      <i class="ti ti-lock"></i> No more chapters can be added after this. This <strong>cannot be undone</strong>.
+    </div>
+    <div class="complete-modal-btns">
+      <button class="complete-modal-cancel" onclick="closeCompleteModal(2)">Go Back</button>
+      <button class="complete-modal-confirm" style="background:#059669;" onclick="confirmMarkComplete()"><i class="ti ti-check"></i> Yes, Complete This Story</button>
+    </div>
+  </div>
+</div>
+
 <script src="characterTitles.js"></script>
 <script>
   // ── CHARACTER MANAGER (chapters.html) ────────────────────────

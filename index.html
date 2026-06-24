@@ -2196,21 +2196,30 @@
         });
       }
 
+      var resultsExpandedKey = 'poll-results-expanded-' + poll.id;
+
       document.getElementById('poll-close-results').onclick = function() {
         document.getElementById('poll-results').classList.remove('show');
         document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
+        localStorage.removeItem(resultsExpandedKey);
       };
       document.getElementById('poll-show-results-btn').onclick = async function() {
         var res = await db.from('poll_options').select('*').eq('poll_id', poll.id);
         if (res.data) { renderPollResults(res.data); }
+        localStorage.setItem(resultsExpandedKey, '1');
       };
       document.getElementById('poll-banner').style.display = 'block';
 
-      // Already voted — skip the vote buttons entirely, go straight to results
+      // Already voted — only show results if user explicitly expanded them
       if (votedId) {
-        document.getElementById('poll-show-results-btn').style.display = 'none';
-        var initialRes = await db.from('poll_options').select('*').eq('poll_id', poll.id);
-        if (initialRes.data) { renderPollResults(initialRes.data); }
+        var isExpanded = localStorage.getItem(resultsExpandedKey) === '1';
+        if (isExpanded) {
+          document.getElementById('poll-show-results-btn').style.display = 'none';
+          var initialRes = await db.from('poll_options').select('*').eq('poll_id', poll.id);
+          if (initialRes.data) { renderPollResults(initialRes.data); }
+        } else {
+          document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
+        }
       } else {
         document.getElementById('poll-show-results-btn').style.display = 'inline-flex';
       }
