@@ -1377,6 +1377,46 @@
       btn.innerHTML = '<i class="ti ti-check"></i> Save Changes';
     }
 
+
+    // ── NOTIFICATION HELPER ──────────────────────────────────────
+    async function notifyAuthor(type, message, extra) {
+      if (!workData || !currentSession) return;
+      if (currentSession.user.id === workData.author_id) return; // never notify self
+      try {
+        var prefCol = (type === 'echo') ? 'notif_echo' : 'notif_comment';
+        var { data: pref } = await db.from('profiles').select(prefCol).eq('id', workData.author_id).maybeSingle();
+        if (pref && pref[prefCol] === false) return;
+        var { data: me } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
+        var myName = me ? (me.display_name || me.username || 'Someone') : 'Someone';
+        await db.from('notifications').insert(Object.assign({
+          user_id: workData.author_id,
+          type: type,
+          from_user_id: currentSession.user.id,
+          work_id: workData.id,
+          chapter_id: chapterData ? chapterData.id : null,
+          message: message.replace('{name}', myName).replace('{title}', workData.title || 'your story')
+        }, extra || {}));
+      } catch(e) {}
+    }
+
+    async function notifyUser(userId, type, message) {
+      if (!currentSession || currentSession.user.id === userId) return; // never notify self
+      try {
+        var { data: pref } = await db.from('profiles').select('notif_comment').eq('id', userId).maybeSingle();
+        if (pref && pref.notif_comment === false) return;
+        var { data: me } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
+        var myName = me ? (me.display_name || me.username || 'Someone') : 'Someone';
+        await db.from('notifications').insert({
+          user_id: userId,
+          type: type,
+          from_user_id: currentSession.user.id,
+          work_id: workData ? workData.id : null,
+          chapter_id: chapterData ? chapterData.id : null,
+          message: message.replace('{name}', myName).replace('{title}', workData ? workData.title : 'a story')
+        });
+      } catch(e) {}
+    }
+
     // ── PARAGRAPH COMMENTS ────────────────────────────────────────
     var paraVoteCache = {}; // { commentId: 'up'|'down'|null }
 
@@ -1423,7 +1463,7 @@
 
       // Fetch top-level + replies
       var result = await db.from('paragraph_comments')
-        .select('id, content, created_at, user_id, paragraph_index, parent_id, upvotes, downvotes, gif_url')
+        .select('id, content, created_at, user_id, paragraph_index, parent_id, upvotes, downvotes, gif_url, image_url')
         .eq('chapter_id', chapterData.id)
         .eq('paragraph_index', idx)
         .order('created_at', { ascending: true });
@@ -1537,6 +1577,7 @@
         '</div>' +
         '<div class="para-cmt-body">' + dsSpoiler.render(escHtml(c.content)) + '</div>' +
         (c.gif_url ? '<img class="para-cmt-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '') +
+        (c.image_url ? '<img class="para-cmt-gif" src="'+escHtml(c.image_url)+'" alt="image"/>' : '') +
         '<div class="para-cmt-actions">' +
           '<button class="para-vote-btn upvote-btn' + (myVote==='up'?' voted-up':'') + '" data-id="'+c.id+'" data-dir="up"><i class="ti ti-thumb-up"></i> <span class="up-count">'+ups+'</span></button>' +
           '<button class="para-vote-btn downvote-btn' + (myVote==='down'?' voted-down':'') + '" data-id="'+c.id+'" data-dir="down"><i class="ti ti-thumb-down"></i> <span class="dn-count">'+downs+'</span></button>' +
@@ -1705,6 +1746,16 @@
 
       if (error) { showToast('Error: ' + error.message, 'ti-x'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Reply'; return; }
 
+      // Award prestige XP for engagement (silently — no user-facing details)
+      if (workData && currentSession.user.id !== workData.author_id) {
+        try { await db.rpc('award_comment_prestige_xp', { p_user_id: currentSession.user.id, p_chapter_id: chapterData.id }); } catch(e) {}
+      }
+
+      // Notify original para commenter + author
+      var { data: parentParaCmt } = await db.from('paragraph_comments').select('user_id').eq('id', parentId).maybeSingle();
+      if (parentParaCmt) await notifyUser(parentParaCmt.user_id, 'para_reply', '{name} replied to your paragraph comment on "{title}"');
+      await notifyAuthor('para_comment', '{name} replied to a paragraph comment on "{title}"', { paragraph_index: activeParaIndex });
+
       wrap.remove();
       var rlist = parentCard.querySelector('.para-replies-list');
       if (!rlist) {
@@ -1745,25 +1796,13 @@
       input.value = '';
       if (window.CommentToolbar) CommentToolbar.clearAttachments('para'); else gifClear('para');
 
-      // Notify the work author (if not commenting on own chapter), respecting their preference
+      // Award prestige XP for engagement (silently — no user-facing details)
       if (workData && currentSession.user.id !== workData.author_id) {
-        try {
-          var { data: authorPref } = await db.from('profiles').select('notif_comment').eq('id', workData.author_id).maybeSingle();
-          if (!authorPref || authorPref.notif_comment !== false) {
-            var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
-            var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
-            await db.from('notifications').insert({
-              user_id: workData.author_id,
-              type: 'para_comment',
-              from_user_id: currentSession.user.id,
-              work_id: workData.id,
-              chapter_id: chapterData.id,
-              paragraph_index: activeParaIndex,
-              message: myName + ' commented on a paragraph in "' + workData.title + '"'
-            });
-          }
-        } catch(e) {}
+        try { await db.rpc('award_comment_prestige_xp', { p_user_id: currentSession.user.id, p_chapter_id: chapterData.id }); } catch(e) {}
       }
+
+      // Notify the work author
+      await notifyAuthor('para_comment', '{name} commented on a paragraph in "{title}"', { paragraph_index: activeParaIndex });
 
       // Append to body immediately
       var body = document.getElementById('para-panel-body');
@@ -1888,6 +1927,7 @@
         + '</div>'
         + '<div class="comment-body">' + dsSpoiler.render(escHtml(c.content)) + '</div>'
         + (c.gif_url ? '<img class="comment-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '')
+          + (c.image_url ? '<img class="comment-gif" src="'+escHtml(c.image_url)+'" alt="image"/>' : '')
         + '<div class="comment-actions">'
           + (currentSession ? '<button class="comment-reply-btn"><i class="ti ti-corner-down-right"></i> Reply</button>' : '')
           + (canDelete ? '<button class="comment-delete-btn"><i class="ti ti-trash"></i></button>' : '')
@@ -1964,24 +2004,16 @@
 
       wrap.remove(); parentCard.dataset.replyOpen = '0';
 
-      // Notify original commenter, respecting their preference
+      // Award prestige XP for engagement (silently — no user-facing details)
+      if (workData && currentSession.user.id !== workData.author_id) {
+        try { await db.rpc('award_comment_prestige_xp', { p_user_id: currentSession.user.id, p_chapter_id: chapterData.id }); } catch(e) {}
+      }
+
+      // Notify original commenter + author
       var { data: parentCmt } = await db.from('chapter_comments')
         .select('user_id').eq('id', parentId).maybeSingle();
-      if(parentCmt && parentCmt.user_id !== currentSession.user.id){
-        var { data: replyToPref } = await db.from('profiles').select('notif_comment').eq('id', parentCmt.user_id).maybeSingle();
-        if (!replyToPref || replyToPref.notif_comment !== false) {
-          var { data: myProf } = await db.from('profiles')
-            .select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
-          var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
-          try { await db.from('notifications').insert({
-            user_id: parentCmt.user_id,
-            type: 'chapter_reply',
-            from_user_id: currentSession.user.id,
-            work_id: workData ? workData.id : null,
-            message: myName + ' replied to your comment on "' + (workData ? workData.title : 'a chapter') + '"'
-          }); } catch(e){}
-        }
-      }
+      if (parentCmt) await notifyUser(parentCmt.user_id, 'chapter_reply', '{name} replied to your comment on "{title}"');
+      await notifyAuthor('chapter_comment', '{name} replied to a comment on "{title}"');
 
       // Append reply card
       var repliesList = parentCard.querySelector('.replies-list');
@@ -2015,7 +2047,7 @@
     async function loadChapterComments() {
       // Fetch all comments for this chapter (top-level + replies)
       var result = await db.from('chapter_comments')
-        .select('id, content, created_at, user_id, parent_id, gif_url')
+        .select('id, content, created_at, user_id, parent_id, gif_url, image_url')
         .eq('chapter_id', chapterData.id)
         .order('created_at', { ascending: true });
 
@@ -2097,6 +2129,13 @@
       input.value = '';
       if (window.CommentToolbar) CommentToolbar.clearAttachments('chapter'); else gifClear('chapter');
       showToast('Comment posted!');
+      // Award prestige XP for engagement (silently — no user-facing details)
+      if (workData && currentSession.user.id !== workData.author_id) {
+        try { await db.rpc('award_comment_prestige_xp', { p_user_id: currentSession.user.id, p_chapter_id: chapterData.id }); } catch(e) {}
+      }
+
+      // Notify author
+      await notifyAuthor('chapter_comment', '{name} commented on a chapter in "{title}"');
 
       // Append immediately to the list
       var listEl = document.getElementById('chapter-comments-list');
@@ -2208,7 +2247,8 @@
     var spIsOpen = false;
     var spTab = 'toc';
     var spComments = [];
-    var spCommentSort = 'grouped'; // 'grouped' | 'recent'
+    var spMyVotes = {}; // commentId -> 'up'|'down'
+    var spCommentSort = 'grouped'; // 'grouped' | 'recent' | 'best'
     var _spEchoClickHandler = null; // stored so it can be removed when leaving Echoes tab
 
     window.spOpen = function spOpen(tab) {
@@ -2289,11 +2329,17 @@
         var paraLabel = c._type === 'para'
           ? '<div data-para-jump="'+c.paragraph_index+'" style="font-size:10px;color:var(--accent);margin-bottom:4px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-arrow-bar-to-right"></i> Paragraph '+((c.paragraph_index||0)+1)+' — click to jump</div>'
           : '';
+        var ups = c.upvotes || 0;
+        var myVote = spMyVotes[c.id] || null;
+        var votedClass = myVote === 'up' ? 'color:var(--accent);' : 'color:var(--text3);';
+        var thumbBtn = '<button class="sp-thumb-btn" data-id="'+escHtml(c.id)+'" data-type="'+escHtml(c._type)+'" style="display:inline-flex;align-items:center;gap:4px;background:none;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:Lato,sans-serif;padding:3px 0;margin-top:6px;transition:color 0.15s;'+votedClass+'"><i class="ti ti-thumb-up" style="font-size:13px;"></i><span class="sp-up-count">'+ups+'</span></button>';
         return '<div id="sp-comment-'+escHtml(c.id)+'" style="padding:10px 16px;border-bottom:1px solid var(--border);">' +
           paraLabel +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' + av + '<span style="font-size:12px;font-weight:700;color:var(--text);">'+name+'</span><span style="font-size:11px;color:var(--text3);margin-left:auto;">'+timeAgo(c.created_at)+'</span></div>' +
           '<div style="font-size:13px;color:var(--text2);line-height:1.5;">'+dsSpoiler.render(escHtml(c.content||''))+'</div>' +
           (c.gif_url ? '<img src="'+escHtml(c.gif_url)+'" style="max-width:100%;border-radius:7px;margin-top:6px;display:block;" alt="gif"/>' : '') +
+          (c.image_url ? '<img src="'+escHtml(c.image_url)+'" style="max-width:100%;border-radius:7px;margin-top:6px;display:block;" alt="image"/>' : '') +
+          thumbBtn +
           '</div>';
       }
       var sectionDivider = function(label, icon) {
@@ -2302,16 +2348,17 @@
 
       // Sort toggle bar — built via DOM to avoid quote-escaping issues
       var isGrouped = spCommentSort === 'grouped';
+      var isBest    = spCommentSort === 'best';
       var toggleWrap = document.createElement('div');
       toggleWrap.style.cssText = 'display:flex;align-items:center;gap:4px;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0;';
       var sortLabel = document.createElement('span');
       sortLabel.style.cssText = 'font-size:11px;color:var(--text3);margin-right:4px;';
       sortLabel.textContent = 'Sort:';
       toggleWrap.appendChild(sortLabel);
-      ['grouped', 'recent'].forEach(function(mode) {
+      ['grouped', 'recent', 'best'].forEach(function(mode) {
         var btn = document.createElement('button');
         var active = spCommentSort === mode;
-        btn.textContent = mode === 'grouped' ? 'By Position' : 'Most Recent';
+        btn.textContent = mode === 'grouped' ? 'By Position' : mode === 'recent' ? 'Most Recent' : '👍 Best';
         btn.style.cssText = 'padding:3px 10px;font-size:11px;font-weight:700;font-family:Lato,sans-serif;border-radius:6px;cursor:pointer;transition:all 0.15s;'
           + 'border:1px solid ' + (active ? 'var(--accent)' : 'var(--border)') + ';'
           + 'background:' + (active ? 'rgba(45,212,191,0.12)' : 'none') + ';'
@@ -2336,6 +2383,25 @@
           html += sectionDivider('Chapter Comments', 'ti-message-circle');
           html += chapterItems.map(renderComment).join('');
         }
+      } else if (isBest) {
+        // Paragraph comments first, then chapter comments — each group sorted by upvotes DESC
+        function sortByBest(arr) {
+          return arr.slice().sort(function(a,b){
+            var upDiff = (b.upvotes||0) - (a.upvotes||0);
+            if (upDiff !== 0) return upDiff;
+            return new Date(b.created_at) - new Date(a.created_at);
+          });
+        }
+        var bestPara    = sortByBest(spComments.filter(function(c){ return c._type === 'para'; }));
+        var bestChapter = sortByBest(spComments.filter(function(c){ return c._type === 'chapter'; }));
+        if (bestPara.length) {
+          html += sectionDivider('Paragraph Comments', 'ti-indent-increase');
+          html += bestPara.map(renderComment).join('');
+        }
+        if (bestChapter.length) {
+          html += sectionDivider('Chapter Comments', 'ti-message-circle');
+          html += bestChapter.map(renderComment).join('');
+        }
       } else {
         // All comments flat, sorted newest first
         var recent = spComments.slice().sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
@@ -2357,12 +2423,53 @@
           }
         });
       });
+      // Wire thumbs-up clicks on top-level SP comments
+      contentDiv.querySelectorAll('.sp-thumb-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          handleSpThumbVote(btn.dataset.id, btn.dataset.type, btn);
+        });
+      });
     }
 
     window.spSetCommentSort = function(mode) {
       spCommentSort = mode;
       spRenderComments();
     };
+
+    async function handleSpThumbVote(commentId, commentType, btnEl) {
+      if (!currentSession) { showToast('Sign in to vote', 'ti-lock'); return; }
+      var comment = spComments.find(function(c){ return c.id === commentId; });
+      if (!comment) return;
+      // Authors can't vote on their own comments
+      if (comment.user_id === currentSession.user.id) { showToast('You can\'t vote on your own comment', 'ti-info-circle'); return; }
+
+      var prev = spMyVotes[commentId] || null;
+      var table = commentType === 'para' ? 'paragraph_comment_votes' : 'chapter_comment_votes';
+      var cmtTable = commentType === 'para' ? 'paragraph_comments' : 'chapter_comments';
+
+      var newUps = comment.upvotes || 0;
+      if (prev === 'up') {
+        // Toggle off
+        await db.from(table).delete().eq('comment_id', commentId).eq('user_id', currentSession.user.id);
+        newUps = Math.max(0, newUps - 1);
+        await db.from(cmtTable).update({ upvotes: newUps }).eq('id', commentId);
+        delete spMyVotes[commentId];
+      } else {
+        // New upvote (if they had a downvote, remove it first — downvotes not shown here but kept consistent)
+        await db.from(table).upsert({ comment_id: commentId, user_id: currentSession.user.id, vote_type: 'up' }, { onConflict: 'comment_id,user_id' });
+        if (prev !== 'up') newUps = newUps + 1;
+        await db.from(cmtTable).update({ upvotes: newUps }).eq('id', commentId);
+        spMyVotes[commentId] = 'up';
+      }
+      comment.upvotes = newUps;
+
+      // Update button in place — no full re-render
+      var countEl = btnEl.querySelector('.sp-up-count');
+      if (countEl) countEl.textContent = newUps;
+      var isVoted = spMyVotes[commentId] === 'up';
+      btnEl.style.color = isVoted ? 'var(--accent)' : 'var(--text3)';
+    }
 
     function spRenderEchoes() {
       var body = document.getElementById('sp-body');
@@ -2435,11 +2542,11 @@
     async function spLoadComments() {
       if (!chapterData) return;
       var { data: cc } = await db.from('chapter_comments')
-        .select('id,content,created_at,user_id,gif_url')
+        .select('id,content,created_at,user_id,gif_url,image_url,upvotes,downvotes')
         .eq('chapter_id', chapterData.id).is('parent_id', null)
         .order('created_at',{ascending:false}).limit(50);
       var { data: pc } = await db.from('paragraph_comments')
-        .select('id,content,created_at,user_id,paragraph_index,gif_url')
+        .select('id,content,created_at,user_id,paragraph_index,gif_url,image_url,upvotes,downvotes')
         .eq('chapter_id', chapterData.id).is('parent_id', null)
         .order('created_at',{ascending:false}).limit(50);
       // Para comments sorted by paragraph_index ASC (top of chapter first),
@@ -2462,6 +2569,24 @@
       }
       merged.forEach(function(c){ c.profiles = profMap[c.user_id] || {}; });
       spComments = merged;
+
+      // Fetch user's own votes on these comments (for highlighting voted state)
+      spMyVotes = {};
+      if (currentSession && merged.length) {
+        var allIds = merged.map(function(c){ return c.id; });
+        var paraIds = merged.filter(function(c){ return c._type==='para'; }).map(function(c){ return c.id; });
+        var chapIds = merged.filter(function(c){ return c._type==='chapter'; }).map(function(c){ return c.id; });
+        if (paraIds.length) {
+          var { data: pv } = await db.from('paragraph_comment_votes')
+            .select('comment_id,vote_type').eq('user_id', currentSession.user.id).in('comment_id', paraIds);
+          (pv||[]).forEach(function(v){ spMyVotes[v.comment_id] = v.vote_type; });
+        }
+        if (chapIds.length) {
+          var { data: cv } = await db.from('chapter_comment_votes')
+            .select('comment_id,vote_type').eq('user_id', currentSession.user.id).in('comment_id', chapIds);
+          (cv||[]).forEach(function(v){ spMyVotes[v.comment_id] = v.vote_type; });
+        }
+      }
       var ct = document.getElementById('sp-comment-count');
       if (ct) ct.textContent = spComments.length > 0 ? spComments.length : '';
       if (spIsOpen && spTab === 'comments') spRenderComments();
@@ -2482,6 +2607,13 @@
       input.value = '';
       if (window.CommentToolbar) CommentToolbar.clearAttachments('sp'); else gifClear('sp');
       showToast('Comment posted!','ti-check');
+      // Award prestige XP for engagement (silently — no user-facing details)
+      if (workData && currentSession.user.id !== workData.author_id) {
+        try { await db.rpc('award_comment_prestige_xp', { p_user_id: currentSession.user.id, p_chapter_id: chapterData.id }); } catch(e) {}
+      }
+
+      // Notify author
+      await notifyAuthor('chapter_comment', '{name} commented on a chapter in "{title}"');
       await spLoadComments();
     }
 
@@ -2869,6 +3001,9 @@
       echoRenderPanel();
       echoRenderPage();
       showToast('Echo placed!', 'ti-sparkles');
+      // Notify author
+      var _et6 = echoTypes ? echoTypes.find(function(t){return t.id===typeId;}) : null;
+      await notifyAuthor('echo', '{name} placed a ' + (_et6 ? _et6.label : 'Echo') + ' on a paragraph in "{title}"', { paragraph_index: paraIdx });
     }
 
     async function echoPlaceOnChapter(typeId) {
@@ -2887,6 +3022,8 @@
       echoRenderPanel();
       echoRenderPage();
       showToast('Echo placed on this chapter!', 'ti-sparkles');
+      var _et7 = echoTypes ? echoTypes.find(function(t){return t.id===typeId;}) : null;
+      await notifyAuthor('echo', '{name} placed a ' + (_et7 ? _et7.label : 'Echo') + ' on a chapter of "{title}"');
     }
 
     async function echoPlaceOnStory(typeId) {
@@ -2903,6 +3040,8 @@
       myEchoes[typeId] = data;
       echoRenderPanel();
       showToast('Masterpiece Echo placed on this story!', 'ti-sparkles');
+      var _et8 = echoTypes ? echoTypes.find(function(t){return t.id===typeId;}) : null;
+      await notifyAuthor('echo', '{name} placed a ' + (_et8 ? _et8.label : 'Echo') + ' on "{title}"');
     }
 
     function echoRenderPage() {

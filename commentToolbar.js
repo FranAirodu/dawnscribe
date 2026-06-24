@@ -391,8 +391,8 @@
       _showToast('Only JPEG, PNG, GIF, and WebP images are allowed.', 'ti-alert-circle');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      _showToast('Image must be under 5MB.', 'ti-alert-circle');
+    if (file.size > 2 * 1024 * 1024) {
+      _showToast('Image must be under 2MB.', 'ti-alert-circle');
       return;
     }
     var btn = document.getElementById('ct-img-btn-' + context);
