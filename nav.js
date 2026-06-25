@@ -607,6 +607,16 @@ function dsApplyAccent(hex) {
         var prRes=await db.from('paragraph_comments').select('id,content,created_at,chapter_id,user_id,parent_id,paragraph_index').in('chapter_id',ownerChapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(20);
         (prRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){c.work_id=chapWorkMap[c.chapter_id]||null;c._type='para';commentNotifs.push(c);});
       }
+      // Song suggestions
+      try {
+        var songRes=await db.from('character_song_suggestions').select('id,song_title,artist_name,created_at,work_id,user_id,status').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(10);
+        (songRes.data||[]).forEach(function(s){ s.content=(s.song_title||'Unknown')+(s.artist_name?' — '+s.artist_name:''); s._type='song'; commentNotifs.push(s); });
+      } catch(e2){}
+      // Character opinions
+      try {
+        var opRes=await db.from('character_opinions').select('id,body,created_at,work_id,user_id,status').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(10);
+        (opRes.data||[]).forEach(function(o){ o.content=o.body; o._type='opinion'; commentNotifs.push(o); });
+      } catch(e3){}
     }
     if(myArtworkIds.length){
       var acRes2=await db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id').in('work_id',myArtworkIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(20);
@@ -634,6 +644,7 @@ function dsApplyAccent(hex) {
         var item=document.createElement('div'); item.className='notif-item unread'; item.dataset.id=cm.id; item.style.cursor='pointer';
         item.onclick=function(){
           if(!cm.work_id) return;
+          if(cm._type==='song'||cm._type==='opinion'){ window.location.href='story.html?id='+cm.work_id; return; }
           if(cm._type==='artwork') { window.location.href='artwork.html?id='+cm.work_id; }
           else if(cm._type==='para' && cm.chapter_id) {
             var _destUrl = 'chapter.html?id='+cm.chapter_id;
@@ -662,8 +673,10 @@ function dsApplyAccent(hex) {
           ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
           : prof&&prof.avatar_url ? '<img src="'+dsEsc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
         var coverClass2 = work && work.cover_url ? '' : dsCoverColor(cm.user_id||cm.id);
+        var cmTypeLabel = cm._type==='song' ? ' suggested a song for ' : cm._type==='opinion' ? ' shared a character opinion on ' : cm._type==='para' ? ' commented on a paragraph in ' : ' commented on ';
+        var cmTypeColor = cm._type==='song' ? 'color:var(--gold);' : cm._type==='opinion' ? 'color:#ec4899;' : '';
         item.innerHTML='<div class="notif-cover '+coverClass2+'" style="overflow:hidden;padding:0;">'+avHtml2+'</div>'
-          +'<div class="notif-body"><div class="notif-title">'+dsEsc(name)+(cm._type==='para'?' commented on a paragraph in ':' commented on ')+dsEsc(workTitle)+'</div>'
+          +'<div class="notif-body"><div class="notif-title" style="'+cmTypeColor+'">'+dsEsc(name)+cmTypeLabel+dsEsc(workTitle)+'</div>'
           +'<div class="notif-text">"'+dsSpoiler.render(dsEsc((cm.content||'').slice(0,70)))+(cm.content&&cm.content.length>70?'...':'')+'"</div>'
           +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(cm.created_at)+'</div></div><div class="notif-dot"></div>';
         commentFeed.appendChild(item);
@@ -678,11 +691,11 @@ function dsApplyAccent(hex) {
     var unreadAct = 0;
     try {
       var { data: actRows } = await db.from('notifications')
-        .select('id,type,message,work_id,created_at')
+        .select('id,type,message,work_id,chapter_id,created_at')
         .eq('user_id', uid)
-        .in('type', ['song_approved','song_rejected','fan_translation_linked'])
+        .in('type', ['song_approved','song_rejected','fan_translation_linked','opinion_approved','opinion_featured','collab_request','echo','poll_closing'])
         .order('created_at', { ascending: false })
-        .limit(8);
+        .limit(12);
       var clearedAct = dsGetClearedIds('activity');
       var unrAct = (actRows||[]).filter(function(n){ return !clearedAct[n.id]; });
 
@@ -725,22 +738,29 @@ function dsApplyAccent(hex) {
           activityFeed.appendChild(item);
         });
         unrAct.forEach(function(n) {
-          var isTranslation = n.type === 'fan_translation_linked';
-          var isApproved = n.type === 'song_approved';
-          var iconColor = isTranslation ? '#2dd4bf' : (isApproved ? '#22c55e' : '#ef4444');
-          var icon = isTranslation ? 'ti-language' : (isApproved ? 'ti-music' : 'ti-music-off');
-          var title = isTranslation ? '🌐 Fan Translation' : (isApproved ? '🎵 Song Approved' : '🎵 Song Not Approved');
+          var iconColor, icon, title;
+          if(n.type==='song_approved')         { iconColor='#22c55e'; icon='ti-music';             title='🎵 Song Approved'; }
+          else if(n.type==='song_rejected')    { iconColor='#ef4444'; icon='ti-music-off';         title='🎵 Song Not Approved'; }
+          else if(n.type==='fan_translation_linked') { iconColor='#2dd4bf'; icon='ti-language';   title='🌐 Fan Translation'; }
+          else if(n.type==='opinion_approved') { iconColor='#ec4899'; icon='ti-message-heart';     title='💬 Opinion Approved'; }
+          else if(n.type==='opinion_featured') { iconColor='#f59e0b'; icon='ti-star';              title='⭐ Opinion Featured'; }
+          else if(n.type==='collab_request')   { iconColor='#f59e0b'; icon='ti-git-merge';         title='🤝 Collab Request'; }
+          else if(n.type==='echo')             { iconColor='#f97316'; icon='ti-flame';             title='🔥 Echo on Chapter'; }
+          else if(n.type==='poll_closing')     { iconColor='#f59e0b'; icon='ti-clock-exclamation'; title='📊 Poll Closing Soon'; }
+          else                                 { iconColor='var(--text3)'; icon='ti-bell';         title=dsEsc(n.type||'Notification'); }
           var item = document.createElement('div');
           item.className = 'notif-item unread';
           item.dataset.id = n.id;
-          item.style.cursor = n.work_id ? 'pointer' : 'default';
+          var dest = n.chapter_id ? 'chapter.html?id='+n.chapter_id : (n.work_id ? 'story.html?id='+n.work_id : null);
+          if(n.type==='collab_request') dest = 'collab-inbox.html';
+          item.style.cursor = dest ? 'pointer' : 'default';
           item.onclick = function() {
             var map = dsGetClearedIds('activity');
             map[n.id] = true;
             localStorage.setItem('ds_notif_cleared_activity', JSON.stringify(Object.keys(map)));
             item.classList.remove('unread');
             db.from('notifications').update({is_read:true}).eq('id',n.id);
-            if (n.work_id) window.location.href = 'story.html?id=' + n.work_id;
+            if (dest) window.location.href = dest;
           };
           item.innerHTML =
             '<div class="notif-cover" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;color:'+iconColor+';">'+
