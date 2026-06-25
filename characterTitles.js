@@ -1389,6 +1389,10 @@ window.CharacterTitles = (function() {
       }
       modal.remove();
       if (window.showToast) window.showToast('Opinion submitted — the author will review it! ✨', 'ti-message-heart');
+      // Notify the work author
+      if (window.dsNotifyAuthor) {
+        window.dsNotifyAuthor('chapter_comment', '{name} shared a take on ' + charName + ' in "{title}"', { character_id: charId });
+      }
     });
 
     document.body.appendChild(modal);

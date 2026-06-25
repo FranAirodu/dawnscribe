@@ -167,6 +167,18 @@
     .modal-danger{background:transparent;border:1px solid rgba(248,113,113,0.4);border-radius:8px;padding:9px 20px;color:var(--red);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;}
     .modal-danger:hover{background:rgba(248,113,113,0.1);}
 
+    /* CURRENTLY WRITING PICKER */
+    .cw-picker { display: flex; flex-direction: column; gap: 6px; }
+    .cw-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    .cw-pill { background: var(--bg3); border: 1px solid var(--border); border-radius: 20px; padding: 5px 13px; font-size: 12px; font-weight: 700; color: var(--text2); cursor: pointer; transition: all 0.15s; font-family: 'Lato', sans-serif; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+    .cw-pill:hover { border-color: var(--accent); color: var(--accent); }
+    .cw-pill.selected { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); color: var(--accent); }
+    .cw-pill.cw-custom { border-style: dashed; color: var(--text3); }
+    .cw-pill.cw-custom.selected { border-style: solid; }
+    .cw-custom-input { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 13px; font-family: 'Lato', sans-serif; outline: none; width: 100%; transition: border-color 0.2s; display: none; }
+    .cw-custom-input:focus { border-color: var(--accent); }
+    .cw-custom-input.visible { display: block; }
+
     /* TABS */
     .profile-tabs-wrap{max-width:960px;margin:0 auto;padding:0 24px;}
     .profile-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:32px;overflow-x:auto;scrollbar-width:none;}
@@ -577,13 +589,30 @@
   <div class="modal-overlay" id="edit-modal">
     <div class="modal">
       <div class="modal-title"><i class="ti ti-edit"></i> Edit Profile</div>
+      <div style="font-size:11px;color:var(--text3);background:var(--bg3);border-radius:8px;padding:8px 12px;margin-bottom:14px;line-height:1.6;">
+        <i class="ti ti-info-circle" style="color:var(--accent);margin-right:4px;"></i>
+        Fill in as much as you can — each field adds to your profile completion score. Your <strong style="color:var(--text2);">bio</strong> is edited directly on the profile page using the pencil button next to it.
+      </div>
       <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" type="text" id="edit-name"/></div>
       <div class="form-group"><label class="form-label">Role</label><select class="form-select" id="edit-role"><option>Writer</option><option>Artist</option><option>Reader</option><option selected>Writer &amp; Artist</option><option>Writer &amp; Reader</option><option>Artist &amp; Reader</option><option>Writer, Artist &amp; Reader</option></select></div>
+      <div class="form-group">
+        <label class="form-label"><i class="ti ti-pencil-plus" style="color:var(--accent);margin-right:4px;"></i> Currently Writing</label>
+        <div class="cw-picker">
+          <div class="cw-pills" id="cw-pills-container">
+            <div style="font-size:12px;color:var(--text3);font-style:italic;">Loading your works…</div>
+          </div>
+          <input class="cw-custom-input" id="cw-custom-input" type="text" maxlength="80" placeholder="Enter a new book title…"/>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;">Shows on your profile under your bio — lets followers know what you’re working on.</div>
+      </div>
       <div class="form-group"><label class="form-label">Location</label><input class="form-input" type="text" id="edit-location" placeholder="City, Country"/></div>
       <div class="form-group"><label class="form-label">Gender</label><select class="form-select" id="edit-gender"><option value="">Prefer not to say</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Other</option></select></div>
       <div class="form-group"><label class="form-label">Language(s)</label><input class="form-input" type="text" id="edit-language" placeholder="e.g. English, Portuguese"/></div>
       <div class="form-group"><label class="form-label"><i class="ti ti-brand-twitter" style="color:#1d9bf0;"></i> Twitter / X — Username</label><input class="form-input" type="text" id="edit-twitter" placeholder="e.g. Ananias5"/></div>
       <div class="form-group"><label class="form-label"><i class="ti ti-coffee" style="color:#ff5e5b;"></i> Ko-fi — Username</label><input class="form-input" type="text" id="edit-kofi" placeholder="e.g. ananias5"/></div>
+      <div style="font-size:10px;color:var(--text3);background:var(--bg3);border-radius:8px;padding:8px 12px;margin-bottom:14px;line-height:1.6;">
+        <i class="ti ti-pin" style="color:var(--accent);margin-right:4px;"></i> To <strong style="color:var(--text2);">pin a work</strong> to your profile, go to the Works tab → click Edit on a novel → Pin to Profile.
+      </div>
       <div class="modal-btns">
         <button class="modal-cancel" id="edit-modal-cancel">Cancel</button>
         <button class="modal-save" onclick="saveProfile()"><i class="ti ti-check"></i> Save Profile</button>
@@ -866,7 +895,8 @@
       var filled = checks.filter(function(c){ return !!c.val; }).length;
       var percent = Math.round((filled / checks.length) * 100);
       fill.style.width = percent + '%';
-      pct.textContent = percent + '%';
+      pct.textContent = percent < 100 ? percent + '%' : '';
+      pct.style.display = percent < 100 ? '' : 'none';
       wrap.style.display = 'flex';
       if (tip) {
         var missing = checks.filter(function(c){ return !c.val; }).map(function(c){ return c.label; });
@@ -1260,17 +1290,11 @@
       }
     }
     function openCurrentlyWritingEditor() {
-      var current = document.getElementById('currently-writing-text').textContent || '';
-      var val = prompt('What are you currently writing?', current);
-      if (val === null) return; // cancelled
-      val = val.trim().slice(0, 120);
-      document.getElementById('currently-writing-text').textContent = val;
-      document.getElementById('currently-writing-display').style.display = val ? 'flex' : 'none';
-      if (window._viewedProfileData) { window._viewedProfileData.currently_writing = val; updateProfileCompletion(window._viewedProfileData); }
-      db.auth.getSession().then(function(r) {
-        var s = r && r.data ? r.data.session : null;
-        if (s) { db.from('profiles').upsert({ id: s.user.id, currently_writing: val || null }, { onConflict: 'id' }).then(function(res){ if(res.error) showToast('Save failed', 'ti-alert-triangle'); else showToast('Updated!'); }); }
-      });
+      openEditModal();
+      setTimeout(function() {
+        var el = document.getElementById('cw-custom-input');
+        if (el) el.focus();
+      }, 300);
     }
 
     /* ── PINNED WORK ────────────────────────────────────────────── */
@@ -1987,8 +2011,75 @@ async function handleFriendBtn() {
           genderSelect.selectedIndex = i; break;
         }
       }
+      // Build Currently Writing pill picker
+      var cwText = document.getElementById('currently-writing-text').textContent || '';
       document.getElementById('edit-modal').classList.add('open');
+      buildCwPicker(cwText);
     }
+
+    var _cwSelected = '';
+
+    async function buildCwPicker(currentValue) {
+      var container = document.getElementById('cw-pills-container');
+      var customInput = document.getElementById('cw-custom-input');
+      container.innerHTML = '<div style="font-size:12px;color:var(--text3);font-style:italic;">Loading…</div>';
+      customInput.classList.remove('visible');
+      _cwSelected = currentValue || '';
+
+      var novels = [];
+      try {
+        var s = (await db.auth.getSession()).data.session;
+        if (s) {
+          var { data } = await db.from('works')
+            .select('id, title')
+            .eq('author_id', s.user.id)
+            .eq('type', 'novel')
+            .order('created_at', { ascending: false });
+          novels = data || [];
+        }
+      } catch(e) {}
+
+      container.innerHTML = '';
+
+      novels.forEach(function(w) {
+        var pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'cw-pill' + (currentValue === w.title ? ' selected' : '');
+        pill.textContent = w.title;
+        pill.title = w.title;
+        pill.addEventListener('click', function() {
+          _cwSelected = w.title;
+          customInput.classList.remove('visible');
+          container.querySelectorAll('.cw-pill').forEach(function(p){ p.classList.remove('selected'); });
+          pill.classList.add('selected');
+        });
+        container.appendChild(pill);
+      });
+
+      var isCustom = currentValue && !novels.find(function(w){ return w.title === currentValue; });
+      var customPill = document.createElement('button');
+      customPill.type = 'button';
+      customPill.className = 'cw-pill cw-custom' + (isCustom ? ' selected' : '');
+      customPill.innerHTML = '<i class="ti ti-plus" style="font-size:10px;margin-right:3px;"></i> New Book Title';
+      customPill.addEventListener('click', function() {
+        container.querySelectorAll('.cw-pill').forEach(function(p){ p.classList.remove('selected'); });
+        customPill.classList.add('selected');
+        customInput.classList.add('visible');
+        customInput.focus();
+        _cwSelected = customInput.value.trim();
+      });
+      container.appendChild(customPill);
+
+      if (isCustom) {
+        customInput.value = currentValue;
+        customInput.classList.add('visible');
+      }
+
+      customInput.addEventListener('input', function() {
+        _cwSelected = customInput.value.trim();
+      });
+    }
+
     async function saveProfile() {
       var name     = document.getElementById('edit-name').value.trim();
       var twitter  = document.getElementById('edit-twitter').value.trim().replace('@','').replace(/^https?:\/\/(www\.)?(twitter\.com|x\.com)\//i,'').replace(/\/.*$/,'');
@@ -1998,6 +2089,7 @@ async function handleFriendBtn() {
       var location = document.getElementById('edit-location').value.trim();
       var gender   = document.getElementById('edit-gender').value;
       var language = document.getElementById('edit-language').value.trim();
+      var currentlyWriting = _cwSelected || '';
       if (name)     { document.getElementById('display-name').textContent = name; }
       if (location) { document.getElementById('info-location').textContent = location; }
       if (language) { document.getElementById('info-language').textContent = language; }
@@ -2006,11 +2098,13 @@ async function handleFriendBtn() {
       var handleEl = document.getElementById('display-handle');
       var currentHandle = handleEl.textContent.split(' · ')[0];
       handleEl.textContent = currentHandle + ' · ' + role;
+      // Update currently writing display
+      document.getElementById('currently-writing-text').textContent = currentlyWriting;
+      document.getElementById('currently-writing-display').style.display = currentlyWriting ? 'flex' : 'none';
       document.getElementById('edit-modal').classList.remove('open');
       showToast('Profile updated!');
-      // Update completion bar with current values
       if (window._viewedProfileData) {
-        var merged = Object.assign({}, window._viewedProfileData, { display_name: name, role: role, location: location, gender: gender, language: language, twitter: twitter, kofi: kofi });
+        var merged = Object.assign({}, window._viewedProfileData, { display_name: name, role: role, location: location, gender: gender, language: language, twitter: twitter, kofi: kofi, currently_writing: currentlyWriting });
         window._viewedProfileData = merged;
         updateProfileCompletion(merged);
       }
@@ -2020,7 +2114,8 @@ async function handleFriendBtn() {
           var result = await db.from('profiles').upsert({
             id: s.user.id, display_name: name,
             role: role, location: location, gender: gender,
-            language: language, twitter: twitter, kofi: kofi
+            language: language, twitter: twitter, kofi: kofi,
+            currently_writing: currentlyWriting || null
           }, { onConflict: 'id' });
           if (result.error) { console.error('Supabase save error:', result.error); showToast('Save failed: ' + result.error.message, 'ti-alert-triangle'); }
         }
