@@ -744,9 +744,7 @@ window.CharacterTitles = (function() {
       var auraWashStyle = auraData.winner
         ? 'background: radial-gradient(ellipse at top, ' + auraData.winner + '22 0%, transparent 70%);'
         : '';
-      var auraWashHtml = '<div class="ct-aura-wash' + (auraData.winner ? ' active' : '') + '" data-char-aura="'+esc(char.id)+'" style="'+auraWashHtml_style+'"></div>'.replace('auraWashHtml_style', auraWashStyle);
-      // fix self-reference above
-      auraWashHtml = '<div class="ct-aura-wash' + (auraData.winner ? ' active' : '') + '" data-char-aura="'+esc(char.id)+'" style="'+auraWashStyle+'"></div>';
+      var auraWashHtml = '<div class="ct-aura-wash' + (auraData.winner ? ' active' : '') + '" data-char-aura="'+esc(char.id)+'" style="'+auraWashStyle+'"></div>';
 
       // ── FEATURED OPINION strip ────────────────────────────────
       var featuredOpinionHtml = '';
@@ -1230,9 +1228,10 @@ window.CharacterTitles = (function() {
   // ── AURA DATA LOADERS ─────────────────────────────────────────
   async function loadAuraVotes(characterIds) {
     if (!characterIds.length) return {};
-    var { data } = await db().from('character_aura_votes')
+    var { data, error } = await db().from('character_aura_votes')
       .select('character_id, hex, user_id')
       .in('character_id', characterIds);
+    if (error) return {};
     // Group by character, count hex frequencies, find winning hex
     var map = {};
     (data||[]).forEach(function(v) {
@@ -1259,14 +1258,14 @@ window.CharacterTitles = (function() {
   // ── OPINION DATA LOADERS ──────────────────────────────────────
   async function loadFeaturedOpinions(characterIds) {
     if (!characterIds.length) return {};
-    var { data } = await db().from('character_opinions')
+    var { data, error } = await db().from('character_opinions')
       .select('id, character_id, chapter_id, user_id, body, is_featured')
       .in('character_id', characterIds)
       .eq('status', 'approved')
       .eq('is_featured', true);
+    if (error) return {};
     var map = {};
     (data||[]).forEach(function(o) {
-      // Keep most recent featured per character (there should only be one, but safeguard)
       if (!map[o.character_id]) map[o.character_id] = [];
       map[o.character_id].push(o);
     });
