@@ -125,8 +125,7 @@ function dsApplyAccent(hex) {
     .user-avatar-btn { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg,#1e0040,#6b21a8); border: 2px solid rgba(45,212,191,0.4); display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 15px; font-weight: 700; color: #c084fc; cursor: pointer; overflow: hidden; transition: border-color 0.2s, box-shadow 0.2s; flex-shrink: 0; }
     .user-avatar-btn:hover { border-color: var(--accent); }
     .user-avatar-btn img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-    .user-avatar-btn.has-pending { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.25), 0 0 12px rgba(245,158,11,0.2); animation: gold-pulse 2.5s ease-in-out infinite; }
-    @keyframes gold-pulse { 0%,100%{ box-shadow:0 0 0 3px rgba(245,158,11,0.25),0 0 12px rgba(245,158,11,0.2); } 50%{ box-shadow:0 0 0 4px rgba(245,158,11,0.4),0 0 20px rgba(245,158,11,0.35); } }
+    /* gold aura on avatar removed — pending items now live in notifications page */
     .collab-pending-pill { margin-left: auto; background: #f59e0b; color: #0a0a0f; font-size: 10px; font-weight: 700; border-radius: 10px; padding: 1px 7px; letter-spacing: 0.5px; white-space: normal; max-width: 150px; line-height: 1.4; text-align: right; }
     .user-dropdown { display: none; position: absolute; top: calc(100% + 10px); right: 0; width: 260px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; z-index: 400; box-shadow: 0 16px 40px rgba(0,0,0,0.5); animation: ds-fadeDown 0.15s ease; overflow: hidden; }
     .user-dropdown.open { display: block; }
@@ -883,7 +882,6 @@ function dsApplyAccent(hex) {
           var frCount2=(frRes2.data||[]).length; if(frCount2>0) pendingParts.push(frCount2+' friend request'+(frCount2>1?'s':''));
           var collabParts2 = pendingParts.filter(function(p){ return p.indexOf('friend') === -1; });
           var friendParts2 = pendingParts.filter(function(p){ return p.indexOf('friend') !== -1; });
-          if(pendingParts.length>0) avatarBtn.classList.add('has-pending');
           if(collabParts2.length>0){
             var pl2=document.getElementById('dd-profile-link');
             if(pl2) pl2.innerHTML='<i class="ti ti-user"></i> My Profile <span class="collab-pending-pill">'+collabParts2.join(' · ')+'</span>';
@@ -931,7 +929,6 @@ function dsApplyAccent(hex) {
           // Collab pending → My Profile pill
           var collabParts = pendingParts.filter(function(p){ return p.indexOf('friend') === -1; });
           var friendParts = pendingParts.filter(function(p){ return p.indexOf('friend') !== -1; });
-          if(pendingParts.length>0) avatarBtn.classList.add('has-pending');
           if(collabParts.length>0){
             var pl=document.getElementById('dd-profile-link');
             if(pl) pl.innerHTML='<i class="ti ti-user"></i> My Profile <span class="collab-pending-pill">'+collabParts.join(' · ')+'</span>';
