@@ -338,6 +338,10 @@
       typeLabel='suggested a song for a character in'; typeIcon='<i class="ti ti-music" style="color:var(--gold);font-size:11px;margin-right:3px;"></i>'; typeColor='color:var(--gold);';
     } else if(cm._type==='opinion'){
       typeLabel='shared a character opinion on'; typeIcon='<i class="ti ti-message-heart" style="color:#ec4899;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#ec4899;';
+    } else if(cm._type==='echo'){
+      typeLabel=''; typeIcon='<i class="ti ti-flame" style="color:#f97316;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#f97316;';
+    } else if(cm._type==='poll_closing'){
+      typeLabel=''; typeIcon='<i class="ti ti-clock-exclamation" style="color:#f59e0b;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#f59e0b;';
     } else if(cm._para){
       typeLabel='commented on a paragraph in'; typeIcon='<i class="ti ti-pilcrow" style="color:var(--accent);font-size:11px;margin-right:3px;"></i>'; typeColor='';
     } else {
@@ -347,6 +351,17 @@
     card.onclick = function(){
       if(!cm.work_id) return;
       if(cm._type==='song'||cm._type==='opinion'){ window.location.href='story.html?id='+cm.work_id; return; }
+      if(cm._type==='echo'){
+        db.from('notifications').update({is_read:true}).eq('id',cm.id);
+        if(cm.chapter_id) window.location.href='chapter.html?id='+cm.chapter_id;
+        else window.location.href='story.html?id='+cm.work_id;
+        return;
+      }
+      if(cm._type==='poll_closing'){
+        if(cm._chapter_id) window.location.href='chapter.html?id='+cm._chapter_id;
+        else window.location.href='story.html?id='+cm.work_id;
+        return;
+      }
       if(cm._para&&cm.chapter_id){
         if(cm.paragraph_index!==undefined) sessionStorage.setItem('ds_open_para',cm.paragraph_index);
         if(cm.id) sessionStorage.setItem('ds_open_comment',cm.id);
@@ -355,12 +370,23 @@
       window.location.href = cm._type==='artwork' ? 'artwork.html?id='+cm.work_id : 'story.html?id='+cm.work_id;
     };
 
-    var avHtml = prof&&prof.avatar_url ? '<img src="'+esc(prof.avatar_url)+'" alt=""/>' : esc(name.charAt(0).toUpperCase());
+    var avHtml = prof&&prof.avatar_url ? '<img src="'+esc(prof.avatar_url)+'" alt=""/>' : esc((name||'?').charAt(0).toUpperCase());
+    var titleLine, textLine;
+    if(cm._type==='echo'){
+      titleLine = typeIcon + esc(cm.content||'Aura placed');
+      textLine = cm.chapter_id ? 'Tap to view chapter' : 'Tap to view story';
+    } else if(cm._type==='poll_closing'){
+      titleLine = typeIcon + 'Poll closing soon on <em>'+esc(workTitle)+'</em>';
+      textLine = '\u201c'+esc(cm._question||'')+'\u201d \u00b7 '+esc(cm.content||'');
+    } else {
+      titleLine = typeIcon+esc(name)+' '+typeLabel+(typeLabel?' <em>'+esc(workTitle)+'</em>':'');
+      textLine = '\u201c'+dsSpoiler.render(esc(snippet))+'\u201d';
+    }
     card.innerHTML =
       '<div class="notif-cover '+coverColor(cm.user_id||cm.id)+'" style="overflow:hidden;">'+avHtml+'</div>'+
       '<div class="notif-body">'+
-        '<div class="notif-card-title" style="'+typeColor+'">'+typeIcon+esc(name)+' '+typeLabel+' <em>'+esc(workTitle)+'</em></div>'+
-        '<div class="notif-card-text">\u201c'+dsSpoiler.render(esc(snippet))+'\u201d</div>'+
+        '<div class="notif-card-title" style="'+typeColor+'">'+titleLine+'</div>'+
+        '<div class="notif-card-text">'+textLine+'</div>'+
         '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</div>'+
       '</div>'+
       (isUnread?'<div class="notif-unread-dot"></div>':'');
@@ -394,6 +420,14 @@
     else if(n.type==='new_follower'){ iconColor='#2dd4bf'; icon='ti-user-check'; title='\uD83D\uDC64 New Follower'; subtitle=esc(n.message||'New follower'); }
     else if(n.type==='opinion_approved'){ iconColor='#ec4899'; icon='ti-message-heart'; title='\uD83D\uDCAC Opinion Approved'; subtitle=esc(n.message||''); }
     else if(n.type==='opinion_featured'){ iconColor='#f59e0b'; icon='ti-star'; title='\u2B50 Opinion Featured'; subtitle=esc(n.message||''); }
+    else if(n.type==='poll_closing'){ iconColor='#f59e0b'; icon='ti-clock-exclamation'; title='\uD83D\uDCCA Poll Closing Soon'; subtitle=esc(n.message||'');
+      // Override click to go to the chapter/story
+      card.addEventListener('click', function(){
+        var map=getClearedIds('social'); map[n.id]=true; setClearedIds('social',map); card.classList.remove('unread');
+        if(n._chapter_id) window.location.href='chapter.html?id='+n._chapter_id;
+        else if(n.work_id) window.location.href='story.html?id='+n.work_id;
+      }, true);
+    }
     else if(n.type==='collab_request'){ iconColor='#f59e0b'; icon='ti-git-merge'; title='\uD83E\uDD1D Collab Request'; subtitle=esc(n.message||''); }
     else { iconColor='var(--text3)'; icon='ti-bell'; title=esc(n.type||'Notification'); subtitle=esc(n.message||''); }
 
@@ -539,8 +573,8 @@
         }
         // Song suggestions pending
         try {
-          var songRes=await db.from('character_song_suggestions').select('id,body,created_at,work_id,user_id,status').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
-          (songRes.data||[]).forEach(function(s){ s.content=s.body; s._type='song'; commentNotifs.push(s); });
+          var songRes=await db.from('character_song_suggestions').select('id,song_title,artist_name,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
+          (songRes.data||[]).forEach(function(s){ s.content=(s.song_title||'Unknown')+(s.artist_name?' — '+s.artist_name:''); s._type='song'; commentNotifs.push(s); });
         } catch(e2){}
         // Character opinions pending
         try {
@@ -553,11 +587,48 @@
         (acRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){ c._type='artwork'; commentNotifs.push(c); });
       }
 
+      // Echo (Aura) notifications — from notifications table, type='echo'
+      try {
+        var echoRes=await db.from('notifications').select('id,message,work_id,chapter_id,created_at,is_read,from_user_id').eq('user_id',uid).eq('type','echo').eq('is_read',false).order('created_at',{ascending:false}).limit(20);
+        var echoRows=echoRes.data||[];
+        if(echoRows.length){
+          var echoFromIds=[...new Set(echoRows.map(function(r){return r.from_user_id;}).filter(Boolean))];
+          var {data:echoProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',echoFromIds);
+          var echoProfMap={};(echoProfs||[]).forEach(function(p){echoProfMap[p.id]=p;});
+          echoRows.forEach(function(e){
+            e._type='echo'; e.content=e.message||''; e.profiles=echoProfMap[e.from_user_id]||null;
+            e.works=titleMap[e.work_id]||null; commentNotifs.push(e);
+          });
+        }
+      } catch(e4){}
+
+      // Polls closing soon — chapter_polls on author's chapters closing within 48h
+      try {
+        if(myNovelIds.length||myArtIds.length){
+          var now=new Date(); var soon=new Date(now.getTime()+48*60*60*1000);
+          // Get all chapters for author's works
+          var allWids2=[...myNovelIds,...myArtIds];
+          var {data:authorChaps}=await db.from('chapters').select('id,work_id').in('work_id',allWids2);
+          var authorChapIds=(authorChaps||[]).map(function(c){return c.id;});
+          var chapWorkMap2={};(authorChaps||[]).forEach(function(c){chapWorkMap2[c.id]=c.work_id;});
+          if(authorChapIds.length){
+            var pollRes=await db.from('chapter_polls').select('id,question,chapter_id,closes_at').in('chapter_id',authorChapIds).gt('closes_at',now.toISOString()).lt('closes_at',soon.toISOString()).order('closes_at',{ascending:true});
+            (pollRes.data||[]).forEach(function(p){
+              var hoursLeft=Math.round((new Date(p.closes_at)-now)/3600000);
+              var wid=chapWorkMap2[p.chapter_id]||null;
+              commentNotifs.push({ id:'poll-'+p.id, _type:'poll_closing', content:'Closes in ~'+hoursLeft+'h', work_id:wid, works:titleMap[wid]||null, created_at:p.closes_at, _question:p.question, _chapter_id:p.chapter_id });
+            });
+          }
+        }
+      } catch(e5){}
+
       if(commentNotifs.length){
-        var uIds=[...new Set(commentNotifs.map(function(c){return c.user_id;}))];
-        var {data:uProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',uIds);
-        var uMap={};(uProfs||[]).forEach(function(p){uMap[p.id]=p;});
-        commentNotifs.forEach(function(cm){ cm.profiles=uMap[cm.user_id]||null; cm.works=titleMap[cm.work_id]||null; });
+        var uIds=[...new Set(commentNotifs.map(function(c){return c.user_id;}).filter(Boolean))];
+        if(uIds.length){
+          var {data:uProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',uIds);
+          var uMap={};(uProfs||[]).forEach(function(p){uMap[p.id]=p;});
+          commentNotifs.forEach(function(cm){ if(cm.user_id&&!cm.profiles) cm.profiles=uMap[cm.user_id]||null; if(!cm.works) cm.works=titleMap[cm.work_id]||null; });
+        }
       }
       var cleared=getClearedIds('comments');
       commentNotifs.sort(function(a,b){ var aU=!cleared[a.id],bU=!cleared[b.id]; if(aU!==bU) return aU?-1:1; return new Date(b.created_at)-new Date(a.created_at); });
@@ -600,14 +671,13 @@
       var artIds=(myArtworks.data||[]).map(function(w){return w.id;});
       var novTitleMap={};(myNovels.data||[]).forEach(function(w){novTitleMap[w.id]=w.title;});
       var artTitleMap={};(myArtworks.data||[]).forEach(function(w){artTitleMap[w.id]=w.title;});
+      // Collab requests — artwork_collabs covers both novel fan-art and story collabs, keyed by work_id
+      var allWorkIds = [...novIds, ...artIds];
+      var allTitleMap = Object.assign({}, novTitleMap, artTitleMap);
       var collabItems=[];
-      if(artIds.length){
-        var acRes=await db.from('artwork_collabs').select('id,artwork_id,artist_id,created_at').in('artwork_id',artIds).eq('status','pending').order('created_at',{ascending:false});
-        (acRes.data||[]).forEach(function(c){ c._kind='story_collab'; c._workTitle=artTitleMap[c.artwork_id]||'your artwork'; c._fromId=c.artist_id; collabItems.push(c); });
-      }
-      if(novIds.length){
-        var scRes=await db.from('story_collabs').select('id,work_id,artist_id,created_at').in('work_id',novIds).eq('status','pending').order('created_at',{ascending:false});
-        (scRes.data||[]).forEach(function(c){ c._kind='fan_art'; c._workTitle=novTitleMap[c.work_id]||'your novel'; c._fromId=c.artist_id; collabItems.push(c); });
+      if(allWorkIds.length){
+        var acRes=await db.from('artwork_collabs').select('id,work_id,artist_id,created_at').in('work_id',allWorkIds).eq('status','pending').order('created_at',{ascending:false});
+        (acRes.data||[]).forEach(function(c){ c._workTitle=allTitleMap[c.work_id]||'your work'; c._fromId=c.artist_id; collabItems.push(c); });
       }
       if(collabItems.length){
         var fromIds=[...new Set(collabItems.map(function(c){return c._fromId;}).filter(Boolean))];
@@ -616,7 +686,7 @@
         collabItems.forEach(function(c){
           var p=fromMap[c._fromId]||{}; var name=p.display_name||p.username||'Someone';
           var avH=p.avatar_url?'<img src="'+esc(p.avatar_url)+'"/>':esc(name.charAt(0).toUpperCase());
-          var kindLabel=c._kind==='fan_art'?'Submitted fan art for':'Story collab request on';
+          var kindLabel='Submitted fan art for';
           var el=document.createElement('div'); el.className='action-card teal-card';
           el.innerHTML='<div class="ac-avatar">'+avH+'</div>'
             +'<div style="flex:1;min-width:0;"><div class="ac-name teal">'+esc(name)+'</div><div class="ac-sub">'+kindLabel+' \u201c'+esc(c._workTitle)+'\u201d \u00b7 '+timeAgo(c.created_at)+'</div></div>'
@@ -630,7 +700,7 @@
       // Activity: new followers + song approvals/rejections + translations + collab_request notifs + announcements
       var socialItems=[];
       if(myPrefs.notif_follow){
-        var folRes=await db.from('notifications').select('id,from_user_id,message,created_at,is_read').eq('user_id',uid).eq('type','new_follower').eq('is_read',false).order('created_at',{ascending:false}).limit(20);
+        var folRes=await db.from('notifications').select('id,from_user_id,message,created_at,is_read').eq('user_id',uid).eq('type','new_follower').neq('is_read',true).order('created_at',{ascending:false}).limit(20);
         var folRows=folRes.data||[];
         if(folRows.length){
           var folIds=folRows.map(function(r){return r.from_user_id;}).filter(Boolean);
@@ -651,6 +721,19 @@
         var blastRes=await db.from('notifications').select('id,type,message,created_at').is('user_id',null).eq('type','blast').order('created_at',{ascending:false}).limit(20);
         socialItems=socialItems.concat(blastRes.data||[]);
       }
+      // Polls closing within 48h that this user has voted on
+      try {
+        var votedRes=await db.from('chapter_poll_votes').select('poll_id').eq('user_id',uid);
+        var votedPollIds=(votedRes.data||[]).map(function(v){return v.poll_id;}).filter(Boolean);
+        if(votedPollIds.length){
+          var nowTs=new Date(); var soonTs=new Date(nowTs.getTime()+48*60*60*1000);
+          var closingRes=await db.from('chapter_polls').select('id,question,chapter_id,closes_at').in('id',votedPollIds).gt('closes_at',nowTs.toISOString()).lt('closes_at',soonTs.toISOString()).order('closes_at',{ascending:true});
+          (closingRes.data||[]).forEach(function(p){
+            var hoursLeft=Math.max(1,Math.round((new Date(p.closes_at)-nowTs)/3600000));
+            socialItems.push({ id:'poll-closing-'+p.id, type:'poll_closing', message:'\u201c'+p.question+'\u201d closes in ~'+hoursLeft+'h', work_id:null, _chapter_id:p.chapter_id, created_at:p.closes_at });
+          });
+        }
+      } catch(e6){}
       var cleared=getClearedIds('social');
       socialItems.sort(function(a,b){ var aU=!cleared[a.id],bU=!cleared[b.id]; if(aU!==bU) return aU?-1:1; return new Date(b.created_at)-new Date(a.created_at); });
       allData.social=socialItems;
