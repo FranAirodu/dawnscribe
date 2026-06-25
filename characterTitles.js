@@ -182,6 +182,16 @@ window.CharacterTitles = (function() {
             openSongModal(cid, cname, wid, uid || 'anon');
           });
           card.appendChild(songBtn);
+
+          // Personal Opinion button
+          var opinionBtn = document.createElement('button');
+          opinionBtn.className = 'ct-opinion-btn';
+          opinionBtn.innerHTML = '<i class="ti ti-message-heart"></i> Share your take on ' + esc(cname) + ' this chapter';
+          opinionBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            openOpinionModal(cid, cname, chapterId, wid, uid);
+          });
+          card.appendChild(opinionBtn);
         })(char.id, char.name, workId, userId);
       }
 
@@ -589,6 +599,23 @@ window.CharacterTitles = (function() {
       collabsByChar[key].push(c);
     });
 
+    // Load aura votes
+    var charIds = chars.map(function(c){ return c.id; });
+    var auraByChar = await loadAuraVotes(charIds);
+
+    // Load featured opinions per character
+    var featuredOpinionsByChar = await loadFeaturedOpinions(charIds);
+
+    // Load current user's own aura votes (to show which they picked)
+    var myAuraMap = {};
+    if (currentUserSession) {
+      var { data: myAuraRows } = await db().from('character_aura_votes')
+        .select('character_id, hex')
+        .in('character_id', charIds)
+        .eq('user_id', currentUserSession.user.id);
+      (myAuraRows||[]).forEach(function(r){ myAuraMap[r.character_id] = r.hex; });
+    }
+
     // Load approved songs and suggester names
     var songsByChar = await loadApprovedSongs(workId);
     var allSongUserIds = [];
@@ -664,6 +691,9 @@ window.CharacterTitles = (function() {
     chars.forEach(function(char) {
       var charVotes = voteCounts[char.id] || {};
       var charCollabs = collabsByChar[char.name.toLowerCase().trim()] || [];
+      var auraData = auraByChar[char.id] || { winner: null, total: 0 };
+      var myAuraHex = myAuraMap[char.id] || null;
+      var featuredOpinions = featuredOpinionsByChar[char.id] || [];
 
       var top3 = Object.keys(charVotes)
         .map(function(tid){ return { title: titleMap[tid], count: charVotes[tid] }; })
@@ -707,6 +737,25 @@ window.CharacterTitles = (function() {
             return cover ? '<a href="artwork.html?id='+esc(c.artwork_id)+'" class="ct-story-art-thumb"><img src="'+esc(cover)+'" alt="collab art"/></a>' : '';
           }).join('') +
           (charCollabs.length > 6 ? '<div class="ct-story-art-more">+' + (charCollabs.length-6) + '</div>' : '') +
+          '</div>';
+      }
+
+      // ── AURA wash (full card gradient tint from winning vote) ──
+      var auraWashStyle = auraData.winner
+        ? 'background: radial-gradient(ellipse at top, ' + auraData.winner + '22 0%, transparent 70%);'
+        : '';
+      var auraWashHtml = '<div class="ct-aura-wash' + (auraData.winner ? ' active' : '') + '" data-char-aura="'+esc(char.id)+'" style="'+auraWashHtml_style+'"></div>'.replace('auraWashHtml_style', auraWashStyle);
+      // fix self-reference above
+      auraWashHtml = '<div class="ct-aura-wash' + (auraData.winner ? ' active' : '') + '" data-char-aura="'+esc(char.id)+'" style="'+auraWashStyle+'"></div>';
+
+      // ── FEATURED OPINION strip ────────────────────────────────
+      var featuredOpinionHtml = '';
+      if (featuredOpinions.length) {
+        var fo = featuredOpinions[0]; // show most recently featured
+        featuredOpinionHtml =
+          '<div class="ct-opinion-strip">' +
+            '<div class="ct-opinion-label"><i class="ti ti-message-heart"></i> Reader\'s Take</div>' +
+            '<div class="ct-opinion-body">' + esc('\u201c' + fo.body + '\u201d') + '</div>' +
           '</div>';
       }
 
@@ -759,7 +808,63 @@ window.CharacterTitles = (function() {
 
       // Flip card structure
       card.className += ' ct-flip-card';
+
+      // Build aura picker HTML for back panel
+      // Build vote breakdown HTML (shown after voting or for owner)
+      function buildAuraBreakdown(counts, total) {
+        if (!total) return '<div style="font-size:11px;color:var(--text3);padding:4px 12px 8px;font-style:italic;">No votes cast yet.</div>';
+        var sorted = Object.keys(counts).sort(function(a,b){ return counts[b]-counts[a]; });
+        var palMap = {};
+        AURA_PALETTE.forEach(function(p){ palMap[p.hex] = p.name; });
+        return '<div class="ct-aura-breakdown">' +
+          '<div class="ct-aura-breakdown-title">Vote Breakdown</div>' +
+          sorted.map(function(hex) {
+            var pct = Math.round(counts[hex] / total * 100);
+            var name = palMap[hex] || hex;
+            return '<div class="ct-aura-bar-row">' +
+              '<div class="ct-aura-bar-dot" style="background:' + hex + ';"></div>' +
+              '<div class="ct-aura-bar-track"><div class="ct-aura-bar-fill" style="width:' + pct + '%;background:' + hex + ';"></div></div>' +
+              '<div class="ct-aura-bar-label">' + counts[hex] + '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>';
+      }
+
+      var alreadyVoted = !!myAuraHex;
+      var auraPickerHtml = '';
+      if (currentUserSession && !isOwner) {
+        var confirmedSel = alreadyVoted ? ' confirmed' : '';
+        auraPickerHtml =
+          '<div class="ct-aura-label"><i class="ti ti-droplet"></i> Character\'s Aura</div>' +
+          '<div style="font-size:10px;color:var(--text3);padding:0 12px 6px;line-height:1.5;">Pick the color that best reflects this character\'s soul — a feeling, not a fact. The most voted color shades their card.</div>' +
+          '<div class="ct-aura-swatch-row" data-aura-char="'+esc(char.id)+'">' +
+          AURA_PALETTE.map(function(p) {
+            var cls = (myAuraHex === p.hex) ? ' confirmed' : '';
+            return '<div class="ct-aura-swatch'+cls+'" style="background:'+p.hex+';" title="'+esc(p.name)+'" data-hex="'+esc(p.hex)+'" data-name="'+esc(p.name)+'"></div>';
+          }).join('') +
+          '</div>' +
+          '<div class="ct-aura-name-hint" data-aura-name-hint>' + (myAuraHex ? (AURA_PALETTE.find(function(p){return p.hex===myAuraHex;})||{name:myAuraHex}).name : '') + '</div>' +
+          '<div class="ct-aura-accept-row">' +
+            '<button class="ct-aura-accept-btn' + (alreadyVoted ? '' : '') + '" data-aura-accept style="' + (alreadyVoted ? 'display:none;' : 'display:none;') + '">' +
+              '<i class="ti ti-check"></i> Accept' +
+            '</button>' +
+            (alreadyVoted
+              ? '<span style="font-size:11px;color:var(--text3);font-style:italic;">Your vote: <strong style="color:var(--text);">' + (AURA_PALETTE.find(function(p){return p.hex===myAuraHex;})||{name:myAuraHex}).name + '</strong></span>'
+              : '') +
+          '</div>' +
+          (alreadyVoted ? buildAuraBreakdown(auraData.counts || {}, auraData.total) : '<div data-aura-breakdown-placeholder></div>');
+      } else if (isOwner) {
+        auraPickerHtml =
+          '<div class="ct-aura-label"><i class="ti ti-droplet"></i> Character\'s Aura</div>' +
+          '<div style="font-size:10px;color:var(--text3);padding:0 12px 8px;line-height:1.5;">Readers vote on the color that reflects this character\'s soul. The most popular choice tints their card.</div>' +
+          (auraData.winner
+            ? '<div class="ct-aura-voted"><div class="ct-aura-voted-dot" style="background:'+auraData.winner+';"></div> Leading: ' + (AURA_PALETTE.find(function(p){return p.hex===auraData.winner;})||{name:auraData.winner}).name + ' · ' + auraData.total + ' vote' + (auraData.total!==1?'s':'') + '</div>'
+            : '<div style="font-size:11px;color:var(--text3);padding:0 12px 8px;font-style:italic;">No votes yet</div>') +
+          buildAuraBreakdown(auraData.counts || {}, auraData.total);
+      }
+
       card.innerHTML =
+        auraWashHtml +
         '<div class="ct-flip-inner">' +
           // FRONT
           '<div class="ct-flip-front">' +
@@ -769,12 +874,15 @@ window.CharacterTitles = (function() {
               endedBadge + editBtn +
             '</div>' +
             '<div class="ct-story-titles-wrap">' + titlesHtml + '</div>' +
+            featuredOpinionHtml +
             featuredHtml +
             collabsHtml +
-            (charSongs.length ? '<button class="ct-flip-trigger" title="View songs"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
+            (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
+            ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura"><i class="ti ti-droplet"></i> Aura</button>' : '') +
+            (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura"><i class="ti ti-droplet"></i> Aura</button>' : '') +
           '</div>' +
-          // BACK
-          '<div class="ct-flip-back">' +
+          // BACK — Songs
+          '<div class="ct-flip-back" data-back="songs">' +
             '<div class="ct-flip-back-header">' +
               '<div class="ct-flip-back-name"><i class="ti ti-music"></i> ' + esc(char.name) + '\u2019s Songs</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
@@ -782,13 +890,137 @@ window.CharacterTitles = (function() {
             '<div class="ct-songs-list">' + backSongsHtml + '</div>' +
             suggestBtnHtml +
           '</div>' +
+          // BACK — Aura
+          '<div class="ct-flip-back" data-back="aura" style="display:none;">' +
+            '<div class="ct-flip-back-header">' +
+              '<div class="ct-flip-back-name"><i class="ti ti-droplet"></i> ' + esc(char.name) + '\u2019s Aura</div>' +
+              '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
+            '</div>' +
+            auraPickerHtml +
+          '</div>' +
         '</div>';
 
-      // Wire flip trigger
-      var flipTrigger = card.querySelector('.ct-flip-trigger');
-      var flipClose = card.querySelector('.ct-flip-close');
-      if (flipTrigger) flipTrigger.addEventListener('click', function(e) { e.stopPropagation(); card.classList.add('flipped'); });
-      if (flipClose) flipClose.addEventListener('click', function(e) { e.stopPropagation(); card.classList.remove('flipped'); });
+      // Wire flip triggers — songs and aura each open their own back
+      var flipTriggers = card.querySelectorAll('.ct-flip-trigger');
+      var flipCloses = card.querySelectorAll('.ct-flip-close');
+      var songBack = card.querySelector('.ct-flip-back[data-back="songs"]');
+      var auraBack = card.querySelector('.ct-flip-back[data-back="aura"]');
+
+      function showBack(which) {
+        if (songBack) songBack.style.display = (which === 'songs') ? 'flex' : 'none';
+        if (auraBack) auraBack.style.display = (which === 'aura') ? 'flex' : 'none';
+        card.classList.add('flipped');
+      }
+      function hideBack() {
+        card.classList.remove('flipped');
+      }
+
+      flipTriggers.forEach(function(t) {
+        t.addEventListener('click', function(e) {
+          e.stopPropagation();
+          if (t.classList.contains('ct-flip-aura')) {
+            showBack('aura');
+          } else {
+            showBack('songs');
+          }
+        });
+      });
+      flipCloses.forEach(function(fc) {
+        fc.addEventListener('click', function(e) { e.stopPropagation(); hideBack(); });
+      });
+
+      // Wire aura swatches — two-step: click to stage, Accept btn to confirm
+      var auraRow = card.querySelector('.ct-aura-swatch-row');
+      var acceptBtn = card.querySelector('[data-aura-accept]');
+      var nameHint = card.querySelector('[data-aura-name-hint]');
+      var breakdownPlaceholder = card.querySelector('[data-aura-breakdown-placeholder]');
+      var stagedHex = null;
+
+      if (auraRow && currentUserSession && !isOwner) {
+        auraRow.querySelectorAll('.ct-aura-swatch').forEach(function(sw) {
+          sw.addEventListener('click', function() {
+            // If already confirmed (voted), re-staging is allowed to change vote
+            var hex = sw.dataset.hex;
+            var name = sw.dataset.name || hex;
+            stagedHex = hex;
+            // Update swatch visuals
+            auraRow.querySelectorAll('.ct-aura-swatch').forEach(function(s){
+              s.classList.remove('staged', 'confirmed');
+            });
+            sw.classList.add('staged');
+            // Show color name hint
+            if (nameHint) nameHint.textContent = name;
+            // Show Accept button (dynamically colored)
+            if (acceptBtn) {
+              acceptBtn.style.display = 'block';
+              acceptBtn.style.background = hex;
+              acceptBtn.style.color = isLightColor(hex) ? '#111' : '#fff';
+              acceptBtn.textContent = '';
+              var icon = document.createElement('i');
+              icon.className = 'ti ti-check';
+              acceptBtn.appendChild(icon);
+              acceptBtn.appendChild(document.createTextNode(' Accept ' + name));
+            }
+          });
+        });
+
+        if (acceptBtn) {
+          acceptBtn.addEventListener('click', async function() {
+            if (!stagedHex) return;
+            acceptBtn.disabled = true;
+            var ok = await submitAuraVote(char.id, stagedHex, currentUserSession.user.id);
+            if (!ok) { acceptBtn.disabled = false; return; }
+
+            // Mark swatch confirmed
+            auraRow.querySelectorAll('.ct-aura-swatch').forEach(function(s){
+              s.classList.remove('staged', 'confirmed');
+              if (s.dataset.hex === stagedHex) s.classList.add('confirmed');
+            });
+            acceptBtn.style.display = 'none';
+
+            // Update name hint to confirmed state
+            var name = (AURA_PALETTE.find(function(p){return p.hex===stagedHex;})||{name:stagedHex}).name;
+            if (nameHint) nameHint.textContent = '';
+
+            // Update vote label
+            var acceptRow = card.querySelector('.ct-aura-accept-row');
+            if (acceptRow) {
+              var voteLabel = acceptRow.querySelector('span');
+              if (!voteLabel) { voteLabel = document.createElement('span'); voteLabel.style.cssText = 'font-size:11px;color:var(--text3);font-style:italic;'; acceptRow.appendChild(voteLabel); }
+              voteLabel.innerHTML = 'Your vote: <strong style="color:var(--text);">' + name + '</strong>';
+            }
+
+            // Refresh breakdown — reload votes fresh
+            var fresh = await loadAuraVotes([char.id]);
+            var freshData = fresh[char.id] || { counts: {}, total: 0 };
+            if (breakdownPlaceholder) {
+              var bkDiv = document.createElement('div');
+              bkDiv.innerHTML = buildAuraBreakdown(freshData.counts, freshData.total);
+              breakdownPlaceholder.replaceWith(bkDiv.firstElementChild || bkDiv);
+            }
+
+            // Update wash color on the card front
+            var wash = card.querySelector('.ct-aura-wash');
+            if (wash && freshData.winner) {
+              wash.style.background = 'radial-gradient(ellipse at top, ' + freshData.winner + '22 0%, transparent 70%)';
+              wash.classList.add('active');
+            }
+
+            if (window.showToast) window.showToast('Aura locked in! ✨', 'ti-droplet');
+            stagedHex = null;
+          });
+        }
+      }
+
+      // Helper: is a hex color light enough to need dark text?
+      function isLightColor(hex) {
+        hex = hex.replace('#','');
+        if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+        var r = parseInt(hex.slice(0,2),16);
+        var g = parseInt(hex.slice(2,4),16);
+        var b = parseInt(hex.slice(4,6),16);
+        return (r*299 + g*587 + b*114) / 1000 > 140;
+      }
 
       // Wire edit button
       if (isOwner) {
@@ -835,6 +1067,7 @@ window.CharacterTitles = (function() {
     // Author pending songs panel
     if (isOwner) {
       await renderPendingSongsPanel(container, workId);
+      await renderPendingOpinionsPanel(container, workId);
     }
   }
 
@@ -948,6 +1181,286 @@ window.CharacterTitles = (function() {
     _songModal = modal;
   }
 
+  // ── AURA PALETTE ──────────────────────────────────────────────
+  var AURA_PALETTE = [
+    // Reds & pinks
+    { hex: '#fca5a5', name: 'Blush' },
+    { hex: '#ef4444', name: 'Crimson' },
+    { hex: '#b91c1c', name: 'Bloodstone' },
+    { hex: '#f43f5e', name: 'Scarlet' },
+    { hex: '#ec4899', name: 'Rose' },
+    { hex: '#db2777', name: 'Fuchsia' },
+    // Oranges & yellows
+    { hex: '#fed7aa', name: 'Peach' },
+    { hex: '#f97316', name: 'Ember' },
+    { hex: '#c2410c', name: 'Rust' },
+    { hex: '#f59e0b', name: 'Amber' },
+    { hex: '#eab308', name: 'Gold' },
+    { hex: '#ca8a04', name: 'Bronze' },
+    // Greens
+    { hex: '#86efac', name: 'Mint' },
+    { hex: '#84cc16', name: 'Lime' },
+    { hex: '#22c55e', name: 'Jade' },
+    { hex: '#15803d', name: 'Forest' },
+    { hex: '#10b981', name: 'Teal' },
+    { hex: '#0f766e', name: 'Depths' },
+    // Blues & cyans
+    { hex: '#67e8f9', name: 'Ice' },
+    { hex: '#06b6d4', name: 'Cyan' },
+    { hex: '#0284c7', name: 'Sapphire' },
+    { hex: '#3b82f6', name: 'Azure' },
+    { hex: '#1d4ed8', name: 'Cobalt' },
+    { hex: '#1e3a5f', name: 'Abyss' },
+    // Purples & violets
+    { hex: '#c4b5fd', name: 'Lavender' },
+    { hex: '#8b5cf6', name: 'Violet' },
+    { hex: '#6366f1', name: 'Indigo' },
+    { hex: '#a855f7', name: 'Amethyst' },
+    { hex: '#7e22ce', name: 'Dusk' },
+    { hex: '#4a044e', name: 'Shadow' },
+    // Neutrals & special
+    { hex: '#ffffff', name: 'Ivory' },
+    { hex: '#e2e8f0', name: 'Silver' },
+    { hex: '#94a3b8', name: 'Ash' },
+    { hex: '#475569', name: 'Slate' },
+    { hex: '#1e293b', name: 'Void' },
+    { hex: '#713f12', name: 'Umber' },
+  ];
+
+  // ── AURA DATA LOADERS ─────────────────────────────────────────
+  async function loadAuraVotes(characterIds) {
+    if (!characterIds.length) return {};
+    var { data } = await db().from('character_aura_votes')
+      .select('character_id, hex, user_id')
+      .in('character_id', characterIds);
+    // Group by character, count hex frequencies, find winning hex
+    var map = {};
+    (data||[]).forEach(function(v) {
+      if (!map[v.character_id]) map[v.character_id] = { counts: {}, votes: [] };
+      map[v.character_id].counts[v.hex] = (map[v.character_id].counts[v.hex] || 0) + 1;
+      map[v.character_id].votes.push(v);
+    });
+    // Add winning hex
+    Object.keys(map).forEach(function(cid) {
+      var counts = map[cid].counts;
+      var best = Object.keys(counts).sort(function(a,b){ return counts[b]-counts[a]; })[0];
+      map[cid].winner = best || null;
+      map[cid].total = map[cid].votes.length;
+    });
+    return map;
+  }
+
+  async function submitAuraVote(characterId, hex, userId) {
+    var { error } = await db().from('character_aura_votes')
+      .upsert({ character_id: characterId, user_id: userId, hex: hex }, { onConflict: 'character_id,user_id' });
+    return !error;
+  }
+
+  // ── OPINION DATA LOADERS ──────────────────────────────────────
+  async function loadFeaturedOpinions(characterIds) {
+    if (!characterIds.length) return {};
+    var { data } = await db().from('character_opinions')
+      .select('id, character_id, chapter_id, user_id, body, is_featured')
+      .in('character_id', characterIds)
+      .eq('status', 'approved')
+      .eq('is_featured', true);
+    var map = {};
+    (data||[]).forEach(function(o) {
+      // Keep most recent featured per character (there should only be one, but safeguard)
+      if (!map[o.character_id]) map[o.character_id] = [];
+      map[o.character_id].push(o);
+    });
+    return map;
+  }
+
+  async function loadPendingOpinions(workId) {
+    var { data } = await db().from('character_opinions')
+      .select('id, character_id, chapter_id, user_id, body, created_at')
+      .eq('work_id', workId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+    return data || [];
+  }
+
+  async function submitOpinion(characterId, chapterId, workId, userId, body) {
+    var { error } = await db().from('character_opinions').insert({
+      character_id: characterId,
+      chapter_id: chapterId,
+      work_id: workId,
+      user_id: userId,
+      body: body.trim()
+    });
+    if (error) {
+      if (error.code === '23505') return { error: 'You already submitted an opinion for this character this chapter.' };
+      return { error: error.message };
+    }
+    return { ok: true };
+  }
+
+  async function updateOpinionStatus(id, status, featured) {
+    var update = { status: status };
+    if (featured !== undefined) update.is_featured = featured;
+    var { error } = await db().from('character_opinions').update(update).eq('id', id);
+    return !error;
+  }
+
+  // ── OPINION MODAL ─────────────────────────────────────────────
+  var _opinionModal = null;
+  function openOpinionModal(charId, charName, chapterId, workId, userId) {
+    if (_opinionModal) _opinionModal.remove();
+    var modal = document.createElement('div');
+    modal.className = 'ct-opinion-modal-overlay';
+    modal.innerHTML =
+      '<div class="ct-opinion-modal">' +
+        '<div class="ct-opinion-modal-header">' +
+          '<div class="ct-opinion-modal-title"><i class="ti ti-message-heart"></i> Your Take on ' + esc(charName) + '</div>' +
+          '<button class="ct-opinion-modal-close"><i class="ti ti-x"></i></button>' +
+        '</div>' +
+        '<div class="ct-opinion-modal-body">' +
+          '<div class="ct-opinion-hint">Share your personal take on ' + esc(charName) + ' based on what happened this chapter. One opinion per chapter — the author may feature it on the character card. Keep it honest, keep it kind.</div>' +
+          '<textarea class="ct-opinion-textarea" id="ct-opinion-body" maxlength="280" placeholder="What do you make of ' + esc(charName) + ' after this chapter?"></textarea>' +
+          '<div class="ct-opinion-char-counter"><span id="ct-opinion-counter">0</span>/280</div>' +
+          '<div id="ct-opinion-error" style="color:var(--red);font-size:12px;display:none;"></div>' +
+        '</div>' +
+        '<div class="ct-opinion-modal-footer">' +
+          '<button class="ct-opinion-cancel-btn">Cancel</button>' +
+          '<button class="ct-opinion-submit-btn" disabled><i class="ti ti-send"></i> Submit</button>' +
+        '</div>' +
+      '</div>';
+
+    var textarea = modal.querySelector('#ct-opinion-body');
+    var counter = modal.querySelector('#ct-opinion-counter');
+    var submitBtn = modal.querySelector('.ct-opinion-submit-btn');
+    var errEl = modal.querySelector('#ct-opinion-error');
+
+    textarea.addEventListener('input', function() {
+      var len = textarea.value.length;
+      counter.textContent = len;
+      submitBtn.disabled = len < 1;
+    });
+
+    modal.querySelector('.ct-opinion-modal-close').addEventListener('click', function() { modal.remove(); });
+    modal.querySelector('.ct-opinion-cancel-btn').addEventListener('click', function() { modal.remove(); });
+    modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+
+    submitBtn.addEventListener('click', async function() {
+      var body = textarea.value.trim();
+      errEl.style.display = 'none';
+      if (!body) return;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Submitting...';
+      var result = await submitOpinion(charId, chapterId, workId, userId, body);
+      if (result.error) {
+        errEl.textContent = result.error;
+        errEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="ti ti-send"></i> Submit';
+        return;
+      }
+      modal.remove();
+      if (window.showToast) window.showToast('Opinion submitted — the author will review it! ✨', 'ti-message-heart');
+    });
+
+    document.body.appendChild(modal);
+    _opinionModal = modal;
+  }
+
+  // ── PENDING OPINIONS PANEL (author, on story.html) ────────────
+  async function renderPendingOpinionsPanel(container, workId) {
+    var pending = await loadPendingOpinions(workId);
+    var existingPanel = container.querySelector('.ct-pending-opinions-panel');
+    if (existingPanel) existingPanel.remove();
+    if (!pending.length) return;
+
+    var uids = [...new Set(pending.map(function(o){ return o.user_id; }))];
+    var names = await loadUsernames(uids);
+
+    var chapIds = [...new Set(pending.filter(function(o){ return o.chapter_id; }).map(function(o){ return o.chapter_id; }))];
+    var chapMap = {};
+    if (chapIds.length) {
+      var { data: chapRows } = await db().from('chapters').select('id, title, chapter_number').in('id', chapIds);
+      (chapRows||[]).forEach(function(c){ chapMap[c.id] = c; });
+    }
+
+    // Also fetch character names
+    var charIds = [...new Set(pending.map(function(o){ return o.character_id; }))];
+    var charMap = {};
+    if (charIds.length) {
+      var { data: charRows } = await db().from('novel_characters').select('id, name').in('id', charIds);
+      (charRows||[]).forEach(function(c){ charMap[c.id] = c; });
+    }
+
+    var panel = document.createElement('div');
+    panel.className = 'ct-pending-opinions-panel';
+    panel.innerHTML = '<div class="ct-pending-opinions-title"><i class="ti ti-message-heart"></i> Reader Opinions Awaiting Review <span class="ct-pending-badge">' + pending.length + '</span></div>';
+
+    pending.forEach(function(o) {
+      var name = names[o.user_id] || 'Unknown';
+      var chap = o.chapter_id ? chapMap[o.chapter_id] : null;
+      var charName = charMap[o.character_id] ? charMap[o.character_id].name : '?';
+      var chapLabel = chap ? 'Ch. ' + chap.chapter_number + (chap.title ? ' — ' + chap.title : '') : '';
+
+      var row = document.createElement('div');
+      row.className = 'ct-pending-opinion-row';
+
+      var metaDiv = document.createElement('div');
+      metaDiv.className = 'ct-pending-opinion-meta';
+      metaDiv.textContent = name + ' on ' + charName + (chapLabel ? ' · ' + chapLabel : '');
+
+      var bodyDiv = document.createElement('div');
+      bodyDiv.style.flex = '1';
+      bodyDiv.appendChild(metaDiv);
+      var textDiv = document.createElement('div');
+      textDiv.className = 'ct-pending-opinion-body';
+      textDiv.textContent = '\u201c' + o.body + '\u201d';
+      bodyDiv.appendChild(textDiv);
+
+      var actions = document.createElement('div');
+      actions.className = 'ct-pending-opinion-actions';
+
+      var approveBtn = document.createElement('button');
+      approveBtn.className = 'ct-opinion-approve-btn';
+      approveBtn.innerHTML = '<i class="ti ti-check"></i> Approve';
+      approveBtn.addEventListener('click', async function() {
+        await updateOpinionStatus(o.id, 'approved', false);
+        renderPendingOpinionsPanel(container, workId);
+      });
+
+      var featureBtn = document.createElement('button');
+      featureBtn.className = 'ct-opinion-feature-btn';
+      featureBtn.innerHTML = '<i class="ti ti-star"></i> Feature';
+      featureBtn.title = 'Approve and feature on character card for this chapter';
+      featureBtn.addEventListener('click', async function() {
+        // Un-feature any existing featured opinion for this char+chapter
+        await db().from('character_opinions')
+          .update({ is_featured: false })
+          .eq('character_id', o.character_id)
+          .eq('chapter_id', o.chapter_id)
+          .eq('is_featured', true);
+        await updateOpinionStatus(o.id, 'approved', true);
+        renderPendingOpinionsPanel(container, workId);
+      });
+
+      var rejectBtn = document.createElement('button');
+      rejectBtn.className = 'ct-opinion-reject-btn';
+      rejectBtn.innerHTML = '<i class="ti ti-x"></i> Reject';
+      rejectBtn.addEventListener('click', async function() {
+        await updateOpinionStatus(o.id, 'rejected', false);
+        renderPendingOpinionsPanel(container, workId);
+      });
+
+      actions.appendChild(approveBtn);
+      actions.appendChild(featureBtn);
+      actions.appendChild(rejectBtn);
+
+      row.appendChild(bodyDiv);
+      row.appendChild(actions);
+      panel.appendChild(row);
+    });
+
+    container.appendChild(panel);
+  }
+
   // Public API
   return {
     renderVotingSection: renderVotingSection,
@@ -956,7 +1469,8 @@ window.CharacterTitles = (function() {
     openSuggestModal: openSuggestModal,
     closeSuggestModal: closeSuggestModal,
     submitSuggestion: submitSuggestion,
-    openSongModal: openSongModal
+    openSongModal: openSongModal,
+    openOpinionModal: openOpinionModal
   };
 
 })();
