@@ -1391,7 +1391,7 @@ window.CharacterTitles = (function() {
       if (window.showToast) window.showToast('Opinion submitted — the author will review it! ✨', 'ti-message-heart');
       // Notify the work author
       if (window.dsNotifyAuthor) {
-        window.dsNotifyAuthor('chapter_comment', '{name} shared a take on ' + charName + ' in "{title}"', { character_id: charId });
+        window.dsNotifyAuthor('opinion_submitted', '{name} shared a character opinion on \u201c{title}\u201d', { character_id: charId });
       }
     });
 
@@ -1457,6 +1457,16 @@ window.CharacterTitles = (function() {
       approveBtn.innerHTML = '<i class="ti ti-check"></i> Approve';
       approveBtn.addEventListener('click', async function() {
         await updateOpinionStatus(o.id, 'approved', false);
+        // Notify the submitter their opinion was approved
+        try {
+          await db().from('notifications').insert({
+            user_id: o.user_id,
+            type: 'opinion_approved',
+            work_id: workId,
+            character_id: o.character_id,
+            message: 'Your character opinion on ' + charName + ' was approved by the author'
+          });
+        } catch(e2) {}
         renderPendingOpinionsPanel(container, workId);
       });
 
@@ -1472,6 +1482,16 @@ window.CharacterTitles = (function() {
           .eq('chapter_id', o.chapter_id)
           .eq('is_featured', true);
         await updateOpinionStatus(o.id, 'approved', true);
+        // Notify the submitter their opinion was featured
+        try {
+          await db().from('notifications').insert({
+            user_id: o.user_id,
+            type: 'opinion_featured',
+            work_id: workId,
+            character_id: o.character_id,
+            message: 'Your character opinion on ' + charName + ' was featured on the character card! \u2b50'
+          });
+        } catch(e2) {}
         renderPendingOpinionsPanel(container, workId);
       });
 
