@@ -716,11 +716,16 @@ window.CharacterTitles = (function() {
         ? '<button class="ct-edit-btn" data-char="'+esc(char.id)+'" title="Upload portrait"><i class="ti ti-pencil"></i> Edit</button>'
         : '';
 
+      var aura = auraData.winner; // null if no votes yet
+
       var titlesHtml = top3.length
         ? top3.map(function(e, i){
             var catColor = { personality:'var(--accent)', role:'var(--gold)', dawnscribe:'#a78bfa', relationship:'#f472b6', fan_reaction:'#fb923c', negative:'var(--red)' };
             var color = catColor[e.title.category] || 'var(--accent)';
-            return '<div class="ct-story-top-title" style="border-color:'+color+';color:'+color+';">' +
+            // If aura voted, blend: border uses aura, text keeps category color
+            var borderColor = aura ? aura : color;
+            var bgColor = aura ? aura + '18' : 'transparent';
+            return '<div class="ct-story-top-title" style="border-color:'+borderColor+';color:'+color+';background:'+bgColor+';">' +
               (i===0 ? '<i class="ti ti-crown" style="font-size:10px;"></i> ' : '') +
               esc(e.title.title) +
               ' <span class="ct-story-title-count">'+e.count+'</span>' +
@@ -766,11 +771,12 @@ window.CharacterTitles = (function() {
       if (featuredSong) {
         var sugName = usernames[featuredSong.user_id] || 'a reader';
         var vid = ytId(featuredSong.youtube_url);
-        featuredHtml = '<a href="' + esc(featuredSong.youtube_url) + '" target="_blank" rel="noopener" class="ct-featured-song">' +
+        var songBg = aura ? 'background:' + aura + '12;border-color:' + aura + '40;' : '';
+        featuredHtml = '<a href="' + esc(featuredSong.youtube_url) + '" target="_blank" rel="noopener" class="ct-featured-song" style="' + songBg + '">' +
           '<div class="ct-featured-song-thumb"><img src="https://img.youtube.com/vi/' + esc(vid) + '/default.jpg" alt=""/><div class="ct-featured-song-play"><i class="ti ti-player-play-filled"></i></div></div>' +
           '<div class="ct-featured-song-info"><div class="ct-featured-song-title">' + esc(featuredSong.song_title) + '</div>' +
           '<div class="ct-featured-song-artist">' + esc(featuredSong.artist_name || '') + '</div>' +
-          '<div class="ct-featured-song-credit">♪ suggested by ' + esc(sugName) + '</div></div>' +
+          '<div class="ct-featured-song-credit" style="' + (aura ? 'color:'+aura+';' : '') + '">♪ suggested by ' + esc(sugName) + '</div></div>' +
           '</a>';
       }
 
@@ -875,9 +881,9 @@ window.CharacterTitles = (function() {
             featuredOpinionHtml +
             featuredHtml +
             collabsHtml +
-            (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
-            ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura"><i class="ti ti-droplet"></i> Aura</button>' : '') +
-            (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura"><i class="ti ti-droplet"></i> Aura</button>' : '') +
+            (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
+            ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
+            (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
           '</div>' +
           // BACK — Songs
           '<div class="ct-flip-back" data-back="songs">' +
@@ -894,7 +900,9 @@ window.CharacterTitles = (function() {
               '<div class="ct-flip-back-name"><i class="ti ti-droplet"></i> ' + esc(char.name) + '\u2019s Aura</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
-            auraPickerHtml +
+            '<div class="ct-aura-back-scroll">' +
+              auraPickerHtml +
+            '</div>' +
           '</div>' +
         '</div>';
 
@@ -1002,6 +1010,26 @@ window.CharacterTitles = (function() {
             if (wash && freshData.winner) {
               wash.style.background = 'radial-gradient(ellipse at top, ' + freshData.winner + '22 0%, transparent 70%)';
               wash.classList.add('active');
+            }
+
+            // Live-tint title pills, song strip, and trigger buttons with new winner
+            if (freshData.winner) {
+              var w = freshData.winner;
+              card.querySelectorAll('.ct-story-top-title').forEach(function(el) {
+                el.style.borderColor = w;
+                el.style.background = w + '18';
+              });
+              var songStrip = card.querySelector('.ct-featured-song');
+              if (songStrip) {
+                songStrip.style.background = w + '12';
+                songStrip.style.borderColor = w + '40';
+                var credit = songStrip.querySelector('.ct-featured-song-credit');
+                if (credit) credit.style.color = w;
+              }
+              card.querySelectorAll('.ct-flip-trigger').forEach(function(btn) {
+                btn.style.borderColor = w + '55';
+                btn.style.color = w;
+              });
             }
 
             if (window.showToast) window.showToast('Aura locked in! ✨', 'ti-droplet');
@@ -1181,48 +1209,51 @@ window.CharacterTitles = (function() {
 
   // ── AURA PALETTE ──────────────────────────────────────────────
   var AURA_PALETTE = [
-    // Reds & pinks
+    // Reds & pinks (8)
     { hex: '#fca5a5', name: 'Blush' },
     { hex: '#ef4444', name: 'Crimson' },
     { hex: '#b91c1c', name: 'Bloodstone' },
     { hex: '#f43f5e', name: 'Scarlet' },
     { hex: '#ec4899', name: 'Rose' },
     { hex: '#db2777', name: 'Fuchsia' },
-    // Oranges & yellows
+    { hex: '#ff80ab', name: 'Carnation' },
+    { hex: '#be123c', name: 'Garnet' },
+    // Oranges & yellows (8)
     { hex: '#fed7aa', name: 'Peach' },
     { hex: '#f97316', name: 'Ember' },
     { hex: '#c2410c', name: 'Rust' },
     { hex: '#f59e0b', name: 'Amber' },
     { hex: '#eab308', name: 'Gold' },
     { hex: '#ca8a04', name: 'Bronze' },
-    // Greens
+    { hex: '#fde68a', name: 'Sunlight' },
+    { hex: '#92400e', name: 'Mahogany' },
+    // Greens (8)
     { hex: '#86efac', name: 'Mint' },
     { hex: '#84cc16', name: 'Lime' },
     { hex: '#22c55e', name: 'Jade' },
     { hex: '#15803d', name: 'Forest' },
     { hex: '#10b981', name: 'Teal' },
     { hex: '#0f766e', name: 'Depths' },
-    // Blues & cyans
+    { hex: '#d9f99d', name: 'Wisp' },
+    { hex: '#064e3b', name: 'Ancient' },
+    // Blues & cyans (8)
     { hex: '#67e8f9', name: 'Ice' },
     { hex: '#06b6d4', name: 'Cyan' },
     { hex: '#0284c7', name: 'Sapphire' },
     { hex: '#3b82f6', name: 'Azure' },
     { hex: '#1d4ed8', name: 'Cobalt' },
     { hex: '#1e3a5f', name: 'Abyss' },
-    // Purples & violets
+    { hex: '#bae6fd', name: 'Frost' },
+    { hex: '#172554', name: 'Midnight' },
+    // Purples, violets & neutrals (8)
     { hex: '#c4b5fd', name: 'Lavender' },
     { hex: '#8b5cf6', name: 'Violet' },
     { hex: '#6366f1', name: 'Indigo' },
     { hex: '#a855f7', name: 'Amethyst' },
     { hex: '#7e22ce', name: 'Dusk' },
     { hex: '#4a044e', name: 'Shadow' },
-    // Neutrals & special
     { hex: '#ffffff', name: 'Ivory' },
-    { hex: '#e2e8f0', name: 'Silver' },
     { hex: '#94a3b8', name: 'Ash' },
-    { hex: '#475569', name: 'Slate' },
-    { hex: '#1e293b', name: 'Void' },
-    { hex: '#713f12', name: 'Umber' },
   ];
 
   // ── AURA DATA LOADERS ─────────────────────────────────────────
