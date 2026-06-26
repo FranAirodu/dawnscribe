@@ -693,8 +693,6 @@ window.CharacterTitles = (function() {
       var charCollabs = collabsByChar[char.name.toLowerCase().trim()] || [];
       var auraData = auraByChar[char.id] || { winner: null, total: 0 };
       var myAuraHex = myAuraMap[char.id] || null;
-      var featuredOpinions = featuredOpinionsByChar[char.id] || [];
-
       var top3 = Object.keys(charVotes)
         .map(function(tid){ return { title: titleMap[tid], count: charVotes[tid] }; })
         .filter(function(e){ return e.title; })
@@ -752,13 +750,16 @@ window.CharacterTitles = (function() {
       var auraWashHtml = '<div class="ct-aura-wash' + (auraData.winner ? ' active' : '') + '" data-char-aura="'+esc(char.id)+'" style="'+auraWashStyle+'"></div>';
 
       // ── FEATURED OPINION strip ────────────────────────────────
+      var featuredOpinions = featuredOpinionsByChar[char.id] || [];
+      var featuredOpinion = featuredOpinions.find(function(o){ return o.is_featured; });
+      var approvedOpinions = featuredOpinions; // all approved, including non-featured
       var featuredOpinionHtml = '';
-      if (featuredOpinions.length) {
-        var fo = featuredOpinions[0]; // show most recently featured
+      if (featuredOpinion) {
         featuredOpinionHtml =
           '<div class="ct-opinion-strip">' +
             '<div class="ct-opinion-label"><i class="ti ti-message-heart"></i> Reader\'s Take</div>' +
-            '<div class="ct-opinion-body">' + esc('\u201c' + fo.body + '\u201d') + '</div>' +
+            '<div class="ct-opinion-body">' + esc('\u201c' + featuredOpinion.body + '\u201d') + '</div>' +
+            '<div class="ct-opinion-attr">\u2014 ' + esc(featuredOpinion._authorName || '') + '</div>' +
           '</div>';
       }
 
@@ -882,8 +883,29 @@ window.CharacterTitles = (function() {
             featuredHtml +
             collabsHtml +
             (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
+            (approvedOpinions.length ? '<button class="ct-flip-trigger ct-flip-opinions" title="View reader opinions" style="color:#ec4899;border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-heart"></i> ' + approvedOpinions.length + ' opinion' + (approvedOpinions.length > 1 ? 's' : '') + '</button>' : '') +
             ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
             (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
+          '</div>' +
+          // BACK — Opinions
+          '<div class="ct-flip-back" data-back="opinions" style="display:none;">' +
+            '<div class="ct-flip-back-header">' +
+              '<div class="ct-flip-back-name"><i class="ti ti-message-heart" style="color:#ec4899;"></i> ' + esc(char.name) + '\u2019s Reader Takes</div>' +
+              '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
+            '</div>' +
+            '<div class="ct-opinions-back-scroll">' +
+              (approvedOpinions.length ? approvedOpinions.map(function(o) {
+                var featuredBtnHtml = isOwner
+                  ? '<button class="ct-opinion-feature-inline' + (o.is_featured ? ' active' : '') + '" data-opinion-id="' + esc(o.id) + '" data-char-id="' + esc(char.id) + '" title="' + (o.is_featured ? 'Unfeature' : 'Feature on card') + '">' +
+                      '<i class="ti ' + (o.is_featured ? 'ti-star-filled' : 'ti-star') + '"></i>' +
+                    '</button>'
+                  : '';
+                return '<div class="ct-opinion-back-row' + (o.is_featured ? ' featured' : '') + '">' +
+                  '<div class="ct-opinion-back-body">' + esc('\u201c' + o.body + '\u201d') + '</div>' +
+                  '<div class="ct-opinion-back-meta">\u2014 ' + esc(o._authorName || '') + featuredBtnHtml + '</div>' +
+                '</div>';
+              }).join('') : '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No approved opinions yet.</div>') +
+            '</div>' +
           '</div>' +
           // BACK — Songs
           '<div class="ct-flip-back" data-back="songs">' +
@@ -906,15 +928,17 @@ window.CharacterTitles = (function() {
           '</div>' +
         '</div>';
 
-      // Wire flip triggers — songs and aura each open their own back
+      // Wire flip triggers — songs, opinions, and aura each open their own back
       var flipTriggers = card.querySelectorAll('.ct-flip-trigger');
       var flipCloses = card.querySelectorAll('.ct-flip-close');
       var songBack = card.querySelector('.ct-flip-back[data-back="songs"]');
       var auraBack = card.querySelector('.ct-flip-back[data-back="aura"]');
+      var opinionsBack = card.querySelector('.ct-flip-back[data-back="opinions"]');
 
       function showBack(which) {
         if (songBack) songBack.style.display = (which === 'songs') ? 'flex' : 'none';
         if (auraBack) auraBack.style.display = (which === 'aura') ? 'flex' : 'none';
+        if (opinionsBack) opinionsBack.style.display = (which === 'opinions') ? 'flex' : 'none';
         card.classList.add('flipped');
       }
       function hideBack() {
@@ -926,6 +950,8 @@ window.CharacterTitles = (function() {
           e.stopPropagation();
           if (t.classList.contains('ct-flip-aura')) {
             showBack('aura');
+          } else if (t.classList.contains('ct-flip-opinions')) {
+            showBack('opinions');
           } else {
             showBack('songs');
           }
@@ -934,6 +960,31 @@ window.CharacterTitles = (function() {
       flipCloses.forEach(function(fc) {
         fc.addEventListener('click', function(e) { e.stopPropagation(); hideBack(); });
       });
+
+      // Wire inline feature buttons (author only) in the opinions panel
+      if (isOwner && opinionsBack) {
+        opinionsBack.querySelectorAll('.ct-opinion-feature-inline').forEach(function(btn) {
+          btn.addEventListener('click', async function(e) {
+            e.stopPropagation();
+            var oid = btn.dataset.opinionId;
+            var cid2 = btn.dataset.charId;
+            var isCurrentlyFeatured = btn.classList.contains('active');
+            // Unfeature all opinions for this character first
+            await db().from('character_opinions')
+              .update({ is_featured: false })
+              .eq('character_id', cid2)
+              .eq('is_featured', true);
+            // If it wasn't already featured, feature it now
+            if (!isCurrentlyFeatured) {
+              await db().from('character_opinions')
+                .update({ is_featured: true })
+                .eq('id', oid);
+            }
+            // Refresh the whole card section
+            renderStoryCharacterCards(container, workId, true);
+          });
+        });
+      }
 
       // Wire aura swatches — two-step: click to stage, Accept btn to confirm
       var auraRow = card.querySelector('.ct-aura-swatch-row');
@@ -1308,12 +1359,21 @@ window.CharacterTitles = (function() {
   // ── OPINION DATA LOADERS ──────────────────────────────────────
   async function loadFeaturedOpinions(characterIds) {
     if (!characterIds.length) return {};
+    // Load ALL approved opinions so we can show them in the Opinions panel
     var { data, error } = await db().from('character_opinions')
-      .select('id, character_id, chapter_id, user_id, body, is_featured')
+      .select('id, character_id, chapter_id, user_id, body, is_featured, created_at')
       .in('character_id', characterIds)
       .eq('status', 'approved')
-      .eq('is_featured', true);
+      .order('created_at', { ascending: false });
     if (error) return {};
+    // Fetch submitter display names
+    var uids = [...new Set((data||[]).map(function(o){ return o.user_id; }))];
+    var nameMap = {};
+    if (uids.length) {
+      var { data: profs } = await db().from('profiles').select('id,display_name,username').in('id', uids);
+      (profs||[]).forEach(function(p){ nameMap[p.id] = p.display_name || p.username || 'Someone'; });
+    }
+    (data||[]).forEach(function(o){ o._authorName = nameMap[o.user_id] || 'Someone'; });
     var map = {};
     (data||[]).forEach(function(o) {
       if (!map[o.character_id]) map[o.character_id] = [];
