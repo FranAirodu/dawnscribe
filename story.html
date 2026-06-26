@@ -152,18 +152,7 @@
     .review-submit:hover{background:var(--accent);color:var(--bg);}
 
     /* COMMENTS */
-    .comment-card{background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:8px;}
-    .comment-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
-    .comment-avatar{width:28px;height:28px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text3);overflow:hidden;flex-shrink:0;}
-    .comment-avatar img{width:100%;height:100%;object-fit:cover;}
-    .comment-name{font-size:13px;font-weight:700;color:var(--text);}
-    .comment-date{font-size:11px;color:var(--text3);}
-    .comment-text{font-size:13px;color:var(--text2);line-height:1.6;}
-    .comment-input-wrap{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
-    .comment-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;resize:none;min-height:70px;transition:all 0.2s;}
-    .comment-textarea:focus{border-color:var(--accent);}
-    .comment-submit{background:var(--accent2);border:none;border-radius:8px;padding:8px 18px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;align-self:flex-end;transition:all 0.2s;}
-    .comment-submit:hover{background:var(--accent);color:var(--bg);}
+
 
     /* SIDEBAR */
     .sidebar-section{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;}
@@ -484,22 +473,7 @@
         <div id="reviews-content"></div>
       </div>
 
-      <!-- COMMENTS -->
-      <div class="section">
-        <div class="section-title"><i class="ti ti-message-circle"></i> Comments <span id="comment-count" style="font-family:'Lato';font-size:13px;font-weight:400;color:var(--text3);margin-left:4px;"></span></div>
-        <div id="comments-list"></div>
-        <div class="comment-input-wrap" id="comment-input-wrap" style="display:none;">
-          <textarea class="comment-textarea" id="comment-input" placeholder="Leave a comment…" maxlength="1000"></textarea>
-          <div class="ct-preview-area" id="ct-preview-story"></div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;" id="story-comment-toolbar-row">
-            <span id="story-comment-toolbar-placeholder"></span>
-            <button class="comment-submit" onclick="submitComment()" style="margin-left:auto;"><i class="ti ti-send"></i> Post</button>
-          </div>
-        </div>
-        <div id="comment-login-prompt" style="font-size:13px;color:var(--text3);margin-top:10px;display:none;">
-          <a href="auth.html" style="color:var(--accent);">Sign in</a> to leave a comment.
-        </div>
-      </div>
+
 
     </div>
 
@@ -1177,60 +1151,9 @@
     }
 
     // ── COMMENTS ─────────────────────────────────────────────────
-    async function loadComments() {
-      var chapIds=[]; var chapIdRes=await db.from('chapters').select('id').eq('work_id',workData.id); chapIds=(chapIdRes.data||[]).map(function(c){return c.id;});
-      var comments=[];
-      if(chapIds.length){
-        var result=await db.from('chapter_comments').select('id,content,created_at,user_id,chapter_id,parent_id').in('chapter_id',chapIds).is('parent_id',null).order('created_at',{ascending:false}).limit(20);
-        comments=result.data||[];
-        if(comments.length){ var cmIds=[...new Set(comments.map(function(c){return c.user_id;}))]; var {data:cmPs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',cmIds); var cmMap={};(cmPs||[]).forEach(function(p){cmMap[p.id]=p;}); comments.forEach(function(c){c.profiles=cmMap[c.user_id]||null;}); }
-      }
-      document.getElementById('comment-count').textContent='('+comments.length+')';
-      var listEl=document.getElementById('comments-list'); listEl.innerHTML='';
-      if(!comments.length){ listEl.innerHTML='<div class="empty-state"><i class="ti ti-message-off"></i>No comments yet.</div>'; }
-      else { comments.forEach(function(c){ var p=c.profiles||{}; listEl.innerHTML+='<div class="comment-card"><div class="comment-header"><div class="comment-avatar">'+(p.avatar_url?'<img src="'+escHtml(p.avatar_url)+'" alt=""/>':'<i class="ti ti-user"></i>')+'</div><div class="comment-name">'+escHtml(p.display_name||p.username||'User')+'</div><div class="comment-date" style="margin-left:auto;">'+timeAgo(c.created_at)+'</div></div><div class="comment-text">'+dsSpoiler.render(escHtml(c.content))+'</div></div>'; }); }
-      if(currentSession){
-        document.getElementById('comment-input-wrap').style.display='flex';
-        // Inject CommentToolbar into the toolbar row
-        var placeholder = document.getElementById('story-comment-toolbar-placeholder');
-        if (placeholder && window.CommentToolbar) {
-          placeholder.outerHTML = CommentToolbar.renderToolbar({ context: 'story', textareaId: 'comment-input' });
-        }
-      } else { document.getElementById('comment-login-prompt').style.display='block'; }
-    }
 
-    async function submitComment() {
-      var input = document.getElementById('comment-input');
-      var content = input.value.trim();
-      var pendingGif = window.CommentToolbar ? CommentToolbar.getPendingGif('story') : null;
-      var pendingImg = window.CommentToolbar ? CommentToolbar.getPendingImage('story') : null;
-      if (!content && !pendingGif && !pendingImg) return;
-      var fc=await db.from('chapters').select('id').eq('work_id',workData.id).order('chapter_number',{ascending:true}).limit(1).maybeSingle();
-      if(!fc.data){ showToast('No chapters found to comment on.','ti-alert-circle'); return; }
-      var insertData = {chapter_id:fc.data.id,user_id:currentSession.user.id,content:content};
-      if (pendingGif) insertData.gif_url = pendingGif;
-      if (pendingImg) insertData.image_url = pendingImg;
-      var result=await db.from('chapter_comments').insert(insertData);
-      if(result.error){ showToast('Error: '+result.error.message,'ti-x'); return; }
-      input.value='';
-      if (window.CommentToolbar) CommentToolbar.clearAttachments('story');
-      showToast('Comment posted!');
-      // First Voice (one-time) + Commentator (tiered) badges
-      try {
-        var { data: cmtBadge } = await db.rpc('award_comment_badges', { p_user_id: currentSession.user.id });
-        if (cmtBadge) {
-          cmtBadge.forEach(function(r, i) {
-            var msg = r.awarded
-              ? '🏅 Badge unlocked: First Voice!'
-              : (r.newly_unlocked && r.newly_unlocked.length > 0
-                  ? '🏅 Commentator — ' + r.newly_unlocked[0].gem_name + '! +' + r.newly_unlocked[0].xp_reward + ' XP'
-                  : null);
-            if (msg) setTimeout(function(){ showToast(msg, 'ti-award'); }, (i + 1) * 600);
-          });
-        }
-      } catch(e) {}
-      loadComments();
-    }
+
+
 
 
     // ── OWNER BAR ────────────────────────────────────────────────
@@ -1325,7 +1248,6 @@
       await loadReviews();
       await loadRecommendations();
       await loadCollabs();
-      await loadComments();
 
       // CHARACTER CARDS
       if (workData.type !== 'artwork') {
@@ -1336,38 +1258,6 @@
           window._ctSession = currentSession;
           await CharacterTitles.renderStoryCharacterCards(ctContainer, workId, isAuthor);
           if (ctContainer.innerHTML.trim()) ctSection.style.display = 'block';
-        }
-
-        // ── DEEP LINK: notification → character section (song/opinion review) ──
-        var _dcCharId   = sessionStorage.getItem('ds_open_char_id');
-        var _dcCharName = sessionStorage.getItem('ds_open_char_name') || '';
-        var _dcAction   = sessionStorage.getItem('ds_open_char_action'); // 'song' | 'opinion'
-        if (_dcCharId && _dcAction) {
-          sessionStorage.removeItem('ds_open_char_id');
-          sessionStorage.removeItem('ds_open_char_name');
-          sessionStorage.removeItem('ds_open_char_action');
-          setTimeout(function(){
-            // Scroll to the relevant character card if it exists
-            var _dcCard = document.getElementById('ct-char-' + _dcCharId);
-            var _dcTarget = _dcCard || ctSection;
-            if (_dcTarget) {
-              _dcTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              // Briefly highlight the card so the author knows where to look
-              if (_dcCard) {
-                _dcCard.style.transition = 'box-shadow 0.3s';
-                _dcCard.style.boxShadow = _dcAction === 'song'
-                  ? '0 0 0 2px var(--gold), 0 4px 20px rgba(245,158,11,0.25)'
-                  : '0 0 0 2px #ec4899, 0 4px 20px rgba(236,72,153,0.25)';
-                setTimeout(function(){ _dcCard.style.boxShadow = ''; }, 2500);
-              }
-              // Scroll to pending panel after short delay
-              setTimeout(function(){
-                var panelClass = _dcAction === 'song' ? '.ct-pending-songs-panel' : '.ct-pending-opinions-panel';
-                var pendingPanel = ctContainer ? ctContainer.querySelector(panelClass) : null;
-                if (pendingPanel) pendingPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }, 800);
-            }
-          }, 400);
         }
       }
 

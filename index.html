@@ -264,6 +264,10 @@
     .cover-card-sub { font-size: 10px; color: var(--text3); display: flex; justify-content: space-between; align-items: center; font-family: 'Lato', sans-serif; }
     .collab-badge { position:absolute; top:6px; right:6px; background:rgba(10,10,15,0.82); border:1px solid rgba(245,158,11,0.7); border-radius:5px; padding:2px 5px; font-size:9px; font-weight:700; color:#f59e0b; display:flex; align-items:center; gap:3px; backdrop-filter:blur(4px); pointer-events:none; font-family:'Lato',sans-serif; z-index:2; }
     .collab-badge i { font-size:10px; }
+    .content-rating-badge { position:absolute; bottom:6px; right:6px; border-radius:4px; padding:2px 5px; font-size:9px; font-weight:700; font-family:'Lato',sans-serif; pointer-events:none; z-index:2; backdrop-filter:blur(4px); display:flex; align-items:center; gap:3px; line-height:1; white-space:nowrap; width:fit-content; height:fit-content; }
+    .content-rating-badge.rating-erotica { background:rgba(239,68,68,0.85); color:#fff; border:1px solid rgba(239,68,68,0.6); }
+    .content-rating-badge.rating-gore    { background:rgba(234,179,8,0.85); color:#0a0a0f; border:1px solid rgba(234,179,8,0.6); }
+    .content-rating-badge.rating-safe    { background:rgba(52,211,153,0.85); color:#0a0a0f; border:1px solid rgba(52,211,153,0.6); }
     .cover-card-author { font-size: 10px; color: var(--text3); font-family: 'Lato', sans-serif; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; transition: color 0.15s; }
     .cover-card-author:hover { color: var(--accent); }
     .cover-card-sub-chapter { font-weight: 700; color: var(--text2); }
@@ -297,6 +301,8 @@
     .continue-card-body { padding: 6px 8px 8px; flex: 1; }
     .continue-card-title { font-size: 11px; font-weight: 700; color: var(--text); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 3px; }
     .continue-card-ch { font-size: 10px; color: var(--accent); font-weight: 700; }
+    /* ── READING HISTORY ── */
+    .reading-history-section { display: none; } /* shown by JS when data loads */
     /* ── EMPTY STATE CARDS (rows 0 & 1 for logged-out/no-follows) ── */
     .empty-state-card { flex-shrink: 0; width: 140px; background: var(--bg3); border: 1px dashed var(--border); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px 12px; text-align: center; color: var(--text3); font-size: 11px; min-height: 180px; }
     .empty-state-card i { font-size: 28px; color: var(--text3); opacity: 0.5; }
@@ -701,6 +707,20 @@
 
         <div class="layout-customize-row" id="layout-customize-row" style="display:none;">
           <button class="layout-customize-btn" onclick="openLayoutModal()"><i class="ti ti-layout-grid"></i> Customize Layout</button>
+        </div>
+
+        <!-- READING HISTORY — shown only when user has read at least one novel, moveable via Customize Layout -->
+        <div class="home-section reading-history-section" data-section-id="rh" id="home-section-rh">
+          <div class="scroll-label">
+            <i class="ti ti-history"></i>
+            <span class="label-accent">Reading</span>
+            <span class="label-white">History</span>
+          </div>
+          <div class="scroll-row-wrap" id="reading-history-wrap">
+            <button class="scroll-nav-btn scroll-nav-left" onclick="scrollRow('rh',-300)"><i class="ti ti-chevron-left"></i></button>
+            <div class="scroll-row" id="row-rh"><div class="scroll-track" id="track-rh" style="display:flex;gap:10px;padding:8px 48px;"></div></div>
+            <button class="scroll-nav-btn scroll-nav-right" onclick="scrollRow('rh',300)"><i class="ti ti-chevron-right"></i></button>
+          </div>
         </div>
 
         <!-- CONTINUE READING — shown only when user has in-progress works, moveable via Customize Layout -->
@@ -1346,8 +1366,71 @@
             '</div>';
           track.appendChild(card);
         });
-        section.style.display = '';
+        section.style.display = 'block';
       } catch(e) { /* silently skip — not critical */ }
+    }
+
+    /* ── READING HISTORY ───────────────────────────────────────── */
+    async function loadReadingHistory(uid) {
+      var section = document.getElementById('home-section-rh');
+      var track   = document.getElementById('track-rh');
+      if (!section || !track) return;
+      try {
+        var res = await db.from('reading_progress')
+          .select('work_id,chapter_id,chapter_number,updated_at,completed')
+          .eq('user_id', uid)
+          .order('updated_at', { ascending: false })
+          .limit(20);
+        if (!res.data || !res.data.length) { section.style.display = 'none'; return; }
+        var workIds = [...new Set(res.data.map(function(r){ return r.work_id; }))];
+        var worksRes = await db.from('works').select('id,title,cover_url,author_id,chapters_count,content_rating_gore,content_rating_erotica').in('id', workIds).eq('is_published', true);
+        var workMap = {};
+        (worksRes.data||[]).forEach(function(w){ workMap[w.id] = w; });
+        var authorIds = [...new Set((worksRes.data||[]).map(function(w){ return w.author_id; }).filter(Boolean))];
+        var profMap = {};
+        if (authorIds.length) {
+          var pr = await db.from('profiles').select('id,username,display_name').in('id', authorIds);
+          (pr.data||[]).forEach(function(p){ profMap[p.id] = p; });
+        }
+        track.innerHTML = '';
+        var shown = 0;
+        res.data.forEach(function(item) {
+          var w = workMap[item.work_id];
+          if (!w) return;
+          var pct = w.chapters_count > 0 ? Math.min(100, Math.round((item.chapter_number / w.chapters_count) * 100)) : 0;
+          var prof = profMap[w.author_id] || {};
+          var authorName = prof.display_name || prof.username || '';
+          var card = document.createElement('a');
+          card.className = 'continue-card';
+          card.href = item.chapter_id ? 'chapter.html?id=' + item.chapter_id : 'story.html?id=' + item.work_id;
+          card.title = w.title || '';
+          var coverStyle = w.cover_url ? 'background-image:url(' + esc(w.cover_url) + ');color:transparent;' : '';
+          // Rating badge
+          var ratingBadgeHtml = '';
+          if (w.content_rating_erotica) {
+            ratingBadgeHtml = '<div class="content-rating-badge rating-erotica" style="position:absolute;top:5px;right:5px;z-index:2;bottom:auto;left:auto;"><i class="ti ti-heart"></i> 18+</div>';
+          } else if (w.content_rating_gore) {
+            ratingBadgeHtml = '<div class="content-rating-badge rating-gore" style="position:absolute;top:5px;right:5px;z-index:2;bottom:auto;left:auto;"><i class="ti ti-droplet"></i> Gore</div>';
+          }
+          var completedBadge = item.completed ? '<div style="position:absolute;top:5px;left:5px;background:rgba(52,211,153,0.85);color:#0a0a0f;border-radius:4px;padding:2px 5px;font-size:9px;font-weight:700;backdrop-filter:blur(4px);"><i class="ti ti-check"></i> Done</div>' : '';
+          card.innerHTML =
+            '<div class="continue-cover ' + (w.cover_url ? '' : coverColor(item.work_id)) + '" style="' + coverStyle + '">' +
+              (w.cover_url ? '' : esc(coverLetter(w.title))) +
+              completedBadge +
+              ratingBadgeHtml +
+              '<div class="continue-progress-bar"><div class="continue-progress-fill" style="width:' + pct + '%;"></div></div>' +
+            '</div>' +
+            '<div class="continue-card-body">' +
+              '<div class="continue-card-title">' + esc(w.title || 'Untitled') + '</div>' +
+              '<div class="continue-card-ch"><i class="ti ti-bookmark" style="font-size:9px;"></i> Ch.' + item.chapter_number + (w.chapters_count ? ' / ' + w.chapters_count : '') + '</div>' +
+              (authorName ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;">' + esc(authorName) + '</div>' : '') +
+            '</div>';
+          track.appendChild(card);
+          shown++;
+        });
+        if (shown === 0) { section.style.display = 'none'; return; }
+        section.style.display = 'block';
+      } catch(e) { /* silently skip */ }
     }
 
     async function loadSidebarCollabs(){
@@ -1606,8 +1689,8 @@
           var { data: cfRow } = await db.from('profiles').select('settings_filter_safe,settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict').eq('id', uid).maybeSingle();
           if (cfRow) {
             if (cfRow.settings_filter_safe !== null && cfRow.settings_filter_safe !== undefined) myContentFilters.safe = !!cfRow.settings_filter_safe;
-            myContentFilters.gore = !!cfRow.settings_filter_gore;
-            myContentFilters.erotica = !!cfRow.settings_filter_erotica;
+            myContentFilters.gore = !cfRow.settings_filter_gore;
+            myContentFilters.erotica = !cfRow.settings_filter_erotica;
             if (cfRow.pref_story_language) myLangPrefs.pref_language = cfRow.pref_story_language;
             if (cfRow.lang_original !== null && cfRow.lang_original !== undefined) myLangPrefs.lang_original = cfRow.lang_original;
             if (cfRow.lang_strict !== null && cfRow.lang_strict !== undefined) myLangPrefs.lang_strict = cfRow.lang_strict;
@@ -1722,7 +1805,7 @@
           var chapData=chapRes.data||[];
           if(chapData.length){
             var r0WorkIds=[...new Set(chapData.map(function(c){return c.work_id;}))];
-            var {data:r0Works}=await db.from('works').select('id,title,cover_url,rating,author_id').in('id',r0WorkIds);
+            var {data:r0Works}=await db.from('works').select('id,title,cover_url,rating,author_id,content_rating_gore,content_rating_erotica').in('id',r0WorkIds);
             var r0Map={};(r0Works||[]).forEach(function(w){r0Map[w.id]=w;});
             var r0AuthorIds=[...new Set((r0Works||[]).map(function(w){return w.author_id;}).filter(Boolean))];
             var r0ProfMap={};
@@ -1737,7 +1820,7 @@
           }
           renderCoverRow(row0track, chapData, function(ch){
             var w=ch.works;
-            var p0=ch.authorProf; return { id:ch.work_id, title:w?w.title:'?', cover:w?w.cover_url:null, href:'chapter.html?id='+ch.id, rating:w?parseFloat(w.rating)||0:0, chapterNumber:ch.chapter_number, chapterTitle:ch.title, chapterTime:ch.created_at, readerChapter:ch.readerChapter, authorName:p0?(p0.display_name||p0.username||null):null, authorUsername:p0?p0.username:null };
+            var p0=ch.authorProf; return { id:ch.work_id, title:w?w.title:'?', cover:w?w.cover_url:null, href:'chapter.html?id='+ch.id, rating:w?parseFloat(w.rating)||0:0, chapterNumber:ch.chapter_number, chapterTitle:ch.title, chapterTime:ch.created_at, readerChapter:ch.readerChapter, authorName:p0?(p0.display_name||p0.username||null):null, authorUsername:p0?p0.username:null, contentRatingGore:w?w.content_rating_gore:null, contentRatingErotica:w?w.content_rating_erotica:null };
           });
         } else {
           row0track.innerHTML='<div style="padding:8px 48px;display:flex;gap:12px;">' +
@@ -1757,8 +1840,8 @@
       try {
         var acIds = await db.from('artwork_collabs').select('artwork_id,work_id').eq('status','approved');
         (acIds.data||[]).forEach(function(r){ if(r.artwork_id) collabWorkIds.add(r.artwork_id); if(r.work_id) collabWorkIds.add(r.work_id); });
-        var scIds = await db.from('story_collabs').select('id').eq('status','approved');
-        (scIds.data||[]).forEach(function(r){ if(r.id) collabWorkIds.add(r.id); });
+        var scIds = await db.from('story_collabs').select('work_id').eq('status','approved');
+        (scIds.data||[]).forEach(function(r){ if(r.work_id) collabWorkIds.add(r.work_id); });
       } catch(e){}
 
       // Row 1: New art from followed users
@@ -1822,7 +1905,7 @@
 
       // Row 2: Featured novels (admin-marked or highest rated)
       var row2track = document.getElementById('track-2');
-      var featQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,language,content_warnings')
+      var featQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,language,content_warnings,content_rating_gore,content_rating_erotica')
         .eq('type','novel').eq('is_published',true);
       featQ = applyContentFilters(featQ);
       featQ = applyLanguageFilters(featQ);
@@ -1830,7 +1913,7 @@
       featRes.data = applyWarningPrefs(applyMutePrefs(applyLangSort(applyTagPrefs(featRes.data || []))));
       var r2ProfMap={};if((featRes.data||[]).length){var r2AIds=[...new Set(featRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r2AIds.length){var {data:r2Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r2AIds);(r2Profs||[]).forEach(function(p){r2ProfMap[p.id]=p;});}}
       renderCoverRow(row2track, featRes.data||[], function(w){
-        var p2=r2ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p2?(p2.display_name||p2.username||null):null, authorUsername:p2?p2.username:null, isCollab:!!collabWorkIds.has(w.id) };
+        var p2=r2ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p2?(p2.display_name||p2.username||null):null, authorUsername:p2?p2.username:null, isCollab:!!collabWorkIds.has(w.id), contentRatingGore:w.content_rating_gore, contentRatingErotica:w.content_rating_erotica };
       });
 
       // Row 3: Featured artwork
@@ -1847,7 +1930,7 @@
 
       // Row 4: Newest novels
       var row4track = document.getElementById('track-4');
-      var newNovQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,language,content_warnings,created_at')
+      var newNovQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,language,content_warnings,created_at,content_rating_gore,content_rating_erotica')
         .eq('type','novel').eq('is_published',true);
       newNovQ = applyContentFilters(newNovQ);
       newNovQ = applyLanguageFilters(newNovQ);
@@ -1855,7 +1938,7 @@
       newNovRes.data = applyWarningPrefs(applyMutePrefs(applyLangSort(applyTagPrefs(newNovRes.data || []))));
       var r4ProfMap={};if((newNovRes.data||[]).length){var r4AIds=[...new Set(newNovRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r4AIds.length){var {data:r4Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r4AIds);(r4Profs||[]).forEach(function(p){r4ProfMap[p.id]=p;});}}
       renderCoverRow(row4track, newNovRes.data||[], function(w){
-        var p4=r4ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, postedTime:w.created_at, authorName:p4?(p4.display_name||p4.username||null):null, authorUsername:p4?p4.username:null, isCollab:!!collabWorkIds.has(w.id) };
+        var p4=r4ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, postedTime:w.created_at, authorName:p4?(p4.display_name||p4.username||null):null, authorUsername:p4?p4.username:null, isCollab:!!collabWorkIds.has(w.id), contentRatingGore:w.content_rating_gore, contentRatingErotica:w.content_rating_erotica };
       });
 
       // Row 5: Newest artwork (works + approved story_collabs fan art)
@@ -1941,6 +2024,23 @@
           cover.appendChild(cntBadge);
         }
 
+        // Content rating badge (novels only — bottom-right corner)
+        if(mapped.contentRatingErotica || mapped.contentRatingGore || mapped.contentRatingGore === false){
+          var ratingBadge = document.createElement('div');
+          cover.style.position = 'relative';
+          if(mapped.contentRatingErotica){
+            ratingBadge.className = 'content-rating-badge rating-erotica';
+            ratingBadge.innerHTML = '<i class="ti ti-heart"></i> 18+';
+          } else if(mapped.contentRatingGore){
+            ratingBadge.className = 'content-rating-badge rating-gore';
+            ratingBadge.innerHTML = '<i class="ti ti-droplet"></i> Gore';
+          } else {
+            ratingBadge.className = 'content-rating-badge rating-safe';
+            ratingBadge.innerHTML = '<i class="ti ti-leaf"></i> Safe';
+          }
+          cover.appendChild(ratingBadge);
+        }
+
         // Title
         var titleEl = document.createElement('div');
         titleEl.className = 'cover-card-title';
@@ -2008,6 +2108,8 @@
       if(session){ await dsBlock.load(uid); }
       if(session){ loadAvatarWidget(uid); }
       dsInitLayoutCustomization(uid);
+      // Suggestion 2: load Continue Reading + Reading History for signed-in users
+      if (uid) { loadReadingHistory(uid); }
       // Suggestion 2: load Continue Reading for signed-in users
       if(uid){ loadContinueReading(uid); }
 
@@ -2597,6 +2699,7 @@
        in localStorage and synced to profiles.homepage_section_order
        so it follows them across devices. */
     var DS_SECTION_LABELS = {
+      'rh': { icon: 'ti-history',    text: 'Reading History' },
       'cr': { icon: 'ti-bookmark', text: 'Continue Reading' },
       '0':  { icon: 'ti-bell',       text: 'New Chapters from Followed Novels' },
       '1':  { icon: 'ti-palette',    text: 'New Art from Followed Artists' },
@@ -2606,8 +2709,8 @@
       '5':  { icon: 'ti-photo-star', text: 'New Artwork' }
     };
     // 'cr' is last by default — users can move it anywhere
-    var DS_DEFAULT_ORDER = ['0','1','2','3','4','5','cr'];
-    var DS_ALL_SECTION_IDS = ['0','1','2','3','4','5','cr'];
+    var DS_DEFAULT_ORDER = ['0','1','2','3','4','5','rh','cr'];
+    var DS_ALL_SECTION_IDS = ['0','1','2','3','4','5','rh','cr'];
     var dsLayoutOrder = null;   // array of section ids, in display order
     var dsLayoutHidden = {};    // { sectionId: true } for hidden sections
     var dsLayoutDragSrc = null;
@@ -2626,7 +2729,8 @@
     function dsApplyLayout(layout) {
       if (!layout || !layout.order) return;
       dsLayoutOrder = layout.order.slice();
-      // Back-fill 'cr' for users who have an old saved layout without it
+      // Back-fill 'rh' and 'cr' for users who have an old saved layout without them
+      if (dsLayoutOrder.indexOf('rh') === -1) dsLayoutOrder.push('rh');
       if (dsLayoutOrder.indexOf('cr') === -1) dsLayoutOrder.push('cr');
       dsLayoutHidden = layout.hidden || {};
       // Re-append sections in saved order using the banner-scroll-wrap as the stable container
@@ -2683,7 +2787,9 @@
         item.className = 'layout-item' + (hidden ? ' is-hidden' : '');
         item.setAttribute('draggable', 'true');
         item.dataset.sectionId = id;
-        var subText = id === 'cr' ? '<span style="font-size:10px;color:var(--text3);margin-left:4px;">— only shows when you have books in progress</span>' : '';
+        var subText = id === 'cr' ? '<span style="font-size:10px;color:var(--text3);margin-left:4px;">— only shows when you have books in progress</span>'
+                      : id === 'rh' ? '<span style="font-size:10px;color:var(--text3);margin-left:4px;">— only shows when you have read at least one novel</span>'
+                      : '';
         item.innerHTML =
           '<i class="ti ti-grip-vertical drag-grip"></i>' +
           '<i class="ti ' + label.icon + '"></i>' +

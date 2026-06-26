@@ -374,6 +374,22 @@
     .char-counter.near-limit{color:var(--gold);}
     .char-counter.at-limit{color:var(--red);font-weight:700;}
     /* TOAST */
+
+
+    /* ── SKELETON LOADER ── */
+    @keyframes skshimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+    .skel { border-radius:6px; background:linear-gradient(90deg,var(--bg3) 25%,var(--bg4) 50%,var(--bg3) 75%); background-size:800px 100%; animation:skshimmer 1.4s infinite; }
+    .skel-title { height:28px; width:60%; margin:0 auto 12px; }
+    .skel-meta  { height:14px; width:40%; margin:0 auto 24px; }
+    .skel-line  { height:14px; margin-bottom:10px; }
+    .skel-line.short { width:80%; }
+    .skel-line.shorter { width:60%; }
+    #chapter-skeleton { padding:40px 0; }
+
+    /* ── SCROLL PROGRESS BAR ── */
+    #scroll-progress-bar { position:fixed; top:56px; left:0; right:0; height:2px; background:var(--bg3); z-index:101; pointer-events:none; }
+    #scroll-progress-fill { height:100%; background:var(--accent); width:0%; transition:width 0.1s linear; }
+
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:600;pointer-events:none;}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
     .toast i{color:var(--accent);}
@@ -469,18 +485,34 @@
               <button class="rs-opt" data-lh="2.2" onclick="setLineHeight(this)">Relaxed</button>
             </div>
           </div>
+          <div id="rs-font-row" style="display:none;">
+            <div class="rs-label">Font</div>
+            <div class="rs-options rs-options-wrap" id="rs-font-opts"></div>
+          </div>
         </div>
       </div>
       <a class="nav-icon-btn" id="nav-story-link" href="#" title="Back to story"><i class="ti ti-arrow-left"></i></a>
     </div>
   </nav>
 
+  <div id="scroll-progress-bar"><div id="scroll-progress-fill"></div></div>
   <div class="reader-wrap">
-    <div class="chapter-header">
+    <div id="chapter-skeleton">
+      <div class="skel skel-title"></div>
+      <div class="skel skel-meta"></div>
+      <div class="skel skel-line"></div>
+      <div class="skel skel-line short"></div>
+      <div class="skel skel-line"></div>
+      <div class="skel skel-line shorter"></div>
+      <div class="skel skel-line"></div>
+      <div class="skel skel-line short"></div>
+    </div>
+    <div class="chapter-header" style="display:none;" id="chapter-header-wrap">
       <div class="chapter-number" id="chapter-number"></div>
-      <div class="chapter-title" id="chapter-title-display">Loading…</div>
+      <div class="chapter-title" id="chapter-title-display"></div>
       <div class="chapter-meta-row" id="chapter-meta-row"></div>
       <div class="chapter-divider"></div>
+    </div>
     </div>
 
     <!-- AUTHOR'S NOTE (TOP) -->
@@ -632,6 +664,93 @@
       return Math.floor(months / 12) + 'y ago';
     }
     function getChapterId(){ return new URLSearchParams(window.location.search).get('id'); }
+
+
+
+
+    // ── COMMENT DRAFT AUTO-SAVE ──────────────────────────────────
+    function getDraftKey(context) {
+      return 'ds_draft_' + context + '_' + (chapterData ? chapterData.id : 'unknown');
+    }
+    function saveDraft(context, text) {
+      try { if (chapterData) sessionStorage.setItem(getDraftKey(context), text); } catch(e) {}
+    }
+    function loadDraft(context) {
+      try { return chapterData ? (sessionStorage.getItem(getDraftKey(context)) || '') : ''; } catch(e) { return ''; }
+    }
+    function clearDraft(context) {
+      try { if (chapterData) sessionStorage.removeItem(getDraftKey(context)); } catch(e) {}
+    }
+    function wireAutosave(textareaId, context) {
+      var ta = document.getElementById(textareaId);
+      if (!ta || ta.dataset.autosave) return;
+      ta.dataset.autosave = '1';
+      var draft = loadDraft(context);
+      if (draft) { ta.value = draft; }
+      ta.addEventListener('input', function() { saveDraft(context, ta.value); });
+    }
+
+    // ── PARAGRAPH SCROLL POSITION ───────────────────────────────
+    var _paraScrollSaveTimer = null;
+    function saveParaScrollPos() {
+      if (!chapterData) return;
+      var paras = document.querySelectorAll('#page-content [data-para-idx]');
+      var best = null;
+      paras.forEach(function(p) {
+        var rect = p.getBoundingClientRect();
+        if (rect.top >= 0 && rect.top < window.innerHeight * 0.5) {
+          if (best === null) best = parseInt(p.getAttribute('data-para-idx'));
+        }
+      });
+      if (best !== null) {
+        sessionStorage.setItem('ds_para_pos_' + chapterData.id, best);
+      }
+    }
+    window.addEventListener('scroll', function() {
+      clearTimeout(_paraScrollSaveTimer);
+      _paraScrollSaveTimer = setTimeout(saveParaScrollPos, 300);
+    }, { passive: true });
+    function restoreParaScrollPos() {
+      if (!chapterData) return;
+      var saved = sessionStorage.getItem('ds_para_pos_' + chapterData.id);
+      if (!saved) return;
+      var idx = parseInt(saved);
+      var el = document.querySelector('#page-content [data-para-idx="' + idx + '"]');
+      if (!el) return;
+      // Show a subtle "jump back" prompt
+      var bar = document.createElement('div');
+      bar.id = 'para-resume-bar';
+      bar.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:400;background:var(--bg2);border:1px solid var(--accent);border-radius:10px;padding:8px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,0.4);font-family:Lato,sans-serif;font-size:13px;color:var(--text);white-space:nowrap;';
+      bar.innerHTML = '<i class="ti ti-bookmark" style="color:var(--accent);"></i> Jump to where you left off ' +
+        '<button style="background:var(--accent2);border:none;border-radius:7px;padding:4px 12px;color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:Lato,sans-serif;" id="para-resume-yes">Jump</button>' +
+        '<button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:2px;" id="para-resume-no">×</button>';
+      document.body.appendChild(bar);
+      document.getElementById('para-resume-yes').onclick = function() {
+        bar.remove();
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Brief highlight flash
+        el.style.transition = 'background 0.3s';
+        el.style.background = 'color-mix(in srgb,var(--accent) 10%,transparent)';
+        setTimeout(function(){ el.style.background = ''; el.style.transition = ''; }, 1200);
+      };
+      document.getElementById('para-resume-no').onclick = function() { bar.remove(); };
+      setTimeout(function(){ var b = document.getElementById('para-resume-bar'); if (b) b.remove(); }, 8000);
+    }
+
+    // ── SCROLL PROGRESS ─────────────────────────────────────────
+    (function() {
+      var fill = null;
+      function updateScrollProgress() {
+        if (!fill) fill = document.getElementById('scroll-progress-fill');
+        if (!fill) return;
+        var scrollTop = window.scrollY || document.documentElement.scrollTop;
+        var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+        var pct = docHeight > 0 ? Math.min(100, (scrollTop / docHeight) * 100) : 0;
+        fill.style.width = pct + '%';
+      }
+      window.addEventListener('scroll', updateScrollProgress, { passive: true });
+      window.addEventListener('resize', updateScrollProgress, { passive: true });
+    })();
 
     // ── AUTHOR'S NOTE ───────────────────────────────────────────
     // Renders the author's top/bottom note (plain text, line breaks
@@ -900,6 +1019,33 @@
       textareaEl.parentNode.insertBefore(counter, textareaEl.nextSibling);
     }
 
+
+    // ── KEYBOARD NAVIGATION ─────────────────────────────────────
+    document.addEventListener('keydown', function(e) {
+      // Don't fire if focus is in a text input/textarea/contenteditable
+      var tag = document.activeElement ? document.activeElement.tagName : '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement.isContentEditable) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        var idx = allChapters.findIndex(function(c){ return c.id === (chapterData && chapterData.id); });
+        if (e.key === 'ArrowRight') {
+          // Next page first, then next chapter
+          if (pages.length > 1 && currentPage < pages.length - 1) {
+            nextPage();
+          } else if (idx !== -1 && allChapters[idx + 1]) {
+            window.location.href = 'chapter.html?id=' + allChapters[idx + 1].id;
+          }
+        } else {
+          // Prev page first, then prev chapter
+          if (pages.length > 1 && currentPage > 0) {
+            prevPage();
+          } else if (idx > 0) {
+            window.location.href = 'chapter.html?id=' + allChapters[idx - 1].id;
+          }
+        }
+        e.preventDefault();
+      }
+    });
+
     // ── READING SETTINGS ─────────────────────────────────────────
     function applyReadingSettings() {
       var saved = localStorage.getItem('ds_reading');
@@ -1003,8 +1149,7 @@
       var content = document.getElementById('page-content');
       content.innerHTML = pages[idx].join('');
       stripInlineColors(content);
-      injectParaWraps();
-      echoRenderPage();
+      injectParaWraps().then(function(){ echoRenderPage(); });
       document.getElementById('page-info').textContent = 'Page ' + (idx+1) + ' of ' + pages.length;
       document.getElementById('prev-page-btn').disabled = idx === 0;
 
@@ -1318,6 +1463,20 @@
       document.querySelectorAll('#rs-lh-opts .rs-opt').forEach(function(b){ b.classList.remove('active'); });
       btn.classList.add('active');
     }
+    function setReaderFont(key) {
+      if (!window.READING_FONTS) return;
+      var fontEntry = window.READING_FONTS[key] || window.READING_FONTS.lato;
+      document.documentElement.style.setProperty('--reader-font', fontEntry.css);
+      try {
+        var r = JSON.parse(localStorage.getItem('ds_reading') || '{}');
+        r.font = key; r.font_override = true;
+        localStorage.setItem('ds_reading', JSON.stringify(r));
+      } catch(e) {}
+      document.querySelectorAll('#rs-font-opts .rs-opt').forEach(function(b){ b.classList.remove('active'); });
+      var ab = document.querySelector('#rs-font-opts .rs-opt[data-font="' + key + '"]');
+      if (ab) ab.classList.add('active');
+    }
+
     function loadReaderPrefs() {
       var width = localStorage.getItem('ds_reader_width');
       var size  = localStorage.getItem('ds_reader_size');
@@ -1342,6 +1501,25 @@
       } else {
         var defaultLh = document.querySelector('#rs-lh-opts .rs-opt[data-lh="1.8"]');
         if (defaultLh) defaultLh.classList.add('active');
+      }
+      // Populate font picker
+      var fontRow = document.getElementById('rs-font-row');
+      var fontOpts = document.getElementById('rs-font-opts');
+      if (fontRow && fontOpts && window.READING_FONTS) {
+        fontRow.style.display = '';
+        var fontKeys = Object.keys(window.READING_FONTS);
+        var savedFont = (function(){ try { var r = JSON.parse(localStorage.getItem('ds_reading')||'{}'); return r.font_override ? r.font : null; } catch(e){ return null; } })();
+        fontOpts.innerHTML = '';
+        fontKeys.forEach(function(key) {
+          var f = window.READING_FONTS[key];
+          var btn = document.createElement('button');
+          btn.className = 'rs-opt' + (savedFont === key ? ' active' : '');
+          btn.setAttribute('data-font', key);
+          btn.style.fontFamily = f.css;
+          btn.textContent = f.label;
+          btn.onclick = function(){ setReaderFont(key); };
+          fontOpts.appendChild(btn);
+        });
       }
     }
     document.addEventListener('DOMContentLoaded', loadReaderPrefs);
@@ -1786,11 +1964,13 @@
       var wrap = document.createElement('div');
       wrap.className = 'para-reply-input-wrap';
       wrap.innerHTML =
-        '<textarea class="para-reply-ta" placeholder="Replying to ' + escHtml(parentName) + '…" maxlength="500"></textarea>' +
+        '<textarea class="para-reply-ta" id="' + replyCtxId + '-ta" placeholder="Replying to ' + escHtml(parentName) + '…" maxlength="500"></textarea>' +
         '<div class="ct-preview-area" id="ct-preview-' + replyCtxId + '"></div>' +
         '<div class="para-reply-actions">' +
           '<button class="spoiler-btn" type="button"><i class="ti ti-eye-off"></i> Spoiler</button>' +
-          (window.CommentToolbar ? '<button class="ct-btn" type="button"><i class="ti ti-gif"></i> GIF</button>' : '') +
+          (window.CommentToolbar ? '<button class="ct-btn" type="button" data-gif-btn><i class="ti ti-gif"></i> GIF</button>' : '') +
+          (window.CommentToolbar ? '<button class="ct-btn" type="button" data-emoji-btn><i class="ti ti-mood-smile"></i></button>' : '') +
+          (window.CommentToolbar ? '<button class="ct-btn" type="button" data-img-btn><i class="ti ti-photo"></i></button>' : '') +
           '<button class="para-reply-cancel" style="margin-left:auto;">Cancel</button>' +
           '<button class="para-reply-submit"><i class="ti ti-send"></i> Reply</button>' +
         '</div>';
@@ -1800,9 +1980,17 @@
       wrap.querySelector('.spoiler-btn').addEventListener('click', function(){
         dsSpoiler.wrapSelection(wrap.querySelector('.para-reply-ta'));
       });
-      var gifBtn = wrap.querySelector('.ct-btn');
+      var gifBtn = wrap.querySelector('[data-gif-btn]');
       if (gifBtn && window.CommentToolbar) {
         gifBtn.addEventListener('click', function(){ CommentToolbar.openGif(replyCtxId); });
+      }
+      var emojiBtn = wrap.querySelector('[data-emoji-btn]');
+      if (emojiBtn && window.CommentToolbar) {
+        emojiBtn.addEventListener('click', function(){ CommentToolbar.openEmoji(replyCtxId + '-ta', replyCtxId); });
+      }
+      var imgBtn = wrap.querySelector('[data-img-btn]');
+      if (imgBtn && window.CommentToolbar) {
+        imgBtn.addEventListener('click', function(){ CommentToolbar.openImage(replyCtxId, replyCtxId + '-ta'); });
       }
       wrap.querySelector('.para-reply-cancel').addEventListener('click', function(){
         if (window.CommentToolbar) CommentToolbar.clearAttachments(replyCtxId);
@@ -1886,6 +2074,7 @@
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i>'; }
       if (error) { showToast('Error: ' + error.message, 'ti-x'); return; }
       input.value = '';
+      clearDraft('para');
       if (window.CommentToolbar) CommentToolbar.clearAttachments('para'); else gifClear('para');
 
       // Award prestige XP for engagement (silently — no user-facing details)
@@ -1917,6 +2106,7 @@
         undone = true;
         cardEl.style.opacity = '';
         cardEl.style.pointerEvents = '';
+        cardEl.style.transition = '';
       });
       await new Promise(function(res){ setTimeout(res, 4100); }); // wait for undo window
       if (undone) return;
@@ -1928,7 +2118,8 @@
         if (e2) { cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.','ti-x'); return; }
       }
       cardEl.style.transition = 'opacity 0.3s';
-      setTimeout(function(){ cardEl.remove(); }, 300);
+      cardEl.style.opacity = '0';
+      setTimeout(function(){ if (cardEl.parentNode) cardEl.remove(); }, 300);
       if (activeParaIndex !== null) updateParaBubbleCount(activeParaIndex, -1);
     }
 
@@ -2157,6 +2348,15 @@
         if(err2){ cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.', 'ti-x'); return; }
       }
       cardEl.remove();
+      // Decrement the SP panel comment badge
+      var spBadge = document.getElementById('sp-comment-count');
+      if (spBadge) {
+        var cur = parseInt(spBadge.textContent || '0');
+        var next = Math.max(0, cur - 1);
+        spBadge.textContent = next > 0 ? next : '';
+      }
+      // Remove from spComments cache so re-render is accurate
+      spComments = spComments.filter(function(c){ return c.id !== commentId; });
     }
 
     async function loadChapterComments() {
@@ -2219,6 +2419,7 @@
           + '</div>'
           + '</div>';
         attachCharCounter(document.getElementById('chapter-comment-input'), 1000);
+        wireAutosave('chapter-comment-input','chapter');
       } else {
         formEl.innerHTML = '<div class="login-prompt"><a href="auth.html">Sign in</a> to leave a comment.</div>';
       }
@@ -2242,6 +2443,7 @@
       if(btn){ btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Post Comment'; }
       if(error){ showToast('Error: ' + error.message, 'ti-x'); return; }
       input.value = '';
+      clearDraft('chapter');
       if (window.CommentToolbar) CommentToolbar.clearAttachments('chapter'); else gifClear('chapter');
       showToast('Comment posted!');
       // Award prestige XP for engagement (silently — no user-facing details)
@@ -2260,6 +2462,15 @@
         .select('id,username,display_name,avatar_url').eq('id', currentSession.user.id).maybeSingle();
       var profMap = {}; if(myProfile) profMap[myProfile.id] = myProfile;
       if(listEl) listEl.appendChild(buildChapterCommentCard(inserted, profMap, isOwner, false));
+      // Keep SP panel in sync
+      var spInserted = Object.assign({}, inserted, { _type: 'chapter', profiles: myProfile || {} });
+      spComments.unshift(spInserted);
+      // Update SP comment count badge
+      var spBadgeNew = document.getElementById('sp-comment-count');
+      if (spBadgeNew) {
+        var newCount = spComments.length;
+        spBadgeNew.textContent = newCount > 0 ? newCount : '';
+      }
     }
 
     // ── EDIT OVERLAY CHARACTER MANAGER ───────────────────────────
@@ -2408,7 +2619,7 @@
       var commentsClosed = chapterData && chapterData.comments_open === false;
       document.getElementById('sp-comment-wrap').style.display = (tab === 'comments' && currentSession && !commentsClosed) ? 'block' : 'none';
       if (tab === 'comments' && currentSession && !commentsClosed) {
-        setTimeout(function(){ attachCharCounter(document.getElementById('sp-comment-input'), 1000); }, 0);
+        setTimeout(function(){ attachCharCounter(document.getElementById('sp-comment-input'), 1000); wireAutosave('sp-comment-input','sp'); }, 0);
       }
       if (tab === 'toc') spRenderToc();
       else if (tab === 'comments') spRenderComments();
@@ -2736,6 +2947,7 @@
       var { data: inserted, error } = await db.from('chapter_comments').insert(insertData).select().single();
       if (error) { showToast('Could not post.','ti-x'); return; }
       input.value = '';
+      clearDraft('sp');
       if (window.CommentToolbar) CommentToolbar.clearAttachments('sp'); else gifClear('sp');
       showToast('Comment posted!','ti-check');
       // Award prestige XP for engagement (silently — no user-facing details)
@@ -2790,7 +3002,8 @@
       // Reconcile reading-mode prefs from the account (in case they were changed
       // on another device) — applyReadingSettings() already ran once above using
       // whatever was cached locally, to avoid a flash of default styling.
-      var myContentPerms = { gore: false, erotica: false };
+      // Logged-in users default to permissive — only restrict if DB explicitly says false
+      var myContentPerms = { gore: !!currentSession, erotica: !!currentSession };
       if (currentSession) {
         try {
           var { data: rpRow } = await db.from('profiles').select('reading_prefs,settings_filter_gore,settings_filter_erotica,display_name,username').eq('id', currentSession.user.id).maybeSingle();
@@ -2800,10 +3013,10 @@
             applyReadingSettings();
           }
           if (rpRow) {
-            myContentPerms.gore = !!rpRow.settings_filter_gore;
-            myContentPerms.erotica = !!rpRow.settings_filter_erotica;
+            myContentPerms.gore = !rpRow.settings_filter_gore;
+            myContentPerms.erotica = !rpRow.settings_filter_erotica;
           }
-        } catch(e) {}
+        } catch(e) {} // on fetch failure, keep permissive defaults for logged-in users
       }
 
       // Load chapter
@@ -2857,7 +3070,6 @@
       paraVoteCache = {}; // clear stale votes from any previous chapter in same session
       spMyVotes = {};
       paraCommentCountCache = null; // clear para comment count cache for new chapter
-      _cachedMyProfile = null; // clear profile cache for new session context
 
       // ── ACCESS GUARD ──────────────────────────────────────────
       // Block access to locked chapters unless owner
@@ -2885,6 +3097,11 @@
       }
 
       // Nav
+      // Hide skeleton, reveal real header
+      var skelEl = document.getElementById('chapter-skeleton');
+      var hdrEl  = document.getElementById('chapter-header-wrap');
+      if (skelEl) skelEl.style.display = 'none';
+      if (hdrEl)  hdrEl.style.display  = '';
       document.getElementById('nav-work-title').textContent = workData ? workData.title : '';
       document.getElementById('nav-work-title').href = 'story.html?id=' + chapterData.work_id;
       document.getElementById('nav-chapter-title').textContent = chapterData.title;
@@ -2918,8 +3135,7 @@
         stripInlineColors(document.getElementById('page-content'));
         var fullParas = document.getElementById('page-content').querySelectorAll('p, h1, h2, h3, blockquote');
         fullParas.forEach(function(p, i){ p.setAttribute('data-para-idx', i); });
-        injectParaWraps();
-        echoRenderPage();
+        injectParaWraps().then(function(){ echoRenderPage(); });
         document.getElementById('timer-bar-wrap').style.display = 'none';
         document.getElementById('page-nav').style.display = 'none';
         document.getElementById('page-info').textContent = '';
@@ -2930,9 +3146,12 @@
         pages = paginateContent(chapterData.content || '');
         var savedPage = parseInt(localStorage.getItem('ds_page_' + chapterData.id)) || 0;
         if (savedPage >= pages.length) savedPage = 0;
+        var isResume = savedPage > 0 && !sessionStorage.getItem('ds_ch_visited_' + chapterData.id);
+        sessionStorage.setItem('ds_ch_visited_' + chapterData.id, '1');
         renderPage(savedPage);
-        if (savedPage > 0) {
+        if (isResume) {
           showToast('Resumed from page ' + (savedPage + 1), 'ti-bookmark');
+          setTimeout(restoreParaScrollPos, 600);
         }
       }
       renderChapterNav();
