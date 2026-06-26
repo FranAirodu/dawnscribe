@@ -375,9 +375,11 @@
 
     var typeLabel, typeIcon, typeColor;
     if(cm._type==='song'){
-      typeLabel='suggested a song for a character in'; typeIcon='<i class="ti ti-music" style="color:var(--gold);font-size:11px;margin-right:3px;"></i>'; typeColor='color:var(--gold);';
+      var charLabel=cm._charName?' for “'+cm._charName+'”':' for a character';
+      typeLabel='suggested a song'+charLabel+' in'; typeIcon='<i class="ti ti-music" style="color:var(--gold);font-size:11px;margin-right:3px;"></i>'; typeColor='color:var(--gold);';
     } else if(cm._type==='opinion'){
-      typeLabel='shared a character opinion on'; typeIcon='<i class="ti ti-message-heart" style="color:#ec4899;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#ec4899;';
+      var charLabel2=cm._charName?' about “'+cm._charName+'”':' about a character';
+      typeLabel='shared an opinion'+charLabel2+' in'; typeIcon='<i class="ti ti-message-heart" style="color:#ec4899;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#ec4899;';
     } else if(cm._type==='echo'){
       typeLabel=''; typeIcon='<i class="ti ti-flame" style="color:#f97316;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#f97316;';
     } else if(cm._type==='poll_closing'){
@@ -390,7 +392,14 @@
 
     card.onclick = function(){
       if(!cm.work_id) return;
-      if(cm._type==='song'||cm._type==='opinion'){ window.location.href='story.html?id='+cm.work_id; return; }
+      if(cm._type==='song'){
+        if(cm.character_id){ sessionStorage.setItem('ds_open_char_id',cm.character_id); sessionStorage.setItem('ds_open_char_name',cm._charName||''); sessionStorage.setItem('ds_open_char_action','song'); }
+        window.location.href='story.html?id='+cm.work_id; return;
+      }
+      if(cm._type==='opinion'){
+        if(cm.character_id){ sessionStorage.setItem('ds_open_char_id',cm.character_id); sessionStorage.setItem('ds_open_char_name',cm._charName||''); sessionStorage.setItem('ds_open_char_action','opinion'); }
+        window.location.href='story.html?id='+cm.work_id; return;
+      }
       if(cm._type==='echo'){
         db.from('notifications').update({is_read:true}).eq('id',cm.id);
         if(cm.chapter_id) window.location.href='chapter.html?id='+cm.chapter_id;
@@ -652,14 +661,24 @@
         }
         // Song suggestions pending
         try {
-          var songRes=await db.from('character_song_suggestions').select('id,song_title,artist_name,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
+          var songRes=await db.from('character_song_suggestions').select('id,song_title,artist_name,youtube_url,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
           (songRes.data||[]).forEach(function(s){ s.content=(s.song_title||'Unknown')+(s.artist_name?' — '+s.artist_name:''); s._type='song'; commentNotifs.push(s); });
         } catch(e2){}
         // Character opinions pending
         try {
-          var opRes=await db.from('character_opinions').select('id,body,created_at,work_id,user_id,status').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
+          var opRes=await db.from('character_opinions').select('id,body,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
           (opRes.data||[]).forEach(function(o){ o.content=o.body; o._type='opinion'; commentNotifs.push(o); });
         } catch(e3){}
+        // Enrich song+opinion items with character names
+        try {
+          var soItems=commentNotifs.filter(function(c){ return (c._type==='song'||c._type==='opinion')&&c.character_id; });
+          if(soItems.length){
+            var cIds=[...new Set(soItems.map(function(c){return c.character_id;}))];
+            var {data:cRows}=await db.from('novel_characters').select('id,name').in('id',cIds);
+            var cMap={};(cRows||[]).forEach(function(ch){cMap[ch.id]=ch.name;});
+            soItems.forEach(function(c){ c._charName=cMap[c.character_id]||null; });
+          }
+        } catch(e4){}
       }
       if(myArtIds.length){
         var acRes=await db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id').in('work_id',myArtIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);

@@ -1201,6 +1201,25 @@ window.CharacterTitles = (function() {
       modal.remove();
       // Show thank-you toast if available
       if (window.showToast) window.showToast('Song suggestion submitted! The author will review it. 🎵', 'ti-music');
+      // Notify the work author
+      try {
+        var _db2 = db();
+        var _wRes2 = await _db2.from('works').select('author_id,title').eq('id', workId).maybeSingle();
+        var _w2 = _wRes2.data;
+        if (_w2 && _w2.author_id !== userId) {
+          var _meRes2 = await _db2.from('profiles').select('display_name,username').eq('id', userId).maybeSingle();
+          var _me2 = _meRes2.data || {};
+          var _myName2 = _me2.display_name || _me2.username || 'Someone';
+          await _db2.from('notifications').insert({
+            user_id: _w2.author_id,
+            type: 'opinion_submitted',
+            from_user_id: userId,
+            work_id: workId,
+            character_id: charId,
+            message: _myName2 + ' suggested a song for a character in \u201c' + (_w2.title || 'your story') + '\u201d'
+          });
+        }
+      } catch(e3) {}
     });
 
     document.body.appendChild(modal);
@@ -1389,9 +1408,29 @@ window.CharacterTitles = (function() {
       }
       modal.remove();
       if (window.showToast) window.showToast('Opinion submitted — the author will review it! ✨', 'ti-message-heart');
-      // Notify the work author
+      // Notify the work author — use chapter.html bridge if available, else insert directly
       if (window.dsNotifyAuthor) {
         window.dsNotifyAuthor('opinion_submitted', '{name} shared a character opinion on \u201c{title}\u201d', { character_id: charId });
+      } else {
+        try {
+          var _db = db();
+          var _wRes = await _db.from('works').select('author_id,title').eq('id', workId).maybeSingle();
+          var _w = _wRes.data;
+          if (_w && _w.author_id !== userId) {
+            var _meRes = await _db.from('profiles').select('display_name,username').eq('id', userId).maybeSingle();
+            var _me = _meRes.data || {};
+            var _myName = _me.display_name || _me.username || 'Someone';
+            await _db.from('notifications').insert({
+              user_id: _w.author_id,
+              type: 'opinion_submitted',
+              from_user_id: userId,
+              work_id: workId,
+              chapter_id: chapterId || null,
+              character_id: charId,
+              message: _myName + ' shared a character opinion on \u201c' + (_w.title || 'your story') + '\u201d'
+            });
+          }
+        } catch(e2) {}
       }
     });
 

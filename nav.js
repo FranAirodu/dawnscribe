@@ -693,7 +693,7 @@ function dsApplyAccent(hex) {
       var { data: actRows } = await db.from('notifications')
         .select('id,type,message,work_id,chapter_id,created_at')
         .eq('user_id', uid)
-        .in('type', ['song_approved','song_rejected','fan_translation_linked','opinion_approved','opinion_featured','collab_request','echo','poll_closing'])
+        .in('type', ['song_approved','song_rejected','fan_translation_linked','opinion_submitted','opinion_approved','opinion_featured','collab_request','echo','poll_closing'])
         .order('created_at', { ascending: false })
         .limit(12);
       var clearedAct = dsGetClearedIds('activity');
@@ -742,6 +742,7 @@ function dsApplyAccent(hex) {
           if(n.type==='song_approved')         { iconColor='#22c55e'; icon='ti-music';             title='🎵 Song Approved'; }
           else if(n.type==='song_rejected')    { iconColor='#ef4444'; icon='ti-music-off';         title='🎵 Song Not Approved'; }
           else if(n.type==='fan_translation_linked') { iconColor='#2dd4bf'; icon='ti-language';   title='🌐 Fan Translation'; }
+          else if(n.type==='opinion_submitted')  { iconColor='#ec4899'; icon='ti-message-heart';     title='💬 New Character Opinion'; }
           else if(n.type==='opinion_approved') { iconColor='#ec4899'; icon='ti-message-heart';     title='💬 Opinion Approved'; }
           else if(n.type==='opinion_featured') { iconColor='#f59e0b'; icon='ti-star';              title='⭐ Opinion Featured'; }
           else if(n.type==='collab_request')   { iconColor='#f59e0b'; icon='ti-git-merge';         title='🤝 Collab Request'; }
