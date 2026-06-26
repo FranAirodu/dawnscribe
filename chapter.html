@@ -81,11 +81,11 @@
     .edit-chapter-btn.visible{display:flex;}
 
     /* READING AREA */
-    .reader-wrap{max-width:var(--reader-width);margin:0 auto;padding:40px 24px 40px;transition:margin-right 0.28s cubic-bezier(.4,0,.2,1),max-width 0.28s cubic-bezier(.4,0,.2,1);}
+    .reader-wrap{width:var(--reader-width) !important;max-width:100% !important;margin:0 auto;padding:40px 24px 40px;transition:margin-right 0.28s cubic-bezier(.4,0,.2,1),width 0.28s cubic-bezier(.4,0,.2,1),max-width 0.28s cubic-bezier(.4,0,.2,1);}
     /* Wide/Full: shrink and shift left to make room for panel */
-    body.sp-panel-open .reader-wrap,body.para-panel-active .reader-wrap{margin-right:320px;margin-left:auto;max-width:calc(var(--reader-width) - 160px);}
+    body.sp-panel-open .reader-wrap,body.para-panel-active .reader-wrap{margin-right:320px;margin-left:auto;width:calc(var(--reader-width) - 160px) !important;max-width:100% !important;}
     /* Narrow/Medium: just anchor to the left, panel overlays */
-    body.panel-open-overlay .reader-wrap{margin-right:0;margin-left:0 !important;max-width:var(--reader-width) !important;}
+    body.panel-open-overlay .reader-wrap{margin-right:0;margin-left:0 !important;width:var(--reader-width) !important;max-width:100% !important;}
     .chapter-header{margin-bottom:32px;text-align:center;}
     .chapter-number{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px;}
     .chapter-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--text);margin-bottom:12px;}
@@ -160,8 +160,9 @@
     .para-wrap{position:relative;}
     .reader-settings-btn{background:none;border:1px solid var(--border);border-radius:7px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:16px;transition:all 0.2s;position:relative;}
     .reader-settings-btn:hover{border-color:var(--accent);color:var(--accent);}
-    .reader-settings-panel{position:absolute;top:calc(100% + 10px);right:0;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;width:300px;z-index:200;box-shadow:0 8px 32px rgba(0,0,0,0.3);display:none;flex-direction:column;gap:18px;}
+    .reader-settings-panel{position:absolute;top:calc(100% + 10px);right:0;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;width:300px;z-index:200;box-shadow:0 8px 32px rgba(0,0,0,0.3);display:none;flex-direction:column;gap:18px;max-height:80vh;overflow-y:auto;}
     .reader-settings-panel.open{display:flex;}
+    .rs-font-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
     .rs-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:8px;}
     .rs-options{display:flex;gap:8px;flex-wrap:wrap;}
     .rs-opt{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:13px;color:var(--text2);cursor:pointer;transition:all 0.2s;font-family:'Lato',sans-serif;}
@@ -512,7 +513,6 @@
       <div class="chapter-title" id="chapter-title-display"></div>
       <div class="chapter-meta-row" id="chapter-meta-row"></div>
       <div class="chapter-divider"></div>
-    </div>
     </div>
 
     <!-- AUTHOR'S NOTE (TOP) -->
@@ -1056,21 +1056,21 @@
         var colorMap = { default:'#9b9bc0', black:'#888888', sepia:'#5c4a2a', white:'#333333', cream:'#4a4035', nightblue:'#a8c0d8', gray:'#d8d8dc' };
         var strongMap = { default:'#f1f0ff', black:'#dddddd', sepia:'#2a1f0a', white:'#000000', cream:'#1a1510', nightblue:'#e0eef8', gray:'#ffffff' };
         if (r.bg) { document.documentElement.style.setProperty('--reader-bg', bgMap[r.bg]||bgMap.default); document.documentElement.style.setProperty('--reader-text', colorMap[r.bg]||colorMap.default); document.documentElement.style.setProperty('--reader-strong', strongMap[r.bg]||strongMap.default); }
-        // Font: only apply reader override here. If no override, the author's
-        // chapter-level font (chapterData.font) is applied later in init()
-        // once chapterData has loaded — see applyChapterFont().
+        // Font: controlled by the chapter page's local picker only (ds_reading.font_override).
+        // settings.html no longer syncs font — author choice (applyChapterFont) is the default.
         if (r.font_override && r.font && window.READING_FONTS) {
           var fontEntry = window.READING_FONTS[r.font] || window.READING_FONTS.lato;
           document.documentElement.style.setProperty('--reader-font', fontEntry.css);
-        } else if (window.READING_FONTS) {
-          document.documentElement.style.setProperty('--reader-font', window.READING_FONTS.lato.css);
         }
         if (r.fontsize) document.documentElement.style.setProperty('--reader-size', r.fontsize+'px');
         if (r.lineheight) document.documentElement.style.setProperty('--reader-lh', (r.lineheight/10).toFixed(1));
         if (r.width) {
           // Only apply ds_reading width if no explicit local override exists
           var localWidth = localStorage.getItem('ds_reader_width');
-          if (!localWidth) document.documentElement.style.setProperty('--reader-width', r.width+'px');
+          if (!localWidth) {
+            var _w = r.width >= 9999 ? '100%' : r.width+'px';
+            document.documentElement.style.setProperty('--reader-width', _w);
+          }
         }
       } catch(e){}
     }
@@ -1441,10 +1441,9 @@
       var width = btn.getAttribute('data-width');
       document.documentElement.style.setProperty('--reader-width', width);
       localStorage.setItem('ds_reader_width', width);
-      // Also keep ds_reading in sync so applyReadingSettings doesn't overwrite it
       try {
         var r = JSON.parse(localStorage.getItem('ds_reading') || '{}');
-        r.width = parseInt(width);
+        r.width = width === '100%' ? 9999 : parseInt(width);
         localStorage.setItem('ds_reading', JSON.stringify(r));
       } catch(e) {}
       document.querySelectorAll('#rs-width-opts .rs-opt').forEach(function(b){ b.classList.remove('active'); });
@@ -1507,15 +1506,25 @@
       var fontOpts = document.getElementById('rs-font-opts');
       if (fontRow && fontOpts && window.READING_FONTS) {
         fontRow.style.display = '';
-        var fontKeys = Object.keys(window.READING_FONTS);
+        // Sort: common readable fonts first, then alphabetical
+        var preferred = ['lato','georgia','merriweather','sourceSeriF4','baskerville','crimsonPro'];
+        var fontKeys = Object.keys(window.READING_FONTS).sort(function(a, b) {
+          var ai = preferred.indexOf(a), bi = preferred.indexOf(b);
+          if (ai !== -1 && bi !== -1) return ai - bi;
+          if (ai !== -1) return -1;
+          if (bi !== -1) return 1;
+          return (window.READING_FONTS[a].label||a).localeCompare(window.READING_FONTS[b].label||b);
+        });
         var savedFont = (function(){ try { var r = JSON.parse(localStorage.getItem('ds_reading')||'{}'); return r.font_override ? r.font : null; } catch(e){ return null; } })();
         fontOpts.innerHTML = '';
+        fontOpts.className = 'rs-font-grid';
         fontKeys.forEach(function(key) {
           var f = window.READING_FONTS[key];
           var btn = document.createElement('button');
           btn.className = 'rs-opt' + (savedFont === key ? ' active' : '');
           btn.setAttribute('data-font', key);
           btn.style.fontFamily = f.css;
+          btn.style.textAlign = 'center';
           btn.textContent = f.label;
           btn.onclick = function(){ setReaderFont(key); };
           fontOpts.appendChild(btn);
@@ -3009,7 +3018,22 @@
           var { data: rpRow } = await db.from('profiles').select('reading_prefs,settings_filter_gore,settings_filter_erotica,display_name,username').eq('id', currentSession.user.id).maybeSingle();
           if (rpRow) _cachedMyProfile = { display_name: rpRow.display_name, username: rpRow.username };
           if (rpRow && rpRow.reading_prefs) {
-            localStorage.setItem('ds_reading', JSON.stringify(rpRow.reading_prefs));
+            // Merge DB prefs with local overrides — local wins for width and font_override
+            var localPrefs = {};
+            try { localPrefs = JSON.parse(localStorage.getItem('ds_reading') || '{}'); } catch(e) {}
+            // Only take bg/fontsize/lineheight from DB — width and font are local-only
+            var merged = { bg: rpRow.reading_prefs.bg, fontsize: rpRow.reading_prefs.fontsize, lineheight: rpRow.reading_prefs.lineheight };
+            // Preserve local width
+            if (localStorage.getItem('ds_reader_width')) {
+              var lw = localStorage.getItem('ds_reader_width');
+              merged.width = lw === '100%' ? 9999 : parseInt(lw);
+            }
+            // Preserve local font override
+            if (localPrefs.font_override) {
+              merged.font = localPrefs.font;
+              merged.font_override = true;
+            }
+            localStorage.setItem('ds_reading', JSON.stringify(merged));
             applyReadingSettings();
           }
           if (rpRow) {
@@ -3032,7 +3056,9 @@
       // Mature content access gate: settings_filter_gore/erotica can only be true
       // for a verified 18+ account (enforced server-side by a DB trigger, not just
       // this check) — so this is a real block, not just a feed-hiding preference.
-      if (workData && ((workData.content_rating_gore && !myContentPerms.gore) || (workData.content_rating_erotica && !myContentPerms.erotica))) {
+      // Authors always bypass this gate for their own works.
+      var isAuthor = currentSession && workData && currentSession.user.id === workData.author_id;
+      if (!isAuthor && workData && ((workData.content_rating_gore && !myContentPerms.gore) || (workData.content_rating_erotica && !myContentPerms.erotica))) {
         document.querySelector('.reader-wrap').innerHTML =
           '<div style="text-align:center;padding:80px 24px;">' +
             '<i class="ti ti-shield-lock" style="font-size:48px;color:var(--accent);display:block;margin-bottom:16px;"></i>' +
