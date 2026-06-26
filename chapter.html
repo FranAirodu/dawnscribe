@@ -395,6 +395,13 @@
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
     .toast i{color:var(--accent);}
     @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  .echo-remove-btn {
+    flex-shrink:0;width:18px;height:18px;border-radius:50%;
+    background:color-mix(in srgb,var(--text3) 20%,transparent);
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;color:var(--text3);line-height:1;transition:background 0.12s,color 0.12s;
+  }
+  .echo-remove-btn:hover { background:color-mix(in srgb,#ef4444 35%,transparent) !important; color:#ef4444 !important; }
   </style>
 </head>
 <body>
@@ -2827,8 +2834,8 @@
         return;
       }
       var hint = echoModeActive
-        ? '<div style="margin:8px 12px;padding:8px 10px;background:color-mix(in srgb,#f59e0b 8%,transparent);border:1px solid color-mix(in srgb,#f59e0b 25%,transparent);border-radius:8px;font-size:12px;color:#f59e0b;text-align:center;">✨ Now click a paragraph in the chapter</div>'
-        : '<div style="padding:8px 16px 4px;font-size:12px;color:var(--text3);font-style:italic;">Select an Echo then click a paragraph. One of each per novel.</div>';
+        ? '<div style="margin:8px 12px;padding:8px 10px;background:color-mix(in srgb,#f59e0b 8%,transparent);border:1px solid color-mix(in srgb,#f59e0b 25%,transparent);border-radius:8px;font-size:12px;color:#f59e0b;text-align:center;">✨ Now click a paragraph in the chapter to place your echo</div>'
+        : '<div style="padding:8px 16px 4px;font-size:12px;color:var(--text3);font-style:italic;">Drag a paragraph echo onto the chapter, or click the 🔮 bubble. Limit: 1 of each per chapter.</div>';
       var html = hint;
       // Helper to render a single echo row
       function renderEchoRow(t) {
@@ -2844,23 +2851,18 @@
           else if (chapterData&&placed.chapter_id===chapterData.id) pt='This chapter — click to move';
           else { var pc=allChapters.find(function(c){return c.id===placed.chapter_id;}); pt='Ch.'+(pc?pc.chapter_number:'?')+' — click to move'; }
         }
-        return '<div data-echo-id="'+t.id+'" class="sp-echo-row" style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:8px;cursor:pointer;border:1.5px solid '+sbd+';background:'+sb+';opacity:'+op+';margin:2px 6px;transition:all 0.12s;">' +
+        var isParaType = t.applies_to === 'paragraph';
+        return '<div data-echo-id="'+t.id+'" class="sp-echo-row"' + (isParaType ? ' draggable="true"' : '') + ' style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:8px;cursor:pointer;border:1.5px solid '+sbd+';background:'+sb+';opacity:'+op+';margin:2px 6px;transition:all 0.12s;">' +
           '<span style="font-size:15px;width:22px;text-align:center;flex-shrink:0;">'+t.icon+'</span>' +
           '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;color:'+rc+';line-height:1.2;">'+t.label+'</div>' +
           (pt?'<div style="font-size:10px;color:'+rc+';margin-top:1px;opacity:0.8;">✓ '+pt+'</div>':'') +
-          '</div></div>';
+          '</div>' +
+          (placed?'<span data-echo-remove="'+t.id+'" class="echo-remove-btn" title="Remove Echo">&#x2715;</span>':'') +
+          '</div>';
       }
-      // Chapter-wide echoes
-      var chapterEchoes = echoTypes.filter(function(t){ return t.scope === 'chapter'; });
-      if (chapterEchoes.length) {
-        html += '<div style="padding:8px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">📖 Chapter Echoes</div>';
-        chapterEchoes.forEach(function(t){ html += renderEchoRow(t); });
-      }
-      // Divider
-      html += '<div style="margin:6px 12px 2px;border-top:1px solid var(--border);"></div>';
       // Paragraph/Quote echoes by rarity
       var rarities = [{key:'common',label:'Common'},{key:'rare',label:'Rare ✦'},{key:'ultra',label:'Ultra Rare ✦✦'}];
-      html += '<div style="padding:4px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">✏️ Paragraph & Quote Echoes</div>';
+      html += '<div style="padding:8px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">✏️ Paragraph & Quote Echoes</div>';
       rarities.forEach(function(r) {
         var items = echoTypes.filter(function(t){ return t.rarity === r.key && t.scope !== 'chapter'; });
         if (!items.length) return;
@@ -2870,19 +2872,118 @@
         }
         items.forEach(function(t){ html += renderEchoRow(t); });
       });
+      // Divider
+      html += '<div style="margin:6px 12px 2px;border-top:1px solid var(--border);"></div>';
+      // Chapter-wide echoes
+      var chapterEchoes = echoTypes.filter(function(t){ return t.scope === 'chapter'; });
+      if (chapterEchoes.length) {
+        html += '<div style="padding:4px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">📖 Chapter Echoes</div>';
+        chapterEchoes.forEach(function(t){ html += renderEchoRow(t); });
+      }
       body.innerHTML = html;
       if (_spEchoClickHandler) { body.removeEventListener('click', _spEchoClickHandler); _spEchoClickHandler = null; }
-      _spEchoClickHandler = function(e) {
+      _spEchoClickHandler = async function(e) {
+        // X remove button — remove without selecting, then re-render SP panel
+        var removeBtn = e.target.closest('[data-echo-remove]');
+        if (removeBtn) {
+          e.stopPropagation();
+          var typeId = removeBtn.dataset.echoRemove;
+          body.removeEventListener('click', _spEchoClickHandler);
+          _spEchoClickHandler = null;
+          await echoRemove(typeId);
+          if (spTab === 'echoes') spRenderEchoes();
+          return;
+        }
         var row = e.target.closest('.sp-echo-row');
         if (!row) return;
+        var type = echoTypes.find(function(t){return t.id===row.dataset.echoId;});
+        // Paragraph echoes: drag or bubble-click only — row click does nothing
+        if (type && type.applies_to === 'paragraph') return;
         body.removeEventListener('click', _spEchoClickHandler);
         _spEchoClickHandler = null;
-        var type = echoTypes.find(function(t){return t.id===row.dataset.echoId;});
         echoSelect(row.dataset.echoId);
-        if (type && type.applies_to !== 'paragraph') spClose();
-        else if (spTab === 'echoes') spRenderEchoes();
+        spClose();
       };
       body.addEventListener('click', _spEchoClickHandler);
+      // Wire drag events on para echo rows
+      echoPanelWireDrag(body);
+    }
+
+    var _echoDragTypeId = null;
+
+    function echoPanelWireDrag(body) {
+      body.querySelectorAll('.sp-echo-row[draggable="true"]').forEach(function(row) {
+        row.addEventListener('dragstart', function(e) {
+          _echoDragTypeId = row.dataset.echoId;
+          row.classList.add('echo-dragging');
+          e.dataTransfer.effectAllowed = 'copy';
+          e.dataTransfer.setData('text/plain', _echoDragTypeId);
+          // Activate drop targets on paragraphs
+          echoActivateDropTargets();
+        });
+        row.addEventListener('dragend', function() {
+          row.classList.remove('echo-dragging');
+          _echoDragTypeId = null;
+          echoDeactivateDropTargets();
+        });
+      });
+    }
+
+    function echoActivateDropTargets() {
+      var paras = document.querySelectorAll('#page-content .para-wrap');
+      paras.forEach(function(p) {
+        p.addEventListener('dragover', echoDragOver);
+        p.addEventListener('dragleave', echoDragLeave);
+        p.addEventListener('drop', echoDrop);
+      });
+    }
+
+    function echoDeactivateDropTargets() {
+      document.querySelectorAll('#page-content .para-wrap').forEach(function(p) {
+        p.classList.remove('echo-drop-over');
+        p.removeEventListener('dragover', echoDragOver);
+        p.removeEventListener('dragleave', echoDragLeave);
+        p.removeEventListener('drop', echoDrop);
+      });
+    }
+
+    function echoDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      this.classList.add('echo-drop-over');
+    }
+
+    function echoDragLeave(e) {
+      if (!this.contains(e.relatedTarget)) this.classList.remove('echo-drop-over');
+    }
+
+    async function echoDrop(e) {
+      e.preventDefault();
+      this.classList.remove('echo-drop-over');
+      echoDeactivateDropTargets();
+      var typeId = _echoDragTypeId || e.dataTransfer.getData('text/plain');
+      _echoDragTypeId = null;
+      if (!typeId) return;
+      var type = echoTypes.find(function(t){ return t.id === typeId; });
+      if (!type || type.applies_to !== 'paragraph') return;
+      // Enforce 1 para echo limit
+      var paraEchoesPlaced = Object.values(myEchoes).filter(function(e) {
+        if (e.chapter_id !== chapterData.id) return false;
+        var t = echoTypes.find(function(x){ return x.id === e.echo_type_id; });
+        return t && t.applies_to === 'paragraph';
+      });
+      var alreadyPlaced = myEchoes[typeId] && myEchoes[typeId].chapter_id === chapterData.id;
+      if (!alreadyPlaced && paraEchoesPlaced.length >= 1) {
+        showToast('You can only place 1 Paragraph Echo per chapter. Remove your existing one to swap it.', 'ti-info-circle');
+        if (spTab === 'echoes') spRenderEchoes();
+        return;
+      }
+      // para-wrap contains the p[data-para-idx] as a child
+      var paraEl = this.querySelector('[data-para-idx]');
+      if (!paraEl) return;
+      var paraIdx = parseInt(paraEl.getAttribute('data-para-idx') || 0);
+      await echoPlaceOnParagraph(typeId, paraIdx, null, null, null);
+      if (spTab === 'echoes') spRenderEchoes();
     }
 
     async function spLoadComments() {
@@ -3037,8 +3138,8 @@
             applyReadingSettings();
           }
           if (rpRow) {
-            myContentPerms.gore = !rpRow.settings_filter_gore;
-            myContentPerms.erotica = !rpRow.settings_filter_erotica;
+            myContentPerms.gore = rpRow.settings_filter_gore !== false;
+            myContentPerms.erotica = rpRow.settings_filter_erotica !== false;
           }
         } catch(e) {} // on fetch failure, keep permissive defaults for logged-in users
       }
@@ -3283,7 +3384,7 @@
           var isUsed = !!placed;
           var appliesHere = echoAppliesToHere(t);
           var cls = 'echo-item' + (isSelected ? ' selected' : '') + (isUsed && !isSelected ? ' used' : '') + (t.rarity !== 'common' ? ' ' + t.rarity : '');
-          var whereText = t.applies_to === 'paragraph' ? 'Click a paragraph' : t.applies_to === 'chapter' ? 'Applies to this chapter' : 'Applies to the whole story';
+          var whereText = t.applies_to === 'paragraph' ? 'Drag onto a paragraph or click 🔮' : t.applies_to === 'chapter' ? 'Applies to this chapter' : 'Applies to the whole story';
           var placedText = placed ? ('Placed in Ch.' + (placed.chapter_id === chapterData.id ? 'this chapter' : '?')) : '';
           html += '<div class="' + cls + '" onclick="echoSelect(' + JSON.stringify(t.id) + ')">' +
             '<span class="echo-item-icon">' + t.icon + '</span>' +
@@ -3314,6 +3415,28 @@
         updateEchoHint('Select an Echo, then click a paragraph to place it.');
         return;
       }
+      // Enforce limits: 1 chapter echo + 1 paragraph echo per chapter (user can also use none)
+      var chapterEchoesPlaced = Object.values(myEchoes).filter(function(e) {
+        if (e.chapter_id !== chapterData.id) return false;
+        var t = echoTypes.find(function(x){ return x.id === e.echo_type_id; });
+        return t && t.applies_to === 'chapter';
+      });
+      var paraEchoesPlaced = Object.values(myEchoes).filter(function(e) {
+        if (e.chapter_id !== chapterData.id) return false;
+        var t = echoTypes.find(function(x){ return x.id === e.echo_type_id; });
+        return t && t.applies_to === 'paragraph';
+      });
+      var alreadyPlaced = myEchoes[typeId] && myEchoes[typeId].chapter_id === chapterData.id;
+      if (!alreadyPlaced) {
+        if (type.applies_to === 'chapter' && chapterEchoesPlaced.length >= 1) {
+          showToast('You can only place 1 Chapter Echo per chapter. Remove your existing one to swap it.', 'ti-info-circle');
+          return;
+        }
+        if (type.applies_to === 'paragraph' && paraEchoesPlaced.length >= 1) {
+          showToast('You can only place 1 Paragraph Echo per chapter. Remove your existing one to swap it.', 'ti-info-circle');
+          return;
+        }
+      }
       activeEchoType = typeId;
       echoModeActive = true;
       echoRenderPanel();
@@ -3326,10 +3449,8 @@
         var targetIdx = activeEchoParaTarget;
         activeEchoParaTarget = null;
         echoPlaceOnParagraph(typeId, targetIdx, null, null, null);
-      } else {
-        echoEnterParaMode();
-        updateEchoHint('Now click a paragraph — or highlight text first.');
       }
+      // paragraph type with no pre-target: drag-and-drop or bubble click only — nothing else
     }
 
     function echoEnterParaMode() {
@@ -3474,14 +3595,15 @@
         var type = echoTypes.find(function(t){ return t.id === echo.echo_type_id; });
         if (!type) return;
         if (type.applies_to === 'chapter') {
-          // Add badge to last paragraph on page
+          // Add badge to last paragraph on page — all chapter echoes stack
           var allParas = Object.values(paraByIdx);
           var lastPara = allParas[allParas.length - 1];
-          if (lastPara && !lastPara.querySelector('.echo-badge-chapter')) {
+          if (lastPara) {
             var badge = document.createElement('span');
             badge.className = 'echo-badge echo-badge-chapter' + (type.rarity !== 'common' ? ' ' + type.rarity : '');
             badge.innerHTML = type.icon + ' ' + type.label;
             badge.title = 'Your Echo — click to remove';
+            badge.dataset.echoType = echo.echo_type_id;
             badge.onclick = function(){ echoRemove(echo.echo_type_id); };
             lastPara.appendChild(badge);
           }

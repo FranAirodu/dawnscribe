@@ -269,7 +269,7 @@
 
   var allData = { novels: [], artists: [], comments: [], social: [] };
   var shown   = { novels: 0, artists: 0, comments: 0, social: 0 };
-  var myPrefs = { notif_follow: true, notif_chapter: true, notif_comment: true, notif_message: true, notif_announce: false };
+  var myPrefs = { notif_follow: true, notif_chapter: true, notif_comment: true, notif_echo: true, notif_message: true, notif_announce: false };
   var BATCH   = 30;
 
   // ── UTILS ────────────────────────────────────────────────────────
@@ -686,7 +686,7 @@
       }
 
       // Echo (Aura) notifications — from notifications table, type='echo'
-      try {
+      if(myPrefs.notif_echo !== false) try {
         var echoRes=await db.from('notifications').select('id,message,work_id,chapter_id,created_at,is_read,from_user_id').eq('user_id',uid).eq('type','echo').neq('is_read',true).order('created_at',{ascending:false}).limit(20);
         var echoRows=echoRes.data||[];
         if(echoRows.length){
@@ -774,8 +774,8 @@
       var allTitleMap = Object.assign({}, novTitleMap, artTitleMap);
       var collabItems=[];
       if(allWorkIds.length){
-        var acRes=await db.from('artwork_collabs').select('id,work_id,artist_id,created_at').in('work_id',allWorkIds).eq('status','pending').order('created_at',{ascending:false});
-        (acRes.data||[]).forEach(function(c){ c._workTitle=allTitleMap[c.work_id]||'your work'; c._fromId=c.artist_id; collabItems.push(c); });
+        var acRes=await db.from('artwork_collabs').select('id,work_id,author_id,created_at').in('work_id',allWorkIds).eq('status','pending').order('created_at',{ascending:false});
+        (acRes.data||[]).forEach(function(c){ c._workTitle=allTitleMap[c.work_id]||'your work'; c._fromId=c.author_id; collabItems.push(c); });
       }
       if(collabItems.length){
         var fromIds=[...new Set(collabItems.map(function(c){return c._fromId;}).filter(Boolean))];
@@ -857,13 +857,14 @@
     }
     var uid=session.user.id;
     try {
-      var {data:prefRow}=await db.from('profiles').select('notif_follow,notif_chapter,notif_comment,notif_message,notif_announce').eq('id',uid).maybeSingle();
+      var {data:prefRow}=await db.from('profiles').select('notif_follow,notif_chapter,notif_comment,notif_echo,notif_message,notif_announce').eq('id',uid).maybeSingle();
       if(prefRow){
         if(prefRow.notif_follow!==null&&prefRow.notif_follow!==undefined) myPrefs.notif_follow=prefRow.notif_follow;
         if(prefRow.notif_chapter!==null&&prefRow.notif_chapter!==undefined) myPrefs.notif_chapter=prefRow.notif_chapter;
         if(prefRow.notif_comment!==null&&prefRow.notif_comment!==undefined) myPrefs.notif_comment=prefRow.notif_comment;
         if(prefRow.notif_message!==null&&prefRow.notif_message!==undefined) myPrefs.notif_message=prefRow.notif_message;
         if(prefRow.notif_announce!==null&&prefRow.notif_announce!==undefined) myPrefs.notif_announce=prefRow.notif_announce;
+        if(prefRow.notif_echo!==null&&prefRow.notif_echo!==undefined) myPrefs.notif_echo=prefRow.notif_echo;
       }
     } catch(e){}
     await loadAll(uid);
