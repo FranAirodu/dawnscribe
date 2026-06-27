@@ -2824,12 +2824,86 @@
       btnEl.disabled = false;
     }
 
+    function echoAuthorScrollToPara(paraIdx) {
+      var el = document.querySelector('[data-para-idx="' + paraIdx + '"]');
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.transition = 'background 0.3s';
+      el.style.background = 'color-mix(in srgb, var(--accent) 18%, transparent)';
+      setTimeout(function(){ el.style.background = ''; }, 1800);
+    }
+
+    async function spRenderEchoesAuthor() {
+      var body = document.getElementById('sp-body');
+      body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text3);font-size:13px;"><i class="ti ti-loader-2" style="font-size:22px;display:block;margin-bottom:8px;animation:spin 1s linear infinite;"></i>Loading echoes…</div>';
+      var { data: allEchoes } = await db.from('reader_echoes')
+        .select('id,echo_type_id,user_id,paragraph_index,highlight_text,created_at')
+        .eq('chapter_id', chapterData.id)
+        .order('paragraph_index', { ascending: true, nullsFirst: false });
+      allEchoes = allEchoes || [];
+      if (!allEchoes.length) {
+        body.innerHTML = '<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px;"><div style="font-size:28px;margin-bottom:8px;">🔮</div>No echoes on this chapter yet.</div>';
+        return;
+      }
+      var readerIds = [...new Set(allEchoes.map(function(e){ return e.user_id; }))];
+      var { data: readers } = await db.from('profiles').select('id,username,display_name,avatar_url').in('id', readerIds);
+      var readerMap = {};
+      (readers || []).forEach(function(p){ readerMap[p.id] = p; });
+
+      var paraEchoes = allEchoes.filter(function(e){ return e.paragraph_index !== null && e.paragraph_index !== undefined; });
+      var chapterEchoes = allEchoes.filter(function(e){ return e.paragraph_index === null || e.paragraph_index === undefined; });
+
+      function buildReaderRow(e) {
+        var p = readerMap[e.user_id] || {};
+        var name = p.display_name || p.username || 'Unknown';
+        var et = (echoTypes||[]).find(function(t){return t.id===e.echo_type_id;}) || { icon:'🔮', label:e.echo_type_id, rarity:'common' };
+        var rc = et.rarity==='rare'?'#ef4444':et.rarity==='ultra'?'#a855f7':'var(--accent)';
+        var av = p.avatar_url
+          ? '<img src="' + p.avatar_url + '" style="width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0;">'
+          : '<div style="width:22px;height:22px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:white;flex-shrink:0;">' + (name[0]||'?').toUpperCase() + '</div>';
+        var echoLabel = '<span style="font-size:10px;font-weight:700;color:' + rc + ';">' + et.icon + ' ' + et.label + '</span>';
+        var locLabel = '';
+        if (e.paragraph_index !== null && e.paragraph_index !== undefined) {
+          var snippet = e.highlight_text ? ('“' + e.highlight_text.slice(0,38) + (e.highlight_text.length>38?'…”':'”')) : null;
+          locLabel = '<span class="echo-para-jump" data-para-idx="' + e.paragraph_index + '" title="Jump to paragraph" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--accent);cursor:pointer;margin-top:2px;text-decoration:underline;text-decoration-style:dotted;">¶ Paragraph ' + (e.paragraph_index+1) + ' <i class="ti ti-arrow-right" style="font-size:9px;"></i></span>' +
+            (snippet ? '<span style="font-size:10px;color:var(--text3);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;margin-top:1px;">' + snippet + '</span>' : '');
+        } else {
+          locLabel = '<span style="font-size:10px;color:var(--text3);margin-top:2px;display:block;">📖 Chapter echo</span>';
+        }
+        return '<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 6px;border-radius:6px;margin:1px 0;">' +
+          av +
+          '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;color:var(--text);">' + name + '</div>' +
+          echoLabel + '<br>' + locLabel + '</div>' +
+          '</div>';
+      }
+
+      var html = '<div style="padding:8px 12px 4px;font-size:11px;color:var(--text3);font-style:italic;">Echoes readers placed on this chapter</div>';
+
+      if (paraEchoes.length) {
+        html += '<div style="padding:4px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">✏️ Paragraph Echoes</div>';
+        paraEchoes.forEach(function(e){ html += buildReaderRow(e); });
+      }
+
+      if (chapterEchoes.length) {
+        if (paraEchoes.length) html += '<div style="margin:6px 12px 2px;border-top:1px solid var(--border);"></div>';
+        html += '<div style="padding:4px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">📖 Chapter Echoes</div>';
+        chapterEchoes.forEach(function(e){ html += buildReaderRow(e); });
+      }
+
+      body.innerHTML = html;
+
+      body.querySelectorAll('.echo-para-jump').forEach(function(el) {
+        el.addEventListener('click', function() {
+          echoAuthorScrollToPara(parseInt(el.dataset.paraIdx));
+        });
+      });
+    }
+
     function spRenderEchoes() {
+      if (isOwner) { spRenderEchoesAuthor(); return; }
       var body = document.getElementById('sp-body');
       if (!echoTypes || !echoTypes.length) {
-        var msg = (currentSession && isOwner)
-          ? 'Authors can\'t use Echoes on their own story.'
-          : 'Log in to use Echoes.';
+        var msg = currentSession ? 'Log in to use Echoes.' : 'Log in to use Echoes.';
         body.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text3);">' + msg + '</div>';
         return;
       }
@@ -3287,6 +3361,11 @@
       await loadChapterComments();
       await spLoadComments();
       if(currentSession && !isOwner) { await echoInit(); }
+      else if(currentSession && isOwner) {
+        // Authors don't place echoes but need echoTypes to render the viewer
+        var { data: types } = await db.from('echo_types').select('*').order('rarity').order('label');
+        echoTypes = types || [];
+      }
 
       // CHARACTER TITLES — show after chapter nav
       var ctSection = document.getElementById('character-titles-section');
