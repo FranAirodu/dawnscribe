@@ -176,7 +176,7 @@ function dsApplyAccent(hex) {
       <i class="ti ti-feather"></i>
       <span class="quill-count" id="ds-quill-count">0</span>
     </div>
-    <div class="ember-wrap" id="ember-wrap" style="display:none;" title="Your embers — earned by reading chapters">
+    <div class="ember-wrap" id="ember-wrap" style="display:none;cursor:pointer;" title="Your embers — spend them in My Avatar" onclick="window.location.href='avatar.html'">
       <i class="ti ti-flame"></i>
       <span class="ember-count" id="ds-ember-count">0</span>
     </div>
