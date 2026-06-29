@@ -1199,7 +1199,7 @@
                 var vid = (s.youtube_url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/) || [])[1] || '';
                 var pname = profMap2[s.user_id] ? (profMap2[s.user_id].display_name || profMap2[s.user_id].username) : 'Unknown';
                 var cname = charMap2[s.character_id] ? charMap2[s.character_id].name : 'Unknown';
-                return '<div class="song-pending-row" style="display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);">' +
+                return '<div class="song-pending-row" data-song-id="'+s.id+'" style="display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);">' +
                   (vid ? '<img src="https://img.youtube.com/vi/'+vid+'/default.jpg" style="width:60px;height:45px;border-radius:6px;object-fit:cover;flex-shrink:0;" />' : '') +
                   '<div style="flex:1;min-width:0;">' +
                     '<div style="font-size:13px;font-weight:700;color:var(--text);"><a href="'+s.youtube_url+'" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">'+s.song_title+'</a></div>' +
@@ -1243,12 +1243,7 @@
       }
       // Remove card from DOM instead of full page reload
       var row = document.querySelector('.song-pending-row[data-song-id="' + id + '"]');
-      if (!row) {
-        // Try to remove by iterating all song rows
-        document.querySelectorAll('.song-pending-row').forEach(function(r) {
-          if (r.innerHTML.includes(id)) r.remove();
-        });
-      } else { row.remove(); }
+      if (row) row.remove();
       var countEl = document.getElementById('song-suggestion-count');
       if (countEl) { var n = Math.max(0, parseInt(countEl.textContent||0) - 1); countEl.textContent = n; if (!n) { var btn = document.getElementById('song-suggestions-btn'); if(btn) btn.style.display='none'; } }
       showToast('Song approved!', 'ti-check');
@@ -1276,10 +1271,8 @@
           character_id: song.character_id || null
         });
       }
-      // Remove card from DOM instead of full page reload
-      document.querySelectorAll('.song-pending-row').forEach(function(r) {
-        if (r.innerHTML.includes(id)) r.remove();
-      });
+      var rejRow = document.querySelector('.song-pending-row[data-song-id="' + id + '"]');
+      if (rejRow) rejRow.remove();
       var countEl = document.getElementById('song-suggestion-count');
       if (countEl) { var n = Math.max(0, parseInt(countEl.textContent||0) - 1); countEl.textContent = n; if (!n) { var btn = document.getElementById('song-suggestions-btn'); if(btn) btn.style.display='none'; } }
       showToast('Song rejected.', 'ti-x');
@@ -1382,9 +1375,11 @@
       layout.className = 'works-layout';
       layout.innerHTML = skeletonCard() + skeletonCard();
       await ensureContentFilters();
-      var result = await db.from('works').select('id,title,cover_url,status,tags_main,type,synopsis,views,chapters_count,word_count,total_readers,updated_at,avg_chapter_days,content_rating_gore,content_rating_erotica').eq('author_id', profileId).order('created_at', { ascending: false });
-      layout.innerHTML = '';
       var isOwner = document.body.classList.contains('is-owner');
+      var worksQ = db.from('works').select('id,title,cover_url,status,tags_main,type,synopsis,views,chapters_count,word_count,total_readers,updated_at,avg_chapter_days,content_rating_gore,content_rating_erotica').eq('author_id', profileId).order('created_at', { ascending: false });
+      if (!isOwner) worksQ = worksQ.eq('is_published', true);
+      var result = await worksQ;
+      layout.innerHTML = '';
 
       // Fetch collab IDs to exclude from Works tab
       var collabWorkIds = new Set();
@@ -1416,6 +1411,11 @@
       }
       var hasBoth  = (novels.length > 0 || fanfics.length > 0) && artworks.length > 0;
       if (hasBoth) { layout.className = 'works-layout'; } else { layout.className = ''; }
+      if (novels.length === 0 && fanfics.length === 0 && artworks.length === 0 && !isOwner) {
+        layout.innerHTML = '<div style="padding:48px 24px;text-align:center;color:var(--text3);"><i class="ti ti-books" style="font-size:36px;display:block;margin-bottom:12px;opacity:0.4;"></i><p style="font-size:14px;">No published works yet.</p></div>';
+        document.getElementById('works-layout').appendChild(layout);
+        return;
+      }
       if (novels.length > 0 || isOwner) {
         var col = document.createElement('div');
         col.innerHTML = '<div class="works-col-header"><div class="works-col-title"><i class="ti ti-book"></i> Novels</div>' +
@@ -1602,10 +1602,14 @@
       return card;
     }
 
+    var _workFollowSession = null;
     async function checkWorkFollowState(workId) {
-      var s = await db.auth.getSession();
-      if (!s || !s.data || !s.data.session) return;
-      var res = await db.from('work_follows').select('id').eq('user_id', s.data.session.user.id).eq('work_id', workId).maybeSingle();
+      if (!_workFollowSession) {
+        var _s = await db.auth.getSession();
+        _workFollowSession = (_s && _s.data) ? _s.data.session : null;
+      }
+      if (!_workFollowSession) return;
+      var res = await db.from('work_follows').select('id').eq('user_id', _workFollowSession.user.id).eq('work_id', workId).maybeSingle();
       var btn = document.getElementById('follow-btn-' + workId);
       if (!btn) return;
       if (res.data) setFollowBtnState(btn, true);
@@ -1695,7 +1699,7 @@
         '<div class="ann-title-text">' + escHtml(ann.title||'') + '</div></div>' +
         '<div class="ann-top-right"><span class="ann-time"><i class="ti ti-clock"></i> ' + timeStr + '</span>' +
         (isOwner ? '<button class="ann-edit-btn" style="display:inline-flex;" onclick="openEditAnnModal(\'' + id + '\')"><i class="ti ti-pencil"></i> Edit</button>' : '') +
-        '</div></div><div class="ann-body">' + escHtml(ann.body||'') + '</div>';
+        '</div></div><div class="ann-body">' + escHtml(ann.body||'').replace(/\n/g,'<br>') + '</div>';
       return el;
     }
 
@@ -1836,7 +1840,14 @@ async function handleFriendBtn() {
     showToast('Friend request sent!', 'ti-user-plus');
     checkFriendshipState(session.user.id, currentProfileId);
   } else if (_friendshipStatus === 'accepted') {
-    if (!confirm('Remove this friend?')) return;
+    if (!window._friendRemoveConfirm) {
+      window._friendRemoveConfirm = true;
+      var _frBtn = document.getElementById('friend-btn');
+      if (_frBtn) { var _frOrig = _frBtn.innerHTML; _frBtn.innerHTML = '<i class="ti ti-alert-triangle"></i> Confirm?'; _frBtn.style.borderColor='var(--red)'; _frBtn.style.color='var(--red)'; }
+      setTimeout(function(){ window._friendRemoveConfirm=false; if(_frBtn){_frBtn.innerHTML=_frOrig;_frBtn.style.borderColor='';_frBtn.style.color='';} }, 3000);
+      return;
+    }
+    window._friendRemoveConfirm = false;
     btn.style.opacity = '0.5';
     await db.from('friendships').delete().eq('id', _friendshipId);
     btn.style.opacity = '1';
@@ -1850,7 +1861,14 @@ async function handleFriendBtn() {
     showToast('Friend request accepted!', 'ti-check');
     checkFriendshipState(session.user.id, currentProfileId);
   } else if (_friendshipStatus === 'pending_sent') {
-    if (!confirm('Cancel friend request?')) return;
+    if (!window._friendCancelConfirm) {
+      window._friendCancelConfirm = true;
+      var _fcBtn = document.getElementById('friend-btn');
+      if (_fcBtn) { var _fcOrig = _fcBtn.innerHTML; _fcBtn.innerHTML = '<i class="ti ti-alert-triangle"></i> Confirm?'; _fcBtn.style.opacity='0.85'; }
+      setTimeout(function(){ window._friendCancelConfirm=false; if(_fcBtn){_fcBtn.innerHTML=_fcOrig;_fcBtn.style.opacity='';} }, 3000);
+      return;
+    }
+    window._friendCancelConfirm = false;
     btn.style.opacity = '0.5';
     await db.from('friendships').delete().eq('id', _friendshipId);
     btn.style.opacity = '1';
@@ -1995,8 +2013,10 @@ async function handleFriendBtn() {
     /* ── EDIT PROFILE MODAL ─────────────────────────────────────── */
     function openEditModal() {
       document.getElementById('edit-name').value = document.getElementById('display-name').textContent;
-      document.getElementById('edit-location').value = document.getElementById('info-location').textContent;
-      document.getElementById('edit-language').value = document.getElementById('info-language').textContent;
+      var _locEl = document.getElementById('info-location');
+      document.getElementById('edit-location').value = (_locEl && !_locEl.classList.contains('muted')) ? _locEl.textContent : '';
+      var _langEl = document.getElementById('info-language');
+      document.getElementById('edit-language').value = (_langEl && !_langEl.classList.contains('muted')) ? _langEl.textContent : '';
       var twitterLink = document.querySelector('#social-icons a[data-type="twitter"]');
       var kofiLink = document.querySelector('#social-icons a[data-type="kofi"]');
       document.getElementById('edit-twitter').value = twitterLink ? twitterLink.getAttribute('data-handle') : '';
@@ -2103,7 +2123,7 @@ async function handleFriendBtn() {
       if (role)     { document.getElementById('info-role').textContent = role; }
       var handleEl = document.getElementById('display-handle');
       var currentHandle = handleEl.textContent.split(' · ')[0];
-      handleEl.textContent = currentHandle + ' · ' + role;
+      handleEl.textContent = role ? currentHandle + ' · ' + role : currentHandle;
       // Update currently writing display
       document.getElementById('currently-writing-text').textContent = currentlyWriting;
       document.getElementById('currently-writing-display').style.display = currentlyWriting ? 'flex' : 'none';
@@ -2168,7 +2188,7 @@ async function handleFriendBtn() {
         '<div class="ann-title-text">' + escHtml(title) + '</div></div>' +
         '<div class="ann-top-right"><span class="ann-time"><i class="ti ti-clock"></i> Just now</span>' +
         '<button class="ann-edit-btn" style="display:inline-flex;" onclick="openEditAnnModal(\'' + newId + '\')"><i class="ti ti-pencil"></i> Edit</button>' +
-        '</div></div><div class="ann-body">' + escHtml(body) + '</div>';
+        '</div></div><div class="ann-body">' + escHtml(body).replace(/\n/g,'<br>') + '</div>';
       var list = document.getElementById('announcements-list');
       list.insertBefore(el, list.firstChild);
       document.getElementById('post-modal').classList.remove('open');
@@ -2214,7 +2234,7 @@ async function handleFriendBtn() {
       var titleEl = el.querySelector('.ann-title-text');
       var bodyEl  = el.querySelector('.ann-body');
       if (titleEl) { titleEl.textContent = title; }
-      if (bodyEl)  { bodyEl.textContent  = body; }
+      if (bodyEl)  { bodyEl.innerHTML = escHtml(body).replace(/\n/g,'<br>'); }
       document.getElementById('edit-ann-modal').classList.remove('open');
       showToast('Announcement updated!');
     }
@@ -2239,7 +2259,7 @@ async function handleFriendBtn() {
       // Only show reading list if this is the owner's profile, or the owner has it set to public
       var isOwner = document.body.classList.contains('is-owner');
       var profileData = window._viewedProfileData;
-      if (!isOwner && !(profileData && profileData.privacy_readinglist)) {
+      if (!isOwner && profileData && profileData.privacy_readinglist === false) {
         container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">Reading list is private.</div>';
         return;
       }
@@ -2287,7 +2307,7 @@ async function handleFriendBtn() {
             : '<div class="reading-cover cover-purple">' + letter + '</div>';
           var card = document.createElement('div');
           card.className = 'reading-card';
-          card.onclick = function(){ window.location.href = 'story.html?id=' + work.id; };
+          card.onclick = function(){ window.location.href = r.chapter_id ? 'chapter.html?id=' + r.chapter_id : 'story.html?id=' + work.id; };
           card.innerHTML = coverHtml +
             '<div class="reading-body">' +
               '<div class="reading-title">' + escHtml(work.title) + '</div>' +
@@ -2437,7 +2457,7 @@ async function handleFriendBtn() {
             var timeStr = c.created_at ? new Date(c.created_at).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : '';
             var item = document.createElement('div'); item.className = 'activity-item';
             item.innerHTML = '<div class="activity-item-on"><span class="act-badge novel">Novel</span> ' + escHtml(workTitle) + ' · Ch. ' + chNum + '</div>' +
-              '<div class="activity-text">"' + dsSpoiler.render(escHtml((c.content||'').slice(0,120))) + (c.content&&c.content.length>120?'...':'') + '"</div>' +
+              '<div class="activity-text">"' + (typeof dsSpoiler!=='undefined'?dsSpoiler.render(escHtml((c.content||'').slice(0,120))):escHtml((c.content||'').slice(0,120))) + (c.content&&c.content.length>120?'...':'') + '"</div>' +
               '<div class="activity-time"><i class="ti ti-clock"></i> ' + timeStr + '</div>';
             if (workId) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'chapter.html?work='+workId+'&chapter='+c.chapter_id; }; }
             commentsCol.appendChild(item);
@@ -2454,7 +2474,7 @@ async function handleFriendBtn() {
             var item = document.createElement('div'); item.className = 'activity-item';
             item.innerHTML = '<div class="activity-item-on"><span class="act-badge novel">Novel</span> ' + escHtml(workTitle) + '</div>' +
               '<div class="review-stars">'+stars+'</div>' +
-              '<div class="activity-text">"' + dsSpoiler.render(escHtml((r.content||'').slice(0,120))) + (r.content&&r.content.length>120?'...':'') + '"</div>' +
+              '<div class="activity-text">"' + (typeof dsSpoiler!=='undefined'?dsSpoiler.render(escHtml((r.content||'').slice(0,120))):escHtml((r.content||'').slice(0,120))) + (r.content&&r.content.length>120?'...':'') + '"</div>' +
               '<div class="activity-time"><i class="ti ti-clock"></i> ' + timeStr + '</div>';
             if (r.work_id) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'story.html?id='+r.work_id; }; }
             reviewsCol.appendChild(item);
