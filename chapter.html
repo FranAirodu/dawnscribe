@@ -434,6 +434,15 @@
           </div>
           <div class="ct-chapter-char-note">Characters carry forward to each new chapter automatically. You can skip or end them per chapter.</div>
         </div>
+        <div class="field-group" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px;">
+          <label class="field-label" style="display:flex;align-items:center;gap:6px;"><i class="ti ti-note" style="color:var(--accent);"></i> Author's Thoughts <span style="font-weight:400;color:var(--text3);font-size:11px;text-transform:none;letter-spacing:0;">(optional — shown to readers)</span></label>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;">Leave a note for readers before or after the chapter. Great for context, inspiration, or a thank-you.</div>
+          <label class="field-label" style="font-size:11px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--text2);margin-bottom:4px;">Top note <span style="font-weight:400;color:var(--text3);">(appears before chapter content)</span></label>
+          <textarea class="field-input" id="edit-author-note-top" rows="3" maxlength="1000" placeholder="e.g. This chapter was inspired by…" style="resize:vertical;font-size:13px;line-height:1.6;"></textarea>
+          <div style="margin-top:10px;"></div>
+          <label class="field-label" style="font-size:11px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--text2);margin-bottom:4px;">Bottom note <span style="font-weight:400;color:var(--text3);">(appears after chapter content)</span></label>
+          <textarea class="field-input" id="edit-author-note-bottom" rows="3" maxlength="1000" placeholder="e.g. Thanks for reading! Next chapter drops Friday…" style="resize:vertical;font-size:13px;line-height:1.6;"></textarea>
+        </div>
       </div>
       <div class="overlay-footer">
         <button class="cancel-btn" onclick="closeEditOverlay()">Cancel</button>
@@ -1353,6 +1362,9 @@
             } catch(e) {
               // Non-critical — badge awards never block reading
             }
+
+            // ── NEW READER MISSION: read first chapter ────────────────
+            try { await window.dsCompleteMission('read_first_chapter'); } catch(e) {}
           } else {
             showToast('Chapter complete! +1 reading progress', 'ti-circle-check');
           }
@@ -1574,6 +1586,12 @@
       var w = editQuill.getText().trim().split(/\s+/).filter(Boolean).length;
       document.getElementById('edit-word-count').textContent = w;
 
+      // Populate Author's Thoughts fields
+      var antEl = document.getElementById('edit-author-note-top');
+      var anbEl = document.getElementById('edit-author-note-bottom');
+      if (antEl) antEl.value = chapterData.author_note_top || '';
+      if (anbEl) anbEl.value = chapterData.author_note_bottom || '';
+
       // Load character manager for this chapter
       if (workData && chapterData) {
         await editCtInit(workData.id, chapterData.id);
@@ -1598,10 +1616,14 @@
       btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Saving…';
 
       var wordCount = text.split(/\s+/).filter(Boolean).length;
+      var noteTop    = (document.getElementById('edit-author-note-top')    || {}).value || '';
+      var noteBottom = (document.getElementById('edit-author-note-bottom') || {}).value || '';
       var result = await db.from('chapters').update({
         title: title,
         content: content,
-        word_count: wordCount
+        word_count: wordCount,
+        author_note_top: noteTop || null,
+        author_note_bottom: noteBottom || null
       }).eq('id', chapterData.id);
 
       if (result.error) {
@@ -1616,8 +1638,14 @@
 
       chapterData.title = title;
       chapterData.content = content;
+      chapterData.author_note_top = noteTop || null;
+      chapterData.author_note_bottom = noteBottom || null;
       document.getElementById('chapter-title-display').textContent = title;
       document.getElementById('nav-chapter-title').textContent = title;
+
+      // Re-render author notes immediately
+      renderAuthorNote('top', chapterData.author_note_top);
+      renderAuthorNote('bottom', chapterData.author_note_bottom);
 
       // Re-paginate with new content
       pages = paginateContent(content);
@@ -1661,6 +1689,22 @@
     // Bridge for characterTitles.js to notify author from chapter context
     window.dsNotifyAuthor = async function(type, message, extra) {
       await notifyAuthor(type, message, extra);
+    };
+
+    // Bridge for completing new reader missions from any context (characterTitles.js, etc.)
+    window.dsCompleteMission = async function(missionKey) {
+      if (!currentSession) return;
+      try {
+        var result = await db.rpc('complete_mission', { p_mission_key: missionKey });
+        if (result.data && result.data.success) {
+          showToast('🏅 Mission complete: ' + result.data.badge_label + '!', 'ti-award');
+          if (result.data.all_done) {
+            setTimeout(function() {
+              showToast('⬛ Obsidian Medal unlocked! All new reader missions complete!', 'ti-sparkles');
+            }, 1200);
+          }
+        }
+      } catch(e) {} // non-critical
     };
 
     async function notifyUser(userId, type, message) {
@@ -2098,6 +2142,9 @@
         try { await db.rpc('award_comment_prestige_xp', { p_user_id: currentSession.user.id, p_chapter_id: chapterData.id }); } catch(e) {}
       }
 
+      // ── NEW READER MISSION: leave first comment ───────────────────
+      try { await window.dsCompleteMission('leave_first_comment'); } catch(e) {}
+
       // Notify the work author
       await notifyAuthor('para_comment', '{name} commented on a paragraph in "{title}"', { paragraph_index: activeParaIndex });
 
@@ -2260,11 +2307,26 @@
       }
       if(currentSession && currentSession.user.id !== c.user_id){
         card.querySelector('.comment-block-btn').addEventListener('click', async function(){
-          var name = escHtml(p.display_name||p.username||'User');
-          if(!confirm('Block '+name+'? Their comments will be hidden.')) return;
-          await dsBlock.block(c.user_id);
-          document.querySelectorAll('.comment-card,.reply-card').forEach(function(el){ if(el.dataset.userId===c.user_id) el.remove(); });
-          showToast('User blocked.','ti-ban');
+          var blockBtn = card.querySelector('.comment-block-btn');
+          if (blockBtn.dataset.confirming === '1') {
+            blockBtn.dataset.confirming = '0';
+            blockBtn.innerHTML = '<i class="ti ti-ban"></i>';
+            blockBtn.style.color = '';
+            await dsBlock.block(c.user_id);
+            document.querySelectorAll('.comment-card,.reply-card').forEach(function(el){ if(el.dataset.userId===c.user_id) el.remove(); });
+            showToast('User blocked.','ti-ban');
+          } else {
+            blockBtn.dataset.confirming = '1';
+            blockBtn.innerHTML = '<i class="ti ti-ban"></i> Block?';
+            blockBtn.style.color = 'var(--red)';
+            setTimeout(function(){
+              if (blockBtn.dataset.confirming === '1') {
+                blockBtn.dataset.confirming = '0';
+                blockBtn.innerHTML = '<i class="ti ti-ban"></i>';
+                blockBtn.style.color = '';
+              }
+            }, 3000);
+          }
         });
       }
       return card;
@@ -2567,12 +2629,47 @@
     async function editCtEnd(id) {
       var char = editCtCharacters.find(function(c){ return c.id === id; });
       if (!char) return;
-      var reason = prompt('Why is ' + char.name + ' leaving? (e.g. Died, Left)');
-      if (reason === null) return;
-      await db.from('novel_characters').update({ status: 'ended', ended_reason: reason || 'No longer in story' }).eq('id', id);
-      char.status = 'ended'; char.chapter_status = 'skipped';
-      editCtRender();
-      showToast(char.name + ' marked as ended.', 'ti-skull');
+      // Find the End button row and replace with inline input
+      var list = document.getElementById('edit-ct-mgr-list');
+      var rows = list ? list.querySelectorAll('.ct-mgr-row') : [];
+      var targetRow = null;
+      rows.forEach(function(r) {
+        var nameEl = r.querySelector('.ct-mgr-name');
+        if (nameEl && nameEl.textContent === char.name) targetRow = r;
+      });
+      if (!targetRow) return;
+      // Don't double-inject
+      if (targetRow.querySelector('.ct-end-input-wrap')) return;
+      var actionsEl = targetRow.querySelector('.ct-mgr-actions');
+      if (actionsEl) actionsEl.style.display = 'none';
+      var wrap = document.createElement('div');
+      wrap.className = 'ct-end-input-wrap';
+      wrap.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:6px;width:100%;flex-wrap:wrap;';
+      wrap.innerHTML =
+        '<input type="text" placeholder="Reason (e.g. Died, Left)…" maxlength="80" style="flex:1;min-width:120px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;font-family:Lato,sans-serif;outline:none;"/>' +
+        '<button style="background:var(--red);border:none;border-radius:6px;padding:5px 10px;color:white;font-size:12px;font-weight:700;font-family:Lato,sans-serif;cursor:pointer;">Confirm</button>' +
+        '<button style="background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;color:var(--text3);font-size:12px;font-family:Lato,sans-serif;cursor:pointer;">Cancel</button>';
+      targetRow.appendChild(wrap);
+      var inp = wrap.querySelector('input');
+      var confirmBtn = wrap.querySelectorAll('button')[0];
+      var cancelBtn  = wrap.querySelectorAll('button')[1];
+      inp.focus();
+      cancelBtn.addEventListener('click', function() {
+        wrap.remove();
+        if (actionsEl) actionsEl.style.display = '';
+      });
+      confirmBtn.addEventListener('click', async function() {
+        var reason = inp.value.trim() || 'No longer in story';
+        wrap.remove();
+        await db.from('novel_characters').update({ status: 'ended', ended_reason: reason }).eq('id', id);
+        char.status = 'ended'; char.chapter_status = 'skipped';
+        editCtRender();
+        showToast(char.name + ' marked as ended.', 'ti-skull');
+      });
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') confirmBtn.click();
+        if (e.key === 'Escape') cancelBtn.click();
+      });
     }
 
     async function editCtSaveChapterCharacters(chapterId, workId) {
@@ -3139,6 +3236,9 @@
         try { await db.rpc('award_comment_prestige_xp', { p_user_id: currentSession.user.id, p_chapter_id: chapterData.id }); } catch(e) {}
       }
 
+      // ── NEW READER MISSION: leave first comment ───────────────────
+      try { await window.dsCompleteMission('leave_first_comment'); } catch(e) {}
+
       // Notify author
       await notifyAuthor('chapter_comment', '{name} commented on a chapter in "{title}"');
       // Optimistically append to spComments and re-render instead of full reload
@@ -3593,6 +3693,8 @@
       echoRenderPanel();
       echoRenderPage();
       showToast('Echo placed!', 'ti-sparkles');
+      // ── NEW READER MISSION: give first echo ──────────────────────
+      try { await window.dsCompleteMission('give_first_echo'); } catch(e) {}
       // Notify author
       var _et6 = echoTypes ? echoTypes.find(function(t){return t.id===typeId;}) : null;
       await notifyAuthor('echo', '{name} placed a ' + (_et6 ? _et6.label : 'Echo') + ' on a paragraph in "{title}"', { paragraph_index: paraIdx });

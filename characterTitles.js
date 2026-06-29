@@ -330,6 +330,11 @@ window.CharacterTitles = (function() {
         return;
       }
 
+      // ── NEW READER MISSION: give character a title ────────────
+      if (window.dsCompleteMission) {
+        try { await window.dsCompleteMission('give_character_title'); } catch(e) {}
+      }
+
       // Replace picker with voted state
       pickerWrap.remove();
       var promptEl = card.querySelector('.ct-char-prompt');
@@ -1028,6 +1033,11 @@ window.CharacterTitles = (function() {
             var ok = await submitAuraVote(char.id, stagedHex, currentUserSession.user.id);
             if (!ok) { acceptBtn.disabled = false; return; }
 
+            // ── NEW READER MISSION: suggest aura for character ────
+            if (window.dsCompleteMission) {
+              try { await window.dsCompleteMission('suggest_character_aura'); } catch(e) {}
+            }
+
             // Mark swatch confirmed
             auraRow.querySelectorAll('.ct-aura-swatch').forEach(function(s){
               s.classList.remove('staged', 'confirmed');
@@ -1252,6 +1262,10 @@ window.CharacterTitles = (function() {
       modal.remove();
       // Show thank-you toast if available
       if (window.showToast) window.showToast('Song suggestion submitted! The author will review it. 🎵', 'ti-music');
+      // ── NEW READER MISSION: suggest a song for a character ────
+      if (window.dsCompleteMission) {
+        try { await window.dsCompleteMission('suggest_character_song'); } catch(e) {}
+      }
       // Notify the work author
       try {
         var _db2 = db();
