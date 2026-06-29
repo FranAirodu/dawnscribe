@@ -81,6 +81,17 @@
     .btn-outline:hover{border-color:var(--accent);color:var(--accent);}
     .btn-outline.active{border-color:var(--accent);color:var(--accent);background:rgba(45,212,191,0.06);}
 
+    /* OFFERING BUTTON */
+    .btn-offering{background:transparent;border:1px solid rgba(251,146,60,0.35);border-radius:9px;padding:10px 18px;color:#fb923c;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;}
+    .btn-offering:hover{border-color:#fb923c;background:rgba(251,146,60,0.08);}
+    .btn-offering.offered{border-color:#fb923c;background:rgba(251,146,60,0.1);color:#fb923c;}
+    .btn-offering:disabled{opacity:0.45;cursor:not-allowed;}
+    .offering-tier-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px;}
+    .offering-tier-badge.ember_lit{background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.25);color:#fb923c;}
+    .offering-tier-badge.burning{background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.3);color:#f97316;}
+    .offering-tier-badge.blazing{background:rgba(234,88,12,0.12);border:1px solid rgba(234,88,12,0.35);color:#ea580c;}
+    .offering-tier-badge.inferno{background:rgba(194,65,12,0.14);border:1px solid rgba(194,65,12,0.4);color:#c2410c;}
+
     /* MAIN CONTENT */
     .story-body{max-width:1000px;margin:0 auto;padding:24px 24px 80px;display:grid;grid-template-columns:1fr 300px;gap:24px;}
     @media(max-width:760px){.story-body{grid-template-columns:1fr;}}
@@ -375,6 +386,11 @@
         <div class="story-tags-row" id="story-tags-row"></div>
         <div class="story-stats-row" id="story-stats-row"></div>
         <div class="story-actions" id="story-actions"></div>
+        <!-- OFFERING BUTTON — shown to non-owners with 5+ chapters read -->
+        <div id="offering-btn-wrap" style="display:none;margin-top:6px;">
+          <button class="btn-offering" id="offering-btn" onclick="submitOffering()">🔥 Offer</button>
+        </div>
+        <div id="offering-tier-wrap"></div>
       </div>
     </div>
   </div>
@@ -672,7 +688,9 @@
       if(d<3600) return Math.floor(d/60)+'m ago';
       if(d<86400) return Math.floor(d/3600)+'h ago';
       if(d<604800) return Math.floor(d/86400)+'d ago';
-      return formatDate(s);
+      if(d<2592000) return Math.floor(d/604800)+'w ago';
+      if(d<31536000) return Math.floor(d/2592000)+'mo ago';
+      return Math.floor(d/31536000)+'y ago';
     }
     function getWorkId() {
       var params = new URLSearchParams(window.location.search);
@@ -990,6 +1008,9 @@
       followBtn.innerHTML = '<i class="ti ti-' + (isFollowingWork ? 'bookmark-filled' : 'bookmark') + '"></i> ' + (isFollowingWork ? 'Following' : 'Follow Story');
       followBtn.addEventListener('click', function() { toggleFollowWork(); });
       actionsEl.appendChild(followBtn);
+
+      // Offering button — shown to logged-in non-owners only, rendered into dedicated wrap
+      renderOfferingButton();
       var isOwnerAct = currentSession && workData && currentSession.user.id === workData.author_id;
       if(currentSession && !isOwnerAct && workData.type !== 'artwork') {
         var collabBtn = document.createElement('button');
@@ -1003,6 +1024,9 @@
     // ── FOLLOW STORY ─────────────────────────────────────────────
     var isFollowingWork = false;
 
+    // ── OFFERING STATE ───────────────────────────────────────────
+    var offeringState = { count: 0, tier: null, hasOffered: false, chaptersRead: 0 };
+
     async function loadFollowState() {
       if (!currentSession) return;
       var result = await db.from('work_follows')
@@ -1011,6 +1035,88 @@
         .eq('work_id', workData.id)
         .maybeSingle();
       isFollowingWork = !!(result.data);
+    }
+
+    // ── LOAD OFFERING STATE ──────────────────────────────────────
+    async function loadOfferingState() {
+      // Always load the public count + tier from works
+      offeringState.count = workData.offering_count || 0;
+      offeringState.tier  = workData.offering_tier  || null;
+      if (!currentSession) return;
+      var isOwner = currentSession.user.id === workData.author_id;
+      if (isOwner) return; // owners can't offer their own work
+      // Check if user has already offered
+      var { data: offerRow } = await db.from('work_offerings')
+        .select('id').eq('work_id', workData.id).eq('user_id', currentSession.user.id).maybeSingle();
+      offeringState.hasOffered = !!(offerRow);
+      // Count completed chapters for this work (check both local + DB)
+      var localRead = readProgress[workData.id] ? Object.keys(readProgress[workData.id]).filter(function(k){ return readProgress[workData.id][k]; }).length : 0;
+      offeringState.chaptersRead = localRead;
+    }
+
+    async function submitOffering() {
+      if (!currentSession) { window.location.href = 'auth.html'; return; }
+      var btn = document.getElementById('offering-btn');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Offering…'; }
+      try {
+        var { data, error } = await db.rpc('record_offering', { p_work_id: workData.id });
+        if (error || !data || !data.success) {
+          var msg = (data && data.error) || (error && error.message) || 'Could not offer';
+          var friendly = {
+            need_5_chapters: 'Read 5 chapters to offer to this story.',
+            insufficient_embers: 'You need at least 1 Ember to offer.',
+            already_offered: 'You\'ve already offered to this story.',
+            not_authenticated: 'Please sign in first.'
+          }[msg] || msg;
+          showToast(friendly, 'ti-x');
+          if (btn) { btn.disabled = false; btn.innerHTML = '🔥 Offer'; }
+          return;
+        }
+        offeringState.hasOffered = true;
+        offeringState.count = data.offering_count;
+        offeringState.tier  = data.offering_tier;
+        showToast('Offering made! 🔥', 'ti-flame');
+        renderOfferingButton();
+        renderOfferingTierBadge();
+      } catch(e) {
+        showToast('Error submitting offering.', 'ti-x');
+        if (btn) { btn.disabled = false; btn.innerHTML = '🔥 Offer'; }
+      }
+    }
+
+    function renderOfferingButton() {
+      var wrap = document.getElementById('offering-btn-wrap');
+      if (!wrap) return;
+      var isOwner = currentSession && currentSession.user.id === workData.author_id;
+      if (isOwner || !currentSession) { wrap.style.display = 'none'; return; }
+      var canOffer = offeringState.chaptersRead >= 5;
+      wrap.style.display = 'block';
+      var btn = document.getElementById('offering-btn');
+      if (!btn) return;
+      if (offeringState.hasOffered) {
+        btn.classList.add('offered');
+        btn.disabled = true;
+        btn.innerHTML = '🔥 Offered (' + offeringState.count + ')';
+        btn.title = 'You\'ve already offered to this story';
+      } else if (!canOffer) {
+        btn.disabled = true;
+        btn.title = 'Read ' + (5 - offeringState.chaptersRead) + ' more chapter(s) to unlock Offerings';
+        btn.innerHTML = '🔥 Offer <span style="font-size:11px;font-weight:400;opacity:0.7;">(' + offeringState.chaptersRead + '/5 ch)</span>';
+      } else {
+        btn.disabled = false;
+        btn.title = 'Spend 1 Ember to offer to this story';
+        btn.innerHTML = '🔥 Offer (' + offeringState.count + ')';
+      }
+    }
+
+    function renderOfferingTierBadge() {
+      var wrap = document.getElementById('offering-tier-wrap');
+      if (!wrap) return;
+      var tier = offeringState.tier;
+      if (!tier) { wrap.innerHTML = ''; return; }
+      var labels = { ember_lit: '🕯️ Ember Lit', burning: '🔥 Burning', blazing: '⚗️ Blazing', inferno: '💎 Inferno' };
+      var label = labels[tier] || tier;
+      wrap.innerHTML = '<div class="offering-tier-badge ' + tier + '">' + label + ' · ' + offeringState.count + ' offering' + (offeringState.count !== 1 ? 's' : '') + '</div>';
     }
 
     async function toggleFollowWork() {
@@ -1025,6 +1131,14 @@
         showToast('Added to Following Titles!', 'ti-bookmark-filled');
         // Following Stories badge
         try { await db.rpc('award_following_stories_badge', { p_user_id: currentSession.user.id }); } catch(e) {}
+        // ── NEW READER MISSION: add work to library ───────────────
+        try {
+          var { data: mRes } = await db.rpc('complete_mission', { p_mission_key: 'add_to_library' });
+          if (mRes && mRes.success) {
+            showToast('🏅 Mission complete: ' + mRes.badge_label + '!', 'ti-award');
+            if (mRes.all_done) setTimeout(function(){ showToast('⬛ Obsidian Medal unlocked! All missions complete!', 'ti-sparkles'); }, 1200);
+          }
+        } catch(e) {}
       }
       renderActions();
     }
@@ -1244,7 +1358,9 @@
       renderWork(workData, authors);
       renderChapters();
       await loadFollowState();
+      await loadOfferingState();
       renderActions();
+      renderOfferingTierBadge();
       await loadReviews();
       await loadRecommendations();
       await loadCollabs();
