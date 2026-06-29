@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+    (function(){
+      var t=localStorage.getItem('ds_theme');
+      if(t) document.documentElement.setAttribute('data-theme',t);
+    })();
+    (function(){
+      var h=localStorage.getItem('ds_accent_hex');
+      if(!h) return;
+      var d=h.replace('#','');
+      var r=Math.max(0,parseInt(d.slice(0,2),16)-30);
+      var g=Math.max(0,parseInt(d.slice(2,4),16)-30);
+      var b=Math.max(0,parseInt(d.slice(4,6),16)-30);
+      var h2='#'+[r,g,b].map(function(v){return v.toString(16).padStart(2,'0');}).join('');
+      var s=document.createElement('style');
+      s.id='ds-accent-override';
+      s.textContent=':root{--accent:'+h+' !important;--accent2:'+h2+' !important;}html[data-theme="light"]{--accent:'+h+' !important;--accent2:'+h2+' !important;}';
+      document.head.appendChild(s);
+    })();
+  </script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Marketplace — DawnScribe</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="spoilerUtils.js"></script>
+  <script src="accessibilityPrefs.js"></script>
+  <script src="blockUtils.js"></script>
+
+  <style>
+    /* ── TOKENS ─────────────────────────────────────────────── */
+    :root {
+      --bg:#0a0a0f; --bg2:#12121a; --bg3:#1a1a26; --bg4:#22223a;
+      --text:#f1f0ff; --text2:#9b9bc0; --text3:#5a5a80;
+      --border:rgba(255,255,255,0.07);
+      --accent:#2dd4bf; --accent2:#0d9488;
+      --gold:#f59e0b; --gold2:#b45309;
+      --red:#f87171; --green:#34d399;
+      --quill:#f59e0b;
+      --ember:#f97316;
+    }
+    html[data-theme="light"] {
+      --bg:#f4f4f8; --bg2:#ffffff; --bg3:#ebebf2; --bg4:#d8d8e8;
+      --text:#0a0a0f; --text2:#3a3a5c; --text3:#7a7a9a;
+      --border:rgba(0,0,0,0.08);
+      --gold:#d97706; --gold2:#92400e;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;}
+
+    /* ── NAV ────────────────────────────────────────────────── */
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;}
+    .nav-left{display:flex;align-items:center;gap:16px;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:var(--text);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:var(--accent);}
+    .back-btn{display:flex;align-items:center;gap:6px;color:var(--text2);font-size:13px;font-weight:700;text-decoration:none;padding:7px 14px;border-radius:8px;border:1px solid var(--border);transition:all 0.2s;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* ── HERO BANNER ─────────────────────────────────────────── */
+    .hero{position:relative;overflow:hidden;background:linear-gradient(135deg,#0a0a0f 0%,#1a0a2e 40%,#0a1a1a 100%);border-bottom:1px solid var(--border);padding:56px 32px 48px;text-align:center;}
+    .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 30% 50%,rgba(245,158,11,0.08) 0%,transparent 60%),radial-gradient(ellipse at 70% 50%,rgba(45,212,191,0.06) 0%,transparent 60%);pointer-events:none;}
+    .hero-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--gold);background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);border-radius:20px;padding:5px 14px;margin-bottom:20px;}
+    .hero-title{font-family:'Cinzel',serif;font-size:42px;font-weight:700;line-height:1.15;margin-bottom:12px;}
+    .hero-title .accent-gold{color:var(--gold);}
+    .hero-title .accent-teal{color:var(--accent);}
+    .hero-sub{color:var(--text2);font-size:15px;max-width:540px;margin:0 auto 28px;line-height:1.7;}
+    .hero-actions{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;}
+
+    /* Currency display in hero */
+    .currency-pill{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:12px;border:1px solid var(--border);background:var(--bg3);font-size:14px;font-weight:700;}
+    .currency-pill.quill{color:var(--gold);border-color:rgba(245,158,11,0.25);background:rgba(245,158,11,0.06);}
+    .currency-pill.ember{color:var(--ember);border-color:rgba(249,115,22,0.25);background:rgba(249,115,22,0.06);}
+    .currency-pill span{color:var(--text);font-size:16px;}
+    .buy-quills-btn{display:inline-flex;align-items:center;gap:7px;padding:10px 20px;border-radius:10px;background:linear-gradient(135deg,var(--gold),#d97706);color:#0a0a0f;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;border:none;cursor:pointer;transition:all 0.2s;text-decoration:none;}
+    .buy-quills-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(245,158,11,0.35);}
+    .buy-quills-btn i{font-size:16px;}
+
+    /* ── PAGE WRAP ───────────────────────────────────────────── */
+    .page-wrap{max-width:1200px;margin:0 auto;padding:40px 24px 100px;}
+
+    /* ── FILTER BAR ──────────────────────────────────────────── */
+    .filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:36px;flex-wrap:wrap;}
+    .filter-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);margin-right:4px;}
+    .filter-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .filter-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .filter-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(45,212,191,0.08);}
+    .filter-btn i{font-size:14px;}
+
+    /* ── SECTION HEADER ──────────────────────────────────────── */
+    .section-hdr{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:20px;}
+    .section-hdr-left{}
+    .section-title{font-family:'Cinzel',serif;font-size:20px;font-weight:700;display:flex;align-items:center;gap:10px;}
+    .section-title i{color:var(--gold);font-size:22px;}
+    .section-sub{font-size:13px;color:var(--text3);margin-top:4px;}
+    .section-divider{border:none;border-top:1px solid var(--border);margin:48px 0 36px;}
+
+    /* ── SCROLL CARD (the Warbond) ───────────────────────────── */
+    .scrolls-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:24px;}
+    .scroll-card{border-radius:16px;overflow:hidden;border:1px solid var(--border);background:var(--bg2);transition:border-color 0.2s,transform 0.2s;cursor:pointer;display:flex;flex-direction:column;}
+    .scroll-card:hover{border-color:rgba(245,158,11,0.4);transform:translateY(-2px);}
+    .scroll-card.owned{border-color:rgba(245,158,11,0.5);box-shadow:0 0 0 1px rgba(245,158,11,0.15);}
+    .scroll-card.featured{border-color:rgba(245,158,11,0.6);box-shadow:0 0 30px rgba(245,158,11,0.1);}
+
+    /* Banner area */
+    .scroll-banner{position:relative;height:160px;overflow:hidden;background:linear-gradient(135deg,#1a0a2e,#0a1a2a);}
+    .scroll-banner img{width:100%;height:100%;object-fit:cover;display:block;}
+    .scroll-banner-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:48px;opacity:0.3;}
+    .scroll-badge-featured{position:absolute;top:10px;left:10px;display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#0a0a0f;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:4px 10px;border-radius:6px;}
+    .scroll-badge-novel{position:absolute;top:10px;right:10px;display:inline-flex;align-items:center;gap:5px;background:rgba(45,212,191,0.15);border:1px solid rgba(45,212,191,0.3);color:var(--accent);font-size:10px;font-weight:700;padding:4px 10px;border-radius:6px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .scroll-owned-ribbon{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(34,212,170,0.25),transparent);padding:8px 12px;font-size:11px;font-weight:700;color:#2dd4bf;display:flex;align-items:center;gap:5px;}
+
+    /* Card body */
+    .scroll-body{padding:18px 18px 20px;display:flex;flex-direction:column;flex:1;gap:12px;}
+    .scroll-meta-row{display:flex;align-items:center;gap:8px;}
+    .scroll-type-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:3px 8px;border-radius:6px;border:1px solid;}
+    .scroll-type-badge.type-official{color:#c084fc;border-color:rgba(192,132,252,0.3);background:rgba(192,132,252,0.07);}
+    .scroll-type-badge.type-artist{color:var(--accent);border-color:rgba(45,212,191,0.3);background:rgba(45,212,191,0.07);}
+    .scroll-type-badge.type-novel{color:var(--gold);border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.07);}
+    .scroll-author-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text3);}
+    .scroll-author-chip img{width:16px;height:16px;border-radius:50%;object-fit:cover;background:var(--bg4);}
+    .scroll-name{font-family:'Cinzel',serif;font-size:17px;font-weight:700;line-height:1.3;}
+    .scroll-desc{font-size:13px;color:var(--text2);line-height:1.6;flex:1;}
+
+    /* Item preview strip */
+    .scroll-items-preview{display:flex;gap:6px;flex-wrap:wrap;}
+    .scroll-item-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text3);background:var(--bg3);border-radius:6px;padding:3px 8px;}
+    .scroll-item-chip i{font-size:12px;}
+
+    /* Footer */
+    .scroll-footer{border-top:1px solid var(--border);padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .scroll-price{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700;color:var(--gold);}
+    .scroll-price i{font-size:16px;}
+    .scroll-price .price-sub{font-size:11px;font-weight:400;color:var(--text3);}
+    .scroll-open-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:9px;background:linear-gradient(135deg,var(--gold),#d97706);color:#0a0a0f;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;border:none;cursor:pointer;transition:all 0.2s;}
+    .scroll-open-btn:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(245,158,11,0.3);}
+    .scroll-open-btn.owned{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0a0a0f;}
+    .scroll-item-count{font-size:12px;color:var(--text3);}
+
+    /* ── SCROLL DETAIL MODAL ─────────────────────────────────── */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);z-index:500;display:none;align-items:center;justify-content:center;padding:20px;}
+    .modal-overlay.open{display:flex;}
+    .modal{background:var(--bg2);border:1px solid var(--border);border-radius:20px;width:100%;max-width:760px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;animation:modalIn 0.2s ease;}
+    @keyframes modalIn{from{opacity:0;transform:scale(0.96) translateY(8px);}to{opacity:1;transform:scale(1) translateY(0);}}
+
+    .modal-banner{position:relative;height:200px;overflow:hidden;background:linear-gradient(135deg,#1a0a2e,#0a1a2a);flex-shrink:0;}
+    .modal-banner img{width:100%;height:100%;object-fit:cover;}
+    .modal-banner-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:72px;opacity:0.2;}
+    .modal-close{position:absolute;top:12px;right:12px;width:34px;height:34px;border-radius:8px;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.1);color:white;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;}
+    .modal-close:hover{background:rgba(0,0,0,0.8);}
+    .modal-banner-info{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(0,0,0,0.85),transparent);padding:20px 20px 16px;}
+    .modal-title{font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:white;line-height:1.2;}
+    .modal-type-row{display:flex;align-items:center;gap:8px;margin-top:5px;}
+
+    .modal-body{overflow-y:auto;padding:20px 24px 24px;display:flex;flex-direction:column;gap:20px;}
+    .modal-desc{font-size:14px;color:var(--text2);line-height:1.7;}
+
+    /* Unlock cost row */
+    .modal-unlock-row{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--bg3);border-radius:12px;padding:14px 18px;border:1px solid var(--border);}
+    .modal-unlock-price{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:700;color:var(--gold);}
+    .modal-unlock-price i{font-size:20px;}
+    .modal-unlock-note{font-size:12px;color:var(--text3);margin-top:2px;}
+    .modal-unlock-btn{display:inline-flex;align-items:center;gap:7px;padding:11px 22px;border-radius:10px;background:linear-gradient(135deg,var(--gold),#d97706);color:#0a0a0f;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;border:none;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+    .modal-unlock-btn:hover{transform:translateY(-1px);box-shadow:0 4px 18px rgba(245,158,11,0.35);}
+    .modal-unlock-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none;box-shadow:none;}
+    .modal-unlock-btn.already-owned{background:linear-gradient(135deg,var(--accent),var(--accent2));}
+
+    /* Items grid in modal */
+    .modal-items-title{font-family:'Cinzel',serif;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--text);}
+    .modal-items-title i{color:var(--gold);}
+    .modal-items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
+    .mitem{border-radius:12px;border:1px solid var(--border);background:var(--bg3);overflow:hidden;transition:border-color 0.2s;}
+    .mitem:hover{border-color:rgba(245,158,11,0.3);}
+    .mitem.locked{opacity:0.55;}
+    .mitem-thumb{height:120px;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:36px;position:relative;overflow:hidden;}
+    .mitem-thumb img{width:100%;height:100%;object-fit:cover;}
+    .mitem-lock-overlay{position:absolute;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;font-size:24px;color:rgba(255,255,255,0.4);}
+    .mitem-body{padding:10px 10px 12px;}
+    .mitem-name{font-weight:700;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .mitem-type{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;display:flex;align-items:center;gap:4px;}
+    .mitem-cost{display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:6px;}
+    .mitem-price{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:var(--ember);}
+    .mitem-price i{font-size:13px;}
+    .mitem-buy-btn{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:6px;background:rgba(249,115,22,0.15);border:1px solid rgba(249,115,22,0.3);color:var(--ember);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+    .mitem-buy-btn:hover{background:rgba(249,115,22,0.25);}
+    .mitem-buy-btn.owned{background:rgba(45,212,191,0.1);border-color:rgba(45,212,191,0.3);color:var(--accent);cursor:default;}
+    .mitem-buy-btn:disabled{opacity:0.5;cursor:not-allowed;}
+
+    /* Artist info strip */
+    .artist-strip{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg3);border-radius:12px;border:1px solid var(--border);}
+    .artist-avatar{width:40px;height:40px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--accent);flex-shrink:0;overflow:hidden;}
+    .artist-avatar img{width:100%;height:100%;object-fit:cover;}
+    .artist-info{flex:1;min-width:0;}
+    .artist-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-weight:700;}
+    .artist-name{font-size:14px;font-weight:700;color:var(--text);}
+    .artist-cut{font-size:11px;color:var(--text3);margin-top:1px;}
+    .artist-profile-link{font-size:12px;color:var(--accent);text-decoration:none;font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:4px;}
+    .artist-profile-link:hover{text-decoration:underline;}
+
+    /* ── QUILL BUNDLES MODAL ─────────────────────────────────── */
+    .quill-modal{max-width:500px;}
+    .quill-modal .modal-body{gap:16px;}
+    .quill-bundles{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .quill-bundle{border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--bg3);text-align:center;cursor:pointer;transition:all 0.2s;position:relative;}
+    .quill-bundle:hover{border-color:var(--gold);transform:translateY(-2px);}
+    .quill-bundle.popular{border-color:rgba(245,158,11,0.5);box-shadow:0 0 20px rgba(245,158,11,0.1);}
+    .bundle-popular-badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--gold),#d97706);color:#0a0a0f;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:3px 10px;border-radius:10px;white-space:nowrap;}
+    .bundle-quill-count{font-size:28px;font-weight:700;color:var(--gold);display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:4px;}
+    .bundle-quill-count i{font-size:26px;}
+    .bundle-bonus{font-size:11px;color:var(--green);font-weight:700;margin-bottom:8px;}
+    .bundle-price{font-size:16px;font-weight:700;color:var(--text);}
+    .bundle-price-sub{font-size:11px;color:var(--text3);margin-top:2px;}
+    .bundle-cta{margin-top:12px;width:100%;padding:9px;border-radius:8px;background:linear-gradient(135deg,var(--gold),#d97706);color:#0a0a0f;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;border:none;cursor:pointer;transition:all 0.2s;}
+    .bundle-cta:hover{transform:translateY(-1px);}
+    .quill-coming-soon{text-align:center;padding:12px;font-size:13px;color:var(--text3);background:var(--bg3);border-radius:10px;border:1px dashed var(--border);}
+
+    /* ── TOAST ───────────────────────────────────────────────── */
+    #mp-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;z-index:900;transition:transform 0.3s ease,opacity 0.3s;opacity:0;pointer-events:none;white-space:nowrap;}
+    #mp-toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
+    #mp-toast i{font-size:16px;}
+
+    /* ── EMPTY / LOADING ─────────────────────────────────────── */
+    .empty-state{padding:60px 24px;text-align:center;color:var(--text3);}
+    .empty-state i{font-size:40px;display:block;margin-bottom:14px;opacity:0.3;}
+    .empty-state p{font-size:14px;}
+    .loading-spinner{display:flex;align-items:center;justify-content:center;gap:10px;padding:60px 0;color:var(--text3);font-size:13px;}
+    .loading-spinner i{font-size:22px;animation:spin 1s linear infinite;}
+    @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+
+    /* ── MISC ────────────────────────────────────────────────── */
+    .tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:0.5px;}
+    .tag-purple{color:#c084fc;background:rgba(192,132,252,0.1);border:1px solid rgba(192,132,252,0.2);}
+    .tag-teal{color:var(--accent);background:rgba(45,212,191,0.1);border:1px solid rgba(45,212,191,0.2);}
+    .tag-gold{color:var(--gold);background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);}
+    .tag-red{color:var(--red);background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.2);}
+    .divider{height:1px;background:var(--border);margin:4px 0;}
+    a{color:inherit;text-decoration:none;}
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ───────────────────────────────────────────────────── -->
+<nav>
+  <div class="nav-left">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Home</a>
+  </div>
+  <!-- nav.js injects right side -->
+</nav>
+<script src="nav.js"></script>
+
+<!-- ── HERO ──────────────────────────────────────────────────── -->
+<div class="hero">
+  <div class="hero-eyebrow"><i class="ti ti-scroll"></i> The Marketplace</div>
+  <h1 class="hero-title">Collect. Display. <span class="accent-gold">Show Off.</span></h1>
+  <p class="hero-sub">Browse Scrolls — themed collections of cosmetics for your avatar, profile, and more. Unlock a Scroll with Quills, then claim each item inside with Embers.</p>
+  <div class="hero-actions">
+    <div class="currency-pill quill">
+      <i class="ti ti-feather"></i> <span id="hero-quill-count">—</span> Quills
+    </div>
+    <div class="currency-pill ember">
+      <i class="ti ti-flame"></i> <span id="hero-ember-count">—</span> Embers
+    </div>
+    <button class="buy-quills-btn" onclick="openQuillModal()">
+      <i class="ti ti-shopping-cart"></i> Buy Quills
+    </button>
+  </div>
+</div>
+
+<!-- ── MAIN ───────────────────────────────────────────────────── -->
+<div class="page-wrap">
+
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <span class="filter-label">Show:</span>
+    <button class="filter-btn active" data-filter="all" onclick="setFilter('all')"><i class="ti ti-layout-grid"></i> All Scrolls</button>
+    <button class="filter-btn" data-filter="official" onclick="setFilter('official')"><i class="ti ti-crown"></i> Official</button>
+    <button class="filter-btn" data-filter="novel" onclick="setFilter('novel')"><i class="ti ti-book"></i> Novel</button>
+    <button class="filter-btn" data-filter="artist" onclick="setFilter('artist')"><i class="ti ti-palette"></i> Artist</button>
+    <button class="filter-btn" data-filter="owned" onclick="setFilter('owned')"><i class="ti ti-check"></i> My Scrolls</button>
+  </div>
+
+  <!-- Scrolls grid -->
+  <div class="section-hdr">
+    <div class="section-hdr-left">
+      <div class="section-title"><i class="ti ti-scroll"></i> Available Scrolls</div>
+      <div class="section-sub">Scrolls never expire — take your time collecting every item.</div>
+    </div>
+    <span class="scroll-item-count" id="scroll-count-label"></span>
+  </div>
+
+  <div class="scrolls-grid" id="scrolls-grid">
+    <div class="loading-spinner"><i class="ti ti-loader"></i> Loading scrolls…</div>
+  </div>
+
+</div><!-- /page-wrap -->
+
+<!-- ── SCROLL DETAIL MODAL ────────────────────────────────────── -->
+<div class="modal-overlay" id="scroll-modal" onclick="closeScrollModal(event)">
+  <div class="modal" id="scroll-modal-inner">
+    <!-- Banner -->
+    <div class="modal-banner" id="modal-banner">
+      <div class="modal-banner-placeholder" id="modal-banner-icon">📜</div>
+      <button class="modal-close" onclick="closeScrollModalDirect()"><i class="ti ti-x"></i></button>
+      <div class="modal-banner-info">
+        <div class="modal-title" id="modal-title">Scroll Name</div>
+        <div class="modal-type-row" id="modal-type-row"></div>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="modal-body">
+      <!-- Artist strip (hidden for official) -->
+      <div class="artist-strip" id="modal-artist-strip" style="display:none;">
+        <div class="artist-avatar" id="modal-artist-avatar">?</div>
+        <div class="artist-info">
+          <div class="artist-label">Created by</div>
+          <div class="artist-name" id="modal-artist-name">—</div>
+          <div class="artist-cut" id="modal-artist-cut">Artist receives a share of Quill revenue from this Scroll.</div>
+        </div>
+        <a class="artist-profile-link" id="modal-artist-link" href="#"><i class="ti ti-user"></i> Profile</a>
+      </div>
+
+      <p class="modal-desc" id="modal-desc">—</p>
+
+      <!-- Unlock row -->
+      <div class="modal-unlock-row" id="modal-unlock-row">
+        <div>
+          <div class="modal-unlock-price" id="modal-unlock-price">
+            <i class="ti ti-feather"></i> <span id="modal-quill-price">—</span> Quills
+          </div>
+          <div class="modal-unlock-note">Unlocking grants access to all items — buy each with Embers.</div>
+        </div>
+        <button class="modal-unlock-btn" id="modal-unlock-btn" onclick="purchaseScroll()">
+          <i class="ti ti-lock-open"></i> Unlock Scroll
+        </button>
+      </div>
+
+      <!-- Items -->
+      <div>
+        <div class="modal-items-title"><i class="ti ti-package"></i> Items in this Scroll <span id="modal-owned-count" style="font-family:'Lato',sans-serif;font-size:12px;color:var(--text3);font-weight:400;margin-left:4px;"></span></div>
+      </div>
+      <div class="modal-items-grid" id="modal-items-grid">
+        <div class="loading-spinner" style="grid-column:1/-1;"><i class="ti ti-loader"></i></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── BUY QUILLS MODAL ───────────────────────────────────────── -->
+<div class="modal-overlay" id="quill-modal" onclick="closeQuillModal(event)">
+  <div class="modal quill-modal">
+    <div class="modal-banner" style="height:100px;background:linear-gradient(135deg,#2d1a00,#1a1a00);">
+      <div class="modal-banner-placeholder" style="font-size:40px;">🪶</div>
+      <button class="modal-close" onclick="document.getElementById('quill-modal').classList.remove('open')"><i class="ti ti-x"></i></button>
+      <div class="modal-banner-info">
+        <div class="modal-title" style="font-size:18px;">Buy Quills</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p class="modal-desc">Quills are DawnScribe's premium currency. Use them to unlock Scrolls and support artists. <strong>Embers</strong> (earned free by reading) let you claim individual items inside any Scroll you own.</p>
+      <div class="quill-bundles" id="quill-bundles-grid">
+        <!-- Rendered by JS -->
+      </div>
+      <div class="quill-coming-soon">
+        <i class="ti ti-clock" style="margin-right:6px;"></i>Payment processing coming soon — check back shortly!
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ──────────────────────────────────────────────────── -->
+<div id="mp-toast"><i class="ti ti-check" id="mp-toast-icon"></i> <span id="mp-toast-msg"></span></div>
+
+<script>
+/* ================================================================
+   DAWNSCRIBE MARKETPLACE
+   Tables expected:
+     scrolls          – id, name, description, type ('official'|'novel'|'artist'),
+                        quill_price, banner_url, banner_emoji, novel_id,
+                        artist_id, is_featured, created_at
+     scroll_items     – id, scroll_id, name, description, type
+                        ('avatar'|'banner'|'background'|'coverart'),
+                        ember_price, image_url, item_emoji
+     scroll_unlocks   – id, user_id, scroll_id, unlocked_at
+     scroll_item_owns – id, user_id, scroll_item_id, owned_at
+   Profiles: id, username, display_name, avatar_url
+   Works:    id, title
+================================================================ */
+
+  const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU3MDU3OTIsImV4cCI6MjA2MTI4MTc5Mn0.SHkSmnF0WIsPuGNkGeONaZKPuqF3W_HgkFrYeyCXRIA';
+  const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let currentUser = null;
+  let userQuills = 0;
+  let userEmbers = 0;
+  let allScrolls = [];
+  let ownedScrollIds = new Set();
+  let ownedItemIds = new Set();
+  let activeFilter = 'all';
+  let openScrollData = null;
+
+  // ── INIT ──────────────────────────────────────────────────────
+  (async function init() {
+    const { data: { session } } = await db.auth.getSession();
+    if (session) {
+      currentUser = session.user;
+      await loadCurrencies();
+    }
+    await loadScrolls();
+    renderQuillBundles();
+  })();
+
+  // ── CURRENCY ──────────────────────────────────────────────────
+  async function loadCurrencies() {
+    if (!currentUser) return;
+    const [qRes, eRes] = await Promise.all([
+      db.from('user_quills').select('balance').eq('user_id', currentUser.id).maybeSingle(),
+      db.from('user_embers').select('balance').eq('user_id', currentUser.id).maybeSingle(),
+    ]);
+    userQuills = qRes.data?.balance || 0;
+    userEmbers = eRes.data?.balance || 0;
+    document.getElementById('hero-quill-count').textContent = userQuills.toLocaleString();
+    document.getElementById('hero-ember-count').textContent = userEmbers.toLocaleString();
+    // Also sync nav counts
+    const qEl = document.getElementById('ds-quill-count');
+    const eEl = document.getElementById('ds-ember-count');
+    if (qEl) qEl.textContent = userQuills.toLocaleString();
+    if (eEl) eEl.textContent = userEmbers.toLocaleString();
+  }
+
+  // ── LOAD SCROLLS ──────────────────────────────────────────────
+  async function loadScrolls() {
+    const grid = document.getElementById('scrolls-grid');
+
+    // Load owned scroll IDs
+    if (currentUser) {
+      const { data: unlocks } = await db.from('scroll_unlocks').select('scroll_id').eq('user_id', currentUser.id);
+      ownedScrollIds = new Set((unlocks || []).map(u => u.scroll_id));
+
+      const { data: itemOwns } = await db.from('scroll_item_owns').select('scroll_item_id').eq('user_id', currentUser.id);
+      ownedItemIds = new Set((itemOwns || []).map(o => o.scroll_item_id));
+    }
+
+    // Load scrolls with item counts
+    const { data: scrolls, error } = await db.from('scrolls')
+      .select('*, scroll_items(count)')
+      .order('is_featured', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error || !scrolls) {
+      grid.innerHTML = '<div class="empty-state"><i class="ti ti-alert-triangle"></i><p>Could not load scrolls. Please try again.</p></div>';
+      return;
+    }
+
+    allScrolls = scrolls;
+    renderScrolls();
+  }
+
+  // ── RENDER SCROLLS ────────────────────────────────────────────
+  function renderScrolls() {
+    const grid = document.getElementById('scrolls-grid');
+    const label = document.getElementById('scroll-count-label');
+
+    let filtered = allScrolls;
+    if (activeFilter === 'owned') filtered = allScrolls.filter(s => ownedScrollIds.has(s.id));
+    else if (activeFilter !== 'all') filtered = allScrolls.filter(s => s.type === activeFilter);
+
+    label.textContent = filtered.length + ' scroll' + (filtered.length !== 1 ? 's' : '');
+
+    if (!filtered.length) {
+      grid.innerHTML = activeFilter === 'owned'
+        ? '<div class="empty-state"><i class="ti ti-scroll"></i><p>You haven\'t unlocked any Scrolls yet.<br>Browse above to find one you love!</p></div>'
+        : '<div class="empty-state"><i class="ti ti-scroll"></i><p>No scrolls here yet — check back soon!</p></div>';
+      return;
+    }
+
+    grid.innerHTML = filtered.map(s => renderScrollCard(s)).join('');
+  }
+
+  function renderScrollCard(s) {
+    const owned = ownedScrollIds.has(s.id);
+    const itemCount = s.scroll_items?.[0]?.count ?? 0;
+    const typeClass = { official: 'type-official', novel: 'type-novel', artist: 'type-artist' }[s.type] || 'type-official';
+    const typeLabel = { official: '✦ Official', novel: '📖 Novel', artist: '🎨 Artist' }[s.type] || 'Official';
+    const bannerStyle = s.banner_url ? `<img src="${esc(s.banner_url)}" alt="">` : `<div class="scroll-banner-placeholder">${s.banner_emoji || '📜'}</div>`;
+
+    return `
+      <div class="scroll-card${owned ? ' owned' : ''}${s.is_featured ? ' featured' : ''}" onclick="openScroll('${s.id}')">
+        <div class="scroll-banner">
+          ${bannerStyle}
+          ${s.is_featured ? '<span class="scroll-badge-featured"><i class="ti ti-star"></i> Featured</span>' : ''}
+          ${s.novel_title ? `<span class="scroll-badge-novel"><i class="ti ti-book"></i> ${esc(s.novel_title)}</span>` : ''}
+          ${owned ? '<div class="scroll-owned-ribbon"><i class="ti ti-check"></i> Unlocked</div>' : ''}
+        </div>
+        <div class="scroll-body">
+          <div class="scroll-meta-row">
+            <span class="scroll-type-badge ${typeClass}">${typeLabel}</span>
+            ${s.artist_username ? `<span class="scroll-author-chip"><i class="ti ti-palette" style="font-size:12px;"></i> ${esc(s.artist_display_name || s.artist_username)}</span>` : ''}
+          </div>
+          <div class="scroll-name">${esc(s.name)}</div>
+          <div class="scroll-desc">${esc(s.description || '')}</div>
+          <div class="scroll-footer">
+            <div class="scroll-price">
+              <i class="ti ti-feather"></i> ${(s.quill_price||0).toLocaleString()}
+              <span class="price-sub">· ${itemCount} item${itemCount !== 1 ? 's' : ''}</span>
+            </div>
+            <button class="scroll-open-btn${owned ? ' owned' : ''}" onclick="event.stopPropagation();openScroll('${s.id}')">
+              ${owned ? '<i class="ti ti-package"></i> View Items' : '<i class="ti ti-lock-open"></i> View Scroll'}
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── FILTER ────────────────────────────────────────────────────
+  function setFilter(f) {
+    activeFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
+    renderScrolls();
+  }
+
+  // ── OPEN SCROLL MODAL ─────────────────────────────────────────
+  async function openScroll(scrollId) {
+    const scroll = allScrolls.find(s => s.id === scrollId);
+    if (!scroll) return;
+    openScrollData = scroll;
+
+    const owned = ownedScrollIds.has(scroll.id);
+
+    // Banner
+    const banner = document.getElementById('modal-banner');
+    const bannerIcon = document.getElementById('modal-banner-icon');
+    if (scroll.banner_url) {
+      bannerIcon.style.display = 'none';
+      let img = banner.querySelector('img.modal-bg-img');
+      if (!img) { img = document.createElement('img'); img.className = 'modal-bg-img'; img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;'; banner.prepend(img); }
+      img.src = scroll.banner_url;
+    } else {
+      bannerIcon.style.display = 'flex';
+      bannerIcon.textContent = scroll.banner_emoji || '📜';
+      const existing = banner.querySelector('img.modal-bg-img');
+      if (existing) existing.remove();
+    }
+
+    document.getElementById('modal-title').textContent = scroll.name;
+
+    // Type row
+    const typeRow = document.getElementById('modal-type-row');
+    const typeLabels = { official: ['tag-purple','✦ Official DawnScribe'], novel: ['tag-gold','📖 Novel Scroll'], artist: ['tag-teal','🎨 Artist Scroll'] };
+    const [cls, lbl] = typeLabels[scroll.type] || typeLabels.official;
+    typeRow.innerHTML = `<span class="tag ${cls}">${lbl}</span>${scroll.novel_title ? `<span class="tag tag-gold" style="margin-left:4px;"><i class="ti ti-book"></i> ${esc(scroll.novel_title)}</span>` : ''}`;
+
+    // Artist strip
+    const artistStrip = document.getElementById('modal-artist-strip');
+    if (scroll.type === 'artist' && scroll.artist_username) {
+      artistStrip.style.display = 'flex';
+      const av = document.getElementById('modal-artist-avatar');
+      av.innerHTML = scroll.artist_avatar_url ? `<img src="${esc(scroll.artist_avatar_url)}" alt="">` : esc((scroll.artist_display_name || scroll.artist_username || '?')[0].toUpperCase());
+      document.getElementById('modal-artist-name').textContent = scroll.artist_display_name || scroll.artist_username;
+      document.getElementById('modal-artist-link').href = `profile.html?u=${esc(scroll.artist_username)}`;
+    } else {
+      artistStrip.style.display = 'none';
+    }
+
+    document.getElementById('modal-desc').textContent = scroll.description || '';
+
+    // Unlock row
+    const unlockBtn = document.getElementById('modal-unlock-btn');
+    const priceEl = document.getElementById('modal-quill-price');
+    priceEl.textContent = (scroll.quill_price || 0).toLocaleString();
+    if (owned) {
+      unlockBtn.className = 'modal-unlock-btn already-owned';
+      unlockBtn.innerHTML = '<i class="ti ti-check"></i> Already Unlocked';
+      unlockBtn.disabled = true;
+    } else {
+      unlockBtn.className = 'modal-unlock-btn';
+      unlockBtn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock Scroll';
+      unlockBtn.disabled = !currentUser;
+    }
+
+    // Load items
+    document.getElementById('modal-items-grid').innerHTML = '<div class="loading-spinner" style="grid-column:1/-1;"><i class="ti ti-loader"></i></div>';
+    document.getElementById('scroll-modal').classList.add('open');
+
+    const { data: items } = await db.from('scroll_items').select('*').eq('scroll_id', scroll.id).order('ember_price', { ascending: true });
+    renderModalItems(items || [], owned);
+  }
+
+  function renderModalItems(items, scrollOwned) {
+    const grid = document.getElementById('modal-items-grid');
+    const ownedCount = items.filter(i => ownedItemIds.has(i.id)).length;
+    document.getElementById('modal-owned-count').textContent = items.length ? `(${ownedCount}/${items.length} collected)` : '';
+
+    if (!items.length) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;padding:30px;"><i class="ti ti-package-off"></i><p>Items coming soon!</p></div>';
+      return;
+    }
+
+    const typeIcons = { avatar: 'ti-shirt', banner: 'ti-photo', background: 'ti-layout', coverart: 'ti-brush' };
+    const typeLabels = { avatar: 'Avatar', banner: 'Profile Banner', background: 'Background', coverart: 'Cover Art' };
+
+    grid.innerHTML = items.map(item => {
+      const owned = ownedItemIds.has(item.id);
+      const locked = !scrollOwned;
+      return `
+        <div class="mitem${locked ? ' locked' : ''}">
+          <div class="mitem-thumb">
+            ${item.image_url ? `<img src="${esc(item.image_url)}" alt="">` : `<span>${item.item_emoji || '🎁'}</span>`}
+            ${locked ? '<div class="mitem-lock-overlay"><i class="ti ti-lock"></i></div>' : ''}
+          </div>
+          <div class="mitem-body">
+            <div class="mitem-name" title="${esc(item.name)}">${esc(item.name)}</div>
+            <div class="mitem-type"><i class="ti ${typeIcons[item.type] || 'ti-package'}"></i> ${typeLabels[item.type] || item.type}</div>
+            <div class="mitem-cost">
+              <div class="mitem-price"><i class="ti ti-flame"></i> ${(item.ember_price||0).toLocaleString()}</div>
+              <button class="mitem-buy-btn${owned ? ' owned' : ''}" 
+                ${locked || owned ? 'disabled' : ''}
+                onclick="${locked || owned ? '' : `purchaseItem('${item.id}', ${item.ember_price||0})`}">
+                ${owned ? '<i class="ti ti-check"></i> Owned' : locked ? '<i class="ti ti-lock"></i> Locked' : '<i class="ti ti-flame"></i> Claim'}
+              </button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function closeScrollModal(e) {
+    if (e.target === document.getElementById('scroll-modal')) closeScrollModalDirect();
+  }
+  function closeScrollModalDirect() {
+    document.getElementById('scroll-modal').classList.remove('open');
+    openScrollData = null;
+  }
+
+  // ── PURCHASE SCROLL ───────────────────────────────────────────
+  async function purchaseScroll() {
+    if (!currentUser || !openScrollData) return;
+    const scroll = openScrollData;
+    const price = scroll.quill_price || 0;
+
+    if (userQuills < price) {
+      showToast('Not enough Quills! Buy more below.', 'ti-feather', true);
+      openQuillModal();
+      return;
+    }
+
+    const btn = document.getElementById('modal-unlock-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Unlocking…';
+
+    try {
+      const { data: rpc, error: rpcErr } = await db.rpc('purchase_scroll', { p_user_id: currentUser.id, p_scroll_id: scroll.id });
+      if (rpcErr) throw rpcErr;
+      if (!rpc?.ok) throw new Error(rpc?.error || 'Purchase failed');
+
+      userQuills = rpc.new_balance;
+      ownedScrollIds.add(scroll.id);
+      document.getElementById('hero-quill-count').textContent = userQuills.toLocaleString();
+      const qEl = document.getElementById('ds-quill-count');
+      if (qEl) qEl.textContent = userQuills.toLocaleString();
+
+      showToast('Scroll unlocked! Start claiming items with Embers.', 'ti-scroll');
+      // Re-render items as unlocked
+      const { data: items } = await db.from('scroll_items').select('*').eq('scroll_id', scroll.id).order('ember_price', { ascending: true });
+      renderModalItems(items || [], true);
+      btn.className = 'modal-unlock-btn already-owned';
+      btn.innerHTML = '<i class="ti ti-check"></i> Already Unlocked';
+
+      // Update card in grid
+      renderScrolls();
+    } catch(e) {
+      console.error(e);
+      showToast('Something went wrong. Please try again.', 'ti-alert-triangle', true);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock Scroll';
+    }
+  }
+
+  // ── PURCHASE ITEM ─────────────────────────────────────────────
+  async function purchaseItem(itemId, emberPrice) {
+    if (!currentUser) return;
+    if (userEmbers < emberPrice) {
+      showToast('Not enough Embers! Keep reading to earn more.', 'ti-flame', true);
+      return;
+    }
+
+    const btn = event.currentTarget;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i>';
+
+    try {
+      const { data: rpc, error: rpcErr } = await db.rpc('purchase_scroll_item', { p_user_id: currentUser.id, p_scroll_item_id: itemId });
+      if (rpcErr) throw rpcErr;
+      if (!rpc?.ok) throw new Error(rpc?.error || 'Purchase failed');
+
+      userEmbers = rpc.new_balance;
+      ownedItemIds.add(itemId);
+      document.getElementById('hero-ember-count').textContent = userEmbers.toLocaleString();
+      const eEl = document.getElementById('ds-ember-count');
+      if (eEl) eEl.textContent = userEmbers.toLocaleString();
+
+      btn.className = 'mitem-buy-btn owned';
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-check"></i> Owned';
+
+      showToast('Item claimed! Check your Avatar page to equip it.', 'ti-sparkles');
+      // update collected count
+      const all = document.querySelectorAll('#modal-items-grid .mitem');
+      const ownedNow = document.querySelectorAll('#modal-items-grid .mitem-buy-btn.owned').length;
+      document.getElementById('modal-owned-count').textContent = `(${ownedNow}/${all.length} collected)`;
+    } catch(e) {
+      console.error(e);
+      showToast('Purchase failed. Please try again.', 'ti-alert-triangle', true);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-flame"></i> Claim';
+    }
+  }
+
+  // ── QUILL BUNDLES MODAL ───────────────────────────────────────
+  const BUNDLES = [
+    { quills: 100, price: '$0.99', bonus: null, popular: false },
+    { quills: 500, price: '$4.99', bonus: '+50 bonus', popular: false },
+    { quills: 1200, price: '$9.99', bonus: '+200 bonus', popular: true },
+    { quills: 3000, price: '$24.99', bonus: '+500 bonus', popular: false },
+  ];
+
+  function renderQuillBundles() {
+    const g = document.getElementById('quill-bundles-grid');
+    g.innerHTML = BUNDLES.map(b => `
+      <div class="quill-bundle${b.popular ? ' popular' : ''}">
+        ${b.popular ? '<div class="bundle-popular-badge">Most Popular</div>' : ''}
+        <div class="bundle-quill-count"><i class="ti ti-feather"></i> ${b.quills.toLocaleString()}</div>
+        ${b.bonus ? `<div class="bundle-bonus">${b.bonus}</div>` : '<div style="height:18px;"></div>'}
+        <div class="bundle-price">${b.price}</div>
+        <div class="bundle-price-sub">one-time purchase</div>
+        <button class="bundle-cta" onclick="showToast('Payment coming soon!','ti-clock')">Purchase</button>
+      </div>`).join('');
+  }
+
+  function openQuillModal() { document.getElementById('quill-modal').classList.add('open'); }
+  function closeQuillModal(e) { if (e.target === document.getElementById('quill-modal')) document.getElementById('quill-modal').classList.remove('open'); }
+
+  // ── TOAST ─────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, icon = 'ti-check', isError = false) {
+    const el = document.getElementById('mp-toast');
+    const msgEl = document.getElementById('mp-toast-msg');
+    const iconEl = document.getElementById('mp-toast-icon');
+    msgEl.textContent = msg;
+    iconEl.className = 'ti ' + icon;
+    el.style.color = isError ? 'var(--red)' : 'var(--text)';
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+  }
+
+  // ── HELPERS ───────────────────────────────────────────────────
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>

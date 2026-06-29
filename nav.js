@@ -82,7 +82,7 @@ function dsApplyAccent(hex) {
     .ember-wrap:hover { border-color: #f97316; }
     .ember-wrap i { font-size: 16px; }
     .ember-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
-    .quill-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--gold); font-size: 14px; font-weight: 700; cursor: default; transition: all 0.2s, transform 0.2s; }
+    .quill-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--gold); font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s, transform 0.2s; }
     .quill-wrap:hover { border-color: var(--gold); }
     .quill-wrap i { font-size: 16px; }
     .quill-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
@@ -172,7 +172,7 @@ function dsApplyAccent(hex) {
 
   /* ── NAV HTML ────────────────────────────────────────────────── */
   var navHtml = `
-    <div class="quill-wrap" id="quill-wrap" style="display:none;" title="Your Quills — purchased to support creators">
+    <div class="quill-wrap" id="quill-wrap" style="display:none;cursor:pointer;" title="Your Quills — spend them in the Marketplace" onclick="window.location.href='marketplace.html'">
       <i class="ti ti-feather"></i>
       <span class="quill-count" id="ds-quill-count">0</span>
     </div>
@@ -856,11 +856,20 @@ function dsApplyAccent(hex) {
         return;
       }
 
-      if(res && !res.error && res.data && !username){
-        username = res.data.username;
-        if(username){
+      if(res && !res.error && res.data){
+        // Fill in any missing username/displayName from DB (more reliable than metadata)
+        if(!username && res.data.username){
+          username = res.data.username;
           document.getElementById('dd-handle').textContent = '@'+username;
           document.getElementById('dd-profile-link').href = 'profile.html?user='+username;
+        }
+        if(res.data.display_name){
+          document.getElementById('dd-display-name').textContent = res.data.display_name;
+          document.getElementById('user-avatar-initial').textContent = res.data.display_name.charAt(0).toUpperCase();
+        }
+        // Apply avatar image immediately — not gated on username
+        if(res.data.avatar_url){
+          avatarBtn.innerHTML = '<img src="'+res.data.avatar_url+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
         }
       }
 
