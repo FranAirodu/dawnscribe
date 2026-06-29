@@ -7,6 +7,7 @@
   <title>DawnScribe — Messages</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="blockUtils.js"></script>
+<script src="spoilerUtils.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <style>
@@ -307,7 +308,9 @@
     if(d<3600) return Math.floor(d/60)+'m';
     if(d<86400) return Math.floor(d/3600)+'h';
     if(d<604800) return Math.floor(d/86400)+'d';
-    return new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    if(d<2592000) return Math.floor(d/604800)+'w';
+    if(d<31536000) return Math.floor(d/2592000)+'mo';
+    return Math.floor(d/31536000)+'y';
   }
   function fullTime(s){
     if(!s) return '';
@@ -349,7 +352,14 @@
         document.getElementById('compose-bar').style.display='flex';
         showToast('User unblocked.','ti-check');
       } else {
-        if(!confirm('Block this user? Their new messages won\'t appear in your inbox.')) return;
+        if(!window._blockConfirmPending){
+          window._blockConfirmPending = true;
+          var _blkBtn = document.getElementById('block-convo-btn');
+          if(_blkBtn){ var _blkOrig = _blkBtn.innerHTML; _blkBtn.innerHTML = '<i class="ti ti-alert-triangle"></i>'; _blkBtn.title='Confirm block?'; _blkBtn.style.color='var(--red)'; _blkBtn.style.borderColor='rgba(248,113,113,0.5)'; }
+          setTimeout(function(){ window._blockConfirmPending=false; if(_blkBtn){_blkBtn.innerHTML=_blkOrig;_blkBtn.title='Block user';_blkBtn.style.color='';_blkBtn.style.borderColor='';} }, 3000);
+          return;
+        }
+        window._blockConfirmPending = false;
         await dsBlock.block(otherUid); blocked=true; updateBlockButton(otherUid);
         document.getElementById('blocked-bar').style.display='flex';
         document.getElementById('blocked-bar-text').textContent='You have blocked this user. Unblock to resume the conversation.';
@@ -398,12 +408,17 @@
 
     conversations = convos.map(function(c){
       var otherId = c.participant_a === uid ? c.participant_b : c.participant_a;
-      return { id: c.id, other: profMap[otherId]||null, last_message: c.last_message, last_message_at: c.last_message_at, unread: unreadMap[c.id]||0 };
+      return { id: c.id, other: profMap[otherId]||null, last_message: c.last_message, last_message_at: c.last_message_at, unread: unreadMap[c.id]||0, _raw_participant_a: c.participant_a };
     });
     renderConvoList();
   }
 
+  function updatePageTitle(){
+    var total = conversations.reduce(function(s,c){ return s+(c.unread||0); }, 0);
+    document.title = total > 0 ? '('+total+') DawnScribe — Messages' : 'DawnScribe — Messages';
+  }
   function renderConvoList(){
+    updatePageTitle();
     var list = document.getElementById('convo-list');
     var query = document.getElementById('inbox-search').value.toLowerCase();
     var filtered = conversations.filter(function(c){
@@ -468,10 +483,6 @@
     var ac = document.getElementById('active-convo');
     ac.style.display = 'flex';
 
-    // Check DM privacy setting for recipient
-    var privRes = await db.from('profiles').select('id').eq('id', activeOtherUser.id).maybeSingle();
-    var recipientSettings = null;
-    try { recipientSettings = JSON.parse(localStorage.getItem('ds_settings_misc_'+activeOtherUser.id)); } catch(e){}
     var iBlockThem = dsBlock.isBlockedByMe(activeOtherUser.id);
     if(iBlockThem){
       document.getElementById('blocked-bar').style.display='flex';
@@ -507,21 +518,64 @@
   }
 
   // ── LOAD MESSAGES ──────────────────────────────────────────
-  async function loadMessages(convoId){
+  var _msgPage = 0;
+  var _msgPageSize = 60;
+  var _msgHasMore = false;
+  async function loadMessages(convoId, append){
     var feed = document.getElementById('message-feed');
-    feed.innerHTML = '<div class="feed-empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite;font-size:24px;"></i></div>';
+    if(!append){
+      _msgPage = 0; _msgHasMore = false;
+      feed.innerHTML = '<div class="feed-empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite;font-size:24px;"></i></div>';
+    }
+    // Fetch one extra to detect if more exist
     var res = await db.from('messages')
       .select('*')
       .eq('conversation_id', convoId)
-      .order('created_at', { ascending: true })
-      .limit(100);
+      .order('created_at', { ascending: false })
+      .range(_msgPage * _msgPageSize, _msgPage * _msgPageSize + _msgPageSize);
     if(res.error){ feed.innerHTML = '<div class="feed-empty"><i class="ti ti-alert-circle"></i><p>Could not load messages.</p></div>'; return; }
-    var msgs = (res.data||[]).filter(function(m){
+    var batch = (res.data||[]).slice(0, _msgPageSize).reverse();
+    _msgHasMore = res.data && res.data.length > _msgPageSize;
+    var msgs = batch.filter(function(m){
       if(m.sender_id !== currentSession.user.id && dsBlock.either(m.sender_id)) return false;
       var isMe = m.sender_id === currentSession.user.id;
       return !(isMe && m.deleted_by_sender) && !(!isMe && m.deleted_by_recipient);
     });
-    renderMessages(msgs);
+    if(append){
+      prependMessages(msgs);
+    } else {
+      renderMessages(msgs);
+    }
+    var existingBtn = document.getElementById('load-older-btn');
+    if(_msgHasMore && !existingBtn){
+      var olderBtn = document.createElement('button');
+      olderBtn.id = 'load-older-btn';
+      olderBtn.style.cssText = 'display:flex;align-items:center;gap:6px;margin:0 auto 8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 16px;color:var(--text3);font-size:12px;font-weight:700;font-family:Lato,sans-serif;cursor:pointer;transition:all 0.2s;';
+      olderBtn.innerHTML = '<i class="ti ti-arrow-up"></i> Load older messages';
+      olderBtn.onmouseenter = function(){ this.style.borderColor='var(--accent)'; this.style.color='var(--accent)'; };
+      olderBtn.onmouseleave = function(){ this.style.borderColor='var(--border)'; this.style.color='var(--text3)'; };
+      olderBtn.onclick = function(){ _msgPage++; loadMessages(convoId, true); this.remove(); };
+      feed.insertBefore(olderBtn, feed.firstChild);
+    } else if(!_msgHasMore && existingBtn){
+      existingBtn.remove();
+    }
+  }
+  function prependMessages(msgs){
+    var feed = document.getElementById('message-feed');
+    var firstMsg = feed.querySelector('.msg-row');
+    var frag = document.createDocumentFragment();
+    var lastDate = null;
+    msgs.forEach(function(m){
+      var msgDate = dateLabel(m.created_at);
+      if(msgDate !== lastDate){
+        var div = document.createElement('div');
+        div.className = 'date-divider'; div.textContent = msgDate;
+        frag.appendChild(div); lastDate = msgDate;
+      }
+      frag.appendChild(buildMessageEl(m));
+    });
+    if(firstMsg){ feed.insertBefore(frag, firstMsg); }
+    else { feed.appendChild(frag); }
   }
 
   function renderMessages(msgs){
@@ -570,26 +624,41 @@
   }
 
   // ── SEND MESSAGE ───────────────────────────────────────────
+  var _sendingMessage = false;
   async function sendMessage(){
     var input = document.getElementById('compose-input');
     var text = input.value.trim();
     if(!text || text.length > 2000 || !activeConvoId) return;
+    if(_sendingMessage) return;
+    _sendingMessage = true;
     var btn = document.getElementById('send-btn');
     btn.disabled = true;
+    // Optimistic bubble — shown immediately, replaced on success
+    var _optMsg = { id: 'opt-'+Date.now(), conversation_id: activeConvoId, sender_id: currentSession.user.id, content: text, created_at: new Date().toISOString(), read_at: null, deleted_by_sender: false, deleted_by_recipient: false };
+    var _optEl = buildMessageEl(_optMsg);
+    _optEl.setAttribute('data-pending','1');
+    _optEl.style.opacity = '0.5';
+    var _feed = document.getElementById('message-feed');
+    _feed.appendChild(_optEl); _feed.scrollTop = _feed.scrollHeight;
     var res = await db.from('messages').insert({
       conversation_id: activeConvoId,
       sender_id: currentSession.user.id,
       content: text
     }).select().single();
-    if(res.error){ showToast('Failed to send: '+res.error.message, 'ti-x'); btn.disabled=false; return; }
+    if(res.error){
+      var _pe = document.querySelector('.msg-row[data-pending]'); if(_pe) _pe.remove();
+      showToast('Failed to send: '+res.error.message, 'ti-x'); btn.disabled=false; _sendingMessage=false; return;
+    }
     // Update convo last_message
     await db.from('conversations').update({ last_message: text, last_message_at: new Date().toISOString() }).eq('id', activeConvoId);
     input.value = '';
     input.style.height = 'auto';
     document.getElementById('char-remaining').textContent = '2000';
     document.getElementById('char-remaining').className = 'char-remaining';
+    // Replace optimistic bubble with confirmed message
+    var _pe2 = document.querySelector('.msg-row[data-pending]'); if(_pe2) _pe2.remove();
     btn.disabled = false;
-    // Append locally (realtime will also fire but dedup by id)
+    _sendingMessage = false;
     appendMessage(res.data);
     // Update convo list preview
     var c = conversations.find(function(x){ return x.id===activeConvoId; });
@@ -615,8 +684,33 @@
   }
 
   // ── REALTIME SUBSCRIPTION ──────────────────────────────────
+  function showTypingIndicator(show){
+    var feed = document.getElementById('message-feed');
+    var ex = document.getElementById('typing-indicator');
+    if(show && !ex){
+      var el = document.createElement('div');
+      el.id='typing-indicator'; el.className='typing-indicator';
+      var who = activeOtherUser ? (activeOtherUser.display_name||activeOtherUser.username||'They') : 'They';
+      el.innerHTML='<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div><span style="margin-left:4px;font-size:11px;">'+who+' is typing…</span>';
+      feed.appendChild(el); feed.scrollTop = feed.scrollHeight;
+    } else if(!show && ex){ ex.remove(); }
+  }
+  var _typingHideTimer = null;
   function subscribeToConvo(convoId){
     if(realtimeSub){ db.removeChannel(realtimeSub); realtimeSub = null; }
+    // Typing channel
+    try{
+      db.channel('typing-'+convoId)
+        .on('broadcast',{event:'typing'},function(p){
+          if(p.payload&&p.payload.uid===currentSession.user.id) return;
+          showTypingIndicator(true);
+          clearTimeout(_typingHideTimer);
+          _typingHideTimer=setTimeout(function(){ showTypingIndicator(false); },3000);
+        })
+        .on('broadcast',{event:'stopped'},function(){
+          clearTimeout(_typingHideTimer); showTypingIndicator(false);
+        }).subscribe();
+    }catch(e){}
     realtimeSub = db.channel('messages:'+convoId)
       .on('postgres_changes',{ event:'INSERT', schema:'public', table:'messages', filter:'conversation_id=eq.'+convoId },
         async function(payload){
@@ -643,10 +737,16 @@
     document.getElementById('delete-modal').classList.remove('show');
     if(!activeConvoId) return;
     var idToDelete = activeConvoId;
-    var msgRes = await db.from('messages').delete().eq('conversation_id', idToDelete);
-    if(msgRes.error){ showToast('Could not delete messages: ' + msgRes.error.message, 'ti-x'); return; }
-    var convRes = await db.from('conversations').delete().eq('id', idToDelete);
-    if(convRes.error){ showToast('Could not delete conversation: ' + convRes.error.message, 'ti-x'); return; }
+    var myId = currentSession.user.id;
+    var convoRow = conversations.find(function(c){ return c.id===idToDelete; });
+    var isParticipantA = convoRow && convoRow._raw_participant_a === myId;
+    var deleteField = isParticipantA ? 'deleted_by_a' : 'deleted_by_b';
+    // Soft-delete: mark the conversation as deleted for this user's side
+    var softRes = await db.from('conversations').update({ [deleteField]: true }).eq('id', idToDelete);
+    // Soft-delete messages: sent by me and received by me
+    await db.from('messages').update({ deleted_by_sender: true }).eq('conversation_id', idToDelete).eq('sender_id', myId);
+    await db.from('messages').update({ deleted_by_recipient: true }).eq('conversation_id', idToDelete).neq('sender_id', myId);
+    if(softRes.error){ showToast('Could not delete conversation: ' + softRes.error.message, 'ti-x'); return; }
     conversations = conversations.filter(function(c){ return c.id !== idToDelete; });
     activeConvoId = null; activeOtherUser = null;
     document.getElementById('active-convo').style.display = 'none';
@@ -678,7 +778,7 @@
     var resultsEl = document.getElementById('compose-user-results');
     if(!q || q.length < 2){ resultsEl.innerHTML=''; selectedNewUser=null; document.getElementById('compose-send').disabled=true; return; }
     hint.textContent = 'Searching…'; hint.className='modal-hint';
-    var res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('username','%'+q+'%').neq('id', currentSession.user.id).limit(5);
+    var res = await db.from('profiles').select('id,username,display_name,avatar_url').or('username.ilike.%'+q+'%,display_name.ilike.%'+q+'%').neq('id', currentSession.user.id).limit(5);
     if(!res.data || !res.data.length){ hint.textContent='No users found.'; hint.className='modal-hint'; resultsEl.innerHTML=''; return; }
     hint.textContent=''; resultsEl.innerHTML='';
     res.data.forEach(function(u){
@@ -751,6 +851,15 @@
       if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); }
     });
     document.getElementById('send-btn').addEventListener('click', sendMessage);
+    var _typingTimer = null;
+    input.addEventListener('input', function(){
+      if(!activeConvoId) return;
+      clearTimeout(_typingTimer);
+      try{ db.channel('typing-'+activeConvoId).send({ type:'broadcast', event:'typing', payload:{uid:currentSession.user.id} }); }catch(e){}
+      _typingTimer = setTimeout(function(){
+        try{ db.channel('typing-'+activeConvoId).send({ type:'broadcast', event:'stopped', payload:{uid:currentSession.user.id} }); }catch(e){}
+      }, 2000);
+    });
     document.getElementById('dm-spoiler-btn').addEventListener('click', function(){
       dsSpoiler.wrapSelection(document.getElementById('compose-input'));
     });
@@ -821,29 +930,30 @@
     var dmTo = params.get('to');
     if(dmTo){ openComposeModal(dmTo); }
 
-    // Subscribe to new messages across all convos for unread badge updates
+    // Subscribe to new messages — filtered to user's own conversations
     var uid = currentSession.user.id;
-    db.channel('all-messages')
-      .on('postgres_changes',{ event:'INSERT', schema:'public', table:'messages' },
-        async function(payload){
-          var m = payload.new;
-          if(m.sender_id === uid) return;
-          // Find which convo this belongs to
-          var c = conversations.find(function(x){ return x.id===m.conversation_id; });
-          if(c){
-            c.last_message = m.content;
-            c.last_message_at = m.created_at;
-            // Only increment unread if this convo isn't currently open
-            if(m.conversation_id !== activeConvoId){
-              c.unread = (c.unread||0)+1;
+    var _myConvoIds = conversations.map(function(c){ return c.id; });
+    if(_myConvoIds.length){
+      db.channel('all-messages-'+uid)
+        .on('postgres_changes',{ event:'INSERT', schema:'public', table:'messages',
+          filter:'conversation_id=in.('+_myConvoIds.join(',')+')'  },
+          async function(payload){
+            var m = payload.new;
+            if(m.sender_id === uid) return;
+            var c = conversations.find(function(x){ return x.id===m.conversation_id; });
+            if(c){
+              c.last_message = m.content;
+              c.last_message_at = m.created_at;
+              if(m.conversation_id !== activeConvoId){
+                c.unread = (c.unread||0)+1;
+              }
+              renderConvoList();
+            } else {
+              await loadConversations();
             }
-            renderConvoList();
-          } else {
-            // New convo from someone new — reload
-            await loadConversations();
-          }
-        })
-      .subscribe();
+          })
+        .subscribe();
+    }
   })();
 
   // CSS spin animation
@@ -852,7 +962,6 @@
   document.head.appendChild(styleEl);
 </script>
 <script src="footer.js"></script>
-<script src="spoilerUtils.js"></script>
 <script src="nav.js"></script>
 </body>
 </html>
