@@ -12,7 +12,24 @@
   </script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <script>
+    (function(){
+      var h=localStorage.getItem('ds_accent_hex');
+      if(!h) return;
+      var d=h.replace('#','');
+      var r=Math.max(0,parseInt(d.slice(0,2),16)-30);
+      var g=Math.max(0,parseInt(d.slice(2,4),16)-30);
+      var b=Math.max(0,parseInt(d.slice(4,6),16)-30);
+      var h2='#'+[r,g,b].map(function(v){return v.toString(16).padStart(2,'0');}).join('');
+      var s=document.createElement('style');
+      s.id='ds-accent-override';
+      s.textContent=':root{--accent:'+h+' !important;--accent2:'+h2+' !important;}[data-theme="light"]{--accent:'+h+' !important;--accent2:'+h2+' !important;}';
+      document.head.appendChild(s);
+    })();
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="spoilerUtils.js"></script>
+  <script src="accessibilityPrefs.js"></script>
   <style>
     :root {
       --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
@@ -30,8 +47,8 @@
     .nav-left { display: flex; align-items: center; gap: 16px; }
     .logo { font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700; color: var(--text); text-decoration: none; }
     .logo span { color: var(--accent); }
-    .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; font-weight: 700; text-decoration: none; transition: color 0.2s; }
-    .back-btn:hover { color: var(--accent); }
+    .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; font-weight: 700; text-decoration: none; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); transition: all 0.2s; }
+    .back-btn:hover { border-color: var(--accent); color: var(--accent); }
 
     .page-wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 80px; }
     .page-header { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
@@ -106,6 +123,18 @@
     .empty-state { padding: 48px 24px; text-align: center; color: var(--text3); }
     .empty-state i { font-size: 36px; display: block; margin-bottom: 12px; opacity: 0.4; }
     .empty-state p { font-size: 14px; }
+    .caught-up { padding: 60px 24px; text-align: center; color: var(--text3); }
+    .caught-up-icon { font-size: 52px; margin-bottom: 16px; }
+    .caught-up h3 { font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700; color: var(--text2); margin-bottom: 8px; }
+    .caught-up p { font-size: 13px; line-height: 1.6; }
+    .caught-up a { color: var(--accent); text-decoration: none; font-weight: 700; }
+    .caught-up a:hover { text-decoration: underline; }
+    /* GLOBAL ACTIONS BAR */
+    .global-actions { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 12px; }
+    .global-mark-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg2); color: var(--text3); font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; }
+    .global-mark-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .section-dismiss-all { font-size: 11px; color: var(--text3); background: none; border: none; font-family: 'Lato', sans-serif; font-weight: 700; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: color 0.2s; }
+    .section-dismiss-all:hover { color: var(--red); }
 
     /* LOAD MORE */
     .load-more-btn { width: 100%; margin-top: 16px; padding: 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; color: var(--text2); font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -118,8 +147,39 @@
     .cc6{background:#ef4444;} .cc7{background:#06b6d4;}
 
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes slideDown { from { opacity:0; transform:translateX(-50%) translateY(-10px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+    @keyframes slideUp { from { opacity:0; transform:translateX(-50%) translateY(10px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
     .loading-row { padding: 32px; text-align: center; color: var(--text3); font-size: 13px; }
     .loading-row i { animation: spin 1s linear infinite; }
+
+    /* UNREAD SUMMARY BAR */
+    .unread-summary { display: flex; align-items: center; justify-content: space-between; background: rgba(45,212,191,0.06); border: 1px solid rgba(45,212,191,0.15); border-radius: 10px; padding: 10px 16px; margin-bottom: 20px; font-size: 13px; color: var(--text2); }
+    .unread-summary strong { color: var(--accent); }
+    .unread-summary.hidden { display: none; }
+
+    /* FILTER BAR */
+    .filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg2); color: var(--text3); font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; }
+    .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .filter-btn.active { background: rgba(45,212,191,0.12); border-color: var(--accent); color: var(--accent); }
+    .sort-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg2); color: var(--text3); font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; margin-left: auto; }
+    .sort-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* SETTINGS LINK */
+    .settings-link { display: inline-flex; align-items: center; gap: 5px; color: var(--text3); font-size: 12px; font-weight: 700; text-decoration: none; padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border); transition: all 0.2s; }
+    .settings-link:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* SECTION MARK-READ (inline with divider) */
+    .section-mark-read { font-size: 11px; color: var(--text3); background: none; border: none; font-family: 'Lato', sans-serif; font-weight: 700; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: color 0.2s; white-space: nowrap; }
+    .section-mark-read:hover { color: var(--accent); }
+
+    /* ARTWORK THUMBNAIL on artist cards */
+    .art-thumb { width: 60px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+    .art-thumb-placeholder { width: 60px; height: 44px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+
+    /* SNOOZE TOAST */
+    .snooze-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 18px; font-size: 13px; font-weight: 700; color: var(--text2); z-index: 400; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); animation: slideUp 0.3s ease; }
+    .snooze-toast i { color: var(--accent); }
   </style>
 </head>
 <body>
@@ -134,10 +194,20 @@
 <div class="page-wrap">
   <div class="page-header">
     <div class="page-icon"><i class="ti ti-bell"></i></div>
-    <div>
+    <div style="flex:1;min-width:0;">
       <div class="page-title">My Notifications</div>
-      <div class="page-subtitle">Updates from stories, artists, and your works</div>
+      <div class="page-subtitle" id="unread-subtitle">Updates from stories, artists, and your works</div>
     </div>
+    <a class="settings-link" href="settings.html#notifications" title="Notification preferences"><i class="ti ti-settings"></i></a>
+    <button class="global-mark-btn" onclick="window.markAllEverything&&window.markAllEverything()">
+      <i class="ti ti-checks"></i> Mark all read
+    </button>
+  </div>
+
+  <!-- UNREAD SUMMARY -->
+  <div class="unread-summary hidden" id="unread-summary-bar">
+    <span id="unread-summary-text"></span>
+    <button class="mark-read-btn" onclick="window.markAllEverything&&window.markAllEverything()" style="margin:0;"><i class="ti ti-checks"></i> Clear all</button>
   </div>
 
   <!-- TABS -->
@@ -159,10 +229,17 @@
       <div class="section-title"><i class="ti ti-rss" style="color:var(--accent);"></i> Following</div>
       <button class="mark-read-btn" onclick="window.markAllRead&&window.markAllRead('following')"><i class="ti ti-checks"></i> Mark all read</button>
     </div>
+    <div class="filter-bar" id="filter-bar-following">
+      <button class="filter-btn active" id="filter-following-all" onclick="window.setFilter&&window.setFilter('following','all',this)"><i class="ti ti-layout-list"></i> All</button>
+      <button class="filter-btn" id="filter-following-unread" onclick="window.setFilter&&window.setFilter('following','unread',this)"><i class="ti ti-circle-filled" style="font-size:8px;"></i> Unread only</button>
+      <button class="sort-btn" id="sort-following" onclick="window.toggleSort&&window.toggleSort('following',this)"><i class="ti ti-sort-descending"></i> Newest first</button>
+    </div>
 
     <div class="section-divider">
       <div class="section-divider-label"><i class="ti ti-book"></i> New Chapters</div>
       <div class="section-divider-line"></div>
+      <button class="section-mark-read" onclick="window.markSectionRead&&window.markSectionRead('novels')"><i class="ti ti-checks"></i> Mark read</button>
+      <button class="section-dismiss-all" onclick="window.dismissAllSection&&window.dismissAllSection('novels')">Dismiss all</button>
     </div>
     <div class="notif-list" id="feed-novels">
       <div class="loading-row"><i class="ti ti-loader"></i></div>
@@ -174,6 +251,8 @@
     <div class="section-divider" style="margin-top:28px;">
       <div class="section-divider-label"><i class="ti ti-palette"></i> New Artwork</div>
       <div class="section-divider-line"></div>
+      <button class="section-mark-read" onclick="window.markSectionRead&&window.markSectionRead('artists')"><i class="ti ti-checks"></i> Mark read</button>
+      <button class="section-dismiss-all" onclick="window.dismissAllSection&&window.dismissAllSection('artists')">Dismiss all</button>
     </div>
     <div class="notif-list" id="feed-artists">
       <div class="loading-row"><i class="ti ti-loader"></i></div>
@@ -189,10 +268,16 @@
       <div class="section-title"><i class="ti ti-message-circle" style="color:var(--accent);"></i> Comments on Your Works</div>
       <button class="mark-read-btn" onclick="window.markAllRead&&window.markAllRead('comments')"><i class="ti ti-checks"></i> Mark all read</button>
     </div>
+    <div class="filter-bar" id="filter-bar-comments">
+      <button class="filter-btn active" id="filter-comments-all" onclick="window.setFilter&&window.setFilter('comments','all',this)"><i class="ti ti-layout-list"></i> All</button>
+      <button class="filter-btn" id="filter-comments-unread" onclick="window.setFilter&&window.setFilter('comments','unread',this)"><i class="ti ti-circle-filled" style="font-size:8px;"></i> Unread only</button>
+      <button class="sort-btn" id="sort-comments" onclick="window.toggleSort&&window.toggleSort('comments',this)"><i class="ti ti-sort-descending"></i> Newest first</button>
+    </div>
 
     <div class="section-divider">
       <div class="section-divider-label"><i class="ti ti-message"></i> Chapter &amp; Paragraph Comments</div>
       <div class="section-divider-line"></div>
+      <button class="section-mark-read" onclick="window.markSectionRead&&window.markSectionRead('comments-chap')"><i class="ti ti-checks"></i> Mark read</button>
     </div>
     <div class="notif-list" id="feed-comments-chap">
       <div class="loading-row"><i class="ti ti-loader"></i></div>
@@ -201,6 +286,7 @@
     <div class="section-divider" style="margin-top:20px;">
       <div class="section-divider-label"><i class="ti ti-music" style="color:var(--gold);"></i> Character Song Suggestions</div>
       <div class="section-divider-line"></div>
+      <button class="section-mark-read" onclick="window.markSectionRead&&window.markSectionRead('comments-songs')"><i class="ti ti-checks"></i> Mark read</button>
     </div>
     <div class="notif-list" id="feed-comments-songs">
       <div class="loading-row"><i class="ti ti-loader"></i></div>
@@ -209,6 +295,7 @@
     <div class="section-divider" style="margin-top:20px;">
       <div class="section-divider-label"><i class="ti ti-message-heart" style="color:#ec4899;"></i> Character Opinions</div>
       <div class="section-divider-line"></div>
+      <button class="section-mark-read" onclick="window.markSectionRead&&window.markSectionRead('comments-opinions')"><i class="ti ti-checks"></i> Mark read</button>
     </div>
     <div class="notif-list" id="feed-comments-opinions">
       <div class="loading-row"><i class="ti ti-loader"></i></div>
@@ -217,6 +304,8 @@
     <div class="section-divider" style="margin-top:20px;">
       <div class="section-divider-label"><i class="ti ti-flame" style="color:#f97316;"></i> Echoes on Chapters</div>
       <div class="section-divider-line"></div>
+      <button class="section-mark-read" onclick="window.markSectionRead&&window.markSectionRead('comments-echoes')"><i class="ti ti-checks"></i> Mark read</button>
+      <button class="section-dismiss-all" onclick="window.dismissAllSection&&window.dismissAllSection('comments-echoes')">Dismiss all</button>
     </div>
     <div class="notif-list" id="feed-comments-echoes">
       <div class="loading-row"><i class="ti ti-loader"></i></div>
@@ -225,6 +314,8 @@
     <div class="section-divider" style="margin-top:20px;">
       <div class="section-divider-label"><i class="ti ti-clock-exclamation" style="color:#f59e0b;"></i> Poll Reminders</div>
       <div class="section-divider-line"></div>
+      <button class="section-mark-read" onclick="window.markSectionRead&&window.markSectionRead('comments-polls')"><i class="ti ti-checks"></i> Mark read</button>
+      <button class="section-dismiss-all" onclick="window.dismissAllSection&&window.dismissAllSection('comments-polls')">Dismiss all</button>
     </div>
     <div class="notif-list" id="feed-comments-polls">
       <div class="loading-row"><i class="ti ti-loader"></i></div>
@@ -243,6 +334,11 @@
       <div class="section-title"><i class="ti ti-users" style="color:var(--accent);"></i> Social &amp; Activity</div>
       <button class="mark-read-btn" onclick="window.markAllRead&&window.markAllRead('social')"><i class="ti ti-checks"></i> Mark all read</button>
     </div>
+    <div class="filter-bar" id="filter-bar-social">
+      <button class="filter-btn active" id="filter-social-all" onclick="window.setFilter&&window.setFilter('social','all',this)"><i class="ti ti-layout-list"></i> All</button>
+      <button class="filter-btn" id="filter-social-unread" onclick="window.setFilter&&window.setFilter('social','unread',this)"><i class="ti ti-circle-filled" style="font-size:8px;"></i> Unread only</button>
+      <button class="sort-btn" id="sort-social" onclick="window.toggleSort&&window.toggleSort('social',this)"><i class="ti ti-sort-descending"></i> Newest first</button>
+    </div>
 
     <div class="section-divider">
       <div class="section-divider-label"><i class="ti ti-user-plus"></i> Friend Requests</div>
@@ -259,6 +355,7 @@
     <div class="section-divider" style="margin-top:20px;">
       <div class="section-divider-label"><i class="ti ti-bell-ringing"></i> Activity</div>
       <div class="section-divider-line"></div>
+      <button class="section-dismiss-all" onclick="window.dismissAllSection&&window.dismissAllSection('social')">Dismiss all</button>
     </div>
     <div class="notif-list" id="feed-social">
       <div class="loading-row"><i class="ti ti-loader"></i></div>
@@ -279,6 +376,10 @@
   var myPrefs = { notif_follow: true, notif_chapter: true, notif_comment: true, notif_echo: true, notif_message: true, notif_announce: false };
   var BATCH   = 30;
 
+  // Filter & sort state per tab
+  var tabFilter = { following: 'all', comments: 'all', social: 'all' };
+  var tabSort   = { novels: 'desc', artists: 'desc', comments: 'desc', social: 'desc', following: 'desc' };
+
   // ── UTILS ────────────────────────────────────────────────────────
   function esc(s){ var d=document.createElement('div');d.textContent=s||'';return d.innerHTML; }
   function coverColor(id){ var h=0;var s=(id||'').toString();for(var i=0;i<s.length;i++){h=(h<<5)-h+s.charCodeAt(i);h|=0;}return 'cc'+(Math.abs(h)%8); }
@@ -286,7 +387,7 @@
   function timeAgo(ts){
     if(!ts) return '';
     var d=new Date(ts), n=new Date(), diff=Math.floor((n-d)/1000);
-    if(diff<60) return diff+'s ago';
+    if(diff<60) return 'just now';
     if(diff<3600) return Math.floor(diff/60)+'m ago';
     if(diff<86400) return Math.floor(diff/3600)+'h ago';
     if(diff<604800) return Math.floor(diff/86400)+'d ago';
@@ -298,6 +399,40 @@
   }
   function setClearedIds(tab, map){
     localStorage.setItem('ds_notif_cleared_'+tab, JSON.stringify(Object.keys(map)));
+  }
+  function getDismissedIds(tab){ try{ return JSON.parse(localStorage.getItem('ds_dismissed_'+tab)||'{}'); }catch(e){ return {}; } }
+  function setDismissedId(tab, id){ try{ var m=getDismissedIds(tab); m[id]=true; localStorage.setItem('ds_dismissed_'+tab, JSON.stringify(m)); }catch(e){} }
+
+  // Snooze: store {id: wakeTimestamp}
+  function getSnoozed(){ try{ return JSON.parse(localStorage.getItem('ds_notif_snoozed')||'{}'); }catch(e){ return {}; } }
+  function snoozeItem(id){
+    try{ var m=getSnoozed(); m[id]=Date.now()+24*60*60*1000; localStorage.setItem('ds_notif_snoozed',JSON.stringify(m)); }catch(e){}
+  }
+  function isSnoozed(id){
+    var m=getSnoozed(); if(!m[id]) return false;
+    if(Date.now()>m[id]){ delete m[id]; try{localStorage.setItem('ds_notif_snoozed',JSON.stringify(m));}catch(e){} return false; }
+    return true;
+  }
+
+  // ── UNREAD SUMMARY BAR ───────────────────────────────────────────
+  function updateUnreadSummary(){
+    var counts = {
+      novels:   (allData.novels||[]).filter(function(c){ var cl=getClearedIds('novels'); return !cl[c.id] && !(c.work_id && cl[c.work_id]); }).length,
+      artists:  (allData.artists||[]).filter(function(w){ return !getClearedIds('artists')[w.id]; }).length,
+      comments: (allData.comments||[]).filter(function(c){ return !getClearedIds('comments')[c.id]; }).length,
+      social:   (allData.social||[]).filter(function(n){ return !getClearedIds('social')[n.id]; }).length
+    };
+    var total = counts.novels + counts.artists + counts.comments + counts.social;
+    var bar = document.getElementById('unread-summary-bar');
+    var txt = document.getElementById('unread-summary-text');
+    if(!bar||!txt) return;
+    if(total === 0){ bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    var parts = [];
+    if(counts.novels+counts.artists > 0) parts.push('<strong>'+(counts.novels+counts.artists)+'</strong> following');
+    if(counts.comments > 0) parts.push('<strong>'+counts.comments+'</strong> comments');
+    if(counts.social > 0) parts.push('<strong>'+counts.social+'</strong> social');
+    txt.innerHTML = '<i class="ti ti-bell-ringing" style="color:var(--accent);"></i> ' + parts.join(' &nbsp;·&nbsp; ') + ' unread';
   }
 
   // ── TABS ─────────────────────────────────────────────────────────
@@ -315,38 +450,92 @@
     if(hash==='activity') window.switchTab('social');
   })();
 
+  // ── FILTER & SORT ─────────────────────────────────────────────────
+  window.setFilter = function(tabGroup, mode, btn){
+    tabFilter[tabGroup] = mode;
+    // Update button states
+    var bar = document.getElementById('filter-bar-'+tabGroup);
+    if(bar) bar.querySelectorAll('.filter-btn').forEach(function(b){ b.classList.remove('active'); });
+    if(btn) btn.classList.add('active');
+    // Re-render the relevant data tabs
+    if(tabGroup==='following'){ shown.novels=0; shown.artists=0; renderBatch('novels',false); renderBatch('artists',false); }
+    else { shown[tabGroup]=0; renderBatch(tabGroup,false); }
+  };
+
+  window.toggleSort = function(tabGroup, btn){
+    var newSort = tabSort[tabGroup]==='desc' ? 'asc' : 'desc';
+    tabSort[tabGroup] = newSort;
+    if(tabGroup==='following'){ tabSort.novels=newSort; tabSort.artists=newSort; }
+    if(btn){
+      btn.innerHTML = newSort==='asc'
+        ? '<i class="ti ti-sort-ascending"></i> Oldest first'
+        : '<i class="ti ti-sort-descending"></i> Newest first';
+    }
+    if(tabGroup==='following'){ shown.novels=0; shown.artists=0; renderBatch('novels',false); renderBatch('artists',false); }
+    else { shown[tabGroup]=0; renderBatch(tabGroup,false); }
+  };
+
+  function applyFilterSort(tab, data){
+    var cleared = getClearedIds(tab);
+    var filter = (tab==='novels'||tab==='artists') ? tabFilter.following : tabFilter[tab]||'all';
+    var sort   = tabSort[tab]||'desc';
+    var result = data.slice();
+    if(filter==='unread') result = result.filter(function(item){ return !cleared[item.id] && !(tab==='novels' && item.work_id && cleared[item.work_id]); });
+    result.sort(function(a,b){
+      var aU=!cleared[a.id] && !(tab==='novels' && a.work_id && cleared[a.work_id]);
+      var bU=!cleared[b.id] && !(tab==='novels' && b.work_id && cleared[b.work_id]);
+      if(aU!==bU) return aU?-1:1;
+      var diff = new Date(b.created_at) - new Date(a.created_at);
+      return sort==='asc' ? -diff : diff;
+    });
+    return result;
+  }
+
+  // ── SNOOZE TOAST ─────────────────────────────────────────────────
+  function showSnoozeToast(label){
+    var t=document.createElement('div'); t.className='snooze-toast';
+    t.innerHTML='<i class="ti ti-alarm"></i> "'+esc(label)+'" snoozed for 24h';
+    document.body.appendChild(t);
+    setTimeout(function(){ t.style.opacity='0'; t.style.transition='opacity 0.4s'; setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); },400); },2500);
+  }
+
   // ── RENDER: NOVEL CARD ───────────────────────────────────────────
-  function renderNovelCard(ch, cleared){
+  function renderNovelCard(ch, cleared, newChapCount){
     var work = ch.works;
     var title = work ? work.title : 'Unknown';
     var workId = ch.work_id;
     var totalChaps = ch.totalChapters || ch.chapter_number || '?';
     var prog = ch.progress;
-    var isUnread = !cleared[ch.id];
+    // BUG FIX: use work_id as the dismissed key so dismissing one chapter doesn't leave the work visible
+    var dismissKey = workId || ch.id;
+    var isUnread = !cleared[dismissKey] && !cleared[ch.id];
     var card = document.createElement('div');
     card.className = 'notif-card novel-card' + (isUnread ? ' unread' : '');
-    card.dataset.id = ch.id;
-    card.onclick = function(e){ if(e.target.closest('.continue-btn')||e.target.closest('.notif-dismiss')) return; window.location.href='story.html?id='+workId; };
+    card.dataset.id = dismissKey;
+    card.onclick = function(e){ if(e.target.closest('.continue-btn')||e.target.closest('.notif-dismiss')||e.target.closest('.snooze-btn')) return; window.location.href='story.html?id='+workId; };
     card.style.cursor = 'pointer';
     var coverHtml = work&&work.cover_url
       ? '<img src="'+esc(work.cover_url)+'" style="width:48px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;" alt=""/>'
       : '<div class="notif-cover '+coverColor(workId)+'">'+esc(coverLetter(title))+'</div>';
-    var latestLabel = 'Ch. '+ch.chapter_number+(ch.title?' — "'+ch.title+'"':'');
+    var count = newChapCount || 1;
+    var newBadge = count > 1 ? ' <span style="display:inline-flex;align-items:center;background:var(--accent);color:#0f1117;font-size:10px;font-weight:700;border-radius:6px;padding:2px 7px;margin-left:6px;">'+count+' new</span>' : '';
+    var latestLabel = 'Ch. '+ch.chapter_number+(ch.title?' \u2014 \u201c'+ch.title+'\u201d':'');
     var progressLabel = prog ? 'Your progress: Ch. '+prog.chapter_number+' / '+totalChaps : 'Total chapters: '+totalChaps;
     var continueHref = prog ? 'chapter.html?id='+prog.chapter_id : 'chapter.html?id='+ch.id;
     card.innerHTML = coverHtml+
       '<div class="notif-body">'+
         '<div class="notif-card-title">'+esc(title)+'</div>'+
-        '<div class="notif-card-text" style="color:var(--accent);">'+esc(latestLabel)+' is now available</div>'+
+        '<div class="notif-card-text" style="color:var(--accent);">'+esc(latestLabel)+' is now available'+newBadge+'</div>'+
         '<div class="notif-card-text" style="margin-top:3px;">'+esc(progressLabel)+'</div>'+
         '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(ch.created_at)+'</div>'+
       '</div>'+
       '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0;">'+
         (isUnread?'<div class="notif-unread-dot"></div>':'<div style="width:9px;"></div>')+
         '<a class="continue-btn" href="'+continueHref+'" onclick="event.stopPropagation();"><i class="ti ti-player-play"></i> Continue</a>'+
+        '<button class="snooze-btn" title="Snooze 24h" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text3);font-size:10px;font-weight:700;font-family:Lato,sans-serif;padding:3px 8px;cursor:pointer;" onclick="event.stopPropagation();window.snoozeCard&&window.snoozeCard(this.closest(\'.notif-card\'),\'novels\',\''+esc(dismissKey)+'\',\''+esc(title)+'\');"><i class="ti ti-alarm"></i> Snooze</button>'+
       '</div>'+
       '<button class="notif-dismiss" title="Dismiss">&#x2715;</button>';
-    card.querySelector('.notif-dismiss').addEventListener('click', function(e){ e.stopPropagation(); window.dismissCard(card,'novels',ch.id,false); });
+    card.querySelector('.notif-dismiss').addEventListener('click', function(e){ e.stopPropagation(); window.dismissCard(card,'novels',dismissKey,false); });
     return card;
   }
 
@@ -358,18 +547,30 @@
     var card = document.createElement('div');
     card.className = 'notif-card'+(isUnread?' unread':'');
     card.dataset.id = work.id;
-    card.onclick = function(){ window.location.href='artwork.html?id='+work.id; };
-    var avHtml = prof&&prof.avatar_url ? '<img src="'+esc(prof.avatar_url)+'" alt=""/>' : esc(name.charAt(0).toUpperCase());
+    card.onclick = function(e){ if(e.target.closest('.snooze-btn')||e.target.closest('.notif-dismiss')) return; window.location.href='artwork.html?id='+work.id; };
+    // Show artwork thumbnail if available, otherwise artist avatar
+    var avHtml;
+    if(work.cover_url){
+      avHtml = '<img class="art-thumb" src="'+esc(work.cover_url)+'" alt="'+esc(work.title)+'" style="width:60px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;"/>';
+    } else if(prof&&prof.avatar_url){
+      avHtml = '<div class="notif-cover" style="overflow:hidden;"><img src="'+esc(prof.avatar_url)+'" alt=""/></div>';
+    } else {
+      avHtml = '<div class="notif-cover '+coverColor(work.author_id)+'">'+esc(name.charAt(0).toUpperCase())+'</div>';
+    }
     card.innerHTML =
-      '<div class="notif-cover '+coverColor(work.author_id)+'" style="overflow:hidden;">'+avHtml+'</div>'+
+      avHtml+
       '<div class="notif-body">'+
         '<div class="notif-card-title">'+esc(name)+'</div>'+
-        '<div class="notif-card-text">Posted \u2014 \u201c'+esc(work.title)+'\u201d</div>'+
+        '<div class="notif-card-text">Posted — “'+esc(work.title)+'”</div>'+
         '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(work.created_at)+'</div>'+
       '</div>'+
-      (isUnread?'<div class="notif-unread-dot"></div>':'')+
+      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0;">'+
+        (isUnread?'<div class="notif-unread-dot"></div>':'<div style="width:9px;"></div>')+
+        '<button class="snooze-btn" title="Snooze 24h" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text3);font-size:10px;font-weight:700;font-family:Lato,sans-serif;padding:3px 8px;cursor:pointer;"><i class="ti ti-alarm"></i> Snooze</button>'+
+      '</div>'+
       '<button class="notif-dismiss" title="Dismiss">&#x2715;</button>';
     card.querySelector('.notif-dismiss').addEventListener('click', function(e){ e.stopPropagation(); window.dismissCard(card,'artists',card.dataset.id,false); });
+    card.querySelector('.snooze-btn').addEventListener('click', function(e){ e.stopPropagation(); window.snoozeCard&&window.snoozeCard(card,'artists',work.id,work.title); });
     return card;
   }
 
@@ -386,10 +587,10 @@
 
     var typeLabel, typeIcon, typeColor;
     if(cm._type==='song'){
-      var charLabel=cm._charName?' for “'+cm._charName+'”':' for a character';
+      var charLabel=cm._charName?' for "'+cm._charName+'"':' for a character';
       typeLabel='suggested a song'+charLabel+' in'; typeIcon='<i class="ti ti-music" style="color:var(--gold);font-size:11px;margin-right:3px;"></i>'; typeColor='color:var(--gold);';
     } else if(cm._type==='opinion'){
-      var charLabel2=cm._charName?' about “'+cm._charName+'”':' about a character';
+      var charLabel2=cm._charName?' about "'+cm._charName+'"':' about a character';
       typeLabel='shared an opinion'+charLabel2+' in'; typeIcon='<i class="ti ti-message-heart" style="color:#ec4899;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#ec4899;';
     } else if(cm._type==='echo'){
       typeLabel=''; typeIcon='<i class="ti ti-flame" style="color:#f97316;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#f97316;';
@@ -403,6 +604,7 @@
 
     card.onclick = function(){
       if(!cm.work_id) return;
+      var map=getClearedIds('comments'); map[cm.id]=true; setClearedIds('comments',map); card.classList.remove('unread');
       if(cm._type==='song'){
         if(cm.character_id){ sessionStorage.setItem('ds_open_char_id',cm.character_id); sessionStorage.setItem('ds_open_char_name',cm._charName||''); sessionStorage.setItem('ds_open_char_action','song'); }
         window.location.href='story.html?id='+cm.work_id; return;
@@ -440,7 +642,7 @@
       textLine = '\u201c'+esc(cm._question||'')+'\u201d \u00b7 '+esc(cm.content||'');
     } else {
       titleLine = typeIcon+esc(name)+' '+typeLabel+(typeLabel?' <em>'+esc(workTitle)+'</em>':'');
-      textLine = '\u201c'+dsSpoiler.render(esc(snippet))+'\u201d';
+      textLine = '\u201c'+(typeof dsSpoiler!=='undefined'?dsSpoiler.render(esc(snippet)):esc(snippet))+'\u201d';
     }
     card.innerHTML =
       '<div class="notif-cover '+coverColor(cm.user_id||cm.id)+'" style="overflow:hidden;">'+avHtml+'</div>'+
@@ -463,14 +665,21 @@
     card.dataset.id = n.id;
     card.dataset.tab = 'social';
 
+    // BUG FIX: single click listener handles all types including poll_closing
     card.addEventListener('click', function(){
       var map = getClearedIds('social'); map[n.id]=true; setClearedIds('social',map);
       card.classList.remove('unread');
       var btn=document.getElementById('tab-btn-social');
       if(btn){ var b=btn.querySelector('.tab-badge'); if(b){ var c=parseInt(b.textContent)-1; if(c<=0) b.remove(); else b.textContent=c; }}
       if(n.type==='blast') return;
+      if(n.type==='poll_closing'){
+        if(n._chapter_id) window.location.href='chapter.html?id='+n._chapter_id;
+        else if(n.work_id) window.location.href='story.html?id='+n.work_id;
+        return;
+      }
       db.from('notifications').update({is_read:true}).eq('id',n.id);
       if(n.type==='new_follower'&&n._username){ window.location.href='profile.html?u='+n._username; return; }
+      if(n.type==='collab_request'){ window.location.href='collab-inbox.html'; return; }
       if(n.work_id) window.location.href='story.html?id='+n.work_id;
     });
 
@@ -482,14 +691,7 @@
     else if(n.type==='new_follower'){ iconColor='#2dd4bf'; icon='ti-user-check'; title='\uD83D\uDC64 New Follower'; subtitle=esc(n.message||'New follower'); }
     else if(n.type==='opinion_approved'){ iconColor='#ec4899'; icon='ti-message-heart'; title='\uD83D\uDCAC Opinion Approved'; subtitle=esc(n.message||''); }
     else if(n.type==='opinion_featured'){ iconColor='#f59e0b'; icon='ti-star'; title='\u2B50 Opinion Featured'; subtitle=esc(n.message||''); }
-    else if(n.type==='poll_closing'){ iconColor='#f59e0b'; icon='ti-clock-exclamation'; title='\uD83D\uDCCA Poll Closing Soon'; subtitle=esc(n.message||'');
-      // Override click to go to the chapter/story
-      card.addEventListener('click', function(){
-        var map=getClearedIds('social'); map[n.id]=true; setClearedIds('social',map); card.classList.remove('unread');
-        if(n._chapter_id) window.location.href='chapter.html?id='+n._chapter_id;
-        else if(n.work_id) window.location.href='story.html?id='+n.work_id;
-      }, true);
-    }
+    else if(n.type==='poll_closing'){ iconColor='#f59e0b'; icon='ti-clock-exclamation'; title='\uD83D\uDCCA Poll Closing Soon'; subtitle=esc(n.message||''); }
     else if(n.type==='collab_request'){ iconColor='#f59e0b'; icon='ti-git-merge'; title='\uD83E\uDD1D Collab Request'; subtitle=esc(n.message||''); }
     else { iconColor='var(--text3)'; icon='ti-bell'; title=esc(n.type||'Notification'); subtitle=esc(n.message||''); }
 
@@ -510,13 +712,16 @@
 
   // ── RENDER BATCH ─────────────────────────────────────────────────
   function renderBatch(tab, append){
-    var data = allData[tab];
+    var rawData = allData[tab];
     var cleared = getClearedIds(tab);
+
+    // Apply filter/sort
+    var data = applyFilterSort(tab, rawData);
+
     var start = append ? shown[tab] : 0;
     var end = Math.min(start+BATCH, data.length);
 
     if(tab === 'comments'){
-      // Sectioned rendering
       var feeds = {
         chap:     document.getElementById('feed-comments-chap'),
         songs:    document.getElementById('feed-comments-songs'),
@@ -537,23 +742,53 @@
         if(target) target.appendChild(card);
       }
       shown[tab]=end;
-      // Show empty state per section
       var labels={chap:'No new comments yet.',songs:'No song suggestions yet.',opinions:'No character opinions yet.',echoes:'No echoes yet.',polls:'No poll reminders.'};
       Object.entries(feeds).forEach(function(kv){
         var k=kv[0],f=kv[1];
         if(f&&f.children.length===0) f.innerHTML='<div style="padding:10px 0 4px;color:var(--text3);font-size:12px;text-align:center;">'+labels[k]+'</div>';
       });
-      var btn=document.getElementById('load-more-comments');
-      if(btn){ if(end<data.length) btn.classList.remove('hidden'); else btn.classList.add('hidden'); }
+      var lmBtn=document.getElementById('load-more-comments');
+      if(lmBtn){
+        if(end<data.length){
+          lmBtn.classList.remove('hidden');
+          lmBtn.innerHTML='<i class="ti ti-chevron-down"></i> Load more &nbsp;<span style="font-size:11px;opacity:0.7;">(showing '+end+' of '+data.length+')</span>';
+        } else {
+          lmBtn.classList.add('hidden');
+        }
+      }
       return;
     }
 
     var feedId = tab==='social' ? 'feed-social' : 'feed-'+tab;
     var feed = document.getElementById(feedId);
+    if(!feed) return;
     if(!append) feed.innerHTML='';
+
+    if(tab==='novels'){
+      // BUG FIX: group by work_id; use work_id as dismissal key
+      var grouped={}, groupOrder=[];
+      for(var i=0;i<data.length;i++){
+        var wid=data[i].work_id||data[i].id;
+        if(!grouped[wid]){ grouped[wid]=[]; groupOrder.push(wid); }
+        grouped[wid].push(data[i]);
+      }
+      var gStart=append?shown[tab]:0; var gEnd=Math.min(gStart+BATCH,groupOrder.length);
+      for(var gi=gStart;gi<gEnd;gi++){
+        var wid=groupOrder[gi]; var items=grouped[wid];
+        var card=renderNovelCard(items[0],cleared,items.length);
+        if(card) feed.appendChild(card);
+      }
+      shown[tab]=gEnd;
+      var btn=document.getElementById('load-more-novels');
+      if(btn){ if(gEnd<groupOrder.length) btn.classList.remove('hidden'); else btn.classList.add('hidden'); }
+      if(!append&&feed.children.length===0){
+        feed.innerHTML='<div class="empty-state"><i class="ti ti-bell-off"></i><p>No new chapters from followed stories.</p></div>';
+      }
+      return;
+    }
+
     for(var i=start;i<end;i++){
       var card;
-      if(tab==='novels')   card=renderNovelCard(data[i],cleared);
       if(tab==='artists')  card=renderArtistCard(data[i],cleared);
       if(tab==='social')   card=renderSocialCard(data[i],cleared);
       if(card) feed.appendChild(card);
@@ -562,7 +797,7 @@
     var btn=document.getElementById('load-more-'+tab);
     if(btn){ if(end<data.length) btn.classList.remove('hidden'); else btn.classList.add('hidden'); }
     if(!append&&(!data.length||feed.children.length===0)){
-      var labels={novels:'No new chapters from followed stories.',artists:'No new art from followed artists.',social:'No activity yet.'};
+      var labels={artists:'No new art from followed artists.',social:'No activity yet.'};
       feed.innerHTML='<div class="empty-state"><i class="ti ti-bell-off"></i><p>'+labels[tab]+'</p></div>';
     }
   }
@@ -574,17 +809,116 @@
     var tabs = tab==='following' ? ['novels','artists'] : [tab];
     tabs.forEach(function(t){
       var cleared=getClearedIds(t);
-      allData[t].forEach(function(item){ cleared[item.id]=true; });
+      var dbIds=[];
+      allData[t].forEach(function(item){
+        cleared[item.id]=true;
+        if(item.work_id) cleared[item.work_id]=true; // also clear by work_id for novels
+        if(item.id && typeof item.id === 'string' && !item.id.startsWith('poll-')) dbIds.push(item.id);
+      });
       setClearedIds(t,cleared);
       shown[t]=0;
       renderBatch(t,false);
+      if(dbIds.length){
+        try{ db.from('notifications').update({is_read:true}).in('id',dbIds); }catch(e){}
+      }
     });
     var btn=document.getElementById('tab-btn-'+tab);
     if(btn){ var b=btn.querySelector('.tab-badge'); if(b) b.remove(); }
+    updateUnreadSummary();
+  };
+
+  // ── MARK SECTION READ ────────────────────────────────────────────
+  window.markSectionRead = function markSectionRead(section){
+    // section: 'novels', 'artists', 'comments-chap', 'comments-songs', 'comments-opinions', 'comments-echoes', 'comments-polls'
+    var tab, typeFilter;
+    if(section==='novels'){ tab='novels'; typeFilter=null; }
+    else if(section==='artists'){ tab='artists'; typeFilter=null; }
+    else { tab='comments'; typeFilter=section.replace('comments-',''); }
+
+    var cleared=getClearedIds(tab);
+    var dbIds=[];
+    (allData[tab]||[]).forEach(function(item){
+      var match = !typeFilter || (
+        (typeFilter==='chap'    && item._type!=='song' && item._type!=='opinion' && item._type!=='echo' && item._type!=='poll_closing') ||
+        (typeFilter==='songs'   && item._type==='song') ||
+        (typeFilter==='opinions'&& item._type==='opinion') ||
+        (typeFilter==='echoes'  && item._type==='echo') ||
+        (typeFilter==='polls'   && item._type==='poll_closing')
+      );
+      if(match){
+        cleared[item.id]=true;
+        if(item.work_id) cleared[item.work_id]=true;
+        if(item.id && typeof item.id==='string' && !item.id.startsWith('poll-')) dbIds.push(item.id);
+      }
+    });
+    setClearedIds(tab,cleared);
+    shown[tab]=0;
+    renderBatch(tab,false);
+    if(dbIds.length){ try{ db.from('notifications').update({is_read:true}).in('id',dbIds); }catch(e){} }
+    updateUnreadSummary();
+    // Recalculate tab badge — Following badge must combine both novels+artists
+    var tabKey = (section==='novels'||section==='artists') ? 'following' : tab;
+    if(tabKey==='following'){
+      var novCl=getClearedIds('novels'), artCl=getClearedIds('artists');
+      var novUnread=(allData.novels||[]).filter(function(i){ return !novCl[i.id]&&!(i.work_id&&novCl[i.work_id]); }).length;
+      var artUnread=(allData.artists||[]).filter(function(i){ return !artCl[i.id]; }).length;
+      setTabBadge('following', novUnread+artUnread);
+    } else {
+      var unread=(allData[tab]||[]).filter(function(item){ return !cleared[item.id]; }).length;
+      setTabBadge(tabKey, unread);
+    }
+  };
+
+  window.markAllEverything = function markAllEverything(){
+    ['following','comments','social'].forEach(function(tab){ window.markAllRead(tab); });
+    ['tab-btn-following','tab-btn-comments','tab-btn-social'].forEach(function(id){
+      var btn=document.getElementById(id); if(!btn) return;
+      var b=btn.querySelector('.tab-badge'); if(b) b.remove();
+    });
+    updateUnreadSummary();
+    checkAllCaughtUp();
+  };
+
+  // BUG FIX: checkAllCaughtUp now checks cleared state, not raw array length
+  function checkAllCaughtUp(){
+    var allCleared = ['novels','artists','comments','social'].every(function(t){
+      var cleared=getClearedIds(t);
+      var data=allData[t]||[];
+      if(data.length===0) return true;
+      return data.every(function(item){ return cleared[item.id]||cleared[item.work_id]; });
+    });
+    if(allCleared){
+      var panel=document.querySelector('.tab-panel.active');
+      if(panel) panel.innerHTML='<div class="caught-up"><div class="caught-up-icon">\uD83C\uDF89</div><h3>You\'re all caught up!</h3><p>No new notifications right now.<br>Why not <a href="browse.html">browse some stories</a> or check out <a href="index.html">what\'s new on the home page</a>?</p></div>';
+    }
+    updateUnreadSummary();
   }
 
-  function getDismissedIds(tab){ try{ return JSON.parse(localStorage.getItem('ds_dismissed_'+tab)||'{}'); }catch(e){ return {}; } }
-  function setDismissedId(tab, id){ try{ var m=getDismissedIds(tab); m[id]=true; localStorage.setItem('ds_dismissed_'+tab, JSON.stringify(m)); }catch(e){} }
+  window.dismissAllSection = function dismissAllSection(section){
+    var feedId;
+    if(section==='novels') feedId='feed-novels';
+    else if(section==='artists') feedId='feed-artists';
+    else if(section==='social') feedId='feed-social';
+    else if(section==='comments-chap')    feedId='feed-comments-chap';
+    else if(section==='comments-songs')   feedId='feed-comments-songs';
+    else if(section==='comments-opinions')feedId='feed-comments-opinions';
+    else if(section==='comments-echoes')  feedId='feed-comments-echoes';
+    else if(section==='comments-polls')   feedId='feed-comments-polls';
+    else feedId='feed-'+section;
+    var feed=document.getElementById(feedId);
+    if(!feed) return;
+    var cards=[].slice.call(feed.querySelectorAll('.notif-card'));
+    cards.forEach(function(c){
+      var id=c.dataset.id;
+      var tab = section==='novels'||section==='artists' ? section : section.startsWith('comments') ? 'comments' : 'social';
+      if(id){ setDismissedId(tab,id); }
+      window.dismissCard(c, tab, id, false);
+    });
+    var tabKey = section==='novels'||section==='artists' ? 'following' : section.startsWith('comments') ? 'comments' : 'social';
+    var tabBtn=document.getElementById('tab-btn-'+tabKey);
+    if(tabBtn){ var b=tabBtn.querySelector('.tab-badge'); if(b) b.remove(); }
+    updateUnreadSummary();
+  };
 
   window.dismissCard = function(cardEl, tab, itemId, dbDelete){
     if (!cardEl) return;
@@ -600,7 +934,7 @@
       cardEl.style.paddingBottom = '0';
       cardEl.style.border = 'none';
     }, 50);
-    setTimeout(function(){ if(cardEl.parentNode) cardEl.parentNode.removeChild(cardEl); }, 380);
+    setTimeout(function(){ if(cardEl.parentNode) cardEl.parentNode.removeChild(cardEl); updateUnreadSummary(); }, 380);
     if(itemId){
       setDismissedId(tab, itemId);
       if(dbDelete){
@@ -608,6 +942,17 @@
         try{ db.from('notifications').update({is_read:true}).eq('id', itemId); } catch(e){}
       }
     }
+  };
+
+  // ── SNOOZE ───────────────────────────────────────────────────────
+  window.snoozeCard = function(cardEl, tab, itemId, label){
+    if(!cardEl||!itemId) return;
+    snoozeItem(itemId);
+    showSnoozeToast(label);
+    // Animate out
+    cardEl.style.transition='opacity 0.3s';
+    cardEl.style.opacity='0';
+    setTimeout(function(){ if(cardEl.parentNode) cardEl.parentNode.removeChild(cardEl); },350);
   };
 
   function setTabBadge(tab, count){
@@ -621,9 +966,10 @@
   async function loadAll(uid){
     await Promise.all([loadNovels(uid), loadArtists(uid), loadComments(uid), loadSocial(uid)]);
     var novCleared=getClearedIds('novels'), artCleared=getClearedIds('artists');
-    var followingUnread=allData.novels.filter(function(c){return !novCleared[c.id];}).length
+    var followingUnread=allData.novels.filter(function(c){return !novCleared[c.id]&&!novCleared[c.work_id];}).length
                        +allData.artists.filter(function(w){return !artCleared[w.id];}).length;
     setTabBadge('following', followingUnread);
+    updateUnreadSummary();
   }
 
   async function loadNovels(uid){
@@ -633,11 +979,12 @@
       var fwRes=await db.from('work_follows').select('work_id').eq('user_id',uid);
       var workIds=(fwRes.data||[]).map(function(r){return r.work_id;});
       if(!workIds.length){ allData.novels=[]; renderBatch('novels',false); return; }
-      var chapRes=await db.from('chapters').select('id,chapter_number,title,created_at,work_id').in('work_id',workIds).eq('status','published').order('created_at',{ascending:false}).limit(30);
+      var chapRes=await db.from('chapters').select('id,chapter_number,title,created_at,work_id').in('work_id',workIds).eq('status','published').order('created_at',{ascending:false}).limit(60);
       var rows=chapRes.data||[];
-      var seenWork={};
-      rows=rows.filter(function(c){ if(seenWork[c.work_id]) return false; seenWork[c.work_id]=true; return true; });
       if(!rows.length){ allData.novels=[]; renderBatch('novels',false); return; }
+      // Filter out snoozed
+      var snoozedMap=getSnoozed();
+      rows=rows.filter(function(c){ return !snoozedMap[c.work_id]||Date.now()>snoozedMap[c.work_id]; });
       var wIds=[...new Set(rows.map(function(c){return c.work_id;}))];
       var {data:wData}=await db.from('works').select('id,title,cover_url').in('id',wIds);
       var wMap={};(wData||[]).forEach(function(w){wMap[w.id]=w;});
@@ -649,7 +996,7 @@
       var progMap={};(progData||[]).forEach(function(p){ if(!progMap[p.work_id]||p.chapter_number>progMap[p.work_id].chapter_number) progMap[p.work_id]=p; });
       rows.forEach(function(c){c.progress=progMap[c.work_id]||null;});
       var cleared=getClearedIds('novels');
-      rows.sort(function(a,b){ var aU=!cleared[a.id],bU=!cleared[b.id]; if(aU!==bU) return aU?-1:1; return new Date(b.created_at)-new Date(a.created_at); });
+      rows.sort(function(a,b){ var aU=!cleared[a.id]&&!cleared[a.work_id],bU=!cleared[b.id]&&!cleared[b.work_id]; if(aU!==bU) return aU?-1:1; return new Date(b.created_at)-new Date(a.created_at); });
       allData.novels=rows; renderBatch('novels',false);
     } catch(e){ feed.innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>'; }
   }
@@ -660,8 +1007,11 @@
       var fuRes=await db.from('follows').select('following_id').eq('follower_id',uid);
       var followedIds=(fuRes.data||[]).map(function(r){return r.following_id;});
       if(!followedIds.length){ allData.artists=[]; renderBatch('artists',false); return; }
-      var artRes=await db.from('works').select('id,title,type,created_at,author_id').eq('type','artwork').in('author_id',followedIds).order('created_at',{ascending:false}).limit(30);
+      var artRes=await db.from('works').select('id,title,type,created_at,author_id,cover_url').eq('type','artwork').in('author_id',followedIds).order('created_at',{ascending:false}).limit(30);
       var rows=artRes.data||[];
+      // Filter out snoozed artist works
+      var snoozedArt=getSnoozed();
+      rows=rows.filter(function(w){ return !snoozedArt[w.id]||Date.now()>snoozedArt[w.id]; });
       if(rows.length){
         var aIds=[...new Set(rows.map(function(w){return w.author_id;}))];
         var {data:aProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',aIds);
@@ -677,7 +1027,8 @@
   async function loadComments(uid){
     var feed=document.getElementById('feed-comments');
     try {
-      if(!myPrefs.notif_comment){
+      // BUG FIX: check notif_comment and notif_echo independently so echo pref isn't suppressed by comment pref
+      if(!myPrefs.notif_comment && myPrefs.notif_echo === false){
         allData.comments=[];
         ['feed-comments-chap','feed-comments-songs','feed-comments-opinions','feed-comments-echoes','feed-comments-polls'].forEach(function(fid){
           var f=document.getElementById(fid); if(f) f.innerHTML='<div style="padding:10px 0;color:var(--text3);font-size:12px;text-align:center;">Comment notifications are turned off.</div>';
@@ -691,43 +1042,63 @@
       var titleMap={}; myRows.forEach(function(w){titleMap[w.id]=w;});
       var commentNotifs=[];
 
-      if(myNovelIds.length){
-        var chapRes=await db.from('chapters').select('id,work_id').in('work_id',myNovelIds);
-        var chapIds=(chapRes.data||[]).map(function(c){return c.id;});
-        var chapWMap={}; (chapRes.data||[]).forEach(function(c){chapWMap[c.id]=c.work_id;});
-        if(chapIds.length){
-          var ncRes=await db.from('chapter_comments').select('id,content,created_at,chapter_id,user_id,parent_id').in('chapter_id',chapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
-          (ncRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){ c.work_id=chapWMap[c.chapter_id]||null; c._type='novel'; commentNotifs.push(c); });
-          var pcRes=await db.from('paragraph_comments').select('id,content,created_at,chapter_id,user_id,parent_id,paragraph_index').in('chapter_id',chapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
-          (pcRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){ c.work_id=chapWMap[c.chapter_id]||null; c._type='novel'; c._para=true; commentNotifs.push(c); });
-        }
-        // Song suggestions pending
-        try {
-          var songRes=await db.from('character_song_suggestions').select('id,song_title,artist_name,youtube_url,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
-          (songRes.data||[]).forEach(function(s){ s.content=(s.song_title||'Unknown')+(s.artist_name?' — '+s.artist_name:''); s._type='song'; commentNotifs.push(s); });
-        } catch(e2){}
-        // Character opinions pending
-        try {
-          var opRes=await db.from('character_opinions').select('id,body,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
-          (opRes.data||[]).forEach(function(o){ o.content=o.body; o._type='opinion'; commentNotifs.push(o); });
-        } catch(e3){}
-        // Enrich song+opinion items with character names
-        try {
-          var soItems=commentNotifs.filter(function(c){ return (c._type==='song'||c._type==='opinion')&&c.character_id; });
-          if(soItems.length){
-            var cIds=[...new Set(soItems.map(function(c){return c.character_id;}))];
-            var {data:cRows}=await db.from('novel_characters').select('id,name').in('id',cIds);
-            var cMap={};(cRows||[]).forEach(function(ch){cMap[ch.id]=ch.name;});
-            soItems.forEach(function(c){ c._charName=cMap[c.character_id]||null; });
+      if(myPrefs.notif_comment !== false){
+        if(myNovelIds.length){
+          var chapRes=await db.from('chapters').select('id,work_id').in('work_id',myNovelIds);
+          var chapIds=(chapRes.data||[]).map(function(c){return c.id;});
+          var chapWMap={}; (chapRes.data||[]).forEach(function(c){chapWMap[c.id]=c.work_id;});
+          if(chapIds.length){
+            var ncRes=await db.from('chapter_comments').select('id,content,created_at,chapter_id,user_id,parent_id').in('chapter_id',chapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
+            (ncRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){ c.work_id=chapWMap[c.chapter_id]||null; c._type='novel'; commentNotifs.push(c); });
+            var pcRes=await db.from('paragraph_comments').select('id,content,created_at,chapter_id,user_id,parent_id,paragraph_index').in('chapter_id',chapIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
+            (pcRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){ c.work_id=chapWMap[c.chapter_id]||null; c._type='novel'; c._para=true; commentNotifs.push(c); });
           }
-        } catch(e4){}
-      }
-      if(myArtIds.length){
-        var acRes=await db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id').in('work_id',myArtIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
-        (acRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){ c._type='artwork'; commentNotifs.push(c); });
+          // Song suggestions pending
+          try {
+            var songRes=await db.from('character_song_suggestions').select('id,song_title,artist_name,youtube_url,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
+            (songRes.data||[]).forEach(function(s){ s.content=(s.song_title||'Unknown')+(s.artist_name?' \u2014 '+s.artist_name:''); s._type='song'; commentNotifs.push(s); });
+          } catch(e2){}
+          // Character opinions pending
+          try {
+            var opRes=await db.from('character_opinions').select('id,body,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
+            (opRes.data||[]).forEach(function(o){ o.content=o.body; o._type='opinion'; commentNotifs.push(o); });
+          } catch(e3){}
+          // Enrich song+opinion items with character names
+          try {
+            var soItems=commentNotifs.filter(function(c){ return (c._type==='song'||c._type==='opinion')&&c.character_id; });
+            if(soItems.length){
+              var cIds=[...new Set(soItems.map(function(c){return c.character_id;}))];
+              var {data:cRows}=await db.from('novel_characters').select('id,name').in('id',cIds);
+              var cMap={};(cRows||[]).forEach(function(ch){cMap[ch.id]=ch.name;});
+              soItems.forEach(function(c){ c._charName=cMap[c.character_id]||null; });
+            }
+          } catch(e4){}
+        }
+        if(myArtIds.length){
+          var acRes=await db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id').in('work_id',myArtIds).neq('user_id',uid).order('created_at',{ascending:false}).limit(30);
+          (acRes.data||[]).filter(function(c){return !c.parent_id;}).forEach(function(c){ c._type='artwork'; commentNotifs.push(c); });
+        }
+        // Polls closing soon — chapter_polls on author's chapters closing within 48h
+        try {
+          if(myNovelIds.length||myArtIds.length){
+            var now=new Date(); var soon=new Date(now.getTime()+48*60*60*1000);
+            var allWids2=[...myNovelIds,...myArtIds];
+            var {data:authorChaps}=await db.from('chapters').select('id,work_id').in('work_id',allWids2);
+            var authorChapIds=(authorChaps||[]).map(function(c){return c.id;});
+            var chapWorkMap2={};(authorChaps||[]).forEach(function(c){chapWorkMap2[c.id]=c.work_id;});
+            if(authorChapIds.length){
+              var pollRes=await db.from('chapter_polls').select('id,question,chapter_id,closes_at').in('chapter_id',authorChapIds).gt('closes_at',now.toISOString()).lt('closes_at',soon.toISOString()).order('closes_at',{ascending:true});
+              (pollRes.data||[]).forEach(function(p){
+                var hoursLeft=Math.max(1,Math.round((new Date(p.closes_at)-now)/3600000));
+                var wid=chapWorkMap2[p.chapter_id]||null;
+                commentNotifs.push({ id:'poll-'+p.id, _type:'poll_closing', content:'Closes in ~'+hoursLeft+'h', work_id:wid, works:titleMap[wid]||null, created_at:p.closes_at, _question:p.question, _chapter_id:p.chapter_id });
+              });
+            }
+          }
+        } catch(e5){}
       }
 
-      // Echo (Aura) notifications — from notifications table, type='echo'
+      // Echo (Aura) notifications — guarded by notif_echo independently
       if(myPrefs.notif_echo !== false) try {
         var echoRes=await db.from('notifications').select('id,message,work_id,chapter_id,created_at,is_read,from_user_id').eq('user_id',uid).eq('type','echo').neq('is_read',true).order('created_at',{ascending:false}).limit(20);
         var echoRows=echoRes.data||[];
@@ -741,26 +1112,6 @@
           });
         }
       } catch(e4){}
-
-      // Polls closing soon — chapter_polls on author's chapters closing within 48h
-      try {
-        if(myNovelIds.length||myArtIds.length){
-          var now=new Date(); var soon=new Date(now.getTime()+48*60*60*1000);
-          // Get all chapters for author's works
-          var allWids2=[...myNovelIds,...myArtIds];
-          var {data:authorChaps}=await db.from('chapters').select('id,work_id').in('work_id',allWids2);
-          var authorChapIds=(authorChaps||[]).map(function(c){return c.id;});
-          var chapWorkMap2={};(authorChaps||[]).forEach(function(c){chapWorkMap2[c.id]=c.work_id;});
-          if(authorChapIds.length){
-            var pollRes=await db.from('chapter_polls').select('id,question,chapter_id,closes_at').in('chapter_id',authorChapIds).gt('closes_at',now.toISOString()).lt('closes_at',soon.toISOString()).order('closes_at',{ascending:true});
-            (pollRes.data||[]).forEach(function(p){
-              var hoursLeft=Math.round((new Date(p.closes_at)-now)/3600000);
-              var wid=chapWorkMap2[p.chapter_id]||null;
-              commentNotifs.push({ id:'poll-'+p.id, _type:'poll_closing', content:'Closes in ~'+hoursLeft+'h', work_id:wid, works:titleMap[wid]||null, created_at:p.closes_at, _question:p.question, _chapter_id:p.chapter_id });
-            });
-          }
-        }
-      } catch(e5){}
 
       if(commentNotifs.length){
         var uIds=[...new Set(commentNotifs.map(function(c){return c.user_id;}).filter(Boolean))];
@@ -815,13 +1166,18 @@
       var artIds=(myArtworks.data||[]).map(function(w){return w.id;});
       var novTitleMap={};(myNovels.data||[]).forEach(function(w){novTitleMap[w.id]=w.title;});
       var artTitleMap={};(myArtworks.data||[]).forEach(function(w){artTitleMap[w.id]=w.title;});
-      // Collab requests — artwork_collabs covers both novel fan-art and story collabs, keyed by work_id
       var allWorkIds = [...novIds, ...artIds];
       var allTitleMap = Object.assign({}, novTitleMap, artTitleMap);
       var collabItems=[];
       if(allWorkIds.length){
         var acRes=await db.from('artwork_collabs').select('id,work_id,author_id,created_at').in('work_id',allWorkIds).eq('status','pending').order('created_at',{ascending:false});
-        (acRes.data||[]).forEach(function(c){ c._workTitle=allTitleMap[c.work_id]||'your work'; c._fromId=c.author_id; collabItems.push(c); });
+        (acRes.data||[]).forEach(function(c){ c._workTitle=allTitleMap[c.work_id]||'your work'; c._fromId=c.author_id; c._kind='fan art'; collabItems.push(c); });
+      }
+      if(novIds.length){
+        try{
+          var scRes=await db.from('story_collabs').select('id,work_id,artist_id,created_at').in('work_id',novIds).eq('status','pending').order('created_at',{ascending:false});
+          (scRes.data||[]).forEach(function(c){ c._workTitle=novTitleMap[c.work_id]||'your novel'; c._fromId=c.artist_id; c._kind='story collab'; collabItems.push(c); });
+        }catch(e){}
       }
       if(collabItems.length){
         var fromIds=[...new Set(collabItems.map(function(c){return c._fromId;}).filter(Boolean))];
@@ -830,10 +1186,10 @@
         collabItems.forEach(function(c){
           var p=fromMap[c._fromId]||{}; var name=p.display_name||p.username||'Someone';
           var avH=p.avatar_url?'<img src="'+esc(p.avatar_url)+'"/>':esc(name.charAt(0).toUpperCase());
-          var kindLabel='Submitted fan art for';
+          var kindLabel=c._kind==='story collab'?'Submitted a story collab for':'Submitted fan art for';
           var el=document.createElement('div'); el.className='action-card teal-card';
           el.innerHTML='<div class="ac-avatar">'+avH+'</div>'
-            +'<div style="flex:1;min-width:0;"><div class="ac-name teal">'+esc(name)+'</div><div class="ac-sub">'+kindLabel+' \u201c'+esc(c._workTitle)+'\u201d \u00b7 '+timeAgo(c.created_at)+'</div></div>'
+            +'<div style="flex:1;min-width:0;"><div class="ac-name teal">'+esc(name)+'</div><div class="ac-sub">'+kindLabel+' "'+esc(c._workTitle)+'" \u00b7 '+timeAgo(c.created_at)+'</div></div>'
             +'<a class="ac-btn teal" href="collab-inbox.html">Review</a>'
             +'<button class="ac-dismiss" title="Dismiss">&#x2715;</button>';
           el.querySelector('.ac-dismiss').addEventListener('click', function(e){ e.stopPropagation(); window.dismissCard(el,'social',null,false); });
@@ -894,6 +1250,29 @@
     }
   }
 
+  // ── REAL-TIME NEW NOTIFICATION BANNER ────────────────────────────
+  var _realtimeUid = null;
+  function startRealtime(uid){
+    _realtimeUid = uid;
+    try{
+      db.channel('notif-realtime-'+uid)
+        .on('postgres_changes',{ event:'INSERT', schema:'public', table:'notifications', filter:'user_id=eq.'+uid }, function(payload){
+          showNewNotifBanner();
+        })
+        .subscribe();
+    }catch(e){}
+  }
+  var _bannerShown = false;
+  function showNewNotifBanner(){
+    if(_bannerShown) return; _bannerShown=true;
+    var banner=document.createElement('div');
+    banner.id='new-notif-banner';
+    banner.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);background:var(--accent2,#0d9488);color:#fff;font-size:13px;font-weight:700;font-family:Lato,sans-serif;padding:10px 20px;border-radius:10px;z-index:300;display:flex;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,0.4);cursor:pointer;animation:slideDown 0.3s ease;';
+    banner.innerHTML='<i class="ti ti-bell-ringing"></i> New notifications arrived <span style="text-decoration:underline;margin-left:4px;">Refresh</span>';
+    banner.onclick=function(){ window.location.reload(); };
+    document.body.appendChild(banner);
+  }
+
   // ── INIT ─────────────────────────────────────────────────────────
   (async function init(){
     var session=null;
@@ -917,11 +1296,20 @@
         if(prefRow.notif_echo!==null&&prefRow.notif_echo!==undefined) myPrefs.notif_echo=prefRow.notif_echo;
       }
     } catch(e){}
+    startRealtime(uid);
     await loadAll(uid);
+    var totalItems = (allData.novels||[]).length+(allData.artists||[]).length+(allData.comments||[]).length+(allData.social||[]).length;
+    if(totalItems===0) checkAllCaughtUp();
   })();
 </script>
+
 <script src="footer.js"></script>
-<script src="spoilerUtils.js"></script>
+<script>
+  // Safety: ensure db is available for nav.js in case the main script errored
+  if(typeof db==='undefined' && window.supabase){
+    var db=window.supabase.createClient('https://cajjyyskpmjnpcxcfeuk.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c');
+  }
+</script>
 <script src="nav.js"></script>
 </body>
 </html>
