@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  (function() {
+    var t = localStorage.getItem('ds_theme');
+    if (t) { document.documentElement.setAttribute('data-theme', t); }
+  })();
+</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Character Licensing</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:#2dd4bf;text-decoration:none;letter-spacing:1px;}
+    .logo span { color: #f1f0ff; transition: color 0.3s; }
+    html[data-theme="light"] .logo span { color: #0a0a0f; }
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:#2dd4bf;color:#2dd4bf;}
+    .page{max-width:880px;margin:0 auto;padding:48px 24px 80px;}
+    .page-header{margin-bottom:24px;}
+    .page-title{font-family:'Cinzel',serif;font-size:28px;font-weight:700;color:var(--text);margin-bottom:6px;}
+    .page-title span{color:#2dd4bf;}
+    .page-subtitle{font-size:14px;color:var(--text3);}
+    .intro-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:28px;font-size:13px;color:var(--text2);}
+    .intro-card h3{font-family:'Cinzel',serif;font-size:15px;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+    .intro-card h3 i{color:#2dd4bf;}
+    .intro-card ul{margin:10px 0 0 18px;}
+    .intro-card li{margin-bottom:4px;}
+    .work-group{margin-bottom:30px;}
+    .work-group-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+    .work-group-title i{color:#2dd4bf;}
+    .char-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;}
+    .char-row{display:flex;gap:14px;align-items:flex-start;}
+    .char-portrait{width:52px;height:52px;border-radius:10px;flex-shrink:0;background:linear-gradient(135deg,#1e0040,#6b21a8);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:20px;font-weight:700;color:#c084fc;overflow:hidden;}
+    .char-portrait img{width:100%;height:100%;object-fit:cover;border-radius:10px;}
+    .char-body{flex:1;min-width:0;}
+    .char-name{font-size:14px;font-weight:700;color:var(--text);}
+    .char-scopes{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+    .scope-badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;display:flex;align-items:center;gap:4px;}
+    .scope-badge.granted{background:rgba(45,212,191,0.12);border:1px solid rgba(45,212,191,0.3);color:#2dd4bf;}
+    .scope-badge.ungranted{background:var(--bg3);border:1px solid var(--border);color:var(--text3);}
+    .char-toggle-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:6px 14px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.15s;flex-shrink:0;white-space:nowrap;}
+    .char-toggle-btn:hover{border-color:#2dd4bf;color:#2dd4bf;}
+    .license-panel{display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);}
+    .license-panel.open{display:block;}
+    .scope-options{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
+    .scope-option{display:flex;align-items:flex-start;gap:10px;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 12px;cursor:pointer;transition:all 0.15s;}
+    .scope-option:hover{border-color:rgba(45,212,191,0.3);}
+    .scope-option.selected{border-color:#2dd4bf;background:rgba(45,212,191,0.06);}
+    .scope-checkbox{width:18px;height:18px;border-radius:5px;border:2px solid var(--text3);flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:11px;color:transparent;transition:all 0.15s;}
+    .scope-option.selected .scope-checkbox{border-color:#2dd4bf;background:#2dd4bf;color:var(--bg);}
+    .scope-option-label{font-size:13px;font-weight:700;color:var(--text);}
+    .scope-option-sub{font-size:11px;color:var(--text3);margin-top:2px;}
+    .disclosure{font-size:11.5px;color:var(--text3);background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:14px;display:flex;gap:8px;align-items:flex-start;}
+    .disclosure i{color:var(--gold);font-size:14px;margin-top:1px;flex-shrink:0;}
+    .agree-btn{background:#0d9488;border:none;border-radius:9px;padding:10px 18px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all 0.2s;}
+    .agree-btn:hover{background:#2dd4bf;color:#0a0a0f;}
+    .agree-btn:disabled{opacity:0.4;cursor:not-allowed;}
+    .agree-btn.confirming{background:var(--red);}
+    .agree-btn.confirming:hover{background:#fca5a5;color:#0a0a0f;}
+    .cancel-btn{background:transparent;border:1px solid var(--border);border-radius:9px;padding:10px 16px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;margin-left:8px;}
+    .cancel-btn:hover{border-color:var(--text2);}
+    .history-list{margin-top:12px;font-size:11px;color:var(--text3);}
+    .history-list .history-row{display:flex;gap:8px;padding:4px 0;}
+    .all-granted-note{font-size:11px;color:var(--green);display:flex;align-items:center;gap:5px;margin-top:10px;}
+    .empty-state{text-align:center;padding:60px 24px;color:var(--text3);}
+    .empty-state i{font-size:48px;color:var(--bg4);display:block;margin-bottom:16px;}
+    .empty-state p{font-size:14px;margin-bottom:20px;}
+    .empty-state a{color:#2dd4bf;text-decoration:none;font-weight:700;}
+    .empty-state a:hover{text-decoration:underline;}
+    .loading-state{text-align:center;padding:60px 24px;color:var(--text3);}
+    .loading-state i{font-size:32px;color:#2dd4bf;display:block;margin-bottom:12px;animation:spin 1s linear infinite;}
+    @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+    .auth-wall{text-align:center;padding:80px 24px;}
+    .auth-wall i{font-size:52px;color:var(--bg4);display:block;margin-bottom:16px;}
+    .auth-wall h2{font-family:'Cinzel',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+    .auth-wall p{font-size:14px;color:var(--text3);margin-bottom:24px;}
+    .auth-wall a{background:#0d9488;color:white;padding:10px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px;transition:all 0.2s;}
+    .auth-wall a:hover{background:#2dd4bf;color:#0a0a0f;}
+    .no-access-wall{text-align:center;padding:80px 24px;}
+    .no-access-wall i{font-size:52px;color:var(--bg4);display:block;margin-bottom:16px;}
+    .no-access-wall h2{font-family:'Cinzel',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+    .no-access-wall p{font-size:14px;color:var(--text3);}
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:#2dd4bf;}
+    footer{background:var(--bg2);border-top:1px solid var(--border);padding:32px;text-align:center;color:var(--text3);font-size:13px;}
+    footer .footer-logo{font-family:'Cinzel',serif;font-size:20px;color:#2dd4bf;margin-bottom:10px;}
+    footer .footer-links{display:flex;justify-content:center;gap:24px;margin:12px 0;flex-wrap:wrap;}
+    footer .footer-links a{color:var(--text3);text-decoration:none;transition:color 0.2s;}
+    footer .footer-links a:hover{color:#2dd4bf;}
+
+    html[data-theme="light"] {
+      --bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;
+      --accent:#0d9488;--accent2:#0f766e;
+      --text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;
+      --border:rgba(0,0,0,0.08);
+      --red:#dc2626;--green:#059669;--gold:#d97706;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Done!</span></div>
+
+  <nav style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </nav>
+
+  <div class="page">
+    <div class="page-header">
+      <h1 class="page-title">Character <span>Licensing</span></h1>
+      <p class="page-subtitle">Grant DawnScribe cosmetic rights to your named characters and earn a royalty when readers buy items based on them.</p>
+    </div>
+
+    <div id="auth-wall" style="display:none;">
+      <div class="auth-wall">
+        <i class="ti ti-lock"></i>
+        <h2>Sign in to manage licensing</h2>
+        <p>You need to be logged in to view this page.</p>
+        <a href="auth.html"><i class="ti ti-login"></i> Sign In</a>
+      </div>
+    </div>
+
+    <div id="no-access-wall" style="display:none;">
+      <div class="no-access-wall">
+        <i class="ti ti-feather-off"></i>
+        <h2>No characters to license yet</h2>
+        <p>Character Licensing applies to named characters in your published or in-progress works. Add characters to a story in the Publish editor first.</p>
+      </div>
+    </div>
+
+    <div id="main-content" style="display:none;">
+      <div class="intro-card">
+        <h3><i class="ti ti-info-circle"></i> How licensing works</h3>
+        <ul>
+          <li>Granting a right is <strong style="color:var(--text2);">permanent and cannot be revoked</strong> — once an item is live, readers who bought it keep it even if you change your mind later.</li>
+          <li>You earn a <strong style="color:var(--text2);">20% royalty</strong>, paid in Embers, on every sale of a cosmetic licensed from your character.</li>
+          <li>You can license additional rights for the same character later — each grant is recorded separately with its own date and version.</li>
+          <li>Licensing is entirely optional. Characters with no agreement on file are never used for cosmetics.</li>
+        </ul>
+      </div>
+
+      <div id="works-loading" class="loading-state"><i class="ti ti-loader"></i><p>Loading your characters...</p></div>
+      <div id="works-list"></div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-logo">DawnScribe</div>
+    <p>A home for stories, art, and the people who love them.</p>
+    <div class="footer-links">
+      <a href="about.html">About</a><a href="terms.html">Terms of Service</a>
+      <a href="privacy.html">Privacy Policy</a><a href="contact.html">Contact</a>
+    </div>
+    <p style="margin-top:8px;">© 2026 DawnScribe. All rights reserved.</p>
+  </footer>
+
+  <script>
+    var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.db = db;
+    var currentSession = null;
+
+    var SCOPE_TYPES = [
+      { key: 'clothing',    label: 'Clothing',    sub: 'Hats, hair, outfits, accessories worn on the avatar.', icon: 'ti-shirt' },
+      { key: 'backgrounds', label: 'Backgrounds', sub: 'Profile and avatar card backdrops themed on this character.', icon: 'ti-photo' },
+      { key: 'cosmetics',   label: 'Cosmetics',   sub: 'Frames, effects, and other decorative items.', icon: 'ti-sparkles' }
+    ];
+
+    function showToast(msg, icon) {
+      var t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg || 'Done!';
+      t.querySelector('i').className = 'ti ' + (icon || 'ti-check');
+      t.classList.add('show');
+      setTimeout(function() { t.classList.remove('show'); }, 2800);
+    }
+
+    function escHtml(s) {
+      return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    /* Union all agreement rows for a character into a single active-scope object */
+    function computeActiveScope(agreements) {
+      var active = {};
+      agreements.forEach(function(a) {
+        var scope = a.license_scope || {};
+        Object.keys(scope).forEach(function(k) { if (scope[k]) active[k] = true; });
+      });
+      return active;
+    }
+
+    function buildCharacterCard(character, agreements) {
+      var activeScope = computeActiveScope(agreements);
+      var allGranted = SCOPE_TYPES.every(function(s) { return !!activeScope[s.key]; });
+
+      var card = document.createElement('div');
+      card.className = 'char-card';
+      card.id = 'char-card-' + character.id;
+
+      var portraitHtml = character.portrait_url
+        ? '<img src="' + escHtml(character.portrait_url) + '" alt="">'
+        : escHtml((character.name || '?').charAt(0).toUpperCase());
+
+      var badgesHtml = SCOPE_TYPES.map(function(s) {
+        var granted = !!activeScope[s.key];
+        return '<span class="scope-badge ' + (granted ? 'granted' : 'ungranted') + '"><i class="ti ' + (granted ? 'ti-check' : s.icon) + '"></i> ' + s.label + '</span>';
+      }).join('');
+
+      var toggleBtnHtml = allGranted
+        ? ''
+        : '<button class="char-toggle-btn" onclick="toggleLicensePanel(\'' + character.id + '\')"><i class="ti ti-license"></i> License rights</button>';
+
+      var historyHtml = agreements.length
+        ? '<div class="history-list">' + agreements.map(function(a) {
+            var types = Object.keys(a.license_scope || {}).filter(function(k){ return a.license_scope[k]; }).join(', ') || '—';
+            var date = a.agreed_at ? new Date(a.agreed_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+            return '<div class="history-row"><i class="ti ti-circle-check" style="color:var(--green);font-size:12px;margin-top:2px;"></i><span>' + escHtml(types) + ' — granted ' + date + ' (agreement ' + escHtml(a.agreement_version) + ')</span></div>';
+          }).join('') + '</div>'
+        : '';
+
+      card.innerHTML =
+        '<div class="char-row">' +
+          '<div class="char-portrait">' + portraitHtml + '</div>' +
+          '<div class="char-body">' +
+            '<div class="char-name">' + escHtml(character.name) + '</div>' +
+            '<div class="char-scopes">' + badgesHtml + '</div>' +
+            (allGranted ? '<div class="all-granted-note"><i class="ti ti-check"></i> All rights licensed</div>' : '') +
+            historyHtml +
+          '</div>' +
+          toggleBtnHtml +
+        '</div>' +
+        '<div class="license-panel" id="license-panel-' + character.id + '"></div>';
+
+      return card;
+    }
+
+    function buildLicensePanel(character, activeScope) {
+      var available = SCOPE_TYPES.filter(function(s) { return !activeScope[s.key]; });
+      var optionsHtml = available.map(function(s) {
+        return '<div class="scope-option" id="scope-opt-' + character.id + '-' + s.key + '" onclick="toggleScopeOption(\'' + character.id + '\',\'' + s.key + '\')">' +
+          '<div class="scope-checkbox"><i class="ti ti-check"></i></div>' +
+          '<div><div class="scope-option-label"><i class="ti ' + s.icon + '"></i> ' + s.label + '</div>' +
+          '<div class="scope-option-sub">' + s.sub + '</div></div>' +
+        '</div>';
+      }).join('');
+
+      return '<div class="scope-options">' + optionsHtml + '</div>' +
+        '<div class="disclosure"><i class="ti ti-alert-triangle"></i><span>Granting these rights is permanent for "' + escHtml(character.name) + '" — once you confirm, this can\'t be undone, even if an item later goes live and you change your mind. You\'ll earn a 20% royalty in Embers on each sale.</span></div>' +
+        '<button class="agree-btn" id="agree-btn-' + character.id + '" disabled onclick="handleAgreeClick(\'' + character.id + '\')"><i class="ti ti-signature"></i> Grant selected rights</button>' +
+        '<button class="cancel-btn" onclick="toggleLicensePanel(\'' + character.id + '\')">Cancel</button>';
+    }
+
+    window._charState = {}; // characterId -> { character, agreements, activeScope, selected: Set, confirming: bool }
+
+    function toggleLicensePanel(characterId) {
+      var panel = document.getElementById('license-panel-' + characterId);
+      if (!panel) return;
+      var isOpen = panel.classList.contains('open');
+      if (isOpen) {
+        panel.classList.remove('open');
+        panel.innerHTML = '';
+        return;
+      }
+      var state = window._charState[characterId];
+      if (!state) return;
+      state.selected = {};
+      state.confirming = false;
+      panel.innerHTML = buildLicensePanel(state.character, state.activeScope);
+      panel.classList.add('open');
+    }
+
+    function toggleScopeOption(characterId, scopeKey) {
+      var state = window._charState[characterId];
+      if (!state) return;
+      var el = document.getElementById('scope-opt-' + characterId + '-' + scopeKey);
+      if (state.selected[scopeKey]) {
+        delete state.selected[scopeKey];
+        el.classList.remove('selected');
+      } else {
+        state.selected[scopeKey] = true;
+        el.classList.add('selected');
+      }
+      var btn = document.getElementById('agree-btn-' + characterId);
+      var anySelected = Object.keys(state.selected).length > 0;
+      btn.disabled = !anySelected;
+      // Reset confirmation state if the selection changes after a confirm prompt was shown
+      if (state.confirming) {
+        state.confirming = false;
+        btn.classList.remove('confirming');
+        btn.innerHTML = '<i class="ti ti-signature"></i> Grant selected rights';
+      }
+    }
+
+    async function handleAgreeClick(characterId) {
+      var state = window._charState[characterId];
+      if (!state) return;
+      var btn = document.getElementById('agree-btn-' + characterId);
+      var selectedKeys = Object.keys(state.selected);
+      if (!selectedKeys.length) return;
+
+      if (!state.confirming) {
+        state.confirming = true;
+        btn.classList.add('confirming');
+        btn.innerHTML = '<i class="ti ti-alert-triangle"></i> This is permanent — click again to confirm';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Submitting...';
+
+      try {
+        var scopeObj = {};
+        selectedKeys.forEach(function(k) { scopeObj[k] = true; });
+
+        var result = await db.from('character_license_agreements').insert({
+          author_id: currentSession.user.id,
+          character_id: characterId,
+          license_scope: scopeObj
+        }).select().single();
+
+        if (result.error) {
+          showToast('Error: ' + result.error.message, 'ti-x');
+          btn.disabled = false;
+          btn.classList.remove('confirming');
+          btn.innerHTML = '<i class="ti ti-signature"></i> Grant selected rights';
+          state.confirming = false;
+          return;
+        }
+
+        state.agreements.push(result.data);
+        Object.keys(scopeObj).forEach(function(k) { state.activeScope[k] = true; });
+
+        showToast('License granted for "' + state.character.name + '"!', 'ti-license');
+
+        // Re-render the whole card from updated state
+        var oldCard = document.getElementById('char-card-' + characterId);
+        var newCard = buildCharacterCard(state.character, state.agreements);
+        oldCard.replaceWith(newCard);
+      } catch(err) {
+        console.error('License agreement error:', err);
+        showToast('Something went wrong', 'ti-alert-triangle');
+        btn.disabled = false;
+        btn.classList.remove('confirming');
+        btn.innerHTML = '<i class="ti ti-signature"></i> Grant selected rights';
+        state.confirming = false;
+      }
+    }
+
+    async function loadCharacters() {
+      try {
+        var worksRes = await db.from('works')
+          .select('id, title, type')
+          .eq('author_id', currentSession.user.id)
+          .order('title', { ascending: true });
+
+        document.getElementById('works-loading').style.display = 'none';
+
+        if (worksRes.error || !worksRes.data || !worksRes.data.length) {
+          document.getElementById('main-content').style.display = 'none';
+          document.getElementById('no-access-wall').style.display = 'block';
+          return;
+        }
+
+        var workMap = {};
+        var workIds = worksRes.data.map(function(w) { workMap[w.id] = w; return w.id; });
+
+        var charsRes = await db.from('novel_characters')
+          .select('id, work_id, name, portrait_url, sort_order')
+          .in('work_id', workIds)
+          .order('sort_order', { ascending: true });
+
+        if (charsRes.error || !charsRes.data || !charsRes.data.length) {
+          document.getElementById('main-content').style.display = 'none';
+          document.getElementById('no-access-wall').style.display = 'block';
+          return;
+        }
+
+        var characterIds = charsRes.data.map(function(c) { return c.id; });
+
+        var agreementsRes = await db.from('character_license_agreements')
+          .select('id, character_id, license_scope, agreed_at, agreement_version')
+          .eq('author_id', currentSession.user.id)
+          .in('character_id', characterIds)
+          .order('agreed_at', { ascending: true });
+
+        var agreementsByChar = {};
+        if (agreementsRes.data) {
+          agreementsRes.data.forEach(function(a) {
+            if (!agreementsByChar[a.character_id]) agreementsByChar[a.character_id] = [];
+            agreementsByChar[a.character_id].push(a);
+          });
+        }
+
+        /* Group characters by work */
+        var charsByWork = {};
+        charsRes.data.forEach(function(c) {
+          if (!charsByWork[c.work_id]) charsByWork[c.work_id] = [];
+          charsByWork[c.work_id].push(c);
+        });
+
+        var listEl = document.getElementById('works-list');
+        listEl.innerHTML = '';
+
+        workIds.forEach(function(workId) {
+          var chars = charsByWork[workId];
+          if (!chars || !chars.length) return;
+          var work = workMap[workId];
+
+          var group = document.createElement('div');
+          group.className = 'work-group';
+          group.innerHTML = '<div class="work-group-title"><i class="ti ' + (work.type === 'artwork' ? 'ti-palette' : 'ti-book') + '"></i> ' + escHtml(work.title) + '</div>';
+
+          chars.forEach(function(character) {
+            var agreements = agreementsByChar[character.id] || [];
+            var activeScope = computeActiveScope(agreements);
+            window._charState[character.id] = {
+              character: character,
+              agreements: agreements,
+              activeScope: activeScope,
+              selected: {},
+              confirming: false
+            };
+            group.appendChild(buildCharacterCard(character, agreements));
+          });
+
+          listEl.appendChild(group);
+        });
+
+        document.getElementById('main-content').style.display = 'block';
+      } catch(err) {
+        console.error('Load characters error:', err);
+        document.getElementById('works-loading').style.display = 'none';
+        document.getElementById('no-access-wall').style.display = 'block';
+      }
+    }
+
+    /* ── INIT ───────────────────────────────────────────────────── */
+    (async function init() {
+      try {
+        var sessionRes = await db.auth.getSession();
+        var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        if (!session) {
+          document.getElementById('auth-wall').style.display = 'block';
+          return;
+        }
+        currentSession = session;
+        document.getElementById('main-content').style.display = 'block';
+        loadCharacters();
+      } catch(err) {
+        console.error('Init error:', err);
+        document.getElementById('auth-wall').style.display = 'block';
+      }
+    })();
+  </script>
+<script src="footer.js"></script>
+<script src="spoilerUtils.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

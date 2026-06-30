@@ -1775,10 +1775,43 @@ async function toggleFollow() {
           await db.from('notifications').insert({ user_id: currentProfileId, type: 'new_follower', from_user_id: session.user.id, message: myName2 + ' started following you' });
         }
       } catch(e) {}
+      // follow_three_authors mission — only counts follows of Writer-role profiles
+      try {
+        var followedRole = (window._viewedProfileData && window._viewedProfileData.role) || '';
+        if (followedRole.toLowerCase().indexOf('writer') !== -1) {
+          checkFollowThreeAuthorsMission(session.user.id);
+        }
+      } catch(e) {}
     }
   } catch(err) {
     console.error('Follow error:', err);
   }
+}
+
+// ── FOLLOW_THREE_AUTHORS MISSION ──────────────────────────────────
+// "Authors" means Writer-role profiles specifically (matches the
+// writer/artist distinction used elsewhere, e.g. following.html's
+// role icon logic). Re-checks the full follow list rather than just
+// incrementing a counter, since it must stay correct after unfollows.
+async function checkFollowThreeAuthorsMission(myUserId) {
+  try {
+    var { data: followRows } = await db.from('follows').select('following_id').eq('follower_id', myUserId);
+    if (!followRows || followRows.length < 3) return;
+    var ids = followRows.map(function(r){ return r.following_id; });
+    var { data: profs } = await db.from('profiles').select('id,role').in('id', ids);
+    if (!profs) return;
+    var authorCount = profs.filter(function(p){ return p.role && p.role.toLowerCase().indexOf('writer') !== -1; }).length;
+    if (authorCount < 3) return;
+    var mRes = await db.rpc('complete_mission', { p_mission_key: 'follow_three_authors' });
+    if (mRes.data && mRes.data.success) {
+      showToast('🏅 Mission complete: ' + mRes.data.badge_label + '!', 'ti-award');
+      if (mRes.data.all_done) {
+        setTimeout(function() {
+          showToast('⬛ Obsidian Medal unlocked! All new reader missions complete!', 'ti-sparkles');
+        }, 1200);
+      }
+    }
+  } catch(e) {} // non-critical
 }
 
 var _friendshipId = null;

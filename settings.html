@@ -1856,10 +1856,38 @@
           return;
         }
         myOriginalUsername = un.toLowerCase() || myOriginalUsername;
+        checkProfileCompleteMission();
       }
 
       markSaved();
       showToast('Settings saved!');
+    }
+
+    // ── COMPLETE_PROFILE MISSION ─────────────────────────────────────
+    // Settings page only edits a subset of profile fields, so pull the
+    // full set used by profile.html's completion bar before deciding
+    // whether the profile now counts as 100% complete.
+    async function checkProfileCompleteMission() {
+      if (!currentSession) return;
+      try {
+        var res = await db.from('profiles')
+          .select('display_name,bio,avatar_url,banner_url,role,currently_writing,pinned_work_id')
+          .eq('id', currentSession.user.id)
+          .maybeSingle();
+        if (!res || res.error || !res.data) return;
+        var d = res.data;
+        var complete = !!(d.display_name && d.bio && d.avatar_url && d.banner_url && d.role && d.currently_writing && d.pinned_work_id);
+        if (!complete) return;
+        var mRes = await db.rpc('complete_mission', { p_mission_key: 'complete_profile' });
+        if (mRes.data && mRes.data.success) {
+          showToast('🏅 Mission complete: ' + mRes.data.badge_label + '!', 'ti-award');
+          if (mRes.data.all_done) {
+            setTimeout(function() {
+              showToast('⬛ Obsidian Medal unlocked! All new reader missions complete!', 'ti-sparkles');
+            }, 1200);
+          }
+        }
+      } catch(e) {} // non-critical
     }
 
     // ── LOAD FROM STORAGE ──────────────────────────────────────────
