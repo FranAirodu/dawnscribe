@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  (function() {
+    var t = localStorage.getItem('ds_theme');
+    if (t) { document.documentElement.setAttribute('data-theme', t); }
+  })();
+</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Creator Payouts</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:#2dd4bf;text-decoration:none;letter-spacing:1px;}
+    .logo span { color: #f1f0ff; transition: color 0.3s; }
+    html[data-theme="light"] .logo span { color: #0a0a0f; }
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:#2dd4bf;color:#2dd4bf;}
+    .page{max-width:880px;margin:0 auto;padding:48px 24px 80px;}
+    .page-header{margin-bottom:24px;}
+    .page-title{font-family:'Cinzel',serif;font-size:28px;font-weight:700;color:var(--text);margin-bottom:6px;}
+    .page-title span{color:#2dd4bf;}
+    .page-subtitle{font-size:14px;color:var(--text3);}
+    .intro-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:28px;font-size:13px;color:var(--text2);}
+    .intro-card h3{font-family:'Cinzel',serif;font-size:15px;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+    .intro-card h3 i{color:#2dd4bf;}
+    .intro-card ul{margin:10px 0 0 18px;}
+    .intro-card li{margin-bottom:4px;}
+
+    .balance-card{background:linear-gradient(135deg,var(--bg2),var(--bg3));border:1px solid var(--border);border-radius:16px;padding:26px;margin-bottom:28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;}
+    .balance-main{display:flex;align-items:center;gap:16px;}
+    .balance-icon{width:54px;height:54px;border-radius:14px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--gold);flex-shrink:0;}
+    .balance-label{font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;}
+    .balance-amount{font-family:'Cinzel',serif;font-size:30px;font-weight:700;color:var(--text);}
+    .balance-amount i{color:#2dd4bf;font-size:22px;margin-right:4px;}
+    .balance-lifetime{font-size:12px;color:var(--text3);margin-top:6px;}
+
+    .section-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin:32px 0 14px;display:flex;align-items:center;gap:8px;}
+    .section-title i{color:#2dd4bf;}
+
+    .approval-card{background:var(--bg2);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:16px;margin-bottom:12px;}
+    .approval-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+    .approval-name{font-size:14px;font-weight:700;color:var(--text);}
+    .approval-sub{font-size:12px;color:var(--text3);margin-top:3px;}
+    .approval-status{display:flex;gap:8px;margin-top:8px;}
+    .status-chip{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;display:flex;align-items:center;gap:4px;}
+    .status-chip.done{background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);color:var(--green);}
+    .status-chip.pending{background:var(--bg3);border:1px solid var(--border);color:var(--text3);}
+    .approve-btn{background:#0d9488;border:none;border-radius:9px;padding:9px 18px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all 0.2s;white-space:nowrap;}
+    .approve-btn:hover{background:#2dd4bf;color:#0a0a0f;}
+    .approve-btn:disabled{opacity:0.4;cursor:not-allowed;}
+    .approve-btn.your-turn-done{background:var(--bg3);color:var(--text3);border:1px solid var(--border);}
+
+    .sale-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:8px;flex-wrap:wrap;}
+    .sale-info{font-size:13px;color:var(--text2);}
+    .sale-info strong{color:var(--text);}
+    .sale-date{font-size:11px;color:var(--text3);margin-top:2px;}
+    .sale-amount{font-size:14px;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:5px;white-space:nowrap;}
+    .sale-role{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:2px 8px;border-radius:20px;background:var(--bg3);color:var(--text3);margin-right:8px;}
+
+    .empty-state{text-align:center;padding:40px 24px;color:var(--text3);}
+    .empty-state i{font-size:36px;color:var(--bg4);display:block;margin-bottom:12px;}
+    .empty-state p{font-size:13px;}
+    .loading-state{text-align:center;padding:60px 24px;color:var(--text3);}
+    .loading-state i{font-size:32px;color:#2dd4bf;display:block;margin-bottom:12px;animation:spin 1s linear infinite;}
+    @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+    .auth-wall{text-align:center;padding:80px 24px;}
+    .auth-wall i{font-size:52px;color:var(--bg4);display:block;margin-bottom:16px;}
+    .auth-wall h2{font-family:'Cinzel',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+    .auth-wall p{font-size:14px;color:var(--text3);margin-bottom:24px;}
+    .auth-wall a{background:#0d9488;color:white;padding:10px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px;transition:all 0.2s;}
+    .auth-wall a:hover{background:#2dd4bf;color:#0a0a0f;}
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:#2dd4bf;}
+    footer{background:var(--bg2);border-top:1px solid var(--border);padding:32px;text-align:center;color:var(--text3);font-size:13px;}
+    footer .footer-logo{font-family:'Cinzel',serif;font-size:20px;color:#2dd4bf;margin-bottom:10px;}
+    footer .footer-links{display:flex;justify-content:center;gap:24px;margin:12px 0;flex-wrap:wrap;}
+    footer .footer-links a{color:var(--text3);text-decoration:none;transition:color 0.2s;}
+    footer .footer-links a:hover{color:#2dd4bf;}
+
+    html[data-theme="light"] {
+      --bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;
+      --accent:#0d9488;--accent2:#0f766e;
+      --text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;
+      --border:rgba(0,0,0,0.08);
+      --red:#dc2626;--green:#059669;--gold:#d97706;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Done!</span></div>
+
+  <nav style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </nav>
+
+  <div class="page">
+    <div class="page-header">
+      <h1 class="page-title">Creator <span>Payouts</span></h1>
+      <p class="page-subtitle">Track your earnings from Artist Scroll sales and approve new Collaboration listings.</p>
+    </div>
+
+    <div id="auth-wall" style="display:none;">
+      <div class="auth-wall">
+        <i class="ti ti-lock"></i>
+        <h2>Sign in to view payouts</h2>
+        <p>You need to be logged in to view this page.</p>
+        <a href="auth.html"><i class="ti ti-login"></i> Sign In</a>
+      </div>
+    </div>
+
+    <div id="main-content" style="display:none;">
+      <div class="intro-card">
+        <h3><i class="ti ti-info-circle"></i> How Artist Scroll revenue works</h3>
+        <ul>
+          <li>When a reader unlocks an <strong style="color:var(--text2);">Artist Scroll</strong> with Quills (DawnScribe's paid currency), the sale splits <strong style="color:var(--text2);">60% to the Artist</strong>, <strong style="color:var(--text2);">30% to the Novelist</strong>, and 10% to DawnScribe.</li>
+          <li>An Artist Scroll can't be sold until <strong style="color:var(--text2);">both</strong> the Artist and the Novelist whose work it's based on approve the listing.</li>
+          <li>Balances below are tracked in Quill-equivalent value. Real-money payout via Stripe is planned — for now this is a running ledger of what you're owed.</li>
+        </ul>
+      </div>
+
+      <div class="balance-card">
+        <div class="balance-main">
+          <div class="balance-icon"><i class="ti ti-wallet"></i></div>
+          <div>
+            <div class="balance-label">Pending payout balance</div>
+            <div class="balance-amount"><i class="ti ti-feather"></i><span id="balance-amount">0</span></div>
+            <div class="balance-lifetime" id="balance-lifetime">Lifetime earned: 0</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="approvals-section" style="display:none;">
+        <div class="section-title"><i class="ti ti-clock-exclamation"></i> Awaiting your approval</div>
+        <div id="approvals-list"></div>
+      </div>
+
+      <div class="section-title"><i class="ti ti-history"></i> Sales history</div>
+      <div id="sales-loading" class="loading-state"><i class="ti ti-loader"></i><p>Loading sales...</p></div>
+      <div id="sales-list"></div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-logo">DawnScribe</div>
+    <p>A home for stories, art, and the people who love them.</p>
+    <div class="footer-links">
+      <a href="about.html">About</a><a href="terms.html">Terms of Service</a>
+      <a href="privacy.html">Privacy Policy</a><a href="contact.html">Contact</a>
+    </div>
+    <p style="margin-top:8px;">© 2026 DawnScribe. All rights reserved.</p>
+  </footer>
+
+  <script>
+    var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.db = db;
+    var currentSession = null;
+
+    function showToast(msg, icon) {
+      var t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg || 'Done!';
+      t.querySelector('i').className = 'ti ' + (icon || 'ti-check');
+      t.classList.add('show');
+      setTimeout(function() { t.classList.remove('show'); }, 2800);
+    }
+
+    function escHtml(s) {
+      return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function fmtDate(d) {
+      return d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+    }
+
+    async function loadBalance() {
+      var res = await db.from('creator_payout_balances')
+        .select('quill_balance, lifetime_quill_earned')
+        .eq('user_id', currentSession.user.id)
+        .maybeSingle();
+
+      var bal = (res.data && res.data.quill_balance) || 0;
+      var lifetime = (res.data && res.data.lifetime_quill_earned) || 0;
+      document.getElementById('balance-amount').textContent = bal.toLocaleString();
+      document.getElementById('balance-lifetime').textContent = 'Lifetime earned: ' + lifetime.toLocaleString();
+    }
+
+    async function loadPendingApprovals() {
+      var uid = currentSession.user.id;
+
+      // Scrolls where I'm the artist and haven't approved, OR I'm the novelist (work author) and haven't approved
+      var artistPending = await db.from('scrolls')
+        .select('id, name, banner_emoji, artist_approved, novelist_approved, novel_id')
+        .eq('type', 'artist')
+        .eq('artist_id', uid)
+        .eq('artist_approved', false);
+
+      var myWorksRes = await db.from('works').select('id, title').eq('author_id', uid);
+      var myWorkIds = (myWorksRes.data || []).map(function(w){ return w.id; });
+      var myWorkMap = {};
+      (myWorksRes.data || []).forEach(function(w){ myWorkMap[w.id] = w.title; });
+
+      var novelistPending = { data: [] };
+      if (myWorkIds.length) {
+        novelistPending = await db.from('scrolls')
+          .select('id, name, banner_emoji, artist_approved, novelist_approved, novel_id')
+          .eq('type', 'artist')
+          .in('novel_id', myWorkIds)
+          .eq('novelist_approved', false);
+      }
+
+      var combined = {};
+      (artistPending.data || []).forEach(function(s) { combined[s.id] = { scroll: s, role: 'artist' }; });
+      (novelistPending.data || []).forEach(function(s) {
+        if (combined[s.id]) { combined[s.id].role = 'both'; }
+        else { combined[s.id] = { scroll: s, role: 'novelist' }; }
+      });
+
+      var list = Object.values(combined);
+      var section = document.getElementById('approvals-section');
+      var container = document.getElementById('approvals-list');
+
+      if (!list.length) {
+        section.style.display = 'none';
+        return;
+      }
+
+      section.style.display = 'block';
+      container.innerHTML = list.map(function(entry) {
+        var s = entry.scroll;
+        var workTitle = myWorkMap[s.novel_id] || '';
+        return '<div class="approval-card" id="approval-' + s.id + '">' +
+          '<div class="approval-row">' +
+            '<div>' +
+              '<div class="approval-name">' + (s.banner_emoji || '📜') + ' ' + escHtml(s.name) + '</div>' +
+              '<div class="approval-sub">' + (workTitle ? 'Based on "' + escHtml(workTitle) + '"' : 'Collaboration item') + '</div>' +
+              '<div class="approval-status">' +
+                '<span class="status-chip ' + (s.artist_approved ? 'done' : 'pending') + '"><i class="ti ti-' + (s.artist_approved ? 'check' : 'clock') + '"></i> Artist</span>' +
+                '<span class="status-chip ' + (s.novelist_approved ? 'done' : 'pending') + '"><i class="ti ti-' + (s.novelist_approved ? 'check' : 'clock') + '"></i> Novelist</span>' +
+              '</div>' +
+            '</div>' +
+            '<button class="approve-btn" onclick="approveScroll(\'' + s.id + '\')"><i class="ti ti-signature"></i> Approve listing</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    async function approveScroll(scrollId) {
+      var btn = document.querySelector('#approval-' + scrollId + ' .approve-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader"></i> Approving...';
+      try {
+        var result = await db.rpc('approve_scroll_listing', { p_user_id: currentSession.user.id, p_scroll_id: scrollId });
+        var data = result.data;
+        if (result.error || !data || data.ok === false) {
+          showToast('Error: ' + ((data && data.error) || (result.error && result.error.message) || 'Could not approve'), 'ti-x');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="ti ti-signature"></i> Approve listing';
+          return;
+        }
+        showToast('Listing approved!', 'ti-check');
+        await loadPendingApprovals();
+      } catch(err) {
+        console.error('Approve scroll error:', err);
+        showToast('Something went wrong', 'ti-alert-triangle');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-signature"></i> Approve listing';
+      }
+    }
+
+    async function loadSalesHistory() {
+      var uid = currentSession.user.id;
+      var res = await db.from('scroll_revenue_splits')
+        .select('id, scroll_id, artist_id, novelist_id, quill_amount, artist_share, novelist_share, created_at, scrolls(name, banner_emoji)')
+        .or('artist_id.eq.' + uid + ',novelist_id.eq.' + uid)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      document.getElementById('sales-loading').style.display = 'none';
+      var list = document.getElementById('sales-list');
+
+      if (res.error || !res.data || !res.data.length) {
+        list.innerHTML = '<div class="empty-state"><i class="ti ti-receipt-off"></i><p>No sales yet. Earnings will show up here once one of your Artist Scrolls sells.</p></div>';
+        return;
+      }
+
+      list.innerHTML = res.data.map(function(row) {
+        var scroll = row.scrolls || {};
+        var role = '';
+        var myShare = 0;
+        if (row.artist_id === uid) {
+          role = 'Artist';
+          myShare = row.artist_share;
+        }
+        if (row.novelist_id === uid) {
+          // Rare edge case: same user is both artist and novelist on a self-collab scroll
+          role = role ? 'Artist + Novelist' : 'Novelist';
+          myShare = role === 'Artist + Novelist' ? (row.artist_share + row.novelist_share) : row.novelist_share;
+        }
+        var shareHtml = '<i class="ti ti-feather"></i> ' + myShare.toLocaleString();
+        return '<div class="sale-row">' +
+          '<div class="sale-info">' +
+            '<span class="sale-role">' + role + '</span>' +
+            '<strong>' + (scroll.banner_emoji || '📜') + ' ' + escHtml(scroll.name || 'Scroll') + '</strong>' +
+            '<div class="sale-date">' + fmtDate(row.created_at) + ' · unlocked for ' + row.quill_amount.toLocaleString() + ' Quills</div>' +
+          '</div>' +
+          '<div class="sale-amount">' + shareHtml + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    /* ── INIT ───────────────────────────────────────────────────── */
+    (async function init() {
+      try {
+        var sessionRes = await db.auth.getSession();
+        var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+        if (!session) {
+          document.getElementById('auth-wall').style.display = 'block';
+          return;
+        }
+        currentSession = session;
+        document.getElementById('main-content').style.display = 'block';
+        await Promise.all([loadBalance(), loadPendingApprovals(), loadSalesHistory()]);
+      } catch(err) {
+        console.error('Init error:', err);
+        document.getElementById('auth-wall').style.display = 'block';
+      }
+    })();
+  </script>
+<script src="footer.js"></script>
+<script src="spoilerUtils.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

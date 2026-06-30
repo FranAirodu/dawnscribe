@@ -370,7 +370,7 @@
         <!-- Rendered by JS -->
       </div>
       <div class="quill-coming-soon">
-        <i class="ti ti-clock" style="margin-right:6px;"></i>Payment processing coming soon — check back shortly!
+        <i class="ti ti-lock" style="margin-right:6px;"></i>Secure checkout powered by Stripe — you'll be redirected to complete payment.
       </div>
     </div>
   </div>
@@ -415,8 +415,30 @@
       checkVisitMarketplaceMission();
     }
     await loadScrolls();
-    renderQuillBundles();
+    loadQuillBundles();
+    handleStripeRedirect();
   })();
+
+  function handleStripeRedirect() {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('quill_purchase');
+    if (!status) return;
+    if (status === 'success') {
+      showToast('Payment received! Quills are on their way — refreshing balance...', 'ti-check');
+      // Webhook may take a moment to land; poll the balance a couple times
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        await loadCurrencies();
+        if (attempts >= 4) clearInterval(poll);
+      }, 1500);
+    } else if (status === 'cancelled') {
+      showToast('Checkout cancelled — no charge was made.', 'ti-x');
+    }
+    params.delete('quill_purchase');
+    const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    window.history.replaceState({}, '', newUrl);
+  }
 
   async function checkVisitMarketplaceMission() {
     try {
@@ -739,24 +761,70 @@
   }
 
   // ── QUILL BUNDLES MODAL ───────────────────────────────────────
-  const BUNDLES = [
-    { quills: 100, price: '$0.99', bonus: null, popular: false },
-    { quills: 500, price: '$4.99', bonus: '+50 bonus', popular: false },
-    { quills: 1200, price: '$9.99', bonus: '+200 bonus', popular: true },
-    { quills: 3000, price: '$24.99', bonus: '+500 bonus', popular: false },
-  ];
+  let BUNDLES = [];
+
+  async function loadQuillBundles() {
+    const { data, error } = await db.from('quill_bundles')
+      .select('id, quills, bonus_quills, price_cents, label, is_popular')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    if (!error && data) BUNDLES = data;
+    renderQuillBundles();
+  }
 
   function renderQuillBundles() {
     const g = document.getElementById('quill-bundles-grid');
-    g.innerHTML = BUNDLES.map(b => `
-      <div class="quill-bundle${b.popular ? ' popular' : ''}">
-        ${b.popular ? '<div class="bundle-popular-badge">Most Popular</div>' : ''}
+    if (!BUNDLES.length) {
+      g.innerHTML = '<div class="loading-spinner" style="grid-column:1/-1;"><i class="ti ti-loader"></i></div>';
+      return;
+    }
+    g.innerHTML = BUNDLES.map(b => {
+      const total = b.quills + (b.bonus_quills || 0);
+      const priceLabel = '$' + (b.price_cents / 100).toFixed(2);
+      return `
+      <div class="quill-bundle${b.is_popular ? ' popular' : ''}">
+        ${b.is_popular ? '<div class="bundle-popular-badge">Most Popular</div>' : ''}
         <div class="bundle-quill-count"><i class="ti ti-feather"></i> ${b.quills.toLocaleString()}</div>
-        ${b.bonus ? `<div class="bundle-bonus">${b.bonus}</div>` : '<div style="height:18px;"></div>'}
-        <div class="bundle-price">${b.price}</div>
+        ${b.label ? `<div class="bundle-bonus">${esc(b.label)}</div>` : '<div style="height:18px;"></div>'}
+        <div class="bundle-price">${priceLabel}</div>
         <div class="bundle-price-sub">one-time purchase</div>
-        <button class="bundle-cta" onclick="showToast('Payment coming soon!','ti-clock')">Purchase</button>
-      </div>`).join('');
+        <button class="bundle-cta" onclick="purchaseQuillBundle('${b.id}', this)">Purchase</button>
+      </div>`;
+    }).join('');
+  }
+
+  async function purchaseQuillBundle(bundleId, btnEl) {
+    if (!currentUser) {
+      showToast('Sign in to buy Quills', 'ti-lock');
+      return;
+    }
+    const originalHtml = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<i class="ti ti-loader"></i> Redirecting...';
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      const resp = await fetch('https://cajjyyskpmjnpcxcfeuk.supabase.co/functions/v1/create-quill-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session.access_token
+        },
+        body: JSON.stringify({ bundle_id: bundleId })
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.ok) {
+        showToast(result.error || 'Could not start checkout', 'ti-x', true);
+        btnEl.disabled = false;
+        btnEl.innerHTML = originalHtml;
+        return;
+      }
+      window.location.href = result.url;
+    } catch (err) {
+      console.error('Quill purchase error:', err);
+      showToast('Something went wrong', 'ti-alert-triangle', true);
+      btnEl.disabled = false;
+      btnEl.innerHTML = originalHtml;
+    }
   }
 
   function openQuillModal() { document.getElementById('quill-modal').classList.add('open'); }
