@@ -103,6 +103,8 @@
     .scroll-card:hover{border-color:rgba(245,158,11,0.4);transform:translateY(-2px);}
     .scroll-card.owned{border-color:rgba(245,158,11,0.5);box-shadow:0 0 0 1px rgba(245,158,11,0.15);}
     .scroll-card.featured{border-color:rgba(245,158,11,0.6);box-shadow:0 0 30px rgba(245,158,11,0.1);}
+    .scroll-card.pending{opacity:0.72;}
+    .scroll-badge-pending{position:absolute;top:10px;left:10px;display:inline-flex;align-items:center;gap:5px;background:rgba(154,154,154,0.85);color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:4px 10px;border-radius:6px;}
 
     /* Banner area */
     .scroll-banner{position:relative;height:160px;overflow:hidden;background:linear-gradient(135deg,#1a0a2e,#0a1a2a);}
@@ -271,6 +273,7 @@
     <button class="buy-quills-btn" onclick="openQuillModal()">
       <i class="ti ti-shopping-cart"></i> Buy Quills
     </button>
+    <a class="back-btn" href="payouts.html" style="background:var(--bg2);"><i class="ti ti-wallet"></i> Creator Payouts</a>
   </div>
 </div>
 
@@ -323,7 +326,7 @@
         <div class="artist-info">
           <div class="artist-label">Created by</div>
           <div class="artist-name" id="modal-artist-name">—</div>
-          <div class="artist-cut" id="modal-artist-cut">Artist receives a share of Quill revenue from this Scroll.</div>
+          <div class="artist-cut" id="modal-artist-cut">Artist &amp; Novelist share Quill revenue from this Scroll — <a href="payouts.html" style="color:var(--accent);text-decoration:underline;">see payouts</a></div>
         </div>
         <a class="artist-profile-link" id="modal-artist-link" href="#"><i class="ti ti-user"></i> Profile</a>
       </div>
@@ -336,7 +339,7 @@
           <div class="modal-unlock-price" id="modal-unlock-price">
             <i class="ti ti-feather"></i> <span id="modal-quill-price">—</span> Quills
           </div>
-          <div class="modal-unlock-note">Unlocking grants access to all items — buy each with Embers.</div>
+          <div class="modal-unlock-note" id="modal-unlock-note">Unlocking grants access to all items — buy each with Embers.</div>
         </div>
         <button class="modal-unlock-btn" id="modal-unlock-btn" onclick="purchaseScroll()">
           <i class="ti ti-lock-open"></i> Unlock Scroll
@@ -488,6 +491,7 @@
     // Load scrolls with item counts
     const { data: scrolls, error } = await db.from('scrolls')
       .select('*, scroll_items(count)')
+      .eq('is_active', true)
       .order('is_featured', { ascending: false })
       .order('created_at', { ascending: false });
 
@@ -496,7 +500,37 @@
       return;
     }
 
-    allScrolls = scrolls;
+    // Artist Scrolls (Collaboration Items) require dual approval before they're
+    // purchasable — purchase_scroll blocks these server-side. We still show
+    // them in the grid (so readers can see what's coming) but flag them as
+    // pending so nobody is surprised when the unlock button won't work yet.
+    scrolls.forEach(s => {
+      s.pending_approval = s.type === 'artist' && !(s.artist_approved && s.novelist_approved);
+    });
+    const visible = scrolls;
+
+    // novel_id / artist_id are bare FK columns on scrolls — fetch the linked
+    // work titles and artist profiles separately and stitch them on, since
+    // these aren't flat columns on the scrolls table itself.
+    const novelIds = [...new Set(visible.map(s => s.novel_id).filter(Boolean))];
+    const artistIds = [...new Set(visible.map(s => s.artist_id).filter(Boolean))];
+
+    const [worksRes, artistsRes] = await Promise.all([
+      novelIds.length ? db.from('works').select('id, title').in('id', novelIds) : Promise.resolve({ data: [] }),
+      artistIds.length ? db.from('profiles').select('id, username, display_name, avatar_url').in('id', artistIds) : Promise.resolve({ data: [] }),
+    ]);
+    const workMap = new Map((worksRes.data || []).map(w => [w.id, w.title]));
+    const artistMap = new Map((artistsRes.data || []).map(a => [a.id, a]));
+
+    visible.forEach(s => {
+      s.novel_title = s.novel_id ? workMap.get(s.novel_id) : null;
+      const artist = s.artist_id ? artistMap.get(s.artist_id) : null;
+      s.artist_username = artist?.username || null;
+      s.artist_display_name = artist?.display_name || null;
+      s.artist_avatar_url = artist?.avatar_url || null;
+    });
+
+    allScrolls = visible;
     renderScrolls();
   }
 
@@ -529,10 +563,10 @@
     const bannerStyle = s.banner_url ? `<img src="${esc(s.banner_url)}" alt="">` : `<div class="scroll-banner-placeholder">${s.banner_emoji || '📜'}</div>`;
 
     return `
-      <div class="scroll-card${owned ? ' owned' : ''}${s.is_featured ? ' featured' : ''}" onclick="openScroll('${s.id}')">
+      <div class="scroll-card${owned ? ' owned' : ''}${s.is_featured ? ' featured' : ''}${s.pending_approval ? ' pending' : ''}" onclick="openScroll('${s.id}')">
         <div class="scroll-banner">
           ${bannerStyle}
-          ${s.is_featured ? '<span class="scroll-badge-featured"><i class="ti ti-star"></i> Featured</span>' : ''}
+          ${s.pending_approval ? '<span class="scroll-badge-pending"><i class="ti ti-clock"></i> Pending Approval</span>' : s.is_featured ? '<span class="scroll-badge-featured"><i class="ti ti-star"></i> Featured</span>' : ''}
           ${s.novel_title ? `<span class="scroll-badge-novel"><i class="ti ti-book"></i> ${esc(s.novel_title)}</span>` : ''}
           ${owned ? '<div class="scroll-owned-ribbon"><i class="ti ti-check"></i> Unlocked</div>' : ''}
         </div>
@@ -549,7 +583,7 @@
               <span class="price-sub">· ${itemCount} item${itemCount !== 1 ? 's' : ''}</span>
             </div>
             <button class="scroll-open-btn${owned ? ' owned' : ''}" onclick="event.stopPropagation();openScroll('${s.id}')">
-              ${owned ? '<i class="ti ti-package"></i> View Items' : '<i class="ti ti-lock-open"></i> View Scroll'}
+              ${owned ? '<i class="ti ti-package"></i> View Items' : s.pending_approval ? '<i class="ti ti-clock"></i> Pending' : '<i class="ti ti-lock-open"></i> View Scroll'}
             </button>
           </div>
         </div>
@@ -612,14 +646,29 @@
     const unlockBtn = document.getElementById('modal-unlock-btn');
     const priceEl = document.getElementById('modal-quill-price');
     priceEl.textContent = (scroll.quill_price || 0).toLocaleString();
+    const unlockNote = document.getElementById('modal-unlock-note');
+    unlockNote.textContent = scroll.pending_approval
+      ? 'This Artist Scroll is awaiting approval from both the Artist and Novelist before it can be unlocked.'
+      : 'Unlocking grants access to all items — buy each with Embers.';
     if (owned) {
       unlockBtn.className = 'modal-unlock-btn already-owned';
       unlockBtn.innerHTML = '<i class="ti ti-check"></i> Already Unlocked';
       unlockBtn.disabled = true;
+    } else if (scroll.pending_approval) {
+      unlockBtn.className = 'modal-unlock-btn';
+      unlockBtn.innerHTML = '<i class="ti ti-clock"></i> Pending Creator Approval';
+      unlockBtn.disabled = true;
+      unlockBtn.onclick = null;
+    } else if (!currentUser) {
+      unlockBtn.className = 'modal-unlock-btn';
+      unlockBtn.innerHTML = '<i class="ti ti-login"></i> Sign In to Unlock';
+      unlockBtn.disabled = false;
+      unlockBtn.onclick = function() { window.location.href = 'auth.html'; };
     } else {
       unlockBtn.className = 'modal-unlock-btn';
       unlockBtn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock Scroll';
-      unlockBtn.disabled = !currentUser;
+      unlockBtn.disabled = false;
+      unlockBtn.onclick = purchaseScroll;
     }
 
     // Load items
@@ -714,7 +763,12 @@
       renderScrolls();
     } catch(e) {
       console.error(e);
-      showToast('Something went wrong. Please try again.', 'ti-alert-triangle', true);
+      const msg = (e && e.message) || '';
+      const friendly = msg === 'Already owned' ? 'You already own this Scroll.'
+        : msg === 'Insufficient quills' ? 'Not enough Quills! Buy more below.'
+        : msg === 'Scroll not yet approved by both creators' ? 'This Scroll isn\'t live yet — still pending creator approval.'
+        : 'Something went wrong. Please try again.';
+      showToast(friendly, 'ti-alert-triangle', true);
       btn.disabled = false;
       btn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock Scroll';
     }
@@ -768,14 +822,20 @@
       .select('id, quills, bonus_quills, price_cents, label, is_popular')
       .eq('is_active', true)
       .order('sort_order', { ascending: true });
-    if (!error && data) BUNDLES = data;
+    if (error) {
+      console.error('Failed to load quill bundles:', error);
+      const g = document.getElementById('quill-bundles-grid');
+      g.innerHTML = '<div class="empty-state" style="grid-column:1/-1;padding:24px;"><i class="ti ti-alert-triangle"></i><p>Could not load Quill bundles. Please try again in a moment.</p></div>';
+      return;
+    }
+    BUNDLES = data || [];
     renderQuillBundles();
   }
 
   function renderQuillBundles() {
     const g = document.getElementById('quill-bundles-grid');
     if (!BUNDLES.length) {
-      g.innerHTML = '<div class="loading-spinner" style="grid-column:1/-1;"><i class="ti ti-loader"></i></div>';
+      g.innerHTML = '<div class="empty-state" style="grid-column:1/-1;padding:24px;"><i class="ti ti-package-off"></i><p>No Quill bundles available right now.</p></div>';
       return;
     }
     g.innerHTML = BUNDLES.map(b => {
@@ -803,6 +863,13 @@
     btnEl.innerHTML = '<i class="ti ti-loader"></i> Redirecting...';
     try {
       const { data: { session } } = await db.auth.getSession();
+      if (!session) {
+        showToast('Your session expired — please sign in again', 'ti-lock', true);
+        btnEl.disabled = false;
+        btnEl.innerHTML = originalHtml;
+        currentUser = null;
+        return;
+      }
       const resp = await fetch('https://cajjyyskpmjnpcxcfeuk.supabase.co/functions/v1/create-quill-checkout', {
         method: 'POST',
         headers: {
