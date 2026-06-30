@@ -586,6 +586,12 @@
             <div class="search-field"><i class="ti ti-brush"></i><input type="text" id="srch-artists" placeholder="Search artists…" class="search-input" autocomplete="off"/><button class="search-go-btn" data-type="artists">Go</button></div>
             <div class="search-preview" id="srch-preview-artists"></div>
           </div>
+          <div class="search-divider"></div>
+          <div class="search-section" id="srch-sec-tags">
+            <div class="search-section-label"><i class="ti ti-tag"></i> Tags</div>
+            <div class="search-field"><i class="ti ti-tag"></i><input type="text" id="srch-tags" placeholder="e.g. fantasy, romance, cultivation…" class="search-input" autocomplete="off"/><button class="search-go-btn" data-type="tags">Go</button></div>
+            <div class="search-preview" id="srch-preview-tags"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -2630,18 +2636,20 @@
       authors: { section: 'srch-sec-novels', preview: 'srch-preview-authors', collapse: 'srch-sec-art',    label: 'Authors' },
       artwork: { section: 'srch-sec-art',    preview: 'srch-preview-artwork', collapse: 'srch-sec-novels', label: 'Artwork' },
       artists: { section: 'srch-sec-art',    preview: 'srch-preview-artists', collapse: 'srch-sec-novels', label: 'Artists' },
+      tags:    { section: 'srch-sec-tags',   preview: 'srch-preview-tags',    collapse: null,              label: 'Tags' },
     };
 
     function srchCollapseOthers(activeType) {
-      // Gently dim the inactive section without collapsing it (avoids layout jumps)
       var cfg = srchConfig[activeType];
       document.getElementById('srch-sec-novels').classList.toggle('collapsed', cfg.collapse === 'srch-sec-novels');
       document.getElementById('srch-sec-art').classList.toggle('collapsed',    cfg.collapse === 'srch-sec-art');
+      document.getElementById('srch-sec-tags').classList.toggle('collapsed',   activeType !== 'tags' && cfg.section !== 'srch-sec-tags');
     }
 
     function srchResetLayout() {
       document.getElementById('srch-sec-novels').classList.remove('collapsed');
       document.getElementById('srch-sec-art').classList.remove('collapsed');
+      document.getElementById('srch-sec-tags').classList.remove('collapsed');
     }
 
     function srchShowSpinner(previewId) {
@@ -2664,7 +2672,11 @@
 
     function srchGoTo(type, query) {
       if (!query.trim()) return;
-      window.location.href = 'search.html?type=' + encodeURIComponent(type) + '&q=' + encodeURIComponent(query.trim());
+      if (type === 'tags') {
+        window.location.href = 'search.html?type=titles&q=' + encodeURIComponent(query.trim()) + '&tagmode=1';
+      } else {
+        window.location.href = 'search.html?type=' + encodeURIComponent(type) + '&q=' + encodeURIComponent(query.trim());
+      }
     }
 
     // Colour helper for book covers (reuse existing if available, else fallback)
@@ -2823,10 +2835,41 @@
       } catch(e) { srchShowEmpty(previewId, 'Search failed.'); }
     }
 
-    // Wire up inputs
-    var srchQueryFns = { titles: srchQueryTitles, authors: srchQueryAuthors, artwork: srchQueryArtwork, artists: srchQueryArtists };
+    // ── TAGS search
+    async function srchQueryTags(q) {
+      var previewId = 'srch-preview-tags';
+      if (!q) { srchClearPreview(previewId); return; }
+      srchShowSpinner(previewId);
+      try {
+        var { data, error } = await db.from('works')
+          .select('id, title, cover_url')
+          .ilike('tags_all', '%' + q + '%')
+          .eq('type', 'novel')
+          .eq('is_published', true)
+          .limit(5);
+        if (error || !data || !data.length) { srchShowEmpty(previewId, 'No novels found with that tag.'); return; }
+        var html = '<a class="search-preview-item" href="search.html?type=titles&q=' + encodeURIComponent(q) + '&tagmode=1" style="background:rgba(45,212,191,0.07);border-bottom:1px solid var(--border);">'
+          + '<div class="search-preview-thumb" style="background:rgba(45,212,191,0.15);display:flex;align-items:center;justify-content:center;"><i class="ti ti-tag" style="font-size:14px;color:var(--accent);"></i></div>'
+          + '<div class="search-preview-info">'
+          + '<div class="search-preview-title" style="color:var(--accent);">See all "' + esc(q) + '" novels</div>'
+          + '<div class="search-preview-sub">' + data.length + ' match' + (data.length !== 1 ? 'es' : '') + ' in tag search</div>'
+          + '</div></a>';
+        data.forEach(function(w) {
+          var letter = (w.title || '?')[0].toUpperCase();
+          var thumb = w.cover_url ? '<img src="' + w.cover_url + '" alt=""/>' : '<span>' + letter + '</span>';
+          html += '<a class="search-preview-item" href="story.html?id=' + w.id + '">'
+            + '<div class="search-preview-thumb" style="background:' + srchCoverColor(w.id) + ';">' + thumb + '</div>'
+            + '<div class="search-preview-info"><div class="search-preview-title">' + esc(w.title) + '</div></div></a>';
+        });
+        document.getElementById(previewId).innerHTML = html;
+        document.getElementById(previewId).classList.add('visible');
+      } catch(e) { srchShowEmpty(previewId, 'Search failed.'); }
+    }
 
-    ['titles','authors','artwork','artists'].forEach(function(type) {
+    // Wire up inputs
+    var srchQueryFns = { titles: srchQueryTitles, authors: srchQueryAuthors, artwork: srchQueryArtwork, artists: srchQueryArtists, tags: srchQueryTags };
+
+    ['titles','authors','artwork','artists','tags'].forEach(function(type) {
       var input = document.getElementById('srch-' + type);
       if (!input) return;
 
