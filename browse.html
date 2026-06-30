@@ -37,6 +37,7 @@
     .result-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;}
     .result-title{font-size:14px;font-weight:700;color:var(--text);}
     .result-sub{font-size:11px;color:var(--text3);}
+    .result-author-link{color:var(--accent);cursor:pointer;}
     .result-flavor{font-size:12px;color:var(--text2);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
     .result-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;}
     .result-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);}
@@ -82,6 +83,7 @@
     .list-row-title{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .list-row-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
     .list-row-tag{font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;background:var(--bg4);color:var(--text3);}
+    .list-row-synopsis{font-size:11px;color:var(--text2);line-height:1.5;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
     .list-row-meta{flex-shrink:0;text-align:right;font-size:11px;color:var(--text3);white-space:nowrap;padding-left:12px;}
     .list-row-meta a{color:var(--accent);text-decoration:none;}
     @media(max-width:640px){.list-row-tags{display:none;}.list-row-meta{font-size:10px;}}
@@ -196,7 +198,12 @@
         + '<div class="result-cover" style="background:' + color + ';">' + coverHtml + '</div>'
         + '<div class="result-body">'
         + '<div class="result-title">' + esc(w.title) + contentWarningBadge(w) + '</div>'
-        + '<div class="result-sub">by <a href="profile.html?user=' + esc(authorHandle) + '" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none;">' + esc(author) + '</a>' + (w.created_at ? ' · <i class="ti ti-clock" style="font-size:10px;"></i> ' + timeAgo(w.created_at) : '') + '</div>'
+        + '<div class="result-sub">by <span class="result-author-link" onclick="event.preventDefault();event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'">' + esc(author) + '</span>' + (w.created_at ? ' · <i class="ti ti-clock" style="font-size:10px;"></i> ' + timeAgo(w.created_at) : '') + '</div>'
+        + '<div class="result-sub" style="margin-top:1px;">'
+          + (w.chapters_count ? '<i class="ti ti-book" style="font-size:10px;"></i> ' + w.chapters_count + ' ch' : '')
+          + (w.chapters_count && w.status ? ' · ' : '')
+          + (w.status ? '<span style="color:' + (w.status==='completed'?'var(--green)':'var(--accent)') + ';font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;">' + (w.status==='completed'?'Complete':'Ongoing') + '</span>' : '')
+        + '</div>'
         + (w.synopsis ? '<div class="result-flavor">' + esc(w.synopsis) + '</div>' : '')
         + (tagHtml ? '<div class="result-tags">' + tagHtml + '</div>' : '')
         + '</div></a>';
@@ -212,7 +219,7 @@
         + '<div class="artwork-thumb" style="background:' + color + ';">' + thumbHtml + '</div>'
         + '<div class="artwork-info">'
         + '<div class="artwork-title">' + esc(w.title) + '</div>'
-        + '<a class="artwork-artist" href="profile.html?user=' + esc(authorHandle) + '" onclick="event.stopPropagation()">by ' + esc(author) + '</a>'
+        + '<span class="artwork-artist" style="cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'">by ' + esc(author) + '</span>'
         + (w.created_at ? '<div class="result-sub"><i class="ti ti-clock" style="font-size:10px;"></i> ' + timeAgo(w.created_at) + '</div>' : '')
         + (w.synopsis ? '<div class="artwork-flavor">' + esc(w.synopsis) + '</div>' : '')
         + (contentWarningBadge(w) ? '<div class="artwork-meta">' + contentWarningBadge(w) + '</div>' : '')
@@ -249,8 +256,11 @@
         + '<div class="list-row-body">'
         + '<div class="list-row-title">' + esc(w.title) + contentWarningBadge(w) + '</div>'
         + (tagHtml ? '<div class="list-row-tags">' + tagHtml + '</div>' : '')
+        + (w.synopsis ? '<div class="list-row-synopsis">' + esc(w.synopsis) + '</div>' : '')
         + '</div>'
-        + '<div class="list-row-meta">' + (w.chapters_count ? w.chapters_count + ' ch · ' : '')
+        + '<div class="list-row-meta">'
+          + (w.chapters_count ? '<span><i class="ti ti-book" style="font-size:10px;"></i> ' + w.chapters_count + ' ch</span><br>' : '')
+          + (w.status ? '<span style="color:' + (w.status==='completed'?'var(--green)':'var(--accent)') + ';font-weight:700;text-transform:uppercase;font-size:10px;">' + (w.status==='completed'?'Complete':'Ongoing') + '</span><br>' : '')
           + '<a href="profile.html?user=' + esc(authorHandle) + '" onclick="event.stopPropagation()">' + esc(author) + '</a>'
           + (w.created_at ? '<br>' + timeAgo(w.created_at) : '')
         + '</div></a>';
@@ -299,7 +309,7 @@
 
     async function fetchPage() {
       if (section === 'new-novels' || section === 'featured-novels') {
-        var q = db.from('works').select('id,title,cover_url,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,chapters_count', { count: 'exact' })
+        var q = db.from('works').select('id,title,cover_url,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,chapters_count,status', { count: 'exact' })
           .eq('type','novel').eq('is_published',true);
         q = applyContentFilters(q); q = applyLanguageFilters(q);
         q = q.order(section === 'new-novels' ? 'created_at' : 'rating', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);

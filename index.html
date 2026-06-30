@@ -244,6 +244,7 @@
     /* SCROLL ROWS */
     .scroll-label { display: flex; align-items: center; gap: 8px; padding: 24px 40px 4px; font-family: 'Cinzel', serif; font-size: 18px; font-weight: 600; cursor: pointer; user-select: none; }
     .scroll-label i { font-size: 20px; color: var(--accent); }
+
     .scroll-label:hover .scroll-toggle-btn { opacity: 1; }
     .label-accent { color: var(--accent); }
     .label-white { color: var(--text); }
@@ -271,13 +272,7 @@
     .collab-badge { position:absolute; top:6px; right:6px; background:rgba(10,10,15,0.82); border:1px solid rgba(245,158,11,0.7); border-radius:5px; padding:2px 5px; font-size:9px; font-weight:700; color:#f59e0b; display:flex; align-items:center; gap:3px; backdrop-filter:blur(4px); pointer-events:none; font-family:'Lato',sans-serif; z-index:2; }
     .collab-badge i { font-size:10px; }
     .wildcard-badge { position:absolute; top:6px; left:6px; background:rgba(192,132,252,0.85); border:1px solid rgba(192,132,252,0.9); border-radius:5px; padding:2px 6px; font-size:9px; font-weight:700; color:#fff; display:flex; align-items:center; gap:3px; backdrop-filter:blur(4px); pointer-events:none; font-family:'Lato',sans-serif; z-index:2; }
-    .drafting-card { flex-shrink:0; width:140px; display:flex; flex-direction:column; gap:6px; }
-    .drafting-cover-wrap { position:relative; }
-    .drafting-upvote-btn { position:absolute; bottom:6px; right:6px; background:rgba(10,10,15,0.85); border:1px solid rgba(45,212,191,0.4); border-radius:20px; padding:4px 9px; color:var(--accent); font-size:11px; font-weight:700; font-family:'Lato',sans-serif; cursor:pointer; display:flex; align-items:center; gap:4px; backdrop-filter:blur(4px); transition:all 0.2s; }
-    .drafting-upvote-btn:hover:not(:disabled) { background:rgba(45,212,191,0.15); border-color:var(--accent); }
-    .drafting-upvote-btn:disabled { opacity:0.5; cursor:not-allowed; }
-    .drafting-upvote-btn.voted { background:rgba(45,212,191,0.2); border-color:var(--accent); }
-    .drafting-vote-count { font-size:10px; color:var(--text3); }
+
     .content-rating-badge { position:absolute; bottom:6px; right:6px; border-radius:4px; padding:2px 5px; font-size:9px; font-weight:700; font-family:'Lato',sans-serif; pointer-events:none; z-index:2; backdrop-filter:blur(4px); display:flex; align-items:center; gap:3px; line-height:1; white-space:nowrap; width:fit-content; height:fit-content; }
     .content-rating-badge.rating-erotica { background:rgba(239,68,68,0.85); color:#fff; border:1px solid rgba(239,68,68,0.6); }
     .content-rating-badge.rating-gore    { background:rgba(234,179,8,0.85); color:#0a0a0f; border:1px solid rgba(234,179,8,0.6); }
@@ -845,21 +840,6 @@
         </div>
         </div>
 
-        <!-- THE DRAFTING ROOM -->
-        <div class="home-section" data-section-id="drafting" id="home-section-drafting">
-        <div class="scroll-label" onclick="toggleRow('drafting')">
-          <i class="ti ti-edit"></i>
-          <span class="label-accent">The Drafting</span>
-          <span class="label-white">Room</span>
-          <a class="scroll-toggle-btn" href="browse.html?section=drafting-room" onclick="event.stopPropagation()" style="text-decoration:none;"><i class="ti ti-arrow-right"></i> View All</a><button class="scroll-toggle-btn" id="toggle-btn-drafting"><i class="ti ti-chevron-up" id="toggle-icon-drafting"></i> Hide</button>
-        </div>
-        <div style="padding:0 40px 4px;font-size:12px;color:var(--text3);">Stories still being written — give them a Spark to show you're excited.</div>
-        <div class="scroll-row-wrap" id="wrap-drafting">
-          <button class="scroll-nav-btn scroll-nav-left" onclick="scrollRow('drafting',-300)"><i class="ti ti-chevron-left"></i></button>
-          <div class="scroll-row" id="row-drafting"><div class="scroll-track" id="track-drafting"><div class="scroll-skel-wrap"><div class="scroll-skel"></div><div class="scroll-skel"></div><div class="scroll-skel"></div><div class="scroll-skel"></div><div class="scroll-skel"></div></div></div></div>
-          <button class="scroll-nav-btn scroll-nav-right" onclick="scrollRow('drafting',300)"><i class="ti ti-chevron-right"></i></button>
-        </div>
-        </div>
 
         <div class="home-section" data-section-id="3" id="home-section-3">
         <div class="scroll-label" onclick="toggleRow(3)">
@@ -2099,8 +2079,7 @@
       // Row: Fan Favorite (highest follower count)
       await loadFanFavoriteRow();
 
-      // Row: The Drafting Room (works-in-progress, upvoted with daily reading-earned Embers)
-      await loadDraftingRoomRow(uid);
+      // Rows loaded below
     }
 
     /* ── TRENDING NOW ─────────────────────────────────────────────── */
@@ -2214,121 +2193,6 @@
     // that readers can upvote. Embers for this come only from reading (no free
     // daily grant), upvoting requires having read at least one chapter first,
     // and authors cannot upvote their own work-in-progress.
-    var draftingVotedIds = new Set();
-    async function loadDraftingRoomRow(uid) {
-      var track = document.getElementById('track-drafting');
-      if (!track) return;
-      try {
-        var { data: works } = await db.from('works')
-          .select('id,title,cover_url,author_id,chapters_count,status,created_at')
-          .eq('type','novel').eq('is_published',true).eq('status','ongoing')
-          .order('created_at',{ascending:false}).limit(40);
-        if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">No drafts in progress right now.</div>'; return; }
-
-        var workIds = works.map(function(w){ return w.id; });
-        var { data: votes } = await db.from('drafting_room_votes').select('work_id,user_id');
-        var voteCounts = {}; var myVotes = new Set();
-        (votes||[]).forEach(function(v){
-          voteCounts[v.work_id] = (voteCounts[v.work_id]||0) + 1;
-          if (uid && v.user_id === uid) myVotes.add(v.work_id);
-        });
-        draftingVotedIds = myVotes;
-
-        // Check which works the current user has read at least 1 chapter of (scroll-gate proxy via reading_progress)
-        var readableWorkIds = new Set();
-        if (uid) {
-          var { data: progRows } = await db.from('reading_progress').select('work_id').eq('user_id', uid).eq('completed', true).in('work_id', workIds);
-          (progRows||[]).forEach(function(p){ readableWorkIds.add(p.work_id); });
-        }
-
-        var aIds = [...new Set(works.map(function(w){ return w.author_id; }).filter(Boolean))];
-        var profMap = {};
-        if (aIds.length) { var { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', aIds); (profs||[]).forEach(function(p){ profMap[p.id]=p; }); }
-
-        track.innerHTML = '';
-        works.forEach(function(w) {
-          var p = profMap[w.author_id]||null;
-          var isOwner = uid && uid === w.author_id;
-          var hasRead = readableWorkIds.has(w.id);
-          var hasVoted = myVotes.has(w.id);
-          var count = voteCounts[w.id] || 0;
-
-          var card = document.createElement('div');
-          card.className = 'drafting-card';
-
-          var coverWrap = document.createElement('div');
-          coverWrap.className = 'drafting-cover-wrap';
-          var coverLink = document.createElement('a');
-          coverLink.href = 'story.html?id=' + w.id;
-          coverLink.className = 'mini-cover ' + coverColor(w.id);
-          coverLink.style.width = '140px'; coverLink.style.height = '196px';
-          if (w.cover_url) {
-            coverLink.style.backgroundImage = 'url(' + esc(w.cover_url) + ')';
-            coverLink.style.backgroundSize = 'cover';
-            coverLink.style.backgroundPosition = 'center';
-            coverLink.style.color = 'transparent';
-          } else {
-            coverLink.textContent = coverLetter(w.title);
-          }
-          coverWrap.appendChild(coverLink);
-
-          var upvoteBtn = document.createElement('button');
-          upvoteBtn.className = 'drafting-upvote-btn' + (hasVoted ? ' voted' : '');
-          if (isOwner) {
-            upvoteBtn.disabled = true;
-            upvoteBtn.title = "You can't upvote your own work-in-progress";
-            upvoteBtn.innerHTML = '<i class="ti ti-sparkles"></i> ' + count;
-          } else if (hasVoted) {
-            upvoteBtn.disabled = true;
-            upvoteBtn.innerHTML = '<i class="ti ti-sparkles"></i> ' + count;
-          } else if (!uid) {
-            upvoteBtn.title = 'Sign in to give a Spark';
-            upvoteBtn.innerHTML = '<i class="ti ti-sparkles"></i> ' + count;
-            upvoteBtn.addEventListener('click', function(){ window.location.href = 'auth.html'; });
-          } else if (!hasRead) {
-            upvoteBtn.disabled = true;
-            upvoteBtn.title = 'Read at least one chapter first to give a Spark';
-            upvoteBtn.innerHTML = '<i class="ti ti-sparkles"></i> ' + count;
-          } else {
-            upvoteBtn.title = 'Give a Spark — costs 1 Ember';
-            upvoteBtn.innerHTML = '<i class="ti ti-sparkles"></i> ' + count;
-            upvoteBtn.addEventListener('click', async function() {
-              upvoteBtn.disabled = true;
-              try {
-                var { data, error } = await db.rpc('cast_drafting_room_vote', { p_work_id: w.id });
-                if (error || !data || !data.success) {
-                  var msg = (data && data.error) || 'Could not give a Spark right now.';
-                  var friendly = { insufficient_embers: 'You need at least 1 Ember (earn more by reading).', already_voted: 'Already given a Spark to this story.', cannot_vote_own_work: "You can't vote on your own work." }[msg] || msg;
-                  alert(friendly);
-                  upvoteBtn.disabled = false;
-                  return;
-                }
-                upvoteBtn.classList.add('voted');
-                upvoteBtn.innerHTML = '<i class="ti ti-sparkles"></i> ' + data.vote_count;
-                upvoteBtn.title = '';
-              } catch(e) { upvoteBtn.disabled = false; }
-            });
-          }
-          coverWrap.appendChild(upvoteBtn);
-          card.appendChild(coverWrap);
-
-          var titleEl = document.createElement('div');
-          titleEl.className = 'cover-card-title';
-          titleEl.textContent = w.title || '';
-          card.appendChild(titleEl);
-
-          if (p) {
-            var authorEl = document.createElement('a');
-            authorEl.className = 'cover-card-author';
-            authorEl.textContent = p.display_name || p.username || '';
-            authorEl.href = p.username ? 'profile.html?user=' + p.username : '#';
-            card.appendChild(authorEl);
-          }
-
-          track.appendChild(card);
-        });
-      } catch(e) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Could not load the Drafting Room.</div>'; }
-    }
 
     function renderCoverRow(track, items, mapper){
       if(!items.length){
@@ -3078,14 +2942,13 @@
       'trending': { icon: 'ti-trending-up', text: 'Trending Now' },
       'rising':   { icon: 'ti-rocket',      text: 'Rising Stars' },
       'favorite': { icon: 'ti-heart-filled',text: 'Fan Favorite' },
-      'drafting': { icon: 'ti-edit',        text: 'The Drafting Room' },
       '3':  { icon: 'ti-palette',    text: 'Featured Artwork' },
       '4':  { icon: 'ti-sparkles',   text: 'New Novels' },
       '5':  { icon: 'ti-photo-star', text: 'New Artwork' }
     };
     // 'cr' is last by default — users can move it anywhere
-    var DS_DEFAULT_ORDER = ['0','1','2','trending','rising','favorite','drafting','3','4','5','rh','cr'];
-    var DS_ALL_SECTION_IDS = ['0','1','2','trending','rising','favorite','drafting','3','4','5','rh','cr'];
+    var DS_DEFAULT_ORDER = ['0','1','2','trending','rising','favorite','3','4','5','rh','cr'];
+    var DS_ALL_SECTION_IDS = ['0','1','2','trending','rising','favorite','3','4','5','rh','cr'];
     var dsLayoutOrder = null;   // array of section ids, in display order
     var dsLayoutHidden = {};    // { sectionId: true } for hidden sections
     var dsLayoutDragSrc = null;
@@ -3109,7 +2972,7 @@
       if (dsLayoutOrder.indexOf('cr') === -1) dsLayoutOrder.push('cr');
       // Back-fill the 4 new ranking/discovery sections for old saved layouts —
       // insert them right after '2' (Featured Novels) to match default placement
-      ['trending','rising','favorite','drafting'].forEach(function(newId) {
+      ['trending','rising','favorite'].forEach(function(newId) {
         if (dsLayoutOrder.indexOf(newId) === -1) {
           var idx2 = dsLayoutOrder.indexOf('2');
           if (idx2 !== -1) dsLayoutOrder.splice(idx2 + 1, 0, newId);

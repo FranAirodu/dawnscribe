@@ -76,8 +76,8 @@ function dsApplyAccent(hex) {
 
   /* ── CSS ─────────────────────────────────────────────────────── */
   var css = `
-    :root { --accent: #2dd4bf; --accent2: #0d9488; }
-    html[data-theme="light"] { --accent: #0d9488; --accent2: #0f766e; }
+    :root { --accent: #2dd4bf; --accent2: #0d9488; --gold: #f59e0b; }
+    html[data-theme="light"] { --accent: #0d9488; --accent2: #0f766e; --gold: #d97706; }
     .ember-wrap { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: #f97316; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s, transform 0.2s; }
     .ember-wrap:hover { border-color: #f97316; }
     .ember-wrap i { font-size: 16px; }
