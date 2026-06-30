@@ -87,6 +87,21 @@
     .item-option:hover { border-color: rgba(45,212,191,0.3); }
     .item-option.selected { border-color: var(--accent); background: rgba(45,212,191,0.06); }
     .item-option-thumb { width: 40px; height: 40px; border-radius: 8px; background: var(--bg4); display: flex; align-items: center; justify-content: center; color: var(--text3); font-size: 18px; }
+    .item-option.locked { cursor: pointer; opacity: 0.85; position: relative; }
+    .item-option.locked:hover { border-color: rgba(245,158,11,0.5); }
+    .item-option-price { display: flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; color: var(--gold); margin-top: 1px; }
+    .item-option-price i { font-size: 11px; }
+    .buy-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 600; align-items: center; justify-content: center; padding: 20px; }
+    .buy-modal-overlay.show { display: flex; }
+    .buy-modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 22px; max-width: 360px; width: 100%; }
+    .buy-modal h3 { font-family: 'Cinzel', serif; font-size: 17px; color: var(--text); margin-bottom: 6px; }
+    .buy-modal p { font-size: 13px; color: var(--text2); margin-bottom: 16px; }
+    .buy-modal-price { display: flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 700; color: var(--gold); margin-bottom: 18px; }
+    .buy-modal-btns { display: flex; gap: 8px; }
+    .buy-modal-btn { flex: 1; padding: 10px; border-radius: 9px; font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; border: none; }
+    .buy-modal-btn.confirm { background: #f59e0b; color: #1a1208; }
+    .buy-modal-btn.confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+    .buy-modal-btn.cancel { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
     .item-option-name { font-size: 10px; color: var(--text2); text-align: center; line-height: 1.3; }
     .item-option.none .item-option-thumb { color: var(--text3); }
 
@@ -138,6 +153,22 @@
   </style>
 </head>
 <body>
+
+<div class="toast" id="avatar-toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:700;pointer-events:none;"><i class="ti ti-check" style="color:var(--accent);"></i><span id="avatar-toast-msg">Done!</span></div>
+<style>#avatar-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}</style>
+
+<div class="buy-modal-overlay" id="buy-modal-overlay">
+  <div class="buy-modal">
+    <h3 id="buy-modal-name">Item</h3>
+    <p>Unlock this item permanently for your avatar.</p>
+    <div class="buy-modal-price"><i class="ti ti-feather"></i> <span id="buy-modal-price-amount">0</span> Quills</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:14px;" id="buy-modal-balance-note">You have 0 Quills.</div>
+    <div class="buy-modal-btns">
+      <button class="buy-modal-btn cancel" onclick="closeBuyModal()">Cancel</button>
+      <button class="buy-modal-btn confirm" id="buy-modal-confirm-btn" onclick="confirmPurchase()">Purchase</button>
+    </div>
+  </div>
+</div>
 
 <nav>
   <div class="nav-left">
@@ -254,6 +285,7 @@
   var activeRegionId = null; // which fill_region of the active item is selected for Color Unlock
   var dirty = false;
   var emberBalance = 0;
+  var quillBalance = 0;
 
   // ── PLACEHOLDER RENDERING ─────────────────────────────────────
   // Until real layered art exists, each slot renders as a simple
@@ -291,16 +323,18 @@
     }
     currentUid = session.user.id;
 
-    var [avatarResult, itemsResult, unlockedResult, embersResult, paletteResult, accentPaletteResult] = await Promise.all([
+    var [avatarResult, itemsResult, unlockedResult, embersResult, quillsResult, paletteResult, accentPaletteResult] = await Promise.all([
       db.from('user_avatars').select('*').eq('user_id', currentUid).maybeSingle(),
       db.from('cosmetic_items').select('*'),
       db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', currentUid),
       db.from('user_embers').select('balance').eq('user_id', currentUid).maybeSingle(),
+      db.from('user_quills').select('balance').eq('user_id', currentUid).maybeSingle(),
       db.from('reroll_color_palette').select('hex,label'),
       db.from('reroll_color_palette').select('hex,label,rarity_weight').eq('region_type','accent').order('label')
     ]);
 
     emberBalance = (embersResult.data && embersResult.data.balance) || 0;
+    quillBalance = (quillsResult.data && quillsResult.data.balance) || 0;
 
     // Build hex → label map for color name tooltips
     window.hexColorMap = {};
@@ -347,6 +381,14 @@
   function getItemsForSlot(slot) {
     return allItems.filter(function(it) {
       return it.slot === slot && (it.is_base_item || unlockedItemIds.has(it.id));
+    });
+  }
+
+  // Marketplace items for this slot the user doesn't own yet — shown as
+  // purchasable tiles rather than left out entirely.
+  function getPurchasableItemsForSlot(slot) {
+    return allItems.filter(function(it) {
+      return it.slot === slot && it.is_marketplace_item && it.quill_price != null && !it.is_base_item && !unlockedItemIds.has(it.id);
     });
   }
 
@@ -496,6 +538,7 @@
   // ── RENDER: ITEM GRID FOR ACTIVE SLOT ────────────────────────────
   function renderItemGrid() {
     var items = getItemsForSlot(activeSlot);
+    var purchasable = getPurchasableItemsForSlot(activeSlot);
     var equippedId = avatarData.equipped[activeSlot] ? avatarData.equipped[activeSlot].item_id : null;
     var icon = SLOT_ICONS[activeSlot] || 'ti-diamond';
 
@@ -510,7 +553,7 @@
       '</div>';
     }
 
-    if (items.length === 0 && slotHasBaseItem === false) {
+    if (items.length === 0 && purchasable.length === 0 && slotHasBaseItem === false) {
       html += '<div class="empty-note" style="grid-column:1/-1;">No items unlocked for this slot yet. Keep reading to earn rewards!</div>';
     } else {
       items.forEach(function(it) {
@@ -522,6 +565,17 @@
         html += '<div class="item-option' + selected + '" onclick="equipItem(\'' + it.id + '\')">' +
           thumb +
           '<div class="item-option-name">' + esc(it.name) + '</div>' +
+        '</div>';
+      });
+      purchasable.forEach(function(it) {
+        var thumbColor = (it.fill_regions && it.fill_regions[0]) ? it.fill_regions[0].default_color : null;
+        var thumb = thumbColor
+          ? '<div class="item-option-thumb" style="background:' + thumbColor + ';"></div>'
+          : '<div class="item-option-thumb"><i class="ti ' + icon + '"></i></div>';
+        html += '<div class="item-option locked" onclick="openBuyModal(\'' + it.id + '\')">' +
+          thumb +
+          '<div class="item-option-name">' + esc(it.name) + '</div>' +
+          '<div class="item-option-price"><i class="ti ti-feather"></i> ' + (it.quill_price || 0).toLocaleString() + '</div>' +
         '</div>';
       });
     }
@@ -1076,6 +1130,68 @@
     if (avatarData.accent_color && avatarData.accent_color.hex) {
       applyAccentCSS(avatarData.accent_color.hex, !!avatarData.accent_color.stroke);
     }
+  }
+
+  // ── MARKETPLACE COSMETIC PURCHASE ────────────────────────────────
+  var pendingBuyItem = null;
+
+  window.openBuyModal = function(itemId) {
+    var item = allItems.find(function(it){ return it.id === itemId; });
+    if (!item) return;
+    pendingBuyItem = item;
+    document.getElementById('buy-modal-name').textContent = item.name;
+    document.getElementById('buy-modal-price-amount').textContent = (item.quill_price || 0).toLocaleString();
+    var confirmBtn = document.getElementById('buy-modal-confirm-btn');
+    var insufficient = quillBalance < (item.quill_price || 0);
+    confirmBtn.disabled = insufficient;
+    confirmBtn.textContent = insufficient ? 'Not enough Quills' : 'Purchase';
+    document.getElementById('buy-modal-balance-note').textContent = 'You have ' + quillBalance.toLocaleString() + ' Quills.';
+    document.getElementById('buy-modal-overlay').classList.add('show');
+  };
+
+  window.closeBuyModal = function() {
+    pendingBuyItem = null;
+    document.getElementById('buy-modal-overlay').classList.remove('show');
+  };
+
+  window.confirmPurchase = async function() {
+    if (!pendingBuyItem || !currentUid) return;
+    var btn = document.getElementById('buy-modal-confirm-btn');
+    btn.disabled = true;
+    btn.textContent = 'Purchasing...';
+    try {
+      var { data, error } = await db.rpc('purchase_marketplace_cosmetic', { p_user_id: currentUid, p_cosmetic_id: pendingBuyItem.id });
+      if (error || !data || data.status !== 'success') {
+        var msg = (data && data.error === 'insufficient_quills') ? 'Not enough Quills.'
+          : (data && data.error === 'already_owned') ? 'You already own this item.'
+          : 'Could not complete purchase.';
+        showToast(msg, 'ti-x');
+        btn.disabled = false;
+        btn.textContent = 'Purchase';
+        return;
+      }
+      quillBalance = data.new_balance;
+      unlockedItemIds.add(pendingBuyItem.id);
+      var quillCountEl = document.getElementById('ds-quill-count');
+      if (quillCountEl) quillCountEl.textContent = quillBalance.toLocaleString();
+      showToast('Unlocked "' + data.name + '"!', 'ti-shopping-bag');
+      closeBuyModal();
+      renderItemGrid();
+    } catch(err) {
+      console.error('Purchase error:', err);
+      showToast('Something went wrong', 'ti-alert-triangle');
+      btn.disabled = false;
+      btn.textContent = 'Purchase';
+    }
+  };
+
+  function showToast(msg, icon) {
+    var t = document.getElementById('avatar-toast');
+    if (!t) return;
+    document.getElementById('avatar-toast-msg').textContent = msg || 'Done!';
+    t.querySelector('i').className = 'ti ' + (icon || 'ti-check');
+    t.classList.add('show');
+    setTimeout(function() { t.classList.remove('show'); }, 2800);
   }
 </script>
 <script src="footer.js"></script>
