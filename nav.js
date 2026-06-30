@@ -277,6 +277,12 @@ function dsApplyAccent(hex) {
           <div class="search-field"><i class="ti ti-brush"></i><input type="text" id="srch-artists" placeholder="Search artists…" class="search-input" autocomplete="off"/><button class="search-go-btn" onclick="dsGoSearch('artists')">Go</button></div>
           <div class="search-preview" id="srch-preview-artists"></div>
         </div>
+        <div class="search-divider"></div>
+        <div class="search-section" id="srch-sec-tags">
+          <div class="search-section-label"><i class="ti ti-tag"></i> Tags</div>
+          <div class="search-field"><i class="ti ti-tag"></i><input type="text" id="srch-tags" placeholder="e.g. fantasy, romance, cultivation…" class="search-input" autocomplete="off"/><button class="search-go-btn" onclick="dsGoSearch('tags')">Go</button></div>
+          <div class="search-preview" id="srch-preview-tags"></div>
+        </div>
       </div>
     </div>
   `;
@@ -372,13 +378,18 @@ function dsApplyAccent(hex) {
   /* ── SEARCH ──────────────────────────────────────────────────── */
   var dsSearchTimers = {};
   window.dsGoSearch = function(type) {
-    var inputMap = { titles:'srch-titles', authors:'srch-authors', artwork:'srch-artwork', artists:'srch-artists' };
+    var inputMap = { titles:'srch-titles', authors:'srch-authors', artwork:'srch-artwork', artists:'srch-artists', tags:'srch-tags' };
     var q = (document.getElementById(inputMap[type])||{}).value || '';
-    if(q.trim()) window.location.href = 'search.html?q='+encodeURIComponent(q.trim())+'&tab='+type;
+    if (!q.trim()) return;
+    if (type === 'tags') {
+      window.location.href = 'search.html?q='+encodeURIComponent(q.trim())+'&type=titles&tagmode=1';
+    } else {
+      window.location.href = 'search.html?q='+encodeURIComponent(q.trim())+'&tab='+type;
+    }
   };
-  ['titles','authors','artwork','artists'].forEach(function(type) {
-    var inputMap = { titles:'srch-titles', authors:'srch-authors', artwork:'srch-artwork', artists:'srch-artists' };
-    var previewMap = { titles:'srch-preview-titles', authors:'srch-preview-authors', artwork:'srch-preview-artwork', artists:'srch-preview-artists' };
+  ['titles','authors','artwork','artists','tags'].forEach(function(type) {
+    var inputMap = { titles:'srch-titles', authors:'srch-authors', artwork:'srch-artwork', artists:'srch-artists', tags:'srch-tags' };
+    var previewMap = { titles:'srch-preview-titles', authors:'srch-preview-authors', artwork:'srch-preview-artwork', artists:'srch-preview-artists', tags:'srch-preview-tags' };
     document.addEventListener('DOMContentLoaded', function(){
       var inp = document.getElementById(inputMap[type]);
       if (!inp) return;
@@ -400,24 +411,49 @@ function dsApplyAccent(hex) {
               res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+q+'%').limit(4);
             } else if (type === 'artwork') {
               res = await db.from('works').select('id,title,cover_url,author_id').eq('type','artwork').eq('is_published',true).ilike('title','%'+q+'%').limit(4);
+            } else if (type === 'tags') {
+              res = await db.from('works').select('id,title,cover_url,tags_main').eq('type','novel').eq('is_published',true).ilike('tags_all','%'+q+'%').limit(5);
             } else {
               res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+q+'%').limit(4);
             }
             var items = res.data || [];
             if (!items.length) { preview.innerHTML='<div style="padding:8px 10px;font-size:12px;color:var(--text3);">No results</div>'; return; }
             preview.innerHTML = '';
-            items.forEach(function(item){
-              var a = document.createElement('a');
-              a.className = 'search-preview-item';
-              var isWork = !!item.title;
-              a.href = isWork ? (type==='titles'?'story.html?id=':'artwork.html?id=')+item.id : 'profile.html?user='+(item.username||'');
-              var coverHtml = (isWork && item.cover_url)
-                ? '<img src="'+dsEsc(item.cover_url)+'" style="width:100%;height:100%;object-fit:cover;"/>'
-                : ((!isWork && item.avatar_url) ? '<img src="'+dsEsc(item.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : dsEsc((item.title||item.display_name||'?').charAt(0).toUpperCase()));
-              a.innerHTML = '<div class="search-preview-cover '+dsCoverColor(item.id)+'">'+coverHtml+'</div>'
-                + '<div class="search-preview-info"><div class="search-preview-title">'+dsEsc(item.title||item.display_name||'Unknown')+'</div></div>';
-              preview.appendChild(a);
-            });
+            if (type === 'tags') {
+              // Show a "See all results" shortcut plus matching novels
+              var seeAll = document.createElement('a');
+              seeAll.className = 'search-preview-item';
+              seeAll.href = 'search.html?q='+encodeURIComponent(q)+'&type=titles&tagmode=1';
+              seeAll.style.cssText = 'background:rgba(45,212,191,0.07);border-bottom:1px solid var(--border);';
+              seeAll.innerHTML = '<div class="search-preview-cover" style="background:rgba(45,212,191,0.15);"><i class="ti ti-tag" style="font-size:14px;color:var(--accent);"></i></div>'
+                + '<div class="search-preview-info"><div class="search-preview-title" style="color:var(--accent);">See all "'+dsEsc(q)+'" novels</div>'
+                + '<div class="search-preview-sub">'+items.length+' match'+(items.length!==1?'es':'')+' in tag search</div></div>';
+              preview.appendChild(seeAll);
+              items.forEach(function(item){
+                var a = document.createElement('a');
+                a.className = 'search-preview-item';
+                a.href = 'story.html?id='+item.id;
+                var coverHtml = item.cover_url
+                  ? '<img src="'+dsEsc(item.cover_url)+'" style="width:100%;height:100%;object-fit:cover;"/>'
+                  : dsEsc((item.title||'?').charAt(0).toUpperCase());
+                a.innerHTML = '<div class="search-preview-cover '+dsCoverColor(item.id)+'">'+coverHtml+'</div>'
+                  + '<div class="search-preview-info"><div class="search-preview-title">'+dsEsc(item.title||'Unknown')+'</div></div>';
+                preview.appendChild(a);
+              });
+            } else {
+              items.forEach(function(item){
+                var a = document.createElement('a');
+                a.className = 'search-preview-item';
+                var isWork = !!item.title;
+                a.href = isWork ? (type==='titles'?'story.html?id=':'artwork.html?id=')+item.id : 'profile.html?user='+(item.username||'');
+                var coverHtml = (isWork && item.cover_url)
+                  ? '<img src="'+dsEsc(item.cover_url)+'" style="width:100%;height:100%;object-fit:cover;"/>'
+                  : ((!isWork && item.avatar_url) ? '<img src="'+dsEsc(item.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : dsEsc((item.title||item.display_name||'?').charAt(0).toUpperCase()));
+                a.innerHTML = '<div class="search-preview-cover '+dsCoverColor(item.id)+'">'+coverHtml+'</div>'
+                  + '<div class="search-preview-info"><div class="search-preview-title">'+dsEsc(item.title||item.display_name||'Unknown')+'</div></div>';
+                preview.appendChild(a);
+              });
+            }
           } catch(e){ preview.innerHTML=''; preview.classList.remove('visible'); }
         }, 300);
       });
