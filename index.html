@@ -947,7 +947,7 @@
 
 
     /* ── HELPERS ────────────────────────────────────────────────── */
-    function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function timeAgo(s){
       if(!s) return '';
       var d=Math.floor((Date.now()-new Date(s))/1000);
@@ -962,6 +962,23 @@
     var COVER_COLORS = ['cover-purple','cover-blue','cover-red','cover-green','cover-gold','cover-pink'];
     function coverColor(id){ var h=0; for(var i=0;i<(id||'').length;i++) h=(h*31+id.charCodeAt(i))&0xffff; return COVER_COLORS[h%COVER_COLORS.length]; }
     function coverLetter(t){ return (t||'?').charAt(0).toUpperCase(); }
+
+    /* Muted/blocked author check — top-level so both the discovery rows and
+       the nav search previews can use it. Populated by dsLoadMutedIds(uid). */
+    var dsMutedIds = [];
+    async function dsLoadMutedIds(uid){
+      if (!uid) return;
+      try {
+        var { data: muteRows } = await db.from('mutes').select('muted_id').eq('muter_id', uid);
+        dsMutedIds = (muteRows || []).map(function(r){ return r.muted_id; });
+      } catch(e) {}
+    }
+    function isHiddenAuthor(authorId) {
+      if (!authorId) return false;
+      if (dsMutedIds.indexOf(authorId) !== -1) return true;
+      try { if (window.dsBlock && dsBlock.either(authorId)) return true; } catch(e) {}
+      return false;
+    }
 
     /* ── DM BUTTON (LIVE) ──────────────────────────────────────────── */
     async function loadDmPreview(uid){
@@ -1121,6 +1138,7 @@
           artistFeed.appendChild(item);
         });
       }
+      dsApplyFriendReqs(); // re-apply friend requests (initUserNav may have run first)
 
       // Comments — chapter_comments has no work_id, go via chapters; also artwork_comments
       var myWorks=await db.from('works').select('id,title,type,cover_url').eq('author_id',uid);
@@ -1272,6 +1290,18 @@
       var badge = document.getElementById('notif-badge');
       if(remaining===0) badge.style.display='none';
       else{ badge.textContent=Math.min(remaining,99); badge.style.display='flex'; }
+    }
+
+    /* Friend-request cards for the Artists notif tab. Built by initUserNav,
+       re-applied after loadNotifications renders the feed, so the two async
+       loaders can finish in either order without wiping them. */
+    var _dsFriendReqHtml = '';
+    function dsApplyFriendReqs() {
+      if (!_dsFriendReqHtml) return;
+      var feed = document.getElementById('notif-feed-artists');
+      if (!feed) return;
+      feed.querySelectorAll('.ds-friend-req').forEach(function(el){ el.remove(); });
+      feed.insertAdjacentHTML('afterbegin', _dsFriendReqHtml);
     }
 
     function getClearedIds(tab) {
@@ -1780,8 +1810,10 @@
     async function loadScrollRows(uid){
       // Load this viewer's content filter + language preferences.
       // safe/gore/erotica flags mean "filter OUT this content when true".
-      // Default to false (show everything) so content loads even without a profile.
-      var myContentFilters = { safe: false, gore: false, erotica: false };
+      // Gore/erotica are hidden by default (safe-by-default): only an explicit
+      // false on the profile shows them. Null values and logged-out viewers
+      // both get the safe default.
+      var myContentFilters = { safe: false, gore: true, erotica: true };
       var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
       if (uid) {
         try {
@@ -1796,6 +1828,7 @@
           }
         } catch(e) {}
       }
+      window._dsContentFilters = myContentFilters; // realtime handlers read this
       // safe=true means master "hide everything sensitive".
       // gore=true means "filter out gore". erotica=true means "filter out erotica".
       function applyContentFilters(q) {
@@ -1858,21 +1891,9 @@
       // Mute is silent (no notification, you can still interact). Block already
       // exists site-wide via dsBlock, but until now nothing on the homepage
       // actually checked it — blocked users' work still showed up here.
-      var myMutedIds = [];
-      if (uid) {
-        try {
-          var { data: muteRows } = await db.from('mutes').select('muted_id').eq('muter_id', uid);
-          myMutedIds = (muteRows || []).map(function(r){ return r.muted_id; });
-        } catch(e) {}
-      }
-      function isHiddenAuthor(authorId) {
-        if (!authorId) return false;
-        if (myMutedIds.indexOf(authorId) !== -1) return true;
-        try { if (window.dsBlock && dsBlock.either(authorId)) return true; } catch(e) {}
-        return false;
-      }
+      await dsLoadMutedIds(uid); // isHiddenAuthor is top-level now (nav search uses it too)
       function applyMutePrefs(items) {
-        if (!myMutedIds.length && !(window.dsBlock && dsBlock.blockedByMe && dsBlock.blockedByMe().size)) return items;
+        if (!dsMutedIds.length && !(window.dsBlock && dsBlock.blockedByMe && dsBlock.blockedByMe().size)) return items;
         return items.filter(function(w){ return !isHiddenAuthor(w.author_id); });
       }
 
@@ -1890,6 +1911,22 @@
           var warnings = Array.isArray(w.content_warnings) ? w.content_warnings : [];
           return !warnings.some(function(cw){ return myFilteredWarnings.indexOf(cw) !== -1; });
         });
+      }
+
+      // Shared item-level filter for Trending / Rising / Fan Favorite, which
+      // fetch + score client-side: applies gore/erotica prefs (own works
+      // exempt), mutes/blocks, blocked tags, and filtered content warnings —
+      // same net effect as the query-level filters on rows 2-5.
+      function filterDiscoveryItems(items) {
+        var blockGore    = myContentFilters.safe || myContentFilters.gore;
+        var blockErotica = myContentFilters.safe || myContentFilters.erotica;
+        var out = (items || []).filter(function(w){
+          if (uid && w.author_id === uid) return true;
+          if (blockGore && w.content_rating_gore === true) return false;
+          if (blockErotica && w.content_rating_erotica === true) return false;
+          return true;
+        });
+        return applyWarningPrefs(applyMutePrefs(applyTagPrefs(out)));
       }
 
       // Row 0: New chapters from followed works
@@ -2077,26 +2114,27 @@
       renderCoverRow(row5track, r5Items, function(w){ return Object.assign({}, w, { postedTime: w.created_at }); });
 
       // Row: Trending Now (Echoes + comments + follows, last 7 days — weighted, same spirit as Featured rotation)
-      await loadTrendingRow();
+      await loadTrendingRow(filterDiscoveryItems);
 
       // Row: Rising Stars (newest works gaining followers fastest)
-      await loadRisingRow();
+      await loadRisingRow(filterDiscoveryItems);
 
       // Row: Fan Favorite (highest follower count)
-      await loadFanFavoriteRow();
+      await loadFanFavoriteRow(filterDiscoveryItems);
 
       // Rows loaded below
     }
 
     /* ── TRENDING NOW ─────────────────────────────────────────────── */
-    async function loadTrendingRow() {
+    async function loadTrendingRow(filterFn) {
       var track = document.getElementById('track-trending');
       if (!track) return;
       try {
         var sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,author_id,chapters_count,content_rating_gore,content_rating_erotica')
-          .eq('type','novel').eq('is_published',true).limit(60);
+          .select('id,title,cover_url,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
+          .eq('type','novel').eq('is_published',true).order('created_at',{ascending:false}).limit(60);
+        if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Nothing trending yet.</div>'; return; }
         var workIds = works.map(function(w){ return w.id; });
 
@@ -2139,15 +2177,16 @@
     }
 
     /* ── RISING STARS ──────────────────────────────────────────────── */
-    async function loadRisingRow() {
+    async function loadRisingRow(filterFn) {
       var track = document.getElementById('track-rising');
       if (!track) return;
       try {
         var thirtyDaysAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString();
         // Newer works (last 30 days) ranked by follower velocity
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,author_id,chapters_count,created_at,content_rating_gore,content_rating_erotica')
-          .eq('type','novel').eq('is_published',true).gte('created_at', thirtyDaysAgo).limit(60);
+          .select('id,title,cover_url,author_id,chapters_count,created_at,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
+          .eq('type','novel').eq('is_published',true).gte('created_at', thirtyDaysAgo).order('created_at',{ascending:false}).limit(60);
+        if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">No new rising stories yet.</div>'; return; }
         var workIds = works.map(function(w){ return w.id; });
         var { data: follows } = await db.from('work_follows').select('work_id').in('work_id', workIds);
@@ -2170,13 +2209,14 @@
     }
 
     /* ── FAN FAVORITE ──────────────────────────────────────────────── */
-    async function loadFanFavoriteRow() {
+    async function loadFanFavoriteRow(filterFn) {
       var track = document.getElementById('track-favorite');
       if (!track) return;
       try {
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,author_id,chapters_count,content_rating_gore,content_rating_erotica')
-          .eq('type','novel').eq('is_published',true).limit(80);
+          .select('id,title,cover_url,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
+          .eq('type','novel').eq('is_published',true).order('created_at',{ascending:false}).limit(80);
+        if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Nothing here yet.</div>'; return; }
         var workIds = works.map(function(w){ return w.id; });
         var { data: follows } = await db.from('work_follows').select('work_id').in('work_id', workIds);
@@ -2193,12 +2233,6 @@
         });
       } catch(e) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Could not load fan favorites.</div>'; }
     }
-
-    /* ── THE DRAFTING ROOM ────────────────────────────────────────── */
-    // Shows works-in-progress (ongoing, low chapter count = early stage signal)
-    // that readers can upvote. Embers for this come only from reading (no free
-    // daily grant), upvoting requires having read at least one chapter first,
-    // and authors cannot upvote their own work-in-progress.
 
     function renderCoverRow(track, items, mapper){
       if(!items.length){
@@ -2368,17 +2402,24 @@
         var loader = track.querySelector('[style*="flex"]');
         if(loader && loader.tagName==='DIV') loader.remove();
         var a = document.createElement('a');
-        a.className = 'mini-cover ' + coverColor(work.id);
+        a.className = 'cover-card';
         a.href = href;
         a.title = work.title || '';
+        var c = document.createElement('div');
+        c.className = 'mini-cover ' + coverColor(work.id);
         if(work.cover_url){
-          a.style.backgroundImage = 'url(' + esc(work.cover_url) + ')';
-          a.style.backgroundSize = 'cover';
-          a.style.backgroundPosition = 'center';
-          a.style.color = 'transparent';
+          c.style.backgroundImage = 'url(' + esc(work.cover_url) + ')';
+          c.style.backgroundSize = 'cover';
+          c.style.backgroundPosition = 'center';
+          c.style.color = 'transparent';
         } else {
-          a.textContent = coverLetter(work.title);
+          c.textContent = coverLetter(work.title);
         }
+        a.appendChild(c);
+        var t = document.createElement('div');
+        t.className = 'cover-card-title';
+        t.textContent = work.title || '';
+        a.appendChild(t);
         a.style.opacity = '0';
         a.style.transform = 'scale(0.85)';
         a.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
@@ -2398,6 +2439,14 @@
             var w = payload.new;
             if(!w||!w.id) return;
             if(w.collab_status==='pending') return; // don't show pending collab art
+            if(w.is_published === false) return;
+            if(isHiddenAuthor(w.author_id)) return;
+            // Respect viewer content filters (hide-by-default until prefs load)
+            var _cf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
+            if(!(uid && w.author_id === uid)){
+              if((_cf.safe || _cf.gore) && w.content_rating_gore === true) return;
+              if((_cf.safe || _cf.erotica) && w.content_rating_erotica === true) return;
+            }
             var trackId = w.type==='artwork' ? 'track-5' : 'track-4';
             prependCover(trackId, w, w.type==='artwork' ? 'artwork.html?id='+w.id : 'story.html?id='+w.id);
             // Update sidebar
@@ -2417,12 +2466,13 @@
           async function(payload){
             var ch = payload.new;
             if(!ch||!ch.work_id) return;
+            if(ch.status && ch.status !== 'published') return;
             if(!uid) return;
             var fwRes = await db.from('work_follows').select('id').eq('user_id',uid).eq('work_id',ch.work_id).maybeSingle();
             if(!fwRes.data) return;
             var workRes = await db.from('works').select('id,title,cover_url').eq('id',ch.work_id).maybeSingle();
             if(!workRes.data) return;
-            prependCover('track-0', workRes.data, 'chapter.html?work='+ch.work_id+'&chapter='+ch.id);
+            prependCover('track-0', workRes.data, 'chapter.html?id='+ch.id);
             loadSidebarUpdates();
           })
         .subscribe();
@@ -2457,6 +2507,8 @@
         document.getElementById('notif-feed-novels').innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><a href="auth.html" style="color:var(--accent);">Sign in</a> to see notifications.</div>';
         document.getElementById('notif-feed-artists').innerHTML = document.getElementById('notif-feed-novels').innerHTML;
         document.getElementById('notif-feed-comments').innerHTML = document.getElementById('notif-feed-novels').innerHTML;
+        var actFeedLo = document.getElementById('notif-feed-activity');
+        if (actFeedLo) actFeedLo.innerHTML = document.getElementById('notif-feed-novels').innerHTML;
       }
     })();
 
@@ -2580,7 +2632,7 @@
       barsEl.innerHTML = '';
       options.forEach(function(opt) {
         var pct = total > 0 ? Math.round((opt.vote_count / total) * 100) : 0;
-        barsEl.innerHTML += '<div class="poll-result-row"><span class="poll-result-label">' + opt.option_text + '</span><div class="poll-result-bar"><div class="poll-result-fill" style="width:' + pct + '%"></div></div><span class="poll-result-pct">' + pct + '%</span></div>';
+        barsEl.innerHTML += '<div class="poll-result-row"><span class="poll-result-label">' + esc(opt.option_text) + '</span><div class="poll-result-bar"><div class="poll-result-fill" style="width:' + pct + '%"></div></div><span class="poll-result-pct">' + pct + '%</span></div>';
       });
       document.getElementById('poll-total').textContent = total + ' vote' + (total === 1 ? '' : 's') + ' total';
       document.getElementById('poll-results').classList.add('show');
@@ -2681,7 +2733,7 @@
 
     // Colour helper for book covers (reuse existing if available, else fallback)
     var coverColors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa','#fb923c'];
-    function srchCoverColor(id) { return coverColors[Math.abs(id || 0) % coverColors.length]; }
+    function srchCoverColor(id) { var s=String(id||''),h=0; for(var i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))&0xffff; return coverColors[h % coverColors.length]; }
 
     // ── TITLES search
     async function srchQueryTitles(q) {
@@ -2708,7 +2760,7 @@
           var author = prof.display_name || prof.username || 'Unknown';
           var letter = (w.title || '?')[0].toUpperCase();
           var thumb = w.cover_url
-            ? '<img src="' + w.cover_url + '" alt=""/>'
+            ? '<img src="' + esc(w.cover_url) + '" alt=""/>'
             : '<span>' + letter + '</span>';
           html += '<a class="search-preview-item" href="story.html?id=' + w.id + '">'
             + '<div class="search-preview-thumb" style="background:' + srchCoverColor(w.id) + ';">' + thumb + '</div>'
@@ -2744,7 +2796,7 @@
           var name = p.display_name || p.username;
           var initial = (name || '?')[0].toUpperCase();
           var thumb = p.avatar_url
-            ? '<img src="' + p.avatar_url + '" alt=""/>'
+            ? '<img src="' + esc(p.avatar_url) + '" alt=""/>'
             : '<span>' + initial + '</span>';
           html += '<a class="search-preview-item" href="profile.html?user=' + encodeURIComponent(p.username) + '">'
             + '<div class="search-preview-thumb round">' + thumb + '</div>'
@@ -2784,7 +2836,7 @@
         data.forEach(function(w) {
           var prof = profileMap[w.author_id] || {};
           var artist = prof.display_name || prof.username || 'Unknown';
-          var thumb = w.cover_url ? '<img src="' + w.cover_url + '" alt=""/>' : '<span>🎨</span>';
+          var thumb = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt=""/>' : '<span>🎨</span>';
           html += '<a class="search-preview-item" href="artwork.html?id=' + w.id + '">'
             + '<div class="search-preview-thumb">' + thumb + '</div>'
             + '<div class="search-preview-info">'
@@ -2819,7 +2871,7 @@
         data.forEach(function(p) {
           var name = p.display_name || p.username;
           var initial = (name || '?')[0].toUpperCase();
-          var thumb = p.avatar_url ? '<img src="' + p.avatar_url + '" alt=""/>' : '<span>' + initial + '</span>';
+          var thumb = p.avatar_url ? '<img src="' + esc(p.avatar_url) + '" alt=""/>' : '<span>' + initial + '</span>';
           html += '<a class="search-preview-item" href="profile.html?user=' + encodeURIComponent(p.username) + '">'
             + '<div class="search-preview-thumb round">' + thumb + '</div>'
             + '<div class="search-preview-info">'
@@ -2856,7 +2908,7 @@
           + '</div></a>';
         data.forEach(function(w) {
           var letter = (w.title || '?')[0].toUpperCase();
-          var thumb = w.cover_url ? '<img src="' + w.cover_url + '" alt=""/>' : '<span>' + letter + '</span>';
+          var thumb = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt=""/>' : '<span>' + letter + '</span>';
           html += '<a class="search-preview-item" href="story.html?id=' + w.id + '">'
             + '<div class="search-preview-thumb" style="background:' + srchCoverColor(w.id) + ';">' + thumb + '</div>'
             + '<div class="search-preview-info"><div class="search-preview-title">' + esc(w.title) + '</div></div></a>';
@@ -2917,7 +2969,7 @@
         document.getElementById('search-chevron').style.transform = 'rotate(0deg)';
         srchResetLayout();
         srchActive = null;
-        ['titles','authors','artwork','artists'].forEach(function(t){ srchClearPreview('srch-preview-'+t); });
+        ['titles','authors','artwork','artists','tags'].forEach(function(t){ srchClearPreview('srch-preview-'+t); });
       }
       var notifWrap = document.querySelector('.notif-wrap');
       if (notifWrap && !notifWrap.contains(e.target)) { document.getElementById('notifDropdown').classList.remove('open'); }
@@ -3168,7 +3220,7 @@
         list.querySelectorAll('.layout-item').forEach(function(el){ el.classList.remove('dragging','drag-over'); });
         dsLayoutDragSrc = null;
       });
-    });
+    })();
 
     /* ── DM / NOTIF / SIDEBAR ───────────────────────────────────── */
 
@@ -3239,9 +3291,11 @@
             var _b = Math.max(0, parseInt(_h.slice(4,6),16) - 30);
             var _hex2 = '#' + [_r,_g,_b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
             var _stroke = ac.stroke ? '.logo, .footer-logo { -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }' : '';
+            var _old = document.getElementById('ds-accent-override');
+            if (_old) _old.remove();
             var _st = document.createElement('style');
             _st.id = 'ds-accent-override';
-            _st.textContent = ':root {   }' + _stroke;
+            _st.textContent = ':root{--accent:'+ac.hex+' !important;--accent2:'+_hex2+' !important;}html[data-theme="light"]{--accent:'+ac.hex+' !important;--accent2:'+_hex2+' !important;}' + _stroke;
             document.head.appendChild(_st);
             localStorage.setItem('ds_accent_hex', ac.hex);
           } else {
@@ -3287,7 +3341,7 @@
                 document.getElementById('user-avatar-initial').textContent = res.data.display_name.charAt(0).toUpperCase();
               }
               if (res.data.avatar_url) {
-                avatarBtn.innerHTML = '<img src="' + res.data.avatar_url + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
+                avatarBtn.innerHTML = '<img src="' + esc(res.data.avatar_url) + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
               }
               // Check for all pending items: collab requests + friend requests
               if (res.data.id) {
@@ -3317,9 +3371,8 @@
                 var frCount = (frRes.data || []).length;
                 if (frCount > 0) pendingParts.push(frCount + ' friend request' + (frCount > 1 ? 's' : ''));
 
-                // 4. Pending song suggestions
-                var myNovIds = (await db.from('works').select('id').eq('author_id', uid2).eq('type','novel')).data || [];
-                var mniWids = myNovIds.map(function(w){ return w.id; });
+                // 4. Pending song suggestions (reuse novIds from block 2)
+                var mniWids = novIds;
                 if (mniWids.length) {
                   var songRes = await db.from('character_song_suggestions').select('id').in('work_id', mniWids).eq('status','pending');
                   var songCount = (songRes.data || []).length;
@@ -3347,25 +3400,22 @@
                     var { data: frProfs } = await db.from('profiles').select('id, username, display_name, avatar_url').in('id', frIds);
                     var frProfMap = {};
                     (frProfs || []).forEach(function(p){ frProfMap[p.id] = p; });
-                    var artistFeed = document.getElementById('notif-feed-artists');
-                    var frag = document.createDocumentFragment();
+                    var frHtml = '';
                     frRows.forEach(function(fr) {
                       var p = frProfMap[fr.requester_id] || {};
                       var name = p.display_name || p.username || 'Someone';
-                      var uname = p.username || '';
-                      var avH = p.avatar_url ? '<img src="' + p.avatar_url + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : name.charAt(0).toUpperCase();
-                      var el = document.createElement('div');
-                      el.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);';
-                      el.innerHTML = '<div style="width:28px;height:28px;border-radius:50%;background:var(--bg4);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text2);border:1px solid rgba(245,158,11,0.4);">' + avH + '</div>'
+                      var avH = p.avatar_url ? '<img src="' + esc(p.avatar_url) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : esc(name.charAt(0).toUpperCase());
+                      frHtml += '<div class="ds-friend-req" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);">'
+                        + '<div style="width:28px;height:28px;border-radius:50%;background:var(--bg4);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text2);border:1px solid rgba(245,158,11,0.4);">' + avH + '</div>'
                         + '<div style="flex:1;min-width:0;">'
-                          + '<div style="font-size:12px;font-weight:700;color:#f59e0b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + name + ' sent you a friend request</div>'
+                          + '<div style="font-size:12px;font-weight:700;color:#f59e0b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(name) + ' sent you a friend request</div>'
                           + '<div style="font-size:10px;color:var(--text3);margin-top:1px;">Tap to view</div>'
                         + '</div>'
-                        + '<a href="friends.html" style="font-size:11px;font-weight:700;color:#f59e0b;text-decoration:none;white-space:nowrap;border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:3px 8px;">View</a>';
-                      frag.appendChild(el);
+                        + '<a href="friends.html" style="font-size:11px;font-weight:700;color:#f59e0b;text-decoration:none;white-space:nowrap;border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:3px 8px;">View</a>'
+                        + '</div>';
                     });
-                    // Prepend friend requests before existing content
-                    artistFeed.insertBefore(frag, artistFeed.firstChild);
+                    _dsFriendReqHtml = frHtml;
+                    dsApplyFriendReqs();
                   }
                 }
               }
