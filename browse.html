@@ -176,6 +176,15 @@
       if (myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any') q = q.eq('language', myLangPrefs.pref_language);
       return q;
     }
+    function ratingStarsHtml(w) {
+      var r = parseFloat(w.rating) || 0;
+      if (r <= 0) return '';
+      var full = Math.floor(r), half = (r - full) >= 0.5, html = '';
+      for (var i = 0; i < 5; i++) {
+        html += '<i class="ti ' + (i < full ? 'ti-star-filled' : (i === full && half ? 'ti-star-half-filled' : 'ti-star')) + '"></i>';
+      }
+      return '<div class="card-rating" style="display:flex;align-items:center;gap:2px;color:var(--gold);font-size:11px;margin:2px 0 1px;">' + html + '<span style="color:var(--text3);margin-left:4px;font-size:10px;">' + r.toFixed(1) + '</span></div>';
+    }
     function contentWarningBadge(w) {
       var warnGore = w.content_rating_gore && (myContentFilters.safe || !myContentFilters.gore);
       var warnErotica = w.content_rating_erotica && (myContentFilters.safe || !myContentFilters.erotica);
@@ -198,6 +207,7 @@
         + '<div class="result-cover" style="background:' + color + ';">' + coverHtml + '</div>'
         + '<div class="result-body">'
         + '<div class="result-title">' + esc(w.title) + contentWarningBadge(w) + '</div>'
+        + ratingStarsHtml(w)
         + '<div class="result-sub">by <span class="result-author-link" onclick="event.preventDefault();event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'">' + esc(author) + '</span>' + (w.created_at ? ' · <i class="ti ti-clock" style="font-size:10px;"></i> ' + timeAgo(w.created_at) : '') + '</div>'
         + '<div class="result-sub" style="margin-top:1px;">'
           + (w.chapters_count ? '<i class="ti ti-book" style="font-size:10px;"></i> ' + w.chapters_count + ' ch' : '')
@@ -255,13 +265,14 @@
         + '<div class="list-row-thumb" style="background:' + color + ';">' + coverHtml + '</div>'
         + '<div class="list-row-body">'
         + '<div class="list-row-title">' + esc(w.title) + contentWarningBadge(w) + '</div>'
+        + ratingStarsHtml(w)
         + (tagHtml ? '<div class="list-row-tags">' + tagHtml + '</div>' : '')
         + (w.synopsis ? '<div class="list-row-synopsis">' + esc(w.synopsis) + '</div>' : '')
         + '</div>'
         + '<div class="list-row-meta">'
           + (w.chapters_count ? '<span><i class="ti ti-book" style="font-size:10px;"></i> ' + w.chapters_count + ' ch</span><br>' : '')
           + (w.status ? '<span style="color:' + (w.status==='completed'?'var(--green)':'var(--accent)') + ';font-weight:700;text-transform:uppercase;font-size:10px;">' + (w.status==='completed'?'Complete':'Ongoing') + '</span><br>' : '')
-          + '<a href="profile.html?user=' + esc(authorHandle) + '" onclick="event.stopPropagation()">' + esc(author) + '</a>'
+          + '<span style="cursor:pointer;text-decoration:underline;" onclick="event.preventDefault();event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'">' + esc(author) + '</span>'
           + (w.created_at ? '<br>' + timeAgo(w.created_at) : '')
         + '</div></a>';
     }
@@ -309,7 +320,7 @@
 
     async function fetchPage() {
       if (section === 'new-novels' || section === 'featured-novels') {
-        var q = db.from('works').select('id,title,cover_url,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,chapters_count,status', { count: 'exact' })
+        var q = db.from('works').select('id,title,cover_url,rating,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,chapters_count,status', { count: 'exact' })
           .eq('type','novel').eq('is_published',true);
         q = applyContentFilters(q); q = applyLanguageFilters(q);
         q = q.order(section === 'new-novels' ? 'created_at' : 'rating', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
@@ -324,7 +335,7 @@
         };
       }
       if (section === 'new-art' || section === 'featured-art') {
-        var q2 = db.from('works').select('id,title,cover_url,synopsis,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at', { count: 'exact' })
+        var q2 = db.from('works').select('id,title,cover_url,rating,synopsis,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at', { count: 'exact' })
           .eq('type','artwork').eq('is_published',true);
         q2 = applyContentFilters(q2);
         q2 = q2.order(section === 'new-art' ? 'created_at' : 'rating', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
@@ -365,7 +376,7 @@
       if (section === 'followed-art') {
         var authorIds = await getFollowedAuthorIds();
         if (!authorIds.length) return { items: [], count: 0, html: [], grid: 'artwork-grid' };
-        var artQ = db.from('works').select('id,title,cover_url,synopsis,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at', { count: 'exact' })
+        var artQ = db.from('works').select('id,title,cover_url,rating,synopsis,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at', { count: 'exact' })
           .eq('type','artwork').eq('is_published',true).in('author_id', authorIds)
           .order('created_at',{ascending:false}).range(offset, offset + PAGE_SIZE - 1);
         var artRes = await artQ;

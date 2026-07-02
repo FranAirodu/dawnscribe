@@ -1150,7 +1150,7 @@
       var reviewsEl = document.getElementById('reviews-content');
 
       // Load existing reviews
-      var result = await db.from('reviews').select('id,rating,content,created_at,user_id').eq('work_id', workData.id).order('created_at', { ascending: false });
+      var result = await db.from('reviews').select('id,rating,content,created_at,updated_at,user_id').eq('work_id', workData.id).order('created_at', { ascending: false });
       var reviews = (result.data || []);
       if(reviews.length){ var rvIds=[...new Set(reviews.map(function(r){return r.user_id;}))]; var {data:rvPs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',rvIds); var rvMap={};(rvPs||[]).forEach(function(p){rvMap[p.id]=p;}); reviews.forEach(function(r){r.profiles=rvMap[r.user_id]||null;}); }
       document.getElementById('review-count').textContent = '(' + reviews.length + ')';
@@ -1171,18 +1171,30 @@
       if (currentSession) {
         if (canReview) {
           var alreadyReviewed = reviews.find(function(r){ return r.user_id === currentSession.user.id; });
-          if (!alreadyReviewed) {
+          if (alreadyReviewed && !editingReviewId) {
+            reviewsEl.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">' +
+              '<button type="button" class="review-submit" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);" onclick="startEditReview(\'' + alreadyReviewed.id + '\', ' + alreadyReviewed.rating + ')"><i class="ti ti-pencil"></i> Edit your review</button>' +
+              '</div>';
+          }
+          if (!alreadyReviewed || editingReviewId) {
             var formHtml = '<div class="review-form">' +
               '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">Leave a Review</div>' +
               '<div class="stars-row" id="stars-row"></div>' +
               '<textarea class="review-textarea" id="review-textarea" placeholder="Share your thoughts on this story…" maxlength="2000"></textarea>' +
               '<div style="display:flex;gap:8px;margin-top:8px;">' +
                 '<button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById(\'review-textarea\'))"><i class="ti ti-eye-off"></i> Spoiler</button>' +
-                '<button class="review-submit" onclick="submitReview()"><i class="ti ti-send"></i> Submit Review</button>' +
+                '<button class="review-submit" onclick="submitReview()"><i class="ti ti-send"></i> ' + (editingReviewId ? 'Update Review' : 'Submit Review') + '</button>' +
+                (editingReviewId ? '<button type="button" class="review-submit" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);" onclick="cancelEditReview()">Cancel</button>' : '') +
               '</div>' +
               '</div>';
             reviewsEl.innerHTML = formHtml;
-            renderStars(0);
+            if (editingReviewId) {
+              var mine = reviews.find(function(r){ return r.id === editingReviewId; });
+              document.getElementById('review-textarea').value = (mine && mine.content) || '';
+              renderStars(mine ? mine.rating : 0);
+            } else {
+              renderStars(0);
+            }
           }
         } else {
           reviewsEl.innerHTML = '<div class="review-lock">' +
@@ -1211,7 +1223,7 @@
               '<div class="review-avatar">' + (p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
               '<div style="flex:1;">' +
                 '<div class="review-name">' + escHtml(p.display_name || p.username || 'User') + '</div>' +
-                '<div class="review-date">' + timeAgo(r.created_at) + '</div>' +
+                '<div class="review-date">' + timeAgo(r.created_at) + (r.updated_at ? ' <span style="opacity:0.7;">(edited)</span>' : '') + '</div>' +
               '</div>' +
               '<div class="review-stars">' + stars + '</div>' +
             '</div>' +
@@ -1236,17 +1248,34 @@
       row.addEventListener('mouseleave', function(){ renderStars(selectedRating); });
     }
 
+    var editingReviewId = null;
+    function startEditReview(reviewId, rating) {
+      editingReviewId = reviewId;
+      loadReviews();
+    }
+    function cancelEditReview() {
+      editingReviewId = null;
+      loadReviews();
+    }
     async function submitReview() {
       if (!selectedRating) { showToast('Please select a star rating', 'ti-alert-triangle'); return; }
       var content = document.getElementById('review-textarea').value.trim();
-      var result = await db.from('reviews').insert({
-        work_id: workData.id,
-        user_id: currentSession.user.id,
-        rating: selectedRating,
-        content: content || null
-      });
+      var result;
+      if (editingReviewId) {
+        result = await db.from('reviews')
+          .update({ rating: selectedRating, content: content || null, updated_at: new Date().toISOString() })
+          .eq('id', editingReviewId).eq('user_id', currentSession.user.id);
+      } else {
+        result = await db.from('reviews').insert({
+          work_id: workData.id,
+          user_id: currentSession.user.id,
+          rating: selectedRating,
+          content: content || null
+        });
+      }
       if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
-      showToast('Review posted!');
+      showToast(editingReviewId ? 'Review updated!' : 'Review posted!');
+      editingReviewId = null;
       // Critic (first review) + Reviewer (tiered) badges
       try {
         var { data: badgeRes } = await db.rpc('award_review_badges', { p_user_id: currentSession.user.id });
@@ -1335,6 +1364,21 @@
 
       var sessionRes = await db.auth.getSession();
       currentSession = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+
+      // Sync reading progress from Supabase (same as chapter.html) so the
+      // review/offering gates work on new devices or after cleared storage
+      if (currentSession) {
+        try {
+          var { data: rpSync } = await db.from('reading_progress')
+            .select('chapter_id').eq('user_id', currentSession.user.id)
+            .eq('work_id', workId).eq('completed', true);
+          if (rpSync && rpSync.length) {
+            if (!readProgress[workId]) readProgress[workId] = {};
+            rpSync.forEach(function(r){ readProgress[workId][r.chapter_id] = true; });
+            localStorage.setItem('ds_reading_progress', JSON.stringify(readProgress));
+          }
+        } catch(e) {}
+      }
 
       // Load work
       var workResult = await db.from('works').select('*').eq('id', workId).maybeSingle();
