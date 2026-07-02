@@ -428,12 +428,13 @@
     if (!status) return;
     if (status === 'success') {
       showToast('Payment received! Quills are on their way — refreshing balance...', 'ti-check');
-      // Webhook may take a moment to land; poll the balance a couple times
+      // Webhook may take a moment to land; poll the balance until it changes
+      const baseline = userQuills;
       let attempts = 0;
       const poll = setInterval(async () => {
         attempts++;
         await loadCurrencies();
-        if (attempts >= 4) clearInterval(poll);
+        if (userQuills > baseline || attempts >= 4) clearInterval(poll);
       }, 1500);
     } else if (status === 'cancelled') {
       showToast('Checkout cancelled — no charge was made.', 'ti-x');
@@ -547,7 +548,9 @@
 
     if (!filtered.length) {
       grid.innerHTML = activeFilter === 'owned'
-        ? '<div class="empty-state"><i class="ti ti-scroll"></i><p>You haven\'t unlocked any Scrolls yet.<br>Browse above to find one you love!</p></div>'
+        ? (currentUser
+            ? '<div class="empty-state"><i class="ti ti-scroll"></i><p>You haven\'t unlocked any Scrolls yet.<br>Browse above to find one you love!</p></div>'
+            : '<div class="empty-state"><i class="ti ti-login"></i><p><a href="auth.html" style="color:var(--accent);text-decoration:underline;">Sign in</a> to see your unlocked Scrolls.</p></div>')
         : '<div class="empty-state"><i class="ti ti-scroll"></i><p>No scrolls here yet — check back soon!</p></div>';
       return;
     }
@@ -560,7 +563,7 @@
     const itemCount = s.scroll_items?.[0]?.count ?? 0;
     const typeClass = { official: 'type-official', novel: 'type-novel', artist: 'type-artist' }[s.type] || 'type-official';
     const typeLabel = { official: '✦ Official', novel: '📖 Novel', artist: '🎨 Artist' }[s.type] || 'Official';
-    const bannerStyle = s.banner_url ? `<img src="${esc(s.banner_url)}" alt="">` : `<div class="scroll-banner-placeholder">${s.banner_emoji || '📜'}</div>`;
+    const bannerStyle = s.banner_url ? `<img src="${esc(s.banner_url)}" alt="">` : `<div class="scroll-banner-placeholder">${esc(s.banner_emoji) || '📜'}</div>`;
 
     return `
       <div class="scroll-card${owned ? ' owned' : ''}${s.is_featured ? ' featured' : ''}${s.pending_approval ? ' pending' : ''}" onclick="openScroll('${s.id}')">
@@ -635,7 +638,7 @@
       const av = document.getElementById('modal-artist-avatar');
       av.innerHTML = scroll.artist_avatar_url ? `<img src="${esc(scroll.artist_avatar_url)}" alt="">` : esc((scroll.artist_display_name || scroll.artist_username || '?')[0].toUpperCase());
       document.getElementById('modal-artist-name').textContent = scroll.artist_display_name || scroll.artist_username;
-      document.getElementById('modal-artist-link').href = `profile.html?u=${esc(scroll.artist_username)}`;
+      document.getElementById('modal-artist-link').href = 'profile.html?u=' + encodeURIComponent(scroll.artist_username);
     } else {
       artistStrip.style.display = 'none';
     }
@@ -675,7 +678,7 @@
     document.getElementById('modal-items-grid').innerHTML = '<div class="loading-spinner" style="grid-column:1/-1;"><i class="ti ti-loader"></i></div>';
     document.getElementById('scroll-modal').classList.add('open');
 
-    const { data: items } = await db.from('scroll_items').select('*').eq('scroll_id', scroll.id).order('ember_price', { ascending: true });
+    const { data: items } = await db.from('scroll_items').select('*').eq('scroll_id', scroll.id).order('sort_order', { ascending: true }).order('ember_price', { ascending: true });
     renderModalItems(items || [], owned);
   }
 
@@ -698,7 +701,7 @@
       return `
         <div class="mitem${locked ? ' locked' : ''}">
           <div class="mitem-thumb">
-            ${item.image_url ? `<img src="${esc(item.image_url)}" alt="">` : `<span>${item.item_emoji || '🎁'}</span>`}
+            ${item.image_url ? `<img src="${esc(item.image_url)}" alt="">` : `<span>${esc(item.item_emoji) || '🎁'}</span>`}
             ${locked ? '<div class="mitem-lock-overlay"><i class="ti ti-lock"></i></div>' : ''}
           </div>
           <div class="mitem-body">
@@ -708,7 +711,7 @@
               <div class="mitem-price"><i class="ti ti-flame"></i> ${(item.ember_price||0).toLocaleString()}</div>
               <button class="mitem-buy-btn${owned ? ' owned' : ''}" 
                 ${locked || owned ? 'disabled' : ''}
-                onclick="${locked || owned ? '' : `purchaseItem('${item.id}', ${item.ember_price||0})`}">
+                onclick="${locked || owned ? '' : `purchaseItem('${item.id}', ${item.ember_price||0}, this)`}">
                 ${owned ? '<i class="ti ti-check"></i> Owned' : locked ? '<i class="ti ti-lock"></i> Locked' : '<i class="ti ti-flame"></i> Claim'}
               </button>
             </div>
@@ -754,7 +757,7 @@
 
       showToast('Scroll unlocked! Start claiming items with Embers.', 'ti-scroll');
       // Re-render items as unlocked
-      const { data: items } = await db.from('scroll_items').select('*').eq('scroll_id', scroll.id).order('ember_price', { ascending: true });
+      const { data: items } = await db.from('scroll_items').select('*').eq('scroll_id', scroll.id).order('sort_order', { ascending: true }).order('ember_price', { ascending: true });
       renderModalItems(items || [], true);
       btn.className = 'modal-unlock-btn already-owned';
       btn.innerHTML = '<i class="ti ti-check"></i> Already Unlocked';
@@ -775,14 +778,13 @@
   }
 
   // ── PURCHASE ITEM ─────────────────────────────────────────────
-  async function purchaseItem(itemId, emberPrice) {
-    if (!currentUser) return;
+  async function purchaseItem(itemId, emberPrice, btn) {
+    if (!currentUser || !btn) return;
     if (userEmbers < emberPrice) {
       showToast('Not enough Embers! Keep reading to earn more.', 'ti-flame', true);
       return;
     }
 
-    const btn = event.currentTarget;
     btn.disabled = true;
     btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i>';
 
@@ -808,7 +810,13 @@
       document.getElementById('modal-owned-count').textContent = `(${ownedNow}/${all.length} collected)`;
     } catch(e) {
       console.error(e);
-      showToast('Purchase failed. Please try again.', 'ti-alert-triangle', true);
+      const msg = (e && e.message) || '';
+      const friendly = msg === 'Insufficient embers' ? 'Not enough Embers! Keep reading to earn more.'
+        : msg === 'Already owned' ? 'You already own this item.'
+        : msg === 'Scroll not unlocked' ? 'Unlock this Scroll first to claim its items.'
+        : 'Purchase failed. Please try again.';
+      showToast(friendly, 'ti-alert-triangle', true);
+      if (msg === 'Insufficient embers') loadCurrencies(); // balance was stale — resync
       btn.disabled = false;
       btn.innerHTML = '<i class="ti ti-flame"></i> Claim';
     }
@@ -860,7 +868,7 @@
     }
     const originalHtml = btnEl.innerHTML;
     btnEl.disabled = true;
-    btnEl.innerHTML = '<i class="ti ti-loader"></i> Redirecting...';
+    btnEl.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Redirecting...';
     try {
       const { data: { session } } = await db.auth.getSession();
       if (!session) {
