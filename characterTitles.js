@@ -593,16 +593,17 @@ window.CharacterTitles = (function() {
 
     var voteCounts = await loadWorkVoteCounts(workId);
 
-    var { data: collabs } = await db().from('artwork_collabs')
-      .select('id, artwork_id, character_name, works(id, cover_url, title)')
-      .eq('novel_id', workId)
-      .eq('status', 'approved');
+    // NOTE: artwork_collabs lost its novel_id/character_name columns in the
+    // collab system rebuild, so per-character art matching is disabled until
+    // the schema grows a character link. Query kept schema-valid to avoid 400s.
     var collabsByChar = {};
-    (collabs||[]).forEach(function(c){
-      var key = (c.character_name||'').toLowerCase().trim();
-      if (!collabsByChar[key]) collabsByChar[key] = [];
-      collabsByChar[key].push(c);
-    });
+    try {
+      var { data: collabs } = await db().from('artwork_collabs')
+        .select('id, artwork_id, work_id, status')
+        .eq('work_id', workId)
+        .eq('status', 'approved');
+      // No character association available — collabsByChar stays empty.
+    } catch(e) {}
 
     // Load aura votes
     var charIds = chars.map(function(c){ return c.id; });

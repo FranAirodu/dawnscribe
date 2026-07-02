@@ -1165,19 +1165,23 @@
         document.getElementById('rating-count').textContent = 'No reviews yet';
       }
 
-      reviewsEl.innerHTML = '';
+      // Build ALL of the section's HTML first, assign once, and only then
+      // attach star listeners — 'innerHTML +=' re-parses the container and
+      // silently destroys any listeners attached before it.
+      var html = '';
+      var showForm = false;
 
-      // Review form
       if (currentSession) {
         if (canReview) {
           var alreadyReviewed = reviews.find(function(r){ return r.user_id === currentSession.user.id; });
           if (alreadyReviewed && !editingReviewId) {
-            reviewsEl.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">' +
+            html += '<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">' +
               '<button type="button" class="review-submit" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);" onclick="startEditReview(\'' + alreadyReviewed.id + '\', ' + alreadyReviewed.rating + ')"><i class="ti ti-pencil"></i> Edit your review</button>' +
               '</div>';
           }
           if (!alreadyReviewed || editingReviewId) {
-            var formHtml = '<div class="review-form">' +
+            showForm = true;
+            html += '<div class="review-form">' +
               '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">Leave a Review</div>' +
               '<div class="stars-row" id="stars-row"></div>' +
               '<textarea class="review-textarea" id="review-textarea" placeholder="Share your thoughts on this story…" maxlength="2000"></textarea>' +
@@ -1187,24 +1191,16 @@
                 (editingReviewId ? '<button type="button" class="review-submit" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);" onclick="cancelEditReview()">Cancel</button>' : '') +
               '</div>' +
               '</div>';
-            reviewsEl.innerHTML = formHtml;
-            if (editingReviewId) {
-              var mine = reviews.find(function(r){ return r.id === editingReviewId; });
-              document.getElementById('review-textarea').value = (mine && mine.content) || '';
-              renderStars(mine ? mine.rating : 0);
-            } else {
-              renderStars(0);
-            }
           }
         } else {
-          reviewsEl.innerHTML = '<div class="review-lock">' +
+          html += '<div class="review-lock">' +
             '<i class="ti ti-lock"></i>' +
             '<p>Read 5 chapters to unlock reviews</p>' +
             '<small>You\'ve read ' + chaptersRead + '/5 chapters</small>' +
             '</div>';
         }
       } else {
-        reviewsEl.innerHTML = '<div class="review-lock">' +
+        html += '<div class="review-lock">' +
           '<i class="ti ti-lock"></i>' +
           '<p><a href="auth.html" style="color:var(--accent);">Sign in</a> and read 5 chapters to leave a review</p>' +
           '</div>';
@@ -1212,13 +1208,13 @@
 
       // Existing reviews
       if (!reviews.length) {
-        reviewsEl.innerHTML += '<div class="empty-state"><i class="ti ti-star-off"></i>No reviews yet — be the first!</div>';
+        html += '<div class="empty-state"><i class="ti ti-star-off"></i>No reviews yet — be the first!</div>';
       } else {
         reviews.forEach(function(r) {
           var p = r.profiles || {};
           var stars = '';
           for (var i = 1; i <= 5; i++) stars += '<span class="review-star">' + (i <= r.rating ? '★' : '☆') + '</span>';
-          reviewsEl.innerHTML += '<div class="review-card">' +
+          html += '<div class="review-card">' +
             '<div class="review-header">' +
               '<div class="review-avatar">' + (p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
               '<div style="flex:1;">' +
@@ -1231,21 +1227,44 @@
             '</div>';
         });
       }
+
+      reviewsEl.innerHTML = html;
+
+      if (showForm) {
+        if (editingReviewId) {
+          var mine = reviews.find(function(r){ return r.id === editingReviewId; });
+          document.getElementById('review-textarea').value = (mine && mine.content) || '';
+          renderStars(mine ? mine.rating : 0);
+        } else {
+          renderStars(0);
+        }
+      }
     }
 
     function renderStars(rating) {
       selectedRating = rating;
       var row = document.getElementById('stars-row');
       if (!row) return;
+      // Paint by toggling classes only — never rebuild the DOM on hover,
+      // or the element under the cursor is destroyed mid-click.
+      function paint(n) {
+        for (var j = 0; j < row.children.length; j++) {
+          row.children[j].className = 'star' + (j < n ? ' filled' : '');
+        }
+      }
       row.innerHTML = '';
       for (var i = 1; i <= 5; i++) {
         var star = document.createElement('span');
         star.className = 'star' + (i <= rating ? ' filled' : '');
         star.textContent = '★';
-        (function(val){ star.addEventListener('click', function(){ renderStars(val); }); star.addEventListener('mouseover', function(){ renderStars(val); }); })(i);
+        star.style.userSelect = 'none';
+        (function(val){
+          star.addEventListener('click', function(){ selectedRating = val; paint(val); });
+          star.addEventListener('mouseover', function(){ paint(val); });
+        })(i);
         row.appendChild(star);
       }
-      row.addEventListener('mouseleave', function(){ renderStars(selectedRating); });
+      row.onmouseleave = function(){ paint(selectedRating); };
     }
 
     var editingReviewId = null;
