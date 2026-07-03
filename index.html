@@ -1510,6 +1510,12 @@
           .order('updated_at', { ascending: false })
           .limit(20);
         if (!res.data || !res.data.length) { section.style.display = 'none'; return; }
+        // One card per work: rows are newest-first, keep first occurrence
+        var seenRH = new Set();
+        res.data = res.data.filter(function(r){
+          if (seenRH.has(r.work_id)) return false;
+          seenRH.add(r.work_id); return true;
+        });
         var workIds = [...new Set(res.data.map(function(r){ return r.work_id; }))];
         var worksRes = await db.from('works').select('id,title,cover_url,author_id,chapters_count,content_rating_gore,content_rating_erotica').in('id', workIds).eq('is_published', true);
         var workMap = {};
@@ -1953,6 +1959,12 @@
             });
             chapData.forEach(function(ch){ch.works=r0Map[ch.work_id]||null; ch.readerChapter=r0ProgMap[ch.work_id]||null; var w=r0Map[ch.work_id]; ch.authorProf=w?r0ProfMap[w.author_id]||null:null;});
             chapData = chapData.filter(function(ch){ return !ch.works || !isHiddenAuthor(ch.works.author_id); });
+            // One card per work: chapData is newest-first, keep first occurrence
+            var seenR0 = new Set();
+            chapData = chapData.filter(function(ch){
+              if (seenR0.has(ch.work_id)) return false;
+              seenR0.add(ch.work_id); return true;
+            });
           }
           renderCoverRow(row0track, chapData, function(ch){
             var w=ch.works;
@@ -2247,6 +2259,7 @@
         var card = document.createElement('a');
         card.className = 'cover-card' + (mapped.isCollab ? ' is-collab' : '');
         card.href = mapped.href;
+        if (mapped.id) card.dataset.workId = mapped.id;
 
         // Cover image
         var cover = document.createElement('div');
@@ -2405,6 +2418,7 @@
         a.className = 'cover-card';
         a.href = href;
         a.title = work.title || '';
+        if (work.id) a.dataset.workId = work.id;
         var c = document.createElement('div');
         c.className = 'mini-cover ' + coverColor(work.id);
         if(work.cover_url){
@@ -2472,6 +2486,12 @@
             if(!fwRes.data) return;
             var workRes = await db.from('works').select('id,title,cover_url').eq('id',ch.work_id).maybeSingle();
             if(!workRes.data) return;
+            // One card per work: drop any existing card for this work first
+            var track0 = document.getElementById('track-0');
+            if (track0) {
+              var existing0 = track0.querySelector('[data-work-id="'+ch.work_id+'"]');
+              if (existing0) existing0.remove();
+            }
             prependCover('track-0', workRes.data, 'chapter.html?id='+ch.id);
             loadSidebarUpdates();
           })
