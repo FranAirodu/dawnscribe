@@ -92,6 +92,29 @@
     .offering-tier-badge.blazing{background:rgba(234,88,12,0.12);border:1px solid rgba(234,88,12,0.35);color:#ea580c;}
     .offering-tier-badge.inferno{background:rgba(194,65,12,0.14);border:1px solid rgba(194,65,12,0.4);color:#c2410c;}
     .offering-tier-badge.none{background:rgba(251,146,60,0.05);border:1px solid rgba(251,146,60,0.18);color:rgba(251,146,60,0.8);}
+    .btn-spark{background:transparent;border:1px solid rgba(240,192,64,0.4);border-radius:9px;padding:9px 16px;color:#f0c040;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .btn-spark:hover{border-color:#f0c040;background:rgba(240,192,64,0.08);}
+    .btn-spark:disabled{opacity:0.5;cursor:default;}
+    .btn-rally{background:transparent;border:1px solid rgba(45,212,191,0.35);border-radius:9px;padding:9px 16px;color:#2dd4bf;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .btn-rally:hover{border-color:#2dd4bf;background:rgba(45,212,191,0.08);}
+    .btn-rally:disabled{opacity:0.5;cursor:default;}
+    .rally-count-line{font-size:12px;color:var(--text2);margin-top:6px;display:flex;align-items:center;gap:6px;}
+    .flame-counter{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px;background:rgba(240,192,64,0.08);border:1px solid rgba(240,192,64,0.35);color:#f0c040;}
+    .btn-flame-give{background:linear-gradient(135deg,rgba(240,192,64,0.15),rgba(240,192,64,0.05));border:1px solid #f0c040;border-radius:20px;padding:5px 14px;color:#f0c040;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;margin-top:8px;margin-left:8px;transition:all 0.2s;}
+    .btn-flame-give:hover{background:rgba(240,192,64,0.2);}
+    .top-fan-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+    .top-fan-row:last-child{border-bottom:none;}
+    .top-fan-rank{width:26px;text-align:center;font-size:14px;font-weight:700;color:var(--text2);}
+    .top-fan-avatar{width:32px;height:32px;border-radius:50%;overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center;color:var(--text3);flex-shrink:0;}
+    .top-fan-avatar img{width:100%;height:100%;object-fit:cover;}
+    .top-fan-name{cursor:pointer;font-weight:700;font-size:13px;color:var(--text);}
+    .top-fan-name:hover{color:var(--accent);}
+    .top-fan-stats{margin-left:auto;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px;}
+    .streak-flair{font-size:10px;margin-left:6px;padding:1px 6px;border-radius:8px;background:var(--bg3);font-weight:700;vertical-align:middle;}
+    .streak-flair.gray{color:var(--text3);}
+    .streak-flair.orange{color:#fb923c;}
+    .streak-flair.red{color:#ef4444;}
+    .streak-flair.gold{color:#f0c040;}
 
     /* MAIN CONTENT */
     .story-body{max-width:1000px;margin:0 auto;padding:24px 24px 80px;display:grid;grid-template-columns:1fr 300px;gap:24px;}
@@ -392,6 +415,8 @@
           <button class="btn-offering" id="offering-btn" onclick="submitOffering()">🔥 Offer</button>
         </div>
         <div id="offering-tier-wrap"></div>
+        <div id="spark-rally-wrap" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;"></div>
+        <div id="flame-counter-wrap"></div>
       </div>
     </div>
   </div>
@@ -482,6 +507,12 @@
       <div class="echoes-section" id="echoes-section" style="display:none;">
         <div class="section-title" style="font-family:'Cinzel',serif;font-size:14px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:0.5px;">🔮 Reader Echoes</div>
         <div class="echoes-grid" id="echoes-grid"></div>
+      </div>
+
+      <!-- TOP FANS -->
+      <div class="section" id="top-fans-section" style="display:none;">
+        <div class="section-title"><i class="ti ti-crown"></i> Top Fans</div>
+        <div id="top-fans-content"></div>
       </div>
 
       <!-- REVIEWS -->
@@ -1123,6 +1154,188 @@
       wrap.innerHTML = '<div class="offering-tier-badge ' + tier + '" title="Total Embers offered: ' + offeringState.count + '">' + label + ' · ' + offeringState.count + ' offering' + (offeringState.count !== 1 ? 's' : '') + '</div>';
     }
 
+    // ─ ─ SPARK OF DAWN / RALLIES / CELESTIAL FLAMES ───────
+    var engageState = { sparkWeek: 0, sparkTotal: 0, sparkedToday: false, flameCount: 0, myFlames: 0, freeSparks: 0, activeRallies: 0, iAmRallying: false };
+
+    async function loadEngagementState() {
+      engageState.sparkWeek  = workData.spark_count_week || 0;
+      engageState.sparkTotal = workData.spark_count_total || 0;
+      engageState.flameCount = workData.celestial_flame_count || 0;
+      try {
+        var rc = await db.from('chapter_rallies').select('id,user_id').eq('work_id', workData.id).is('fulfilled_at', null);
+        var rows = rc.data || [];
+        engageState.activeRallies = rows.length;
+        if (currentSession) engageState.iAmRallying = rows.some(function(r){ return r.user_id === currentSession.user.id; });
+      } catch(e) {}
+      if (!currentSession) return;
+      var uid = currentSession.user.id;
+      if (uid === workData.author_id) return;
+      try {
+        var today = new Date().toISOString().slice(0, 10);
+        var sp = await db.from('dawn_sparks').select('id').eq('work_id', workData.id).eq('user_id', uid).eq('spark_date', today).maybeSingle();
+        engageState.sparkedToday = !!(sp.data);
+      } catch(e) {}
+      try {
+        var fl = await db.from('user_celestial_flames').select('balance').eq('user_id', uid).maybeSingle();
+        engageState.myFlames = (fl.data && fl.data.balance) || 0;
+      } catch(e) {}
+      try {
+        var st = await db.from('user_streaks').select('free_sparks').eq('user_id', uid).maybeSingle();
+        engageState.freeSparks = (st.data && st.data.free_sparks) || 0;
+      } catch(e) {}
+    }
+
+    function renderEngagement() {
+      var wrap = document.getElementById('spark-rally-wrap');
+      if (!wrap) return;
+      var isOwner = currentSession && currentSession.user.id === workData.author_id;
+      var html = '';
+      if (currentSession && !isOwner) {
+        if (engageState.sparkedToday) {
+          html += '<button class="btn-spark" disabled title="You can spark this novel again tomorrow."><i class="ti ti-bolt"></i> Sparked today · ' + engageState.sparkWeek + ' this week</button>';
+        } else {
+          var costNote = engageState.freeSparks > 0 ? '(free ×' + engageState.freeSparks + ')' : '(2 🔥)';
+          html += '<button class="btn-spark" onclick="submitSpark()" title="Spark of Dawn — once per day per novel. Boosts this novel in the weekly Dawn Ranking."><i class="ti ti-bolt"></i> Spark of Dawn <span style="font-size:11px;font-weight:400;opacity:0.75;">' + costNote + '</span></button>';
+        }
+      } else if (engageState.sparkWeek > 0) {
+        html += '<div class="rally-count-line"><i class="ti ti-bolt" style="color:#f0c040;"></i> ' + engageState.sparkWeek + ' Spark' + (engageState.sparkWeek !== 1 ? 's' : '') + ' of Dawn this week</div>';
+      }
+      if (currentSession && !isOwner) {
+        if (engageState.iAmRallying) {
+          html += '<button class="btn-rally" disabled title="You\u2019re rallying! You\u2019ll be notified when a new chapter drops."><i class="ti ti-megaphone"></i> Rallying (' + engageState.activeRallies + ')</button>';
+        } else {
+          html += '<button class="btn-rally" onclick="submitRally()" title="Rally for a new chapter — 1 Ember. The author sees the demand and you\u2019re notified when they answer."><i class="ti ti-megaphone"></i> Rally for a Chapter (' + engageState.activeRallies + ')</button>';
+        }
+      } else if (engageState.activeRallies > 0) {
+        html += '<div class="rally-count-line"><i class="ti ti-megaphone" style="color:#2dd4bf;"></i> ' + engageState.activeRallies + ' reader' + (engageState.activeRallies !== 1 ? 's are' : ' is') + ' rallying for a new chapter!</div>';
+      }
+      wrap.innerHTML = html;
+    }
+
+    function renderFlameCounter() {
+      var wrap = document.getElementById('flame-counter-wrap');
+      if (!wrap) return;
+      var isOwner = currentSession && currentSession.user.id === workData.author_id;
+      var html = '<div class="flame-counter" title="Celestial Flames — a rare honor bestowed by devoted readers"><i class="ti ti-flare"></i> ' + engageState.flameCount + ' Celestial Flame' + (engageState.flameCount !== 1 ? 's' : '') + '</div>';
+      if (currentSession && !isOwner && engageState.myFlames > 0) {
+        html += '<button class="btn-flame-give" onclick="submitFlame()" title="Bestow one of your ' + engageState.myFlames + ' Celestial Flame(s) on this novel"><i class="ti ti-flare"></i> Give a Flame (' + engageState.myFlames + ')</button>';
+      }
+      wrap.innerHTML = html;
+    }
+
+    async function submitSpark() {
+      if (!currentSession) { window.location.href = 'auth.html'; return; }
+      try {
+        var { data, error } = await db.rpc('spark_novel', { p_work_id: workData.id });
+        if (error || !data || !data.success) {
+          var msg = (data && data.error) || (error && error.message) || 'Could not spark';
+          var friendly = {
+            insufficient_embers: 'You need 2 Embers to spark. Read chapters to earn more!',
+            already_sparked_today: 'You\u2019ve already sparked this novel today.',
+            own_work: 'You can\u2019t spark your own novel.',
+            not_authenticated: 'Please sign in first.',
+            work_not_found: 'This work can\u2019t be sparked.'
+          }[msg] || msg;
+          showToast(friendly, 'ti-x');
+          return;
+        }
+        engageState.sparkedToday = true;
+        engageState.sparkWeek = data.spark_count_week;
+        engageState.sparkTotal = data.spark_count_total;
+        engageState.freeSparks = data.free_sparks_left || 0;
+        showToast(data.was_free ? 'Sparked with a free Spark! ⚡' : 'Spark of Dawn given! ⚡', 'ti-bolt');
+        renderEngagement();
+        loadTopFans();
+      } catch(e) { showToast('Error sparking.', 'ti-x'); }
+    }
+
+    async function submitRally() {
+      if (!currentSession) { window.location.href = 'auth.html'; return; }
+      try {
+        var { data, error } = await db.rpc('rally_chapter', { p_work_id: workData.id });
+        if (error || !data || !data.success) {
+          var msg = (data && data.error) || (error && error.message) || 'Could not rally';
+          var friendly = {
+            insufficient_embers: 'You need 1 Ember to rally.',
+            already_rallying: 'You\u2019re already rallying for this story\u2019s next chapter.',
+            own_work: 'You can\u2019t rally for your own novel — go write that chapter! ✍️',
+            not_authenticated: 'Please sign in first.',
+            work_not_found: 'This work can\u2019t be rallied.'
+          }[msg] || msg;
+          showToast(friendly, 'ti-x');
+          return;
+        }
+        engageState.iAmRallying = true;
+        engageState.activeRallies = data.active_rallies;
+        showToast('Rally raised! The author will see the call. 📣', 'ti-megaphone');
+        renderEngagement();
+        loadTopFans();
+      } catch(e) { showToast('Error rallying.', 'ti-x'); }
+    }
+
+    async function submitFlame() {
+      if (!currentSession) { window.location.href = 'auth.html'; return; }
+      try {
+        var { data, error } = await db.rpc('give_celestial_flame', { p_work_id: workData.id });
+        if (error || !data || !data.success) {
+          var msg = (data && data.error) || (error && error.message) || 'Could not give flame';
+          var friendly = {
+            no_flames: 'You have no Celestial Flames to give.',
+            own_work: 'You can\u2019t bestow a Flame on your own novel.',
+            not_authenticated: 'Please sign in first.',
+            work_not_found: 'This work can\u2019t receive a Flame.'
+          }[msg] || msg;
+          showToast(friendly, 'ti-x');
+          return;
+        }
+        engageState.flameCount = data.celestial_flame_count;
+        engageState.myFlames = data.balance;
+        showToast('Celestial Flame bestowed! ✨', 'ti-flare');
+        renderFlameCounter();
+        loadTopFans();
+      } catch(e) { showToast('Error giving flame.', 'ti-x'); }
+    }
+
+    async function loadTopFans() {
+      try {
+        var { data, error } = await db.rpc('get_work_top_fans', { p_work_id: workData.id, p_limit: 5 });
+        var fans = data || [];
+        var sec = document.getElementById('top-fans-section');
+        var el = document.getElementById('top-fans-content');
+        if (!sec || !el) return;
+        if (error || !fans.length) { sec.style.display = 'none'; return; }
+        var html = '';
+        fans.forEach(function(f, i) {
+          var name = escHtml(f.display_name || f.username || 'Reader');
+          var medal = i === 0 ? '👑' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : (i + 1) + '.'));
+          var statsTitle = f.offerings + ' offering(s), ' + f.sparks + ' spark(s), ' + f.rallies + ' rally(ies)';
+          html += '<div class="top-fan-row">' +
+            '<div class="top-fan-rank">' + medal + '</div>' +
+            '<div class="top-fan-avatar">' + (f.avatar_url ? '<img src="' + escHtml(f.avatar_url) + '" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+            '<span class="top-fan-name" onclick="window.location.href=\'profile.html?u=' + encodeURIComponent(f.username || '') + '\'">' + name + '</span>' +
+            '<div class="top-fan-stats" title="' + escHtml(statsTitle) + '">🔥 ' + f.embers_total +
+              (Number(f.flames) > 0 ? ' · <i class="ti ti-flare" style="color:#f0c040;"></i> ' + f.flames : '') +
+            '</div>' +
+          '</div>';
+        });
+        el.innerHTML = html;
+        sec.style.display = 'block';
+      } catch(e) {}
+    }
+
+    function streakFlair(s) {
+      if (!s || !s.last_checkin || !s.current_streak) return '';
+      var last = new Date(s.last_checkin + 'T00:00:00Z').getTime();
+      var now = new Date();
+      var todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      var diffDays = Math.round((todayUTC - last) / 86400000);
+      if (diffDays > 1) return '';
+      var n = s.current_streak;
+      if (n < 3) return '';
+      var cls = n >= 100 ? 'gold' : (n >= 30 ? 'red' : (n >= 7 ? 'orange' : 'gray'));
+      return '<span class="streak-flair ' + cls + '" title="' + n + '-day check-in streak">🔥' + n + '</span>';
+    }
+
     async function toggleFollowWork() {
       if (!currentSession) { window.location.href = 'auth.html'; return; }
       if (isFollowingWork) {
@@ -1156,7 +1369,9 @@
       // Load existing reviews
       var result = await db.from('reviews').select('id,rating,content,created_at,updated_at,user_id').eq('work_id', workData.id).order('created_at', { ascending: false });
       var reviews = (result.data || []);
-      if(reviews.length){ var rvIds=[...new Set(reviews.map(function(r){return r.user_id;}))]; var {data:rvPs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',rvIds); var rvMap={};(rvPs||[]).forEach(function(p){rvMap[p.id]=p;}); reviews.forEach(function(r){r.profiles=rvMap[r.user_id]||null;}); }
+      if(reviews.length){ var rvIds=[...new Set(reviews.map(function(r){return r.user_id;}))]; var {data:rvPs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',rvIds); var rvMap={};(rvPs||[]).forEach(function(p){rvMap[p.id]=p;}); reviews.forEach(function(r){r.profiles=rvMap[r.user_id]||null;});
+        try { var {data:rvSt}=await db.from('user_streaks').select('user_id,current_streak,last_checkin').in('user_id',rvIds); var stMap={};(rvSt||[]).forEach(function(s){stMap[s.user_id]=s;}); reviews.forEach(function(r){r._streak=streakFlair(stMap[r.user_id]);}); } catch(e){}
+      }
       document.getElementById('review-count').textContent = '(' + reviews.length + ')';
 
       // Rating summary
@@ -1223,7 +1438,7 @@
             '<div class="review-header">' +
               '<div class="review-avatar">' + (p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
               '<div style="flex:1;">' +
-                '<div class="review-name">' + escHtml(p.display_name || p.username || 'User') + '</div>' +
+                '<div class="review-name">' + escHtml(p.display_name || p.username || 'User') + (r._streak || '') + '</div>' +
                 '<div class="review-date">' + timeAgo(r.created_at) + (r.updated_at ? ' <span style="opacity:0.7;">(edited)</span>' : '') + '</div>' +
               '</div>' +
               '<div class="review-stars">' + stars + '</div>' +
@@ -1429,6 +1644,10 @@
       await loadOfferingState();
       renderActions();
       renderOfferingTierBadge();
+      await loadEngagementState();
+      renderEngagement();
+      renderFlameCounter();
+      loadTopFans();
       await loadReviews();
       await loadRecommendations();
       await loadCollabs();
