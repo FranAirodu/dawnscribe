@@ -108,9 +108,12 @@
     /* ── Daily Check-In (click-to-claim) ── */
     .checkin-btn { position: relative; display: none; align-items: center; justify-content: center; width: 38px; height: 38px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--gold); font-size: 18px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; }
     .checkin-btn:hover { border-color: var(--gold); transform: translateY(-1px); }
+    .checkin-btn.claimed { color: var(--text3); opacity: 0.55; }
+    .checkin-btn.claimed:hover { border-color: var(--border); transform: none; opacity: 0.8; }
     .checkin-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); display: none; animation: ds-ckPulse 1.8s infinite; }
     @keyframes ds-ckPulse { 0% { box-shadow: 0 0 0 0 rgba(245,197,66,0.6); } 70% { box-shadow: 0 0 0 7px rgba(245,197,66,0); } 100% { box-shadow: 0 0 0 0 rgba(245,197,66,0); } }
     html[data-theme="light"] .checkin-btn { background: #fdf6e0; border-color: rgba(200,150,20,0.35); color: #a16207; }
+    html[data-theme="light"] .checkin-btn.claimed { background: var(--bg3); border-color: var(--border); color: var(--text3); }
     .ck-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 3000; display: none; align-items: flex-start; justify-content: center; padding: 56px 16px 24px; overflow-y: auto; }
     .ck-overlay.open { display: flex; animation: ds-fadeDown 0.2s ease; }
     .ck-modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 560px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.45); }
@@ -1881,19 +1884,48 @@
         } catch(e) {}
       }
       window._dsContentFilters = myContentFilters; // realtime handlers read this
+
+      // Works the viewer is a collab participant on (approved artwork/story
+      // collabs where they're the artist, or listed coauthor). These are
+      // exempt from the viewer's OWN content filters, exactly like their own
+      // works — you co-made it, you get to see it. Other viewers' filters
+      // still apply to them normally.
+      var myCollabExemptIds = new Set();
+      if (uid) {
+        try {
+          // Story collabs: viewer is the artist on an approved piece → exempt the novel
+          var { data: scMine } = await db.from('story_collabs').select('work_id').eq('artist_id', uid).eq('status','approved');
+          (scMine||[]).forEach(function(r){ if(r.work_id) myCollabExemptIds.add(r.work_id); });
+          // Artwork collabs: viewer owns the artwork on an approved link → exempt the novel
+          var { data: acRows } = await db.from('artwork_collabs').select('artwork_id,work_id').eq('status','approved');
+          var acArtIds = [...new Set((acRows||[]).map(function(r){ return r.artwork_id; }).filter(Boolean))];
+          if (acArtIds.length) {
+            var { data: acOwned } = await db.from('works').select('id').in('id', acArtIds).eq('author_id', uid);
+            var mineArt = new Set((acOwned||[]).map(function(w){ return w.id; }));
+            (acRows||[]).forEach(function(r){ if(r.work_id && mineArt.has(r.artwork_id)) myCollabExemptIds.add(r.work_id); });
+          }
+          // Coauthored works
+          var { data: coRows } = await db.from('work_coauthors').select('work_id').eq('user_id', uid);
+          (coRows||[]).forEach(function(r){ if(r.work_id) myCollabExemptIds.add(r.work_id); });
+        } catch(e) {}
+      }
+      // PostgREST in-list fragment for the .or() clauses below ('' when none)
+      var collabExemptOr = myCollabExemptIds.size ? (',id.in.(' + [...myCollabExemptIds].join(',') + ')') : '';
+
       // safe=true means master "hide everything sensitive".
       // gore=true means "filter out gore". erotica=true means "filter out erotica".
       function applyContentFilters(q) {
         var blockGore    = myContentFilters.safe || myContentFilters.gore;
         var blockErotica = myContentFilters.safe || myContentFilters.erotica;
         // Always exempt the viewer's own works so authors can see their own content
-        // regardless of their content filter settings.
+        // regardless of their content filter settings. Works they collabed on
+        // (myCollabExemptIds) get the same treatment.
         if (blockGore) {
-          if (uid) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null,author_id.eq.' + uid);
+          if (uid) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null,author_id.eq.' + uid + collabExemptOr);
           else     q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
         }
         if (blockErotica) {
-          if (uid) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null,author_id.eq.' + uid);
+          if (uid) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null,author_id.eq.' + uid + collabExemptOr);
           else     q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
         }
         return q;
@@ -1974,6 +2006,7 @@
         var blockErotica = myContentFilters.safe || myContentFilters.erotica;
         var out = (items || []).filter(function(w){
           if (uid && w.author_id === uid) return true;
+          if (myCollabExemptIds.has(w.id)) return true; // viewer collabed on this work
           if (blockGore && w.content_rating_gore === true) return false;
           if (blockErotica && w.content_rating_erotica === true) return false;
           return true;
@@ -3342,6 +3375,13 @@
   function dsSetCheckinDot(show) {
     var dot = document.getElementById('ds-checkin-dot');
     if (dot) dot.style.display = show ? 'block' : 'none';
+    // De-highlight the sunrise button once today's reward is claimed so the
+    // nav itself tells you you're done — gold = unclaimed, dimmed = claimed.
+    var btn = document.getElementById('ds-checkin-btn');
+    if (btn) {
+      btn.classList.toggle('claimed', !show);
+      btn.title = show ? 'Daily Check-In — claim your reward!' : 'Daily reward claimed — come back tomorrow!';
+    }
   }
 
   function dsInjectCheckinModal() {

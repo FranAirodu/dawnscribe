@@ -167,9 +167,12 @@ function dsApplyAccent(hex) {
     /* ── Daily Check-In (click-to-claim) ── */
     .checkin-btn { position: relative; display: none; align-items: center; justify-content: center; width: 38px; height: 38px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--gold); font-size: 18px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; }
     .checkin-btn:hover { border-color: var(--gold); transform: translateY(-1px); }
+    .checkin-btn.claimed { color: var(--text3); opacity: 0.55; }
+    .checkin-btn.claimed:hover { border-color: var(--border); transform: none; opacity: 0.8; }
     .checkin-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); display: none; animation: ds-ckPulse 1.8s infinite; }
     @keyframes ds-ckPulse { 0% { box-shadow: 0 0 0 0 rgba(245,197,66,0.6); } 70% { box-shadow: 0 0 0 7px rgba(245,197,66,0); } 100% { box-shadow: 0 0 0 0 rgba(245,197,66,0); } }
     html[data-theme="light"] .checkin-btn { background: #fdf6e0; border-color: rgba(200,150,20,0.35); color: #a16207; }
+    html[data-theme="light"] .checkin-btn.claimed { background: var(--bg3); border-color: var(--border); color: var(--text3); }
     .ck-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 3000; display: none; align-items: flex-start; justify-content: center; padding: 56px 16px 24px; overflow-y: auto; }
     .ck-overlay.open { display: flex; animation: ds-fadeDown 0.2s ease; }
     .ck-modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 560px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.45); }
@@ -1182,6 +1185,13 @@ function dsApplyAccent(hex) {
   function dsSetCheckinDot(show) {
     var dot = document.getElementById('ds-checkin-dot');
     if (dot) dot.style.display = show ? 'block' : 'none';
+    // De-highlight the sunrise button once today's reward is claimed so the
+    // nav itself tells you you're done — gold = unclaimed, dimmed = claimed.
+    var btn = document.getElementById('ds-checkin-btn');
+    if (btn) {
+      btn.classList.toggle('claimed', !show);
+      btn.title = show ? 'Daily Check-In — claim your reward!' : 'Daily reward claimed — come back tomorrow!';
+    }
   }
 
   function dsInjectCheckinModal() {
