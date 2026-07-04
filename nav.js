@@ -164,6 +164,48 @@ function dsApplyAccent(hex) {
     .search-preview-sub { font-size: 10px; color: var(--text3); }
     .search-preview-spinner { padding: 8px; text-align: center; color: var(--text3); }
     .search-section.collapsed { opacity: 0.4; pointer-events: none; }
+    /* ── Daily Check-In (click-to-claim) ── */
+    .checkin-btn { position: relative; display: none; align-items: center; justify-content: center; width: 38px; height: 38px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--gold); font-size: 18px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; }
+    .checkin-btn:hover { border-color: var(--gold); transform: translateY(-1px); }
+    .checkin-dot { position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); display: none; animation: ds-ckPulse 1.8s infinite; }
+    @keyframes ds-ckPulse { 0% { box-shadow: 0 0 0 0 rgba(245,197,66,0.6); } 70% { box-shadow: 0 0 0 7px rgba(245,197,66,0); } 100% { box-shadow: 0 0 0 0 rgba(245,197,66,0); } }
+    html[data-theme="light"] .checkin-btn { background: #fdf6e0; border-color: rgba(200,150,20,0.35); color: #a16207; }
+    .ck-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 3000; display: none; align-items: flex-start; justify-content: center; padding: 56px 16px 24px; overflow-y: auto; }
+    .ck-overlay.open { display: flex; animation: ds-fadeDown 0.2s ease; }
+    .ck-modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 560px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.45); }
+    .ck-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .ck-title { font-size: 18px; font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    .ck-title i { color: var(--gold); }
+    .ck-close { background: none; border: none; color: var(--text3); font-size: 20px; cursor: pointer; padding: 4px; line-height: 1; }
+    .ck-close:hover { color: var(--text); }
+    .ck-sub { font-size: 12.5px; color: var(--text3); margin-bottom: 14px; line-height: 1.5; }
+    .ck-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 14px; }
+    .ck-tile { position: relative; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 8px 3px 7px; text-align: center; transition: all 0.2s; }
+    .ck-tile .ck-d { font-size: 9.5px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.3px; }
+    .ck-tile .ck-ic { font-size: 18px; margin: 3px 0 1px; color: #f97316; }
+    .ck-tile .ck-r { font-size: 11px; font-weight: 800; color: var(--text); line-height: 1.2; }
+    .ck-tile .ck-bonus { display: block; font-size: 9px; color: var(--text3); font-weight: 600; margin-top: 1px; }
+    .ck-tile.done { opacity: 0.5; }
+    .ck-tile.done::after { content: '✓'; position: absolute; top: 3px; right: 5px; color: #22c55e; font-weight: 900; font-size: 11px; }
+    .ck-tile.day7 { border-color: rgba(245,197,66,0.4); }
+    .ck-tile.day7 .ck-ic { color: var(--gold); }
+    .ck-tile.claim { border-color: var(--gold); box-shadow: 0 0 12px rgba(245,197,66,0.25); cursor: pointer; transform: translateY(-2px); }
+    .ck-tile.claim:hover { box-shadow: 0 0 18px rgba(245,197,66,0.5); }
+    .ck-claim-btn { width: 100%; margin: 0 0 16px; padding: 11px; border: none; border-radius: 10px; background: linear-gradient(135deg, #f5c542, #f97316); color: #1a1208; font-size: 14px; font-weight: 800; cursor: pointer; transition: filter 0.2s; }
+    .ck-claim-btn:hover { filter: brightness(1.08); }
+    .ck-claim-btn:disabled { opacity: 0.55; cursor: default; filter: none; }
+    .ck-cal { border-top: 1px solid var(--border); padding-top: 12px; }
+    .ck-cal-title { font-size: 11.5px; font-weight: 800; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
+    .ck-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .ck-wd { text-align: center; font-size: 10px; font-weight: 700; color: var(--text3); padding-bottom: 2px; }
+    .ck-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 12px; font-weight: 700; color: var(--text3); background: var(--bg3); border: 1px solid transparent; }
+    .ck-day.claimed { background: rgba(245,197,66,0.14); color: var(--gold); border-color: rgba(245,197,66,0.35); }
+    .ck-day.missed { opacity: 0.3; }
+    .ck-day.future { opacity: 0.6; }
+    .ck-day.today { border-color: var(--gold); }
+    .ck-day.blank { background: transparent; }
+    .ck-foot { margin-top: 12px; font-size: 12px; color: var(--text3); text-align: center; line-height: 1.5; }
+    .ck-foot b { color: var(--gold); }
     @keyframes ds-fadeDown { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
   `;
   var styleEl = document.createElement('style');
@@ -180,6 +222,10 @@ function dsApplyAccent(hex) {
       <i class="ti ti-flame"></i>
       <span class="ember-count" id="ds-ember-count">0</span>
     </div>
+    <button class="checkin-btn" id="ds-checkin-btn" title="Daily Check-In — claim your reward!" onclick="dsOpenCheckin()">
+      <i class="ti ti-sunrise"></i>
+      <span class="checkin-dot" id="ds-checkin-dot"></span>
+    </button>
     <div class="dm-wrap">
       <a class="dm-btn" href="messages.html" id="dm-btn">
         <i class="ti ti-message"></i>
@@ -1040,32 +1086,23 @@ function dsApplyAccent(hex) {
             } catch(e) {}
 
             try {
-              // ── DAILY CHECK-IN ────────────────────────
-              // Server RPC is fully idempotent (one row per user per UTC day);
-              // the localStorage guard only avoids a redundant RPC per page view.
+              // ── DAILY CHECK-IN: click-to-claim (no auto-claim, no pop-up) ──
+              // The sunrise nav button opens the calendar modal; a pulsing
+              // gold dot shows while today's reward is unclaimed. localStorage
+              // is the fast path; user_streaks confirms cross-device claims.
+              var ckBtn = document.getElementById('ds-checkin-btn');
+              if (ckBtn) ckBtn.style.display = 'flex';
               var dsCkToday = new Date().toISOString().slice(0, 10);
               var dsCkKey = 'ds_checkin_' + uid2;
-              if (localStorage.getItem(dsCkKey) !== dsCkToday) {
-                var dsCk = await db.rpc('daily_checkin');
-                if (dsCk.data && dsCk.data.success) {
-                  localStorage.setItem(dsCkKey, dsCkToday);
-                  if (!dsCk.data.already_checked_in) {
-                    var dsRw = dsCk.data.rewards || {};
-                    if (dsRw.embers) {
-                      window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: dsRw.embers } }));
-                    }
-                    // Pages can listen to refresh their own state (e.g. free Sparks on story.html)
-                    window.dispatchEvent(new CustomEvent('ds-checkin-complete', { detail: dsCk.data }));
-                    if (typeof window.showToast === 'function') {
-                      var dsBits = ['Day ' + dsCk.data.streak + ' check-in! +' + (dsRw.embers || 0) + ' Embers \ud83d\udd25'];
-                      if (dsRw.flame) dsBits.push('Weekly bonus: +1 Celestial Flame \u2728');
-                      if (dsRw.free_spark) dsBits.push('+1 free Spark of Dawn \u26a1');
-                      if (dsRw.perfect_month) dsBits.push('Perfect month! Dawnkeeper honor earned \ud83c\udfc6');
-                      dsBits.forEach(function(b, bi) {
-                        setTimeout(function() { window.showToast(b, 'ti-flame'); }, bi * 900);
-                      });
-                    }
-                  }
+              if (localStorage.getItem(dsCkKey) === dsCkToday) {
+                dsSetCheckinDot(false);
+              } else {
+                var ckSt = await db.from('user_streaks').select('last_checkin').eq('user_id', uid2).maybeSingle();
+                if (ckSt.data && ckSt.data.last_checkin === dsCkToday) {
+                  localStorage.setItem(dsCkKey, dsCkToday);   // claimed on another device
+                  dsSetCheckinDot(false);
+                } else {
+                  dsSetCheckinDot(true);
                 }
               }
             } catch(e) {}
@@ -1131,6 +1168,203 @@ function dsApplyAccent(hex) {
     el.parentElement.style.transform = 'scale(1.15)';
     setTimeout(function(){ el.parentElement.style.transform = 'scale(1)'; }, 200);
   });
+  /* ── DAILY CHECK-IN: click-to-claim calendar (Gaia-style) ─────
+     Opened only via the sunrise nav button — never auto-opens.
+     Rewards come from the daily_checkin RPC; this UI reads
+     user_streaks + daily_checkins (both have SELECT RLS). */
+  var dsCkState = null;
+
+  function dsCkRewardFor(day) {
+    if (day === 7) return { embers: 10, flame: true, spark: false };
+    return { embers: 2, flame: false, spark: (day === 3 || day === 6) };
+  }
+
+  function dsSetCheckinDot(show) {
+    var dot = document.getElementById('ds-checkin-dot');
+    if (dot) dot.style.display = show ? 'block' : 'none';
+  }
+
+  function dsInjectCheckinModal() {
+    if (document.getElementById('ds-checkin-modal')) return;
+    var ov = document.createElement('div');
+    ov.className = 'ck-overlay';
+    ov.id = 'ds-checkin-modal';
+    ov.innerHTML =
+      '<div class="ck-modal">' +
+        '<div class="ck-head">' +
+          '<div class="ck-title"><i class="ti ti-sunrise"></i> Daily Check-In</div>' +
+          '<button class="ck-close" onclick="dsCloseCheckin()" title="Close"><i class="ti ti-x"></i></button>' +
+        '</div>' +
+        '<div class="ck-sub" id="ck-sub">Loading\u2026</div>' +
+        '<div class="ck-strip" id="ck-strip"></div>' +
+        '<button class="ck-claim-btn" id="ck-claim-btn" style="display:none;" onclick="dsClaimDaily()"></button>' +
+        '<div class="ck-cal">' +
+          '<div class="ck-cal-title"><span id="ck-month-label"></span><span id="ck-month-count"></span></div>' +
+          '<div class="ck-grid" id="ck-grid"></div>' +
+          '<div class="ck-foot" id="ck-foot"></div>' +
+        '</div>' +
+      '</div>';
+    ov.addEventListener('click', function(e){ if (e.target === ov) dsCloseCheckin(); });
+    document.body.appendChild(ov);
+  }
+
+  window.dsCloseCheckin = function() {
+    var ov = document.getElementById('ds-checkin-modal');
+    if (ov) ov.classList.remove('open');
+    document.body.style.overflow = '';
+  };
+
+  window.dsOpenCheckin = async function() {
+    dsInjectCheckinModal();
+    var ov = document.getElementById('ds-checkin-modal');
+    ov.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    try {
+      var session = (await db.auth.getSession()).data.session;
+      if (!session) { window.location.href = 'auth.html'; return; }
+      var uid = session.user.id;
+      var now = new Date();
+      var todayStr = now.toISOString().slice(0, 10);
+      var y = now.getUTCFullYear(), m = now.getUTCMonth();
+      var mStart = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+      var mEnd = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
+      var yest = new Date(Date.UTC(y, m, now.getUTCDate() - 1)).toISOString().slice(0, 10);
+
+      var sRes = await db.from('user_streaks')
+        .select('current_streak,longest_streak,last_checkin')
+        .eq('user_id', uid).maybeSingle();
+      var cRes = await db.from('daily_checkins')
+        .select('checkin_date')
+        .eq('user_id', uid)
+        .gte('checkin_date', mStart).lte('checkin_date', mEnd);
+
+      var streak = sRes.data || { current_streak: 0, longest_streak: 0, last_checkin: null };
+      var claimedDates = {};
+      (cRes.data || []).forEach(function(r){ claimedDates[r.checkin_date] = true; });
+
+      var claimedToday = (streak.last_checkin === todayStr);
+      var effStreak;
+      if (claimedToday) effStreak = streak.current_streak || 1;
+      else if (streak.last_checkin === yest) effStreak = (streak.current_streak || 0) + 1;
+      else effStreak = 1;
+
+      dsCkState = {
+        uid: uid, todayStr: todayStr, claimedToday: claimedToday,
+        effStreak: effStreak, cycleDay: ((effStreak - 1) % 7) + 1,
+        streak: streak, claimedDates: claimedDates, y: y, m: m
+      };
+      // Sync localStorage if this device missed a claim made elsewhere
+      if (claimedToday) localStorage.setItem('ds_checkin_' + uid, todayStr);
+      dsSetCheckinDot(!claimedToday);
+      dsRenderCheckin();
+    } catch(e) {
+      var sub = document.getElementById('ck-sub');
+      if (sub) sub.textContent = 'Could not load check-in data \u2014 please try again shortly.';
+    }
+  };
+
+  function dsRenderCheckin() {
+    var s = dsCkState;
+    if (!s) return;
+    var sub = document.getElementById('ck-sub');
+    if (s.claimedToday) {
+      sub.innerHTML = 'Day <b style="color:var(--gold);">' + s.effStreak + '</b> claimed \u2014 come back tomorrow to keep the streak going! Longest streak: <b>' + Math.max(s.streak.longest_streak || 0, s.effStreak) + '</b> days.';
+    } else if (s.effStreak > 1) {
+      sub.innerHTML = 'You\u2019re on a <b style="color:var(--gold);">' + (s.effStreak - 1) + '-day</b> streak \u2014 claim now to make it <b>' + s.effStreak + '</b>!';
+    } else {
+      sub.innerHTML = 'Check in daily to earn <b>Embers</b>, free <b>Sparks of Dawn</b>, and a <b>Celestial Flame</b> every 7th day!';
+    }
+
+    var html = '';
+    for (var d = 1; d <= 7; d++) {
+      var r = dsCkRewardFor(d);
+      var cls = 'ck-tile' + (d === 7 ? ' day7' : '');
+      var claimable = false;
+      if (d < s.cycleDay || (d === s.cycleDay && s.claimedToday)) cls += ' done';
+      else if (d === s.cycleDay && !s.claimedToday) { cls += ' claim'; claimable = true; }
+      var bonus = r.flame ? '+1 Flame' : (r.spark ? '+1 Spark' : 'Embers');
+      html += '<div class="' + cls + '"' + (claimable ? ' onclick="dsClaimDaily()" title="Click to claim today\u2019s reward!"' : '') + '>' +
+        '<div class="ck-d">Day ' + d + '</div>' +
+        '<div class="ck-ic"><i class="ti ' + (r.flame ? 'ti-sparkles' : 'ti-flame') + '"></i></div>' +
+        '<div class="ck-r">+' + r.embers + '<span class="ck-bonus">' + bonus + '</span></div>' +
+        '</div>';
+    }
+    document.getElementById('ck-strip').innerHTML = html;
+
+    var btn = document.getElementById('ck-claim-btn');
+    btn.style.display = s.claimedToday ? 'none' : 'block';
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-sunrise"></i> Claim Day ' + s.effStreak + ' Reward';
+
+    // Month calendar (perfect-month / Dawnkeeper progress)
+    var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    document.getElementById('ck-month-label').textContent = months[s.m] + ' ' + s.y;
+    var daysInMonth = new Date(Date.UTC(s.y, s.m + 1, 0)).getUTCDate();
+    var firstDow = new Date(Date.UTC(s.y, s.m, 1)).getUTCDay();
+    var todayDom = parseInt(s.todayStr.slice(8), 10);
+    var g = '';
+    ['S','M','T','W','T','F','S'].forEach(function(w){ g += '<div class="ck-wd">' + w + '</div>'; });
+    for (var b = 0; b < firstDow; b++) g += '<div class="ck-day blank"></div>';
+    var claimedCount = 0, missedAny = false;
+    for (var dd = 1; dd <= daysInMonth; dd++) {
+      var dStr = s.todayStr.slice(0, 8) + String(dd).padStart(2, '0');
+      var c = 'ck-day';
+      if (s.claimedDates[dStr]) { c += ' claimed'; claimedCount++; }
+      else if (dd < todayDom) { c += ' missed'; missedAny = true; }
+      else if (dd > todayDom) c += ' future';
+      if (dd === todayDom) c += ' today';
+      g += '<div class="' + c + '">' + (s.claimedDates[dStr] ? '<i class="ti ti-check"></i>' : dd) + '</div>';
+    }
+    document.getElementById('ck-grid').innerHTML = g;
+    document.getElementById('ck-month-count').textContent = claimedCount + '/' + daysInMonth + ' days';
+    document.getElementById('ck-foot').innerHTML = missedAny
+      ? 'A <b>perfect month</b> (every single day claimed) earns the <b>Dawnkeeper</b> badge \u2014 your next chance begins on the 1st!'
+      : 'Claim <b>every day</b> this month to earn the <b>Dawnkeeper</b> badge! \ud83c\udfc6';
+  }
+
+  window.dsClaimDaily = async function() {
+    var s = dsCkState;
+    if (!s || s.claimedToday) return;
+    var btn = document.getElementById('ck-claim-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Claiming\u2026'; }
+    try {
+      var res = await db.rpc('daily_checkin');
+      if (!res.data || !res.data.success) throw new Error('claim_failed');
+      localStorage.setItem('ds_checkin_' + s.uid, s.todayStr);
+      if (!res.data.already_checked_in) {
+        var rw = res.data.rewards || {};
+        if (rw.embers) {
+          var el = document.getElementById('ds-ember-count');
+          if (el) {
+            var cur = parseInt((el.textContent || '0').replace(/,/g, '')) || 0;
+            el.textContent = (cur + rw.embers).toLocaleString();
+            el.parentElement.style.transform = 'scale(1.15)';
+            setTimeout(function(){ el.parentElement.style.transform = 'scale(1)'; }, 200);
+          }
+        }
+        // Pages listen to refresh their own state (e.g. free Sparks on story.html).
+        // NOTE: intentionally NOT dispatching ds-embers-awarded — the ember
+        // counter was already updated directly above (avoids double-count).
+        window.dispatchEvent(new CustomEvent('ds-checkin-complete', { detail: res.data }));
+        if (typeof window.showToast === 'function') {
+          var bits = ['Day ' + res.data.streak + ' claimed! +' + (rw.embers || 0) + ' Embers \ud83d\udd25'];
+          if (rw.flame) bits.push('Weekly bonus: +1 Celestial Flame \u2728');
+          if (rw.free_spark) bits.push('+1 free Spark of Dawn \u26a1');
+          if (rw.perfect_month) bits.push('Perfect month! Dawnkeeper honor earned \ud83c\udfc6');
+          bits.forEach(function(bb, bi){ setTimeout(function(){ window.showToast(bb, 'ti-flame'); }, bi * 900); });
+        }
+      }
+      s.claimedToday = true;
+      s.effStreak = res.data.streak || s.effStreak;
+      s.cycleDay = res.data.cycle_day || s.cycleDay;
+      s.claimedDates[s.todayStr] = true;
+      dsSetCheckinDot(false);
+      dsRenderCheckin();
+    } catch(e) {
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Claim failed \u2014 tap to try again'; }
+    }
+  };
+
   }); // dsWaitForDb
 
 })();
