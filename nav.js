@@ -1038,6 +1038,37 @@ function dsApplyAccent(hex) {
                 }));
               }
             } catch(e) {}
+
+            try {
+              // ── DAILY CHECK-IN ────────────────────────
+              // Server RPC is fully idempotent (one row per user per UTC day);
+              // the localStorage guard only avoids a redundant RPC per page view.
+              var dsCkToday = new Date().toISOString().slice(0, 10);
+              var dsCkKey = 'ds_checkin_' + uid2;
+              if (localStorage.getItem(dsCkKey) !== dsCkToday) {
+                var dsCk = await db.rpc('daily_checkin');
+                if (dsCk.data && dsCk.data.success) {
+                  localStorage.setItem(dsCkKey, dsCkToday);
+                  if (!dsCk.data.already_checked_in) {
+                    var dsRw = dsCk.data.rewards || {};
+                    if (dsRw.embers) {
+                      window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: dsRw.embers } }));
+                    }
+                    // Pages can listen to refresh their own state (e.g. free Sparks on story.html)
+                    window.dispatchEvent(new CustomEvent('ds-checkin-complete', { detail: dsCk.data }));
+                    if (typeof window.showToast === 'function') {
+                      var dsBits = ['Day ' + dsCk.data.streak + ' check-in! +' + (dsRw.embers || 0) + ' Embers \ud83d\udd25'];
+                      if (dsRw.flame) dsBits.push('Weekly bonus: +1 Celestial Flame \u2728');
+                      if (dsRw.free_spark) dsBits.push('+1 free Spark of Dawn \u26a1');
+                      if (dsRw.perfect_month) dsBits.push('Perfect month! Dawnkeeper honor earned \ud83c\udfc6');
+                      dsBits.forEach(function(b, bi) {
+                        setTimeout(function() { window.showToast(b, 'ti-flame'); }, bi * 900);
+                      });
+                    }
+                  }
+                }
+              }
+            } catch(e) {}
           })();
         }
       }
