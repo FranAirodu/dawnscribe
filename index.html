@@ -3300,6 +3300,40 @@
           } catch(e) {}
         }
 
+        // ── DAILY CHECK-IN (mirror of nav.js — index.html doesn't load nav.js) ──
+        // Server RPC is fully idempotent (one row per user per UTC day);
+        // the localStorage guard (shared key with nav.js) avoids redundant RPCs.
+        try {
+          var dsCkToday = new Date().toISOString().slice(0, 10);
+          var dsCkKey = 'ds_checkin_' + session.user.id;
+          if (localStorage.getItem(dsCkKey) !== dsCkToday) {
+            var dsCk = await db.rpc('daily_checkin');
+            if (dsCk.data && dsCk.data.success) {
+              localStorage.setItem(dsCkKey, dsCkToday);
+              if (!dsCk.data.already_checked_in) {
+                var dsRw = dsCk.data.rewards || {};
+                if (dsRw.embers) {
+                  var dsEl = document.getElementById('ds-ember-count');
+                  if (dsEl) {
+                    var dsCur = parseInt((dsEl.textContent || '0').replace(/,/g, '')) || 0;
+                    dsEl.textContent = (dsCur + dsRw.embers).toLocaleString();
+                    dsEl.parentElement.style.transform = 'scale(1.15)';
+                    setTimeout(function(){ dsEl.parentElement.style.transform = 'scale(1)'; }, 200);
+                  }
+                }
+                window.dispatchEvent(new CustomEvent('ds-checkin-complete', { detail: dsCk.data }));
+                var dsBits = ['Day ' + dsCk.data.streak + ' check-in! +' + (dsRw.embers || 0) + ' Embers 🔥'];
+                if (dsRw.flame) dsBits.push('Weekly bonus: +1 Celestial Flame ✨');
+                if (dsRw.free_spark) dsBits.push('+1 free Spark of Dawn ⚡');
+                if (dsRw.perfect_month) dsBits.push('Perfect month! Dawnkeeper honor earned 🏆');
+                dsBits.forEach(function(b, bi) {
+                  setTimeout(function(){ if (typeof showToast === 'function') showToast(b, 'ti-flame'); }, bi * 900);
+                });
+              }
+            }
+          }
+        } catch(e) {}
+
         // Apply user's saved accent color sitewide
         try {
           var accentRes = await db.from('user_avatars').select('accent_color').eq('user_id', session.user.id).maybeSingle();

@@ -107,6 +107,11 @@
     .bio-cancel-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:7px 16px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
     .profile-name-row{display:flex;align-items:center;gap:12px;margin-bottom:2px;}
     .profile-name{font-family:'Lato',sans-serif;font-size:24px;font-weight:700;color:var(--text);}
+    .streak-chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;padding:2px 9px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);cursor:default;}
+    .streak-chip.gray{color:var(--text3);}
+    .streak-chip.orange{color:#fb923c;border-color:rgba(251,146,60,0.35);}
+    .streak-chip.red{color:#ef4444;border-color:rgba(239,68,68,0.35);}
+    .streak-chip.gold{color:#f0c040;border-color:rgba(240,192,64,0.4);}
 
     /* STATS */
     .stats-bar{display:flex;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:20px;overflow:hidden;}
@@ -459,6 +464,7 @@
     <div style="margin-bottom:20px;">
       <div class="profile-name-row">
         <div class="profile-name" id="display-name">moonscribe</div>
+        <span id="streak-chip" style="display:none;"></span>
         <div id="profile-completion-wrap" class="owner-only" style="display:none;margin-left:10px;align-items:center;gap:8px;cursor:default;position:relative;" title="">
           <div id="profile-completion-bar" style="width:80px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;">
             <div id="profile-completion-fill" style="height:100%;border-radius:3px;background:var(--accent);width:0%;transition:width 0.5s;"></div>
@@ -916,8 +922,31 @@
       }
     }
 
+    async function loadStreakChip(userId) {
+      try {
+        var res = await db.from('user_streaks').select('current_streak,longest_streak,last_checkin,perfect_months').eq('user_id', userId).maybeSingle();
+        var s = res.data;
+        if (!s || !s.current_streak || !s.last_checkin) return;
+        var last = new Date(s.last_checkin + 'T00:00:00Z').getTime();
+        var now = new Date();
+        var todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+        if (Math.round((todayUTC - last) / 86400000) > 1) return; // streak broken
+        var n = s.current_streak;
+        if (n < 3) return;
+        var cls = n >= 100 ? 'gold' : (n >= 30 ? 'red' : (n >= 7 ? 'orange' : 'gray'));
+        var chip = document.getElementById('streak-chip');
+        if (!chip) return;
+        chip.className = 'streak-chip ' + cls;
+        chip.textContent = '🔥 ' + n;
+        chip.title = n + '-day check-in streak · longest ' + (s.longest_streak || n) +
+          (s.perfect_months ? ' · ' + s.perfect_months + ' perfect month' + (s.perfect_months !== 1 ? 's' : '') : '');
+        chip.style.display = 'inline-flex';
+      } catch(e) {}
+    }
+
     function applyProfileData(data, username, isOwner) {
       if (data.display_name) { document.getElementById('display-name').textContent = data.display_name; }
+      if (data.id) { loadStreakChip(data.id); }
       var handle = '@' + (data.username || username || 'user') + (data.role ? ' · ' + data.role : '');
       document.getElementById('display-handle').textContent = handle;
       if (data.bio) { document.getElementById('bio-text').textContent = data.bio; }
