@@ -1955,24 +1955,29 @@
       // collabs where they're the artist, or listed coauthor). These are
       // exempt from the viewer's OWN content filters, exactly like their own
       // works — you co-made it, you get to see it. Other viewers' filters
-      // still apply to them normally.
+      // still apply to them normally. Skipped entirely for logged-out users
+      // since they can't own anything.
       var myCollabExemptIds = new Set();
       if (uid) {
         try {
+          // All three queries are independent — fire in parallel
+          var [scMineRes, acRowsRes, coRowsRes] = await Promise.all([
+            db.from('story_collabs').select('work_id').eq('artist_id', uid).eq('status','approved'),
+            db.from('artwork_collabs').select('artwork_id,work_id').eq('status','approved'),
+            db.from('work_coauthors').select('work_id').eq('user_id', uid)
+          ]);
           // Story collabs: viewer is the artist on an approved piece → exempt the novel
-          var { data: scMine } = await db.from('story_collabs').select('work_id').eq('artist_id', uid).eq('status','approved');
-          (scMine||[]).forEach(function(r){ if(r.work_id) myCollabExemptIds.add(r.work_id); });
+          (scMineRes.data||[]).forEach(function(r){ if(r.work_id) myCollabExemptIds.add(r.work_id); });
           // Artwork collabs: viewer owns the artwork on an approved link → exempt the novel
-          var { data: acRows } = await db.from('artwork_collabs').select('artwork_id,work_id').eq('status','approved');
-          var acArtIds = [...new Set((acRows||[]).map(function(r){ return r.artwork_id; }).filter(Boolean))];
+          var acRows = acRowsRes.data || [];
+          var acArtIds = [...new Set(acRows.map(function(r){ return r.artwork_id; }).filter(Boolean))];
           if (acArtIds.length) {
             var { data: acOwned } = await db.from('works').select('id').in('id', acArtIds).eq('author_id', uid);
             var mineArt = new Set((acOwned||[]).map(function(w){ return w.id; }));
-            (acRows||[]).forEach(function(r){ if(r.work_id && mineArt.has(r.artwork_id)) myCollabExemptIds.add(r.work_id); });
+            acRows.forEach(function(r){ if(r.work_id && mineArt.has(r.artwork_id)) myCollabExemptIds.add(r.work_id); });
           }
           // Coauthored works
-          var { data: coRows } = await db.from('work_coauthors').select('work_id').eq('user_id', uid);
-          (coRows||[]).forEach(function(r){ if(r.work_id) myCollabExemptIds.add(r.work_id); });
+          (coRowsRes.data||[]).forEach(function(r){ if(r.work_id) myCollabExemptIds.add(r.work_id); });
         } catch(e) {}
       }
       // PostgREST in-list fragment for the .or() clauses below ('' when none)
@@ -2270,26 +2275,21 @@
       r5Items.sort(function(a,b){ return new Date(b.created_at||0) - new Date(a.created_at||0); });
       renderCoverRow(row5track, r5Items, function(w){ return Object.assign({}, w, { postedTime: w.created_at }); });
 
-      // Row: Trending Now (Echoes + comments + follows, last 7 days — weighted, same spirit as Featured rotation)
-      await loadTrendingRow(filterDiscoveryItems);
-
-      // Row: Rising Stars (newest works gaining followers fastest)
-      await loadRisingRow(filterDiscoveryItems);
-
-      // Row: Fan Favorite (highest follower count)
-      await loadFanFavoriteRow(filterDiscoveryItems);
-
-      // Row: Most Sparked This Week (spark_count_week, resets Mondays)
-      await loadSparkedRow(filterDiscoveryItems);
-
-      // Row: Readers are Rallying (open chapter rallies per work)
-      await loadRallyRow(filterDiscoveryItems);
-
-      // Rows: Because You Read + From Your Reading List (signed-in only)
+      // All discovery rows are independent — fire them all concurrently.
+      // Signed-in personalised rows are bundled in the same Promise.all so
+      // they race the public rows rather than waiting for them to finish.
+      var discoveryRows = [
+        loadTrendingRow(filterDiscoveryItems),
+        loadRisingRow(filterDiscoveryItems),
+        loadFanFavoriteRow(filterDiscoveryItems),
+        loadSparkedRow(filterDiscoveryItems),
+        loadRallyRow(filterDiscoveryItems)
+      ];
       if (uid) {
-        await loadForYouRow(uid, filterDiscoveryItems);
-        await loadReadingListRow(uid);
+        discoveryRows.push(loadForYouRow(uid, filterDiscoveryItems));
+        discoveryRows.push(loadReadingListRow(uid));
       }
+      await Promise.all(discoveryRows);
 
       // Rows loaded below
     }
@@ -2315,14 +2315,10 @@
         var { data: recentFollows } = await db.from('work_follows').select('work_id,created_at').in('work_id', workIds).gte('created_at', sevenDaysAgo);
         (recentFollows||[]).forEach(function(f){ if(scores[f.work_id]!==undefined) scores[f.work_id] += 2; });
 
-        // Chapter comments in window (via chapters join)
-        var { data: chRows } = await db.from('chapters').select('id,work_id').in('work_id', workIds);
-        var chToWork = {}; (chRows||[]).forEach(function(c){ chToWork[c.id] = c.work_id; });
-        var chIds = Object.keys(chToWork);
-        if (chIds.length) {
-          var { data: recentComments } = await db.from('chapter_comments').select('chapter_id,created_at').in('chapter_id', chIds).gte('created_at', sevenDaysAgo);
-          (recentComments||[]).forEach(function(c){ var wid = chToWork[c.chapter_id]; if(wid && scores[wid]!==undefined) scores[wid] += 2; });
-        }
+        // Chapter comments in window — chapter_comments has work_id directly,
+        // so the old chapters join to get chapter IDs is unnecessary.
+        var { data: recentComments } = await db.from('chapter_comments').select('work_id,created_at').in('work_id', workIds).gte('created_at', sevenDaysAgo);
+        (recentComments||[]).forEach(function(c){ if(scores[c.work_id]!==undefined) scores[c.work_id] += 2; });
 
         // Offerings as a light trending signal too (1pt each, all-time count proxy since we don't have a date column requirement beyond creation)
         var { data: recentOfferings } = await db.from('work_offerings').select('work_id,created_at').in('work_id', workIds).gte('created_at', sevenDaysAgo);
@@ -2471,11 +2467,20 @@
           .order('updated_at',{ascending:false}).limit(10);
         var readIds = [...new Set((rp||[]).map(function(r){ return r.work_id; }).filter(Boolean))];
         if (!readIds.length) return; // section stays hidden
-        var { data: seed } = await db.from('works')
-          .select('id,title,tags_main').eq('id', readIds[0]).maybeSingle();
-        var seedTags;
-        try { seedTags = JSON.parse((seed && seed.tags_main) || '[]'); } catch(e) { seedTags = []; }
-        if (!seed || !seedTags.length) return;
+
+        // Seed from up to 3 recently-read works so uncommon tag sets still
+        // produce matches. Union all their tags, deduplicated.
+        var seedWorkIds = readIds.slice(0, 3);
+        var { data: seedWorks } = await db.from('works').select('id,title,tags_main').in('id', seedWorkIds);
+        if (!seedWorks || !seedWorks.length) return;
+        var allSeedTags = [];
+        (seedWorks||[]).forEach(function(sw){
+          try { JSON.parse(sw.tags_main || '[]').forEach(function(t){ if(allSeedTags.indexOf(t)===-1) allSeedTags.push(t); }); } catch(e) {}
+        });
+        if (!allSeedTags.length) return;
+        // Label: name the most-recently-read seed that actually contributed tags
+        var labelSeed = seedWorks[0];
+
         // Overlaps-on-text-column isn't expressible in PostgREST (tags_main is
         // JSON-in-text), so fetch recent published novels and match client-side.
         var { data: pool } = await db.from('works')
@@ -2486,13 +2491,13 @@
           if (readIds.indexOf(w.id) !== -1) return false;   // already read
           if (uid && w.author_id === uid) return false;      // own work
           var t; try { t = JSON.parse(w.tags_main || '[]'); } catch(e) { t = []; }
-          return t.some(function(tag){ return seedTags.indexOf(tag) !== -1; });
+          return t.some(function(tag){ return allSeedTags.indexOf(tag) !== -1; });
         });
         if (filterFn) matches = filterFn(matches);
         matches = matches.slice(0, 20);
         if (!matches.length) return;
         var labelEl = document.getElementById('foryou-title-label');
-        if (labelEl) labelEl.textContent = '\u201C' + seed.title + '\u201D';
+        if (labelEl) labelEl.textContent = '\u201C' + labelSeed.title + '\u201D';
         var aIds = [...new Set(matches.map(function(w){ return w.author_id; }).filter(Boolean))];
         var profMap = {};
         if (aIds.length) { var { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', aIds); (profs||[]).forEach(function(p){ profMap[p.id]=p; }); }
@@ -2686,10 +2691,8 @@
       if(session){ await dsBlock.load(uid); }
       if(session){ loadAvatarWidget(uid); }
       dsInitLayoutCustomization(uid);
-      // Suggestion 2: load Continue Reading + Reading History for signed-in users
       if (uid) { loadReadingHistory(uid); }
-      // Suggestion 2: load Continue Reading for signed-in users
-      if(uid){ loadContinueReading(uid); }
+      if (uid) { loadContinueReading(uid); }
 
       // Load public data regardless of auth
       Promise.all([
@@ -3010,8 +3013,6 @@
 
     checkMaintenanceMode();
     loadAnnouncement();
-    // Poll is called without session initially; initLiveData calls it again with session once auth resolves
-    loadPoll();
 
     /* ── SEARCH ─────────────────────────────────────────────────── */
     function toggleSearch() {
@@ -3828,44 +3829,61 @@
       try {
         var session = (await db.auth.getSession()).data.session;
         if (!session) { return; }
+        var uid = session.user.id;
         document.getElementById('nav-login-btn').style.display = 'none';
         document.getElementById('publish-btn').style.display = 'flex';
 
-        // Load ember balance
+        // Show nav wrappers immediately so layout doesn't jump
         var emberWrap = document.getElementById('ember-wrap');
-        if (emberWrap) {
-          emberWrap.style.display = 'flex';
-          try {
-            var emberRes = await db.from('user_embers').select('balance').eq('user_id', session.user.id).maybeSingle();
-            var emberBalance = (emberRes.data && emberRes.data.balance) || 0;
-            document.getElementById('ds-ember-count').textContent = emberBalance.toLocaleString();
-          } catch(e) {}
+        var quillWrap = document.getElementById('quill-wrap');
+        if (emberWrap) emberWrap.style.display = 'flex';
+        if (quillWrap) quillWrap.style.display = 'flex';
+        document.getElementById('user-avatar-btn').style.display = 'flex';
+        var ckBtn = document.getElementById('ds-checkin-btn');
+        if (ckBtn) ckBtn.style.display = 'flex';
+
+        // Seed nav from session metadata immediately (no flicker)
+        var meta = session.user.user_metadata || {};
+        var username = meta.username || null;
+        var displayName = meta.display_name || username || session.user.email.split('@')[0];
+        document.getElementById('dd-display-name').textContent = displayName;
+        document.getElementById('dd-handle').textContent = username ? '@' + username : session.user.email;
+        document.getElementById('user-avatar-initial').textContent = displayName.charAt(0).toUpperCase();
+        if (username) document.getElementById('dd-profile-link').href = 'profile.html?user=' + username;
+
+        // Check-in dot: fast path from localStorage, no network
+        var dsCkToday = new Date().toISOString().slice(0, 10);
+        var dsCkKey = 'ds_checkin_' + uid;
+        if (localStorage.getItem(dsCkKey) === dsCkToday) {
+          dsSetCheckinDot(false);
+        } else {
+          dsSetCheckinDot(true); // optimistic; corrected below once DB responds
         }
 
-        // ── DAILY CHECK-IN: click-to-claim (mirror of nav.js — index.html doesn't load nav.js) ──
-        // No auto-claim, no pop-up: the sunrise nav button opens the calendar
-        // modal; a pulsing gold dot shows while today's reward is unclaimed.
-        try {
-          var ckBtn = document.getElementById('ds-checkin-btn');
-          if (ckBtn) ckBtn.style.display = 'flex';
-          var dsCkToday = new Date().toISOString().slice(0, 10);
-          var dsCkKey = 'ds_checkin_' + session.user.id;
-          if (localStorage.getItem(dsCkKey) === dsCkToday) {
-            dsSetCheckinDot(false);
-          } else {
-            var ckSt = await db.from('user_streaks').select('last_checkin').eq('user_id', session.user.id).maybeSingle();
-            if (ckSt.data && ckSt.data.last_checkin === dsCkToday) {
-              localStorage.setItem(dsCkKey, dsCkToday);   // claimed on another device
-              dsSetCheckinDot(false);
-            } else {
-              dsSetCheckinDot(true);
-            }
-          }
-        } catch(e) {}
+        // ── Fire all independent DB reads in parallel ──────────────
+        var [
+          emberRes, quillRes, accentRes, roleRes, profileRes,
+          adminRes, streakRes
+        ] = await Promise.all([
+          db.from('user_embers').select('balance').eq('user_id', uid).maybeSingle().catch(function(){ return {}; }),
+          db.from('user_quills').select('balance').eq('user_id', uid).maybeSingle().catch(function(){ return {}; }),
+          db.from('user_avatars').select('accent_color').eq('user_id', uid).maybeSingle().catch(function(){ return {}; }),
+          db.from('profiles').select('role').eq('id', uid).maybeSingle().catch(function(){ return {}; }),
+          username ? db.from('profiles').select('avatar_url,display_name,id').eq('username', username).maybeSingle().catch(function(){ return {}; }) : Promise.resolve({}),
+          db.from('admins').select('id').eq('id', uid).maybeSingle().catch(function(){ return {}; }),
+          db.from('user_streaks').select('last_checkin').eq('user_id', uid).maybeSingle().catch(function(){ return {}; })
+        ]);
 
-        // Apply user's saved accent color sitewide
+        // Ember balance
+        var emberBalance = (emberRes.data && emberRes.data.balance) || 0;
+        document.getElementById('ds-ember-count').textContent = emberBalance.toLocaleString();
+
+        // Quill balance
+        var quillBalance = (quillRes.data && quillRes.data.balance) || 0;
+        document.getElementById('ds-quill-count').textContent = quillBalance.toLocaleString();
+
+        // Accent color
         try {
-          var accentRes = await db.from('user_avatars').select('accent_color').eq('user_id', session.user.id).maybeSingle();
           if (accentRes.data && accentRes.data.accent_color && accentRes.data.accent_color.hex) {
             var ac = accentRes.data.accent_color;
             var _h = ac.hex.replace('#','');
@@ -3882,145 +3900,124 @@
             document.head.appendChild(_st);
             localStorage.setItem('ds_accent_hex', ac.hex);
           } else {
-            // No custom accent — cache default teal so it loads instantly on all pages
             localStorage.setItem('ds_accent_hex', '#2dd4bf');
           }
         } catch(e) {}
 
-        // Load Quill balance (placeholder until the Quills system exists)
-        var quillWrap = document.getElementById('quill-wrap');
-        if (quillWrap) {
-          quillWrap.style.display = 'flex';
-          try {
-            var quillRes = await db.from('user_quills').select('balance').eq('user_id', session.user.id).maybeSingle();
-            var quillBalance = (quillRes.data && quillRes.data.balance) || 0;
-            document.getElementById('ds-quill-count').textContent = quillBalance.toLocaleString();
-          } catch(e) {
-            document.getElementById('ds-quill-count').textContent = '0';
-          }
-        }
-
-        // Showcase only shows for artists — check role from profiles
-        var roleRes = await db.from('profiles').select('role').eq('id', session.user.id).maybeSingle();
-        var userRole = roleRes && roleRes.data ? (roleRes.data.role || '') : '';
+        // Showcase button (artists only)
+        var userRole = roleRes.data ? (roleRes.data.role || '') : '';
         if (userRole.toLowerCase().includes('artist')) {
           document.getElementById('showcase-btn').style.display = 'flex';
         }
-        var avatarBtn = document.getElementById('user-avatar-btn');
-        avatarBtn.style.display = 'flex';
-        var meta = session.user.user_metadata || {};
-        var username = meta.username || null;
-        var displayName = meta.display_name || username || session.user.email.split('@')[0];
-        document.getElementById('dd-display-name').textContent = displayName;
-        document.getElementById('dd-handle').textContent = username ? '@' + username : session.user.email;
-        document.getElementById('user-avatar-initial').textContent = displayName.charAt(0).toUpperCase();
-        if (username) { document.getElementById('dd-profile-link').href = 'profile.html?user=' + username; }
-        if (username) {
-          try {
-            var res = await db.from('profiles').select('avatar_url,display_name,id').eq('username', username).maybeSingle();
-            if (res && !res.error && res.data) {
-              if (res.data.display_name) {
-                document.getElementById('dd-display-name').textContent = res.data.display_name;
-                document.getElementById('user-avatar-initial').textContent = res.data.display_name.charAt(0).toUpperCase();
-              }
-              if (res.data.avatar_url) {
-                avatarBtn.innerHTML = '<img src="' + esc(res.data.avatar_url) + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
-              }
-              // Check for all pending items: collab requests + friend requests
-              if (res.data.id) {
-                var uid2 = res.data.id;
-                var pendingParts = [];
 
-                // 1. Pending story-collab proposals on user's artworks (artwork_collabs)
-                var myArtworks = await db.from('works').select('id').eq('author_id', uid2).eq('type', 'artwork');
-                var artIds = (myArtworks.data || []).map(function(w){ return w.id; });
-                if (artIds.length) {
-                  var acRes = await db.from('artwork_collabs').select('id').in('artwork_id', artIds).eq('status', 'pending');
-                  var acCount = (acRes.data || []).length;
-                  if (acCount > 0) pendingParts.push(acCount + ' story collab' + (acCount > 1 ? 's' : ''));
-                }
-
-                // 2. Pending fan-art submissions on user's novels (story_collabs)
-                var myNovels = await db.from('works').select('id').eq('author_id', uid2).eq('type', 'novel');
-                var novIds = (myNovels.data || []).map(function(w){ return w.id; });
-                if (novIds.length) {
-                  var scRes = await db.from('story_collabs').select('id').in('work_id', novIds).eq('status', 'pending');
-                  var scCount = (scRes.data || []).length;
-                  if (scCount > 0) pendingParts.push(scCount + ' fan art' + (scCount > 1 ? 's' : ''));
-                }
-
-                // 3. Incoming friend requests
-                var frRes = await db.from('friendships').select('id').eq('recipient_id', uid2).eq('status', 'pending');
-                var frCount = (frRes.data || []).length;
-                if (frCount > 0) pendingParts.push(frCount + ' friend request' + (frCount > 1 ? 's' : ''));
-
-                // 4. Pending song suggestions (reuse novIds from block 2)
-                var mniWids = novIds;
-                if (mniWids.length) {
-                  var songRes = await db.from('character_song_suggestions').select('id').in('work_id', mniWids).eq('status','pending');
-                  var songCount = (songRes.data || []).length;
-                  if (songCount > 0) pendingParts.push(songCount + ' song suggestion' + (songCount > 1 ? 's' : ''));
-                }
-
-                if (pendingParts.length > 0) {
-                  var collabParts = pendingParts.filter(function(p){ return p.indexOf('friend') === -1; });
-                  var friendParts = pendingParts.filter(function(p){ return p.indexOf('friend') !== -1; });
-                  if(collabParts.length > 0){
-                    var profileLink = document.getElementById('dd-profile-link');
-                    if(profileLink) profileLink.innerHTML = '<i class="ti ti-user"></i> My Profile <span class="collab-pending-pill">' + collabParts.join(' · ') + '</span>';
-                  }
-                  if(friendParts.length > 0){
-                    var friendsLink = document.getElementById('dd-friends-link');
-                    if(friendsLink) friendsLink.innerHTML = '<i class="ti ti-users"></i> Friends <span class="collab-pending-pill">' + friendParts.join(' · ') + '</span>';
-                  }
-                }
-
-                // Inject friend requests into the Artists notification tab
-                if (frCount > 0) {
-                  var { data: frRows } = await db.from('friendships').select('id, requester_id, created_at').eq('recipient_id', uid2).eq('status', 'pending').order('created_at', { ascending: false });
-                  if (frRows && frRows.length) {
-                    var frIds = frRows.map(function(r){ return r.requester_id; });
-                    var { data: frProfs } = await db.from('profiles').select('id, username, display_name, avatar_url').in('id', frIds);
-                    var frProfMap = {};
-                    (frProfs || []).forEach(function(p){ frProfMap[p.id] = p; });
-                    var frHtml = '';
-                    frRows.forEach(function(fr) {
-                      var p = frProfMap[fr.requester_id] || {};
-                      var name = p.display_name || p.username || 'Someone';
-                      var avH = p.avatar_url ? '<img src="' + esc(p.avatar_url) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : esc(name.charAt(0).toUpperCase());
-                      frHtml += '<div class="ds-friend-req" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);">'
-                        + '<div style="width:28px;height:28px;border-radius:50%;background:var(--bg4);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text2);border:1px solid rgba(245,158,11,0.4);">' + avH + '</div>'
-                        + '<div style="flex:1;min-width:0;">'
-                          + '<div style="font-size:12px;font-weight:700;color:#f59e0b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(name) + ' sent you a friend request</div>'
-                          + '<div style="font-size:10px;color:var(--text3);margin-top:1px;">Tap to view</div>'
-                        + '</div>'
-                        + '<a href="friends.html" style="font-size:11px;font-weight:700;color:#f59e0b;text-decoration:none;white-space:nowrap;border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:3px 8px;">View</a>'
-                        + '</div>';
-                    });
-                    _dsFriendReqHtml = frHtml;
-                    dsApplyFriendReqs();
-                  }
-                }
-              }
-            }
-          } catch(e) {}
-        }
-        /* Admin link — check admins table instead of hardcoding UID */
-        try {
-          var adminCheck = await db.from('admins').select('id').eq('id', session.user.id).maybeSingle();
-          if (adminCheck.data) {
-            var menu = document.querySelector('.user-dropdown-menu');
-            var divider = document.createElement('div');
-            divider.className = 'user-dropdown-divider';
-            var adminLink = document.createElement('a');
-            adminLink.className = 'user-dropdown-item';
-            adminLink.href = 'WhiteRoomUnbreakable.html';
-            adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>';
-            var signOutBtn = menu.querySelector('.signout-btn');
-            menu.insertBefore(divider, signOutBtn);
-            menu.insertBefore(adminLink, signOutBtn);
+        // Correct check-in dot now that streak row has responded
+        if (localStorage.getItem(dsCkKey) !== dsCkToday) {
+          if (streakRes.data && streakRes.data.last_checkin === dsCkToday) {
+            localStorage.setItem(dsCkKey, dsCkToday); // claimed on another device
+            dsSetCheckinDot(false);
           }
-        } catch(e) {}
+          // else: dot stays gold (correctly set optimistically above)
+        }
+
+        // Avatar + richer display name from profile row
+        var avatarBtn = document.getElementById('user-avatar-btn');
+        if (profileRes.data) {
+          var pr = profileRes.data;
+          if (pr.display_name) {
+            document.getElementById('dd-display-name').textContent = pr.display_name;
+            document.getElementById('user-avatar-initial').textContent = pr.display_name.charAt(0).toUpperCase();
+          }
+          if (pr.avatar_url) {
+            avatarBtn.innerHTML = '<img src="' + esc(pr.avatar_url) + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
+          }
+
+          // Pending counts — works lists needed first, then collab/friend queries in parallel
+          if (pr.id) {
+            var uid2 = pr.id;
+            try {
+              var [myArtworksRes, myNovelsRes, frRes] = await Promise.all([
+                db.from('works').select('id').eq('author_id', uid2).eq('type', 'artwork'),
+                db.from('works').select('id').eq('author_id', uid2).eq('type', 'novel'),
+                db.from('friendships').select('id,requester_id,created_at').eq('recipient_id', uid2).eq('status', 'pending').order('created_at', { ascending: false })
+              ]);
+              var artIds  = (myArtworksRes.data || []).map(function(w){ return w.id; });
+              var novIds  = (myNovelsRes.data  || []).map(function(w){ return w.id; });
+              var frRows  = frRes.data || [];
+              var frCount = frRows.length;
+
+              // Second parallel wave: collab counts + song suggestions
+              var pendingWave = [];
+              if (artIds.length) pendingWave.push(db.from('artwork_collabs').select('id').in('artwork_id', artIds).eq('status', 'pending'));
+              else pendingWave.push(Promise.resolve({ data: [] }));
+              if (novIds.length) pendingWave.push(db.from('story_collabs').select('id').in('work_id', novIds).eq('status', 'pending'));
+              else pendingWave.push(Promise.resolve({ data: [] }));
+              if (novIds.length) pendingWave.push(db.from('character_song_suggestions').select('id').in('work_id', novIds).eq('status','pending'));
+              else pendingWave.push(Promise.resolve({ data: [] }));
+
+              var [acRes, scRes, songRes] = await Promise.all(pendingWave);
+              var acCount   = (acRes.data   || []).length;
+              var scCount   = (scRes.data   || []).length;
+              var songCount = (songRes.data || []).length;
+
+              var pendingParts = [];
+              if (acCount   > 0) pendingParts.push(acCount   + ' story collab'      + (acCount   > 1 ? 's' : ''));
+              if (scCount   > 0) pendingParts.push(scCount   + ' fan art'           + (scCount   > 1 ? 's' : ''));
+              if (frCount   > 0) pendingParts.push(frCount   + ' friend request'    + (frCount   > 1 ? 's' : ''));
+              if (songCount > 0) pendingParts.push(songCount + ' song suggestion'   + (songCount > 1 ? 's' : ''));
+
+              if (pendingParts.length > 0) {
+                var collabParts = pendingParts.filter(function(p){ return p.indexOf('friend') === -1; });
+                var friendParts = pendingParts.filter(function(p){ return p.indexOf('friend') !== -1; });
+                if (collabParts.length > 0) {
+                  var profileLink = document.getElementById('dd-profile-link');
+                  if (profileLink) profileLink.innerHTML = '<i class="ti ti-user"></i> My Profile <span class="collab-pending-pill">' + collabParts.join(' · ') + '</span>';
+                }
+                if (friendParts.length > 0) {
+                  var friendsLink = document.getElementById('dd-friends-link');
+                  if (friendsLink) friendsLink.innerHTML = '<i class="ti ti-users"></i> Friends <span class="collab-pending-pill">' + friendParts.join(' · ') + '</span>';
+                }
+              }
+
+              // Friend request cards in notification tab
+              if (frCount > 0) {
+                var frIds = frRows.map(function(r){ return r.requester_id; });
+                var { data: frProfs } = await db.from('profiles').select('id,username,display_name,avatar_url').in('id', frIds);
+                var frProfMap = {};
+                (frProfs || []).forEach(function(p){ frProfMap[p.id] = p; });
+                var frHtml = '';
+                frRows.forEach(function(fr) {
+                  var p = frProfMap[fr.requester_id] || {};
+                  var name = p.display_name || p.username || 'Someone';
+                  var avH = p.avatar_url ? '<img src="' + esc(p.avatar_url) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : esc(name.charAt(0).toUpperCase());
+                  frHtml += '<div class="ds-friend-req" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);">'
+                    + '<div style="width:28px;height:28px;border-radius:50%;background:var(--bg4);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text2);border:1px solid rgba(245,158,11,0.4);">' + avH + '</div>'
+                    + '<div style="flex:1;min-width:0;">'
+                      + '<div style="font-size:12px;font-weight:700;color:#f59e0b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(name) + ' sent you a friend request</div>'
+                      + '<div style="font-size:10px;color:var(--text3);margin-top:1px;">Tap to view</div>'
+                    + '</div>'
+                    + '<a href="friends.html" style="font-size:11px;font-weight:700;color:#f59e0b;text-decoration:none;white-space:nowrap;border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:3px 8px;">View</a>'
+                    + '</div>';
+                });
+                _dsFriendReqHtml = frHtml;
+                dsApplyFriendReqs();
+              }
+            } catch(e) {}
+          }
+        }
+
+        // Admin link
+        if (adminRes.data) {
+          var menu = document.querySelector('.user-dropdown-menu');
+          var divider = document.createElement('div');
+          divider.className = 'user-dropdown-divider';
+          var adminLink = document.createElement('a');
+          adminLink.className = 'user-dropdown-item';
+          adminLink.href = 'WhiteRoomUnbreakable.html';
+          adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>';
+          var signOutBtn = menu.querySelector('.signout-btn');
+          menu.insertBefore(divider, signOutBtn);
+          menu.insertBefore(adminLink, signOutBtn);
+        }
       } catch(err) { console.warn('User nav:', err); }
     })();
 
