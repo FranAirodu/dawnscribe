@@ -558,7 +558,7 @@ function dsApplyAccent(hex) {
     var workIds = (followedWorks.data||[]).map(function(r){return r.work_id;});
     var novelNotifs = [];
     if(workIds.length){
-      var chapRes = await db.from('chapters').select('id,chapter_number,title,created_at,work_id').in('work_id',workIds).order('created_at',{ascending:false}).limit(8);
+      var chapRes = await db.from('chapters').select('id,chapter_number,title,created_at,work_id').in('work_id',workIds).eq('status','published').order('created_at',{ascending:false}).limit(8);
       novelNotifs = chapRes.data||[];
       if(novelNotifs.length){
         var cwIds=[...new Set(novelNotifs.map(function(c){return c.work_id;}))];
