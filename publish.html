@@ -2252,8 +2252,11 @@
         aiIntent: aiIntent,
         chapterTitle: document.getElementById('chapter-title').value,
         chapterContent: quill ? quill.root.innerHTML : '',
-        // Save preview URLs for visual restore (user must re-upload files to publish)
-        coverPreviewUrl: document.getElementById('sidebar-cover').src || null
+        // Save preview URLs for visual restore (user must re-upload files to publish).
+        // Guarded on coverFile — an <img> with no src attribute ever set still
+        // returns the page's own URL from .src (browser quirk), which would
+        // otherwise get saved and restored as a broken "cover".
+        coverPreviewUrl: coverFile ? (document.getElementById('sidebar-cover').src || null) : null
       };
       localStorage.setItem('ds_publish_draft', JSON.stringify(draft));
       showToast('Draft saved! Re-upload images before publishing.', 'ti-device-floppy');
@@ -2444,10 +2447,30 @@
             chapter_number: 1,
             word_count: wordCount,
             status: 'published'
-          });
+          }).select().single();
           if (chapterResult.error) {
             console.error('Chapter insert error:', JSON.stringify(chapterResult.error));
             throw chapterResult.error;
+          }
+          var chapterId = chapterResult.data.id;
+
+          // Save any characters staged while writing chapter 1 — this page only
+          // ever runs before the work exists, so everything in ctCharacters is
+          // a local staged entry (ctInit/DB-backed characters are edit-only).
+          if (ctCharacters.length) {
+            try {
+              var charRows = ctCharacters.map(function(c, i) {
+                return { work_id: workId, name: c.name, sort_order: i };
+              });
+              var charInsertRes = await db.from('novel_characters').insert(charRows).select('id,name,sort_order');
+              if (!charInsertRes.error && charInsertRes.data) {
+                charInsertRes.data.forEach(function(row) {
+                  var match = ctCharacters[row.sort_order];
+                  if (match) match.id = row.id;
+                });
+                await ctSaveChapterCharacters(chapterId, workId);
+              }
+            } catch(e) { console.warn('Character save failed:', e); }
           }
         }
 
@@ -2711,8 +2734,8 @@ function ctRender() {
   ctCharacters.forEach(function(char) {
     var row = document.createElement('div');
     row.className = 'ct-mgr-row';
-    var statusLabel = char.chapter_status === 'skipped' ? 'Skipped' : (char.status === 'ended' ? 'Ended' : 'Active');
-    var statusClass = char.chapter_status === 'skipped' ? 'skipped' : (char.status === 'ended' ? 'ended' : 'active');
+    var statusLabel = char._staged ? 'New' : (char.chapter_status === 'skipped' ? 'Skipped' : (char.status === 'ended' ? 'Ended' : 'Active'));
+    var statusClass = char._staged ? 'active' : (char.chapter_status === 'skipped' ? 'skipped' : (char.status === 'ended' ? 'ended' : 'active'));
     row.innerHTML =
       '<div class="comment-avatar ct-mgr-avatar">' +
         (char.portrait_url ? '<img src="'+char.portrait_url+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : '<i class="ti ti-user"></i>') +
@@ -2720,12 +2743,17 @@ function ctRender() {
       '<div class="ct-mgr-name">' + char.name + '</div>' +
       '<span class="ct-mgr-status ' + statusClass + '">' + statusLabel + '</span>' +
       '<div class="ct-mgr-actions">' +
-        (char.chapter_status !== 'skipped' && char.status !== 'ended'
-          ? '<button class="ct-mgr-btn" onclick="ctSkipChar(\''+char.id+'\')">Skip<span class="ct-tooltip">Character isn\'t present in this chapter</span></button>'
-          : (char.chapter_status === 'skipped' ? '<button class="ct-mgr-btn" onclick="ctActivateChar(\''+char.id+'\')">Include<span class="ct-tooltip">Mark character as present in this chapter</span></button>' : '')) +
-        (char.status !== 'ended'
-          ? '<button class="ct-mgr-btn danger" onclick="ctEndChar(\''+char.id+'\')">End<span class="ct-tooltip">Character has passed away and/or will never return</span></button>'
-          : '') +
+        (char._staged
+          ? '<button class="ct-mgr-btn danger" onclick="ctRemoveStagedChar(\''+char.id+'\')">Remove<span class="ct-tooltip">Remove this character before publishing</span></button>'
+          : (
+              (char.chapter_status !== 'skipped' && char.status !== 'ended'
+                ? '<button class="ct-mgr-btn" onclick="ctSkipChar(\''+char.id+'\')">Skip<span class="ct-tooltip">Character isn\'t present in this chapter</span></button>'
+                : (char.chapter_status === 'skipped' ? '<button class="ct-mgr-btn" onclick="ctActivateChar(\''+char.id+'\')">Include<span class="ct-tooltip">Mark character as present in this chapter</span></button>' : '')) +
+              (char.status !== 'ended'
+                ? '<button class="ct-mgr-btn danger" onclick="ctEndChar(\''+char.id+'\')">End<span class="ct-tooltip">Character has passed away and/or will never return</span></button>'
+                : '')
+            )
+        ) +
       '</div>';
     list.appendChild(row);
   });
@@ -2735,7 +2763,19 @@ async function ctAddCharacter() {
   var input = document.getElementById('ct-mgr-input');
   var name = input ? input.value.trim() : '';
   if (!name) return;
-  if (!ctWorkId) { showToast('Save the story first before adding characters.', 'ti-alert-triangle'); return; }
+
+  if (!ctWorkId) {
+    // Pre-publish (this page only ever runs before the work exists) —
+    // stage locally and persist to the DB once publishWork() creates the story.
+    ctCharacters.push({
+      id: 'local_' + Date.now() + '_' + ctCharacters.length,
+      name: name, status: 'active', chapter_status: 'active', _staged: true
+    });
+    input.value = '';
+    ctRender();
+    showToast(name + ' added \u2014 saved when you publish!', 'ti-user-plus');
+    return;
+  }
 
   var { data, error } = await db.from('novel_characters').insert({
     work_id: ctWorkId,
@@ -2748,6 +2788,11 @@ async function ctAddCharacter() {
   input.value = '';
   ctRender();
   showToast(name + ' added!', 'ti-user-plus');
+}
+
+function ctRemoveStagedChar(id) {
+  var idx = ctCharacters.findIndex(function(c){ return c.id === id; });
+  if (idx !== -1) { ctCharacters.splice(idx, 1); ctRender(); }
 }
 
 function ctSkipChar(id) {

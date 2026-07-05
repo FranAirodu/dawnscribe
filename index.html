@@ -3953,13 +3953,13 @@
           emberRes, quillRes, accentRes, roleRes, profileRes,
           adminRes, streakRes
         ] = await Promise.all([
-          db.from('user_embers').select('balance').eq('user_id', uid).maybeSingle().catch(function(){ return {}; }),
-          db.from('user_quills').select('balance').eq('user_id', uid).maybeSingle().catch(function(){ return {}; }),
-          db.from('user_avatars').select('accent_color').eq('user_id', uid).maybeSingle().catch(function(){ return {}; }),
-          db.from('profiles').select('role').eq('id', uid).maybeSingle().catch(function(){ return {}; }),
-          username ? db.from('profiles').select('avatar_url,display_name,id').eq('username', username).maybeSingle().catch(function(){ return {}; }) : Promise.resolve({}),
-          db.from('admins').select('id').eq('id', uid).maybeSingle().catch(function(){ return {}; }),
-          db.from('user_streaks').select('last_checkin').eq('user_id', uid).maybeSingle().catch(function(){ return {}; })
+          Promise.resolve(db.from('user_embers').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('user_quills').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('user_avatars').select('accent_color').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('profiles').select('role').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('profiles').select('avatar_url,display_name,username,id,account_status').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('admins').select('id').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('user_streaks').select('last_checkin').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; })
         ]);
 
         // Ember balance
@@ -4009,8 +4009,23 @@
 
         // Avatar + richer display name from profile row
         var avatarBtn = document.getElementById('user-avatar-btn');
+
+        // ── BAN CHECK ──────────────────────────────────────────────
+        // Authoritative site-wide enforcement of the banned state, set by
+        // admins via WhiteRoom. Mirrors nav.js — this must never be skipped.
+        if (profileRes && profileRes.data && profileRes.data.account_status === 'banned') {
+          await db.auth.signOut();
+          window.location.href = 'auth.html?reason=banned';
+          return;
+        }
+
         if (profileRes.data) {
           var pr = profileRes.data;
+          if (!username && pr.username) {
+            username = pr.username;
+            document.getElementById('dd-handle').textContent = '@' + username;
+            document.getElementById('dd-profile-link').href = 'profile.html?user=' + username;
+          }
           if (pr.display_name) {
             document.getElementById('dd-display-name').textContent = pr.display_name;
             document.getElementById('user-avatar-initial').textContent = pr.display_name.charAt(0).toUpperCase();
@@ -4346,13 +4361,13 @@
         if(collabStatus === 'pending' && scCollabWorkId){
           var novelRes = await db.from('works').select('author_id').eq('id', scCollabWorkId).maybeSingle();
           if(novelRes.data){
-            await db.from('notifications').insert({
+            await Promise.resolve(db.from('notifications').insert({
               user_id: novelRes.data.author_id,
               type: 'collab_request',
               from_user_id: uid,
               work_id: workRes.data.id,
               message: '"' + title + '" — an artist has created fan art for your story. Tap to approve or decline.'
-            }).catch(function(){});
+            })).catch(function(){});
           }
         }
 
