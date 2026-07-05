@@ -183,6 +183,16 @@
 
     /* ECHO COUNTS */
     .echoes-section{margin-top:28px;padding-top:20px;border-top:1px solid var(--border);}
+    .glossary-category{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin:16px 0 6px;}
+    .glossary-category:first-child{margin-top:0;}
+    .glossary-entry{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+    .glossary-entry:last-child{border-bottom:none;}
+    .glossary-term{font-weight:600;font-size:14px;color:var(--text);min-width:120px;flex-shrink:0;}
+    .glossary-def{font-size:13px;color:var(--text2);line-height:1.55;}
+    .glossary-edit-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+    .glossary-edit-row input,.glossary-edit-row textarea,.glossary-edit-row select{background:var(--input-bg,var(--card));border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--text);font-family:inherit;}
+    .glossary-edit-row input{flex:1;min-width:120px;}
+    .glossary-edit-row textarea{flex:2;min-width:200px;resize:vertical;}
     .echoes-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
     .echo-count-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;font-size:12px;font-weight:700;background:color-mix(in srgb,#f59e0b 8%,transparent);border:1px solid color-mix(in srgb,#f59e0b 20%,transparent);color:#f59e0b;}
     .echo-count-chip.rare{background:color-mix(in srgb,#ef4444 8%,transparent);border-color:color-mix(in srgb,#ef4444 20%,transparent);color:#ef4444;}
@@ -548,6 +558,12 @@
       <div class="section" id="top-fans-section" style="display:none;">
         <div class="section-title"><i class="ti ti-crown"></i> Top Fans</div>
         <div id="top-fans-content"></div>
+      </div>
+
+      <!-- GLOSSARY -->
+      <div class="section" id="glossary-section" style="display:none;">
+        <div class="section-title"><i class="ti ti-book"></i> Glossary</div>
+        <div id="glossary-content"></div>
       </div>
 
       <!-- REVIEWS -->
@@ -1076,6 +1092,56 @@
       followBtn.addEventListener('click', function() { toggleFollowWork(); });
       actionsEl.appendChild(followBtn);
 
+      // Reading List Status dropdown
+      var rls = readingListStatus;
+      var rlLabels = { reading: 'Reading', plan_to_read: 'Plan to Read', completed: 'Completed', on_hold: 'On Hold', dropped: 'Dropped' };
+      var rlIcons  = { reading: 'ti-book-2', plan_to_read: 'ti-bookmark', completed: 'ti-circle-check', on_hold: 'ti-player-pause', dropped: 'ti-x' };
+      var rlWrap = document.createElement('div');
+      rlWrap.style.cssText = 'position:relative;display:inline-block;';
+      var rlBtn = document.createElement('button');
+      rlBtn.className = 'btn-outline' + (rls ? ' active' : '');
+      rlBtn.innerHTML = rls
+        ? '<i class="ti ' + (rlIcons[rls]||'ti-books') + '"></i> ' + (rlLabels[rls]||rls)
+        : '<i class="ti ti-books"></i> Add to List';
+      var rlDropdown = document.createElement('div');
+      rlDropdown.style.cssText = 'display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:160px;overflow:hidden;margin-top:4px;';
+      var rlOptions = [
+        { key:'reading',      label:'Reading',       icon:'ti-book-2' },
+        { key:'plan_to_read', label:'Plan to Read',  icon:'ti-bookmark' },
+        { key:'completed',    label:'Completed',     icon:'ti-circle-check' },
+        { key:'on_hold',      label:'On Hold',       icon:'ti-player-pause' },
+        { key:'dropped',      label:'Dropped',       icon:'ti-x' }
+      ];
+      rlOptions.forEach(function(opt) {
+        var item = document.createElement('button');
+        item.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text);text-align:left;' + (rls === opt.key ? 'background:var(--accent1);color:#fff;' : '');
+        item.innerHTML = '<i class="ti ' + opt.icon + '" style="font-size:14px;"></i>' + opt.label;
+        item.addEventListener('click', function() {
+          rlDropdown.style.display = 'none';
+          setReadingListStatus(opt.key);
+        });
+        item.addEventListener('mouseover', function() { if (rls !== opt.key) this.style.background = 'var(--hover)'; });
+        item.addEventListener('mouseout',  function() { if (rls !== opt.key) this.style.background = ''; });
+        rlDropdown.appendChild(item);
+      });
+      if (rls) {
+        var removeItem = document.createElement('button');
+        removeItem.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text3);text-align:left;border-top:1px solid var(--border);';
+        removeItem.innerHTML = '<i class="ti ti-trash" style="font-size:14px;"></i>Remove from List';
+        removeItem.addEventListener('click', function() { rlDropdown.style.display = 'none'; setReadingListStatus(null); });
+        removeItem.addEventListener('mouseover', function() { this.style.background = 'var(--hover)'; });
+        removeItem.addEventListener('mouseout',  function() { this.style.background = ''; });
+        rlDropdown.appendChild(removeItem);
+      }
+      rlBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        rlDropdown.style.display = rlDropdown.style.display === 'none' ? 'block' : 'none';
+      });
+      document.addEventListener('click', function() { rlDropdown.style.display = 'none'; }, { once: false });
+      rlWrap.appendChild(rlBtn);
+      rlWrap.appendChild(rlDropdown);
+      actionsEl.appendChild(rlWrap);
+
       // Offering button — shown to logged-in non-owners only, rendered into dedicated wrap
       renderOfferingButton();
       var isOwnerAct = currentSession && workData && currentSession.user.id === workData.author_id;
@@ -1090,6 +1156,7 @@
 
     // ── FOLLOW STORY ─────────────────────────────────────────────
     var isFollowingWork = false;
+    var readingListStatus = null; // 'reading'|'plan_to_read'|'completed'|'on_hold'|'dropped'|null
 
     // ── OFFERING STATE ───────────────────────────────────────────
     var offeringState = { count: 0, tier: null, hasOffered: false, chaptersRead: 0 };
@@ -1102,6 +1169,12 @@
         .eq('work_id', workData.id)
         .maybeSingle();
       isFollowingWork = !!(result.data);
+      var rle = await db.from('reading_list_entries')
+        .select('status')
+        .eq('user_id', currentSession.user.id)
+        .eq('work_id', workData.id)
+        .maybeSingle();
+      readingListStatus = rle.data ? rle.data.status : null;
     }
 
     // ── LOAD OFFERING STATE ──────────────────────────────────────
@@ -1583,6 +1656,117 @@
       renderActions();
     }
 
+    // ── READING LIST STATUS ──────────────────────────────────────
+    async function setReadingListStatus(newStatus) {
+      if (!currentSession) { window.location.href = 'auth.html'; return; }
+      var uid = currentSession.user.id;
+      var wid = workData.id;
+      if (!newStatus) {
+        await db.from('reading_list_entries').delete().eq('user_id', uid).eq('work_id', wid);
+        readingListStatus = null;
+        showToast('Removed from reading list', 'ti-books');
+      } else {
+        var rlLabels2 = { reading: 'Reading', plan_to_read: 'Plan to Read', completed: 'Completed', on_hold: 'On Hold', dropped: 'Dropped' };
+        await db.from('reading_list_entries').upsert({ user_id: uid, work_id: wid, status: newStatus, updated_at: new Date().toISOString() }, { onConflict: 'user_id,work_id' });
+        readingListStatus = newStatus;
+        showToast('List: ' + (rlLabels2[newStatus]||newStatus), 'ti-circle-check');
+      }
+      renderActions();
+    }
+
+    // ── GLOSSARY ─────────────────────────────────────────────────
+    var glossaryEntries = [];
+    async function loadGlossary() {
+      var { data } = await db.from('work_glossary')
+        .select('id,term,definition,category,sort_order')
+        .eq('work_id', workData.id)
+        .order('sort_order', { ascending: true })
+        .order('term', { ascending: true });
+      glossaryEntries = data || [];
+      renderGlossary();
+    }
+
+    function renderGlossary() {
+      var sec = document.getElementById('glossary-section');
+      var el  = document.getElementById('glossary-content');
+      if (!el) return;
+      var isAuthor = currentSession && workData.author_id === currentSession.user.id;
+      if (!glossaryEntries.length && !isAuthor) { sec.style.display = 'none'; return; }
+      sec.style.display = 'block';
+      var byCategory = {};
+      glossaryEntries.forEach(function(e) {
+        var cat = e.category || '';
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(e);
+      });
+      var html = '';
+      Object.keys(byCategory).sort().forEach(function(cat) {
+        if (cat) html += '<div class="glossary-category">' + escHtml(cat) + '</div>';
+        byCategory[cat].forEach(function(e) {
+          var entryDiv = document.createElement('div');
+          entryDiv.className = 'glossary-entry';
+          entryDiv.innerHTML = '<div class="glossary-term">' + escHtml(e.term) + '</div><div class="glossary-def">' + escHtml(e.definition) + '</div>';
+          if (isAuthor) {
+            var editBtns = document.createElement('div');
+            editBtns.style.cssText = 'margin-left:auto;display:flex;gap:6px;flex-shrink:0;';
+            var eBtn = document.createElement('button');
+            eBtn.className = 'btn-icon'; eBtn.title = 'Edit';
+            eBtn.innerHTML = '<i class="ti ti-pencil"></i>';
+            (function(eid){ eBtn.addEventListener('click', function(){ editGlossaryEntry(eid); }); })(e.id);
+            var dBtn = document.createElement('button');
+            dBtn.className = 'btn-icon'; dBtn.title = 'Delete';
+            dBtn.innerHTML = '<i class="ti ti-trash"></i>';
+            (function(eid){ dBtn.addEventListener('click', function(){ deleteGlossaryEntry(eid); }); })(e.id);
+            editBtns.appendChild(eBtn); editBtns.appendChild(dBtn);
+            entryDiv.appendChild(editBtns);
+          }
+          html += entryDiv.outerHTML;
+        });
+      });
+      if (isAuthor) {
+        html += '<div class="glossary-edit-row" id="glossary-add-row">' +
+          '<input id="gl-term" placeholder="Term" style="max-width:160px;">' +
+          '<textarea id="gl-def" placeholder="Definition" rows="2"></textarea>' +
+          '<input id="gl-cat" placeholder="Category (optional)" style="max-width:140px;">' +
+          '<button class="btn-sm" onclick="saveGlossaryEntry(null)"><i class="ti ti-plus"></i> Add</button>' +
+        '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    async function saveGlossaryEntry(existingId) {
+      if (!currentSession) return;
+      var term = (document.getElementById('gl-term').value || '').trim();
+      var def  = (document.getElementById('gl-def').value || '').trim();
+      var cat  = (document.getElementById('gl-cat').value || '').trim();
+      if (!term || !def) { showToast('Term and definition are required', 'ti-alert-circle', true); return; }
+      if (existingId) {
+        await db.from('work_glossary').update({ term: term, definition: def, category: cat || null, updated_at: new Date().toISOString() }).eq('id', existingId);
+      } else {
+        await db.from('work_glossary').insert({ work_id: workData.id, term: term, definition: def, category: cat || null });
+      }
+      await loadGlossary();
+    }
+
+    async function deleteGlossaryEntry(id) {
+      if (!confirm('Delete this glossary entry?')) return;
+      await db.from('work_glossary').delete().eq('id', id);
+      await loadGlossary();
+    }
+
+    function editGlossaryEntry(id) {
+      var entry = glossaryEntries.find(function(e){ return e.id === id; });
+      if (!entry) return;
+      var row = document.getElementById('glossary-add-row');
+      if (!row) return;
+      document.getElementById('gl-term').value = entry.term;
+      document.getElementById('gl-def').value  = entry.definition;
+      document.getElementById('gl-cat').value  = entry.category || '';
+      row.querySelector('button').onclick = function(){ saveGlossaryEntry(id); };
+      row.querySelector('button').innerHTML = '<i class="ti ti-check"></i> Save';
+      row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
     // ── REVIEWS ──────────────────────────────────────────────────
     async function loadReviews() {
       var chaptersRead = getChaptersRead(workData.id);
@@ -1875,6 +2059,7 @@
       renderGoal();
       await loadKindlingState();
       renderKindlingUI();
+      await loadGlossary();
       await loadReviews();
       await loadRecommendations();
       await loadCollabs();
@@ -2039,7 +2224,7 @@
       var { data: existing } = await db.from('recommendations').select('id,vote_count').eq('work_id',workData.id).eq('suggested_work_id',work.id).maybeSingle();
       if(existing) {
         if(!recVotedIds.has(existing.id)) {
-          await db.from('recommendation_votes').insert({recommendation_id:existing.id,user_id:currentSession.user.id}).catch(function(){});
+          await Promise.resolve(db.from('recommendation_votes').insert({recommendation_id:existing.id,user_id:currentSession.user.id})).catch(function(){});
           var nc = existing.vote_count+1;
           await db.from('recommendations').update({vote_count:nc}).eq('id',existing.id);
           if(nc>=3) await notifyAuthorRec(existing.id,nc);
@@ -2049,7 +2234,7 @@
       }
       var { data: newRec, error } = await db.from('recommendations').insert({work_id:workData.id,suggested_work_id:work.id,suggested_by:currentSession.user.id,status:'pending',vote_count:1}).select().single();
       if(error) { showToast('Could not submit recommendation.','ti-x'); return; }
-      await db.from('recommendation_votes').insert({recommendation_id:newRec.id,user_id:currentSession.user.id}).catch(function(){});
+      await Promise.resolve(db.from('recommendation_votes').insert({recommendation_id:newRec.id,user_id:currentSession.user.id})).catch(function(){});
       showToast('Recommendation submitted! The author will review it.','ti-check');
       loadRecommendations();
     }
