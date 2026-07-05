@@ -116,6 +116,31 @@
     .streak-flair.red{color:#ef4444;}
     .streak-flair.gold{color:#f0c040;}
 
+    /* CHAPTER GOALS */
+    .goal-pledge{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:10px;}
+    .goal-bar-track{background:var(--bg3);border-radius:20px;height:10px;overflow:hidden;margin-bottom:6px;}
+    .goal-bar-fill{height:100%;background:linear-gradient(90deg,#f0c040,#f97316);border-radius:20px;transition:width 0.4s ease;}
+    .goal-bar-fill.reached{background:linear-gradient(90deg,#34d399,#0d9488);}
+    .goal-progress-line{font-size:11.5px;color:var(--text3);display:flex;justify-content:space-between;margin-bottom:4px;}
+    .goal-reached-banner{background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.3);border-radius:10px;padding:10px 14px;font-size:13px;color:#34d399;font-weight:700;display:flex;align-items:center;gap:8px;margin-top:8px;}
+    .goal-cancel-btn{background:transparent;border:none;color:var(--text3);font-size:11px;cursor:pointer;text-decoration:underline;margin-top:8px;}
+    .goal-cancel-btn:hover{color:#f87171;}
+    .goal-setup-btn{background:transparent;border:1px dashed var(--border);border-radius:9px;padding:9px 16px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .goal-setup-btn:hover{border-color:#f0c040;color:#f0c040;}
+    .goal-form{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
+    .goal-form select,.goal-form input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;}
+    .goal-form-actions{display:flex;gap:8px;}
+    .goal-form-actions button{flex:1;padding:9px;border-radius:8px;border:none;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
+    .goal-form-save{background:linear-gradient(135deg,#f5c542,#f97316);color:#1a1208;}
+    .goal-form-save:disabled{opacity:0.5;cursor:default;}
+    .goal-form-cancel{background:var(--bg3);color:var(--text2);}
+
+    /* KINDLING */
+    .kindling-featured-banner{background:linear-gradient(135deg,rgba(240,192,64,0.14),rgba(249,115,22,0.08));border:1px solid rgba(240,192,64,0.4);border-radius:12px;padding:12px 16px;font-size:13px;font-weight:700;color:#f0c040;display:flex;align-items:center;gap:8px;margin:10px 0;}
+    .kindling-enter-btn{background:transparent;border:1px solid rgba(240,192,64,0.4);border-radius:8px;padding:7px 14px;color:#f0c040;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .kindling-enter-btn:hover{border-color:#f0c040;background:rgba(240,192,64,0.08);}
+    .kindling-enter-btn:disabled{opacity:0.5;cursor:default;}
+
     /* MAIN CONTENT */
     .story-body{max-width:1000px;margin:0 auto;padding:24px 24px 80px;display:grid;grid-template-columns:1fr 300px;gap:24px;}
     @media(max-width:760px){.story-body{grid-template-columns:1fr;}}
@@ -433,6 +458,10 @@
         <a class="owner-btn" id="manage-chapters-btn" href="#"><i class="ti ti-books"></i> Manage Chapters</a>
         <a class="owner-btn" id="edit-story-btn" href="#"><i class="ti ti-edit"></i> Edit Story</a>
         <button class="owner-btn danger" id="delete-story-btn"><i class="ti ti-trash"></i> Delete</button>
+        <button class="kindling-enter-btn" id="kindling-enter-btn" style="display:none;" onclick="submitEnterKindling()"><i class="ti ti-flame"></i> Enter Kindling (this month)</button>
+      </div>
+      <div class="kindling-featured-banner" id="kindling-featured-banner" style="display:none;">
+        <i class="ti ti-flame"></i> This Month's Kindling Pick &mdash; featured on the DawnScribe homepage!
       </div>
 
       <!-- COLLAB BANNER -->
@@ -484,6 +513,12 @@
       <div class="section" id="translations-section" style="display:none;">
         <div class="section-title"><i class="ti ti-language"></i> <span id="translations-title">Translations</span></div>
         <div id="translations-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+
+      <!-- CHAPTER GOAL -->
+      <div class="section" id="chapter-goal-section" style="display:none;">
+        <div class="section-title"><i class="ti ti-target-arrow"></i> Reader Goal</div>
+        <div id="chapter-goal-content"></div>
       </div>
 
       <!-- CHAPTERS -->
@@ -1107,9 +1142,11 @@
         offeringState.hasOffered = true;
         offeringState.count = data.offering_count;
         offeringState.tier  = data.offering_tier;
+        workData.offering_count = data.offering_count;
         showToast('Offering made! 🔥', 'ti-flame');
         renderOfferingButton();
         renderOfferingTierBadge();
+        refreshGoalProgress();
       } catch(e) {
         showToast('Error submitting offering.', 'ti-x');
         if (btn) { btn.disabled = false; btn.innerHTML = '🔥 Offer'; }
@@ -1243,9 +1280,12 @@
         engageState.sparkWeek = data.spark_count_week;
         engageState.sparkTotal = data.spark_count_total;
         engageState.freeSparks = data.free_sparks_left || 0;
+        workData.spark_count_week = data.spark_count_week;
+        workData.spark_count_total = data.spark_count_total;
         showToast(data.was_free ? 'Sparked with a free Spark! ⚡' : 'Spark of Dawn given! ⚡', 'ti-bolt');
         renderEngagement();
         loadTopFans();
+        refreshGoalProgress();
       } catch(e) { showToast('Error sparking.', 'ti-x'); }
     }
 
@@ -1270,6 +1310,7 @@
         showToast('Rally raised! The author will see the call. 📣', 'ti-megaphone');
         renderEngagement();
         loadTopFans();
+        refreshGoalProgress();
       } catch(e) { showToast('Error rallying.', 'ti-x'); }
     }
 
@@ -1322,6 +1363,188 @@
         sec.style.display = 'block';
       } catch(e) {}
     }
+
+    // ── CHAPTER GOALS ─────────────────────────────────────────────
+    var goalState = { goal: null, progress: 0, showForm: false };
+
+    async function loadGoalState() {
+      try {
+        var { data } = await db.from('chapter_goals')
+          .select('*').eq('work_id', workData.id).in('status', ['active','reached'])
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        goalState.goal = data || null;
+        if (goalState.goal) await computeGoalProgress();
+      } catch(e) { goalState.goal = null; }
+    }
+
+    async function computeGoalProgress() {
+      var g = goalState.goal;
+      if (!g) { goalState.progress = 0; return; }
+      if (g.goal_type === 'sparks') {
+        goalState.progress = Math.max(0, (workData.spark_count_total || 0) - g.baseline);
+      } else if (g.goal_type === 'offerings') {
+        goalState.progress = Math.max(0, (workData.offering_count || 0) - g.baseline);
+      } else if (g.goal_type === 'rallies') {
+        try {
+          var rc = await db.from('chapter_rallies').select('id', { count: 'exact', head: true })
+            .eq('work_id', workData.id).gte('created_at', g.created_at);
+          goalState.progress = rc.count || 0;
+        } catch(e) { goalState.progress = 0; }
+      }
+    }
+
+    function renderGoal() {
+      var sec = document.getElementById('chapter-goal-section');
+      var el = document.getElementById('chapter-goal-content');
+      if (!sec || !el) return;
+      var isOwner = currentSession && currentSession.user.id === workData.author_id;
+      var g = goalState.goal;
+
+      if (!g) {
+        if (!isOwner) { sec.style.display = 'none'; return; }
+        sec.style.display = 'block';
+        if (!goalState.showForm) {
+          el.innerHTML = '<button class="goal-setup-btn" onclick="toggleGoalForm(true)"><i class="ti ti-target-arrow"></i> Set a Reader Goal</button>' +
+            '<div style="font-size:11.5px;color:var(--text3);margin-top:8px;">Give your readers something to rally behind \u2014 pledge a bonus chapter when they hit a target.</div>';
+        } else {
+          el.innerHTML =
+            '<div class="goal-form">' +
+              '<select id="goal-type-select"><option value="sparks">Sparks of Dawn</option><option value="rallies">Chapter Rallies</option><option value="offerings">Offerings</option></select>' +
+              '<input type="number" id="goal-target-input" min="5" max="1000" placeholder="Target (5\u20131000)" value="50"/>' +
+              '<input type="text" id="goal-pledge-input" maxlength="200" placeholder="What will you do when readers hit this? (e.g. \u201cBonus chapter!\u201d)"/>' +
+              '<div class="goal-form-actions">' +
+                '<button class="goal-form-save" id="goal-form-save-btn" onclick="submitCreateGoal()">Set Goal</button>' +
+                '<button class="goal-form-cancel" onclick="toggleGoalForm(false)">Cancel</button>' +
+              '</div>' +
+              '<div style="font-size:11px;color:var(--text3);">Goal runs for 7 days. One active goal per story.</div>' +
+            '</div>';
+        }
+        return;
+      }
+
+      sec.style.display = 'block';
+      var pct = Math.min(100, Math.round((goalState.progress / g.target) * 100));
+      var typeLabel = { sparks: 'Sparks of Dawn', rallies: 'Chapter Rallies', offerings: 'Offerings' }[g.goal_type] || g.goal_type;
+      var html = '';
+      if (g.pledge) html += '<div class="goal-pledge">\u201c' + escHtml(g.pledge) + '\u201d</div>';
+      html += '<div class="goal-progress-line"><span>' + typeLabel + '</span><span>' + goalState.progress + ' / ' + g.target + '</span></div>';
+      html += '<div class="goal-bar-track"><div class="goal-bar-fill' + (g.status === 'reached' ? ' reached' : '') + '" style="width:' + pct + '%;"></div></div>';
+      if (g.status === 'reached') {
+        html += '<div class="goal-reached-banner"><i class="ti ti-confetti"></i> Goal reached! ' + (isOwner ? 'Publish your next chapter to fulfill it.' : 'The author\u2019s bonus chapter is coming!') + '</div>';
+      }
+      if (isOwner) {
+        html += '<button class="goal-cancel-btn" onclick="submitCancelGoal(\'' + g.id + '\')">Cancel this goal</button>';
+      }
+      el.innerHTML = html;
+    }
+
+    window.toggleGoalForm = function(show) {
+      goalState.showForm = show;
+      renderGoal();
+    };
+
+    window.submitCreateGoal = async function() {
+      var type = document.getElementById('goal-type-select').value;
+      var target = parseInt(document.getElementById('goal-target-input').value, 10);
+      var pledge = document.getElementById('goal-pledge-input').value;
+      var btn = document.getElementById('goal-form-save-btn');
+      if (!target || target < 5 || target > 1000) { showToast('Target must be between 5 and 1000.', 'ti-x'); return; }
+      if (btn) { btn.disabled = true; btn.textContent = 'Setting\u2026'; }
+      try {
+        var { data, error } = await db.rpc('create_chapter_goal', {
+          p_work_id: workData.id, p_goal_type: type, p_target: target, p_pledge: pledge
+        });
+        if (error || !data || !data.success) {
+          var msg = (data && data.error) || (error && error.message) || 'Could not set goal';
+          var friendly = {
+            goal_already_active: 'You already have an active goal for this story.',
+            not_owner: 'Only the author can set a goal.',
+            invalid_input: 'Please check your target and goal type.',
+            not_authenticated: 'Please sign in first.'
+          }[msg] || msg;
+          showToast(friendly, 'ti-x');
+          if (btn) { btn.disabled = false; btn.textContent = 'Set Goal'; }
+          return;
+        }
+        showToast('Goal set! Readers will see it now. \ud83c\udfaf', 'ti-target-arrow');
+        goalState.showForm = false;
+        await loadGoalState();
+        renderGoal();
+      } catch(e) {
+        showToast('Error setting goal.', 'ti-x');
+        if (btn) { btn.disabled = false; btn.textContent = 'Set Goal'; }
+      }
+    };
+
+    window.submitCancelGoal = async function(goalId) {
+      try {
+        var { data, error } = await db.rpc('cancel_chapter_goal', { p_goal_id: goalId });
+        if (error || !data || !data.success) { showToast('Could not cancel goal.', 'ti-x'); return; }
+        showToast('Goal cancelled.', 'ti-x');
+        goalState.goal = null;
+        renderGoal();
+      } catch(e) { showToast('Error cancelling goal.', 'ti-x'); }
+    };
+
+    async function refreshGoalProgress() {
+      if (!goalState.goal) return;
+      await computeGoalProgress();
+      renderGoal();
+    }
+
+    // ── KINDLING ──────────────────────────────────────────────────
+    var kindlingState = { entered: false, eligible: false };
+
+    async function loadKindlingState() {
+      if (workData.kindling_featured) {
+        var kb = document.getElementById('kindling-featured-banner');
+        if (kb) kb.style.display = 'flex';
+      }
+      if (!currentSession || currentSession.user.id !== workData.author_id) return;
+      if (!workData.is_published || (workData.spark_count_total || 0) >= 100) return;
+      var now = new Date();
+      var monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+      try {
+        var { data } = await db.from('kindling_candidates').select('work_id')
+          .eq('work_id', workData.id).eq('month', monthStart).maybeSingle();
+        kindlingState.entered = !!data;
+        kindlingState.eligible = true;
+      } catch(e) {}
+    }
+
+    function renderKindlingUI() {
+      var btn = document.getElementById('kindling-enter-btn');
+      if (!btn || !kindlingState.eligible) return;
+      btn.style.display = 'inline-flex';
+      if (kindlingState.entered) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="ti ti-check"></i> Entered in Kindling this month';
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-flame"></i> Enter Kindling (this month)';
+      }
+    }
+
+    window.submitEnterKindling = async function() {
+      try {
+        var { data, error } = await db.rpc('enter_kindling', { p_work_id: workData.id });
+        if (error || !data || !data.success) {
+          var msg = (data && data.error) || (error && error.message) || 'Could not enter';
+          var friendly = {
+            already_entered: 'You\u2019ve already entered this story in Kindling this month.',
+            too_established: 'This story has grown past Kindling\u2019s new-voices threshold \u2014 congrats!',
+            not_published: 'Publish this story before entering Kindling.',
+            not_owner: 'Only the author can enter this story.',
+            not_authenticated: 'Please sign in first.'
+          }[msg] || msg;
+          showToast(friendly, 'ti-x');
+          return;
+        }
+        kindlingState.entered = true;
+        renderKindlingUI();
+        showToast('Entered in this month\u2019s Kindling vote! \ud83d\udd6f\ufe0f', 'ti-flame');
+      } catch(e) { showToast('Error entering Kindling.', 'ti-x'); }
+    };
 
     function streakFlair(s) {
       if (!s || !s.last_checkin || !s.current_streak) return '';
@@ -1648,6 +1871,10 @@
       renderEngagement();
       renderFlameCounter();
       loadTopFans();
+      await loadGoalState();
+      renderGoal();
+      await loadKindlingState();
+      renderKindlingUI();
       await loadReviews();
       await loadRecommendations();
       await loadCollabs();

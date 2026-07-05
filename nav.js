@@ -197,6 +197,11 @@ function dsApplyAccent(hex) {
     .ck-claim-btn { width: 100%; margin: 0 0 16px; padding: 11px; border: none; border-radius: 10px; background: linear-gradient(135deg, #f5c542, #f97316); color: #1a1208; font-size: 14px; font-weight: 800; cursor: pointer; transition: filter 0.2s; }
     .ck-claim-btn:hover { filter: brightness(1.08); }
     .ck-claim-btn:disabled { opacity: 0.55; cursor: default; filter: none; }
+    .ck-repair-wrap { margin-top: 10px; text-align: center; }
+    .ck-repair-btn { background: transparent; border: 1px dashed var(--border); border-radius: 9px; padding: 8px 14px; color: var(--text2); font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; }
+    .ck-repair-btn:hover { border-color: #fb923c; color: #fb923c; }
+    .ck-repair-btn:disabled { opacity: 0.5; cursor: default; }
+    .ck-repair-cost { color: var(--gold); font-weight: 800; display: inline-flex; align-items: center; gap: 2px; }
     .ck-cal { border-top: 1px solid var(--border); padding-top: 12px; }
     .ck-cal-title { font-size: 11.5px; font-weight: 800; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
     .ck-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -1212,6 +1217,9 @@ function dsApplyAccent(hex) {
           '<div class="ck-cal-title"><span id="ck-month-label"></span><span id="ck-month-count"></span></div>' +
           '<div class="ck-grid" id="ck-grid"></div>' +
           '<div class="ck-foot" id="ck-foot"></div>' +
+          '<div class="ck-repair-wrap" id="ck-repair-wrap" style="display:none;">' +
+            '<button class="ck-repair-btn" id="ck-repair-btn" onclick="dsRepairStreak()"><i class="ti ti-tool"></i> Repair a missed day <span class="ck-repair-cost">(15 <i class="ti ti-flame"></i>)</span></button>' +
+          '</div>' +
         '</div>' +
       '</div>';
     ov.addEventListener('click', function(e){ if (e.target === ov) dsCloseCheckin(); });
@@ -1258,10 +1266,19 @@ function dsApplyAccent(hex) {
       else if (streak.last_checkin === yest) effStreak = (streak.current_streak || 0) + 1;
       else effStreak = 1;
 
+      var repairedToday = false;
+      try {
+        var rrRes = await db.from('ember_spends').select('id')
+          .eq('user_id', uid).eq('spend_type', 'streak_repair')
+          .gte('created_at', todayStr + 'T00:00:00.000Z').limit(1);
+        repairedToday = !!(rrRes.data && rrRes.data.length);
+      } catch(e) {}
+
       dsCkState = {
         uid: uid, todayStr: todayStr, claimedToday: claimedToday,
         effStreak: effStreak, cycleDay: ((effStreak - 1) % 7) + 1,
-        streak: streak, claimedDates: claimedDates, y: y, m: m
+        streak: streak, claimedDates: claimedDates, y: y, m: m,
+        repairedToday: repairedToday
       };
       // Sync localStorage if this device missed a claim made elsewhere
       if (claimedToday) localStorage.setItem('ds_checkin_' + uid, todayStr);
@@ -1330,7 +1347,45 @@ function dsApplyAccent(hex) {
     document.getElementById('ck-foot').innerHTML = missedAny
       ? 'A <b>perfect month</b> (every single day claimed) earns the <b>Dawnkeeper</b> badge \u2014 your next chance begins on the 1st!'
       : 'Claim <b>every day</b> this month to earn the <b>Dawnkeeper</b> badge! \ud83c\udfc6';
+
+    var repWrap = document.getElementById('ck-repair-wrap');
+    if (repWrap) repWrap.style.display = (missedAny && !s.repairedToday) ? 'block' : 'none';
   }
+
+  window.dsRepairStreak = async function() {
+    var s = dsCkState;
+    if (!s) return;
+    var btn = document.getElementById('ck-repair-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Repairing\u2026'; }
+    try {
+      var res = await db.rpc('repair_missed_checkin');
+      if (!res.data || !res.data.success) {
+        var msg = (res.data && res.data.error) || 'repair_failed';
+        var friendly = {
+          already_repaired_today: 'You can only repair one missed day per day \u2014 try again tomorrow.',
+          nothing_to_repair: 'No missed days to repair this month \u2014 nice work!',
+          insufficient_embers: 'You need 15 Embers to repair a missed day.',
+          not_authenticated: 'Please sign in first.'
+        }[msg] || msg;
+        if (typeof window.showToast === 'function') window.showToast(friendly, 'ti-x');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-tool"></i> Repair a missed day <span class="ck-repair-cost">(15 <i class="ti ti-flame"></i>)</span>'; }
+        return;
+      }
+      var el = document.getElementById('ds-ember-count');
+      if (el) {
+        var cur = parseInt((el.textContent || '0').replace(/,/g, '')) || 0;
+        el.textContent = Math.max(0, cur - (res.data.ember_cost || 15)).toLocaleString();
+      }
+      s.claimedDates[res.data.repaired_date] = true;
+      s.streak.current_streak = res.data.new_streak;
+      s.streak.longest_streak = Math.max(s.streak.longest_streak || 0, res.data.new_streak);
+      s.repairedToday = true;
+      if (typeof window.showToast === 'function') window.showToast('Missed day repaired! Streak restored to ' + res.data.new_streak + ' \ud83d\udd25', 'ti-tool');
+      dsRenderCheckin();
+    } catch(e) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-tool"></i> Repair a missed day <span class="ck-repair-cost">(15 <i class="ti ti-flame"></i>)</span>'; }
+    }
+  };
 
   window.dsClaimDaily = async function() {
     var s = dsCkState;

@@ -138,6 +138,11 @@
     .ck-claim-btn { width: 100%; margin: 0 0 16px; padding: 11px; border: none; border-radius: 10px; background: linear-gradient(135deg, #f5c542, #f97316); color: #1a1208; font-size: 14px; font-weight: 800; cursor: pointer; transition: filter 0.2s; }
     .ck-claim-btn:hover { filter: brightness(1.08); }
     .ck-claim-btn:disabled { opacity: 0.55; cursor: default; filter: none; }
+    .ck-repair-wrap { margin-top: 10px; text-align: center; }
+    .ck-repair-btn { background: transparent; border: 1px dashed var(--border); border-radius: 9px; padding: 8px 14px; color: var(--text2); font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; }
+    .ck-repair-btn:hover { border-color: #fb923c; color: #fb923c; }
+    .ck-repair-btn:disabled { opacity: 0.5; cursor: default; }
+    .ck-repair-cost { color: var(--gold); font-weight: 800; display: inline-flex; align-items: center; gap: 2px; }
     .ck-cal { border-top: 1px solid var(--border); padding-top: 12px; }
     .ck-cal-title { font-size: 11.5px; font-weight: 800; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
     .ck-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -345,6 +350,14 @@
 
     /* LAYOUT CUSTOMIZATION */
     .layout-customize-row { display: flex; justify-content: flex-end; padding: 0 48px 8px; }
+    .kindling-pick-banner{display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,rgba(240,192,64,0.14),rgba(249,115,22,0.08));border:1px solid rgba(240,192,64,0.4);border-radius:16px;padding:16px 22px;margin:0 48px 20px;text-decoration:none;color:inherit;transition:border-color 0.2s;}
+    .kindling-pick-banner:hover{border-color:#f0c040;}
+    .kindling-pick-cover{width:54px;height:74px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-weight:700;color:white;overflow:hidden;}
+    .kindling-pick-cover img{width:100%;height:100%;object-fit:cover;}
+    .kindling-pick-label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#f0c040;margin-bottom:3px;display:flex;align-items:center;gap:5px;}
+    .kindling-pick-title{font-size:16px;font-weight:700;color:var(--text);}
+    .kindling-pick-sub{font-size:12px;color:var(--text3);margin-top:2px;}
+    @media(max-width:760px){.kindling-pick-banner{margin:0 16px 20px;}}
     /* ── CONTINUE READING ── */
     .continue-reading-section { display: none; } /* shown by JS when data loads */
     .continue-card { position: relative; flex-shrink: 0; width: 120px; cursor: pointer; border-radius: 10px; overflow: hidden; background: var(--bg3); border: 1px solid var(--border); transition: transform 0.2s, border-color 0.2s; text-decoration: none; display: flex; flex-direction: column; }
@@ -776,6 +789,15 @@
     <section class="hero-banner">
       <div class="banner-scroll-wrap">
 
+<a class="kindling-pick-banner" id="kindling-pick-banner" style="display:none;" href="#">
+  <div class="kindling-pick-cover" id="kindling-pick-cover"></div>
+  <div>
+    <div class="kindling-pick-label"><i class="ti ti-flame"></i> This Month's Kindling Pick</div>
+    <div class="kindling-pick-title" id="kindling-pick-title"></div>
+    <div class="kindling-pick-sub">Voted in by readers — <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="event.stopPropagation();window.location.href='rising.html';">see this month's Kindling vote</span></div>
+  </div>
+</a>
+
 <div class="layout-customize-row" id="layout-customize-row" style="display:none;">
           <button class="layout-customize-btn" onclick="openLayoutModal()"><i class="ti ti-layout-grid"></i> Customize Layout</button>
         </div>
@@ -901,6 +923,7 @@
           <i class="ti ti-bolt"></i>
           <span class="label-accent">Most Sparked</span>
           <span class="label-white">This Week</span>
+          <a class="scroll-toggle-btn" href="rising.html" onclick="event.stopPropagation()" style="text-decoration:none;"><i class="ti ti-arrow-right"></i> Full Ranking</a>
           <button class="scroll-toggle-btn" id="toggle-btn-sparked"><i class="ti ti-chevron-up" id="toggle-icon-sparked"></i> Hide</button>
         </div>
         <div class="scroll-row-wrap" id="wrap-sparked">
@@ -1928,6 +1951,20 @@
     }
 
     /* ── SCROLL ROWS (LIVE) ─────────────────────────────────────── */
+    async function loadKindlingPickBanner() {
+      try {
+        var { data: w } = await db.from('works').select('id,title,cover_url,author_id').eq('kindling_featured', true).limit(1).maybeSingle();
+        var el = document.getElementById('kindling-pick-banner');
+        if (!w || !el) return;
+        document.getElementById('kindling-pick-title').textContent = w.title;
+        var coverEl = document.getElementById('kindling-pick-cover');
+        if (w.cover_url) coverEl.innerHTML = '<img src="' + w.cover_url.replace(/"/g,'&quot;') + '" alt=""/>';
+        else coverEl.textContent = (w.title || '?').charAt(0).toUpperCase();
+        el.href = 'story.html?id=' + w.id;
+        el.style.display = 'flex';
+      } catch(e) {}
+    }
+
     async function loadScrollRows(uid){
       // Load this viewer's content filter + language preferences.
       // safe/gore/erotica flags mean "filter OUT this content when true".
@@ -2699,7 +2736,8 @@
         loadSidebarCollabs(),
         loadSidebarComments(),
         loadSidebarUpdates(),
-        loadScrollRows(uid)
+        loadScrollRows(uid),
+        loadKindlingPickBanner()
       ]);
 
       // ── REALTIME: ALL 6 ROWS ────────────────────────────────────
@@ -3662,6 +3700,9 @@
           '<div class="ck-cal-title"><span id="ck-month-label"></span><span id="ck-month-count"></span></div>' +
           '<div class="ck-grid" id="ck-grid"></div>' +
           '<div class="ck-foot" id="ck-foot"></div>' +
+          '<div class="ck-repair-wrap" id="ck-repair-wrap" style="display:none;">' +
+            '<button class="ck-repair-btn" id="ck-repair-btn" onclick="dsRepairStreak()"><i class="ti ti-tool"></i> Repair a missed day <span class="ck-repair-cost">(15 <i class="ti ti-flame"></i>)</span></button>' +
+          '</div>' +
         '</div>' +
       '</div>';
     ov.addEventListener('click', function(e){ if (e.target === ov) dsCloseCheckin(); });
@@ -3708,10 +3749,19 @@
       else if (streak.last_checkin === yest) effStreak = (streak.current_streak || 0) + 1;
       else effStreak = 1;
 
+      var repairedToday = false;
+      try {
+        var rrRes = await db.from('ember_spends').select('id')
+          .eq('user_id', uid).eq('spend_type', 'streak_repair')
+          .gte('created_at', todayStr + 'T00:00:00.000Z').limit(1);
+        repairedToday = !!(rrRes.data && rrRes.data.length);
+      } catch(e) {}
+
       dsCkState = {
         uid: uid, todayStr: todayStr, claimedToday: claimedToday,
         effStreak: effStreak, cycleDay: ((effStreak - 1) % 7) + 1,
-        streak: streak, claimedDates: claimedDates, y: y, m: m
+        streak: streak, claimedDates: claimedDates, y: y, m: m,
+        repairedToday: repairedToday
       };
       // Sync localStorage if this device missed a claim made elsewhere
       if (claimedToday) localStorage.setItem('ds_checkin_' + uid, todayStr);
@@ -3780,7 +3830,45 @@
     document.getElementById('ck-foot').innerHTML = missedAny
       ? 'A <b>perfect month</b> (every single day claimed) earns the <b>Dawnkeeper</b> badge \u2014 your next chance begins on the 1st!'
       : 'Claim <b>every day</b> this month to earn the <b>Dawnkeeper</b> badge! \ud83c\udfc6';
+
+    var repWrap = document.getElementById('ck-repair-wrap');
+    if (repWrap) repWrap.style.display = (missedAny && !s.repairedToday) ? 'block' : 'none';
   }
+
+  window.dsRepairStreak = async function() {
+    var s = dsCkState;
+    if (!s) return;
+    var btn = document.getElementById('ck-repair-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Repairing\u2026'; }
+    try {
+      var res = await db.rpc('repair_missed_checkin');
+      if (!res.data || !res.data.success) {
+        var msg = (res.data && res.data.error) || 'repair_failed';
+        var friendly = {
+          already_repaired_today: 'You can only repair one missed day per day \u2014 try again tomorrow.',
+          nothing_to_repair: 'No missed days to repair this month \u2014 nice work!',
+          insufficient_embers: 'You need 15 Embers to repair a missed day.',
+          not_authenticated: 'Please sign in first.'
+        }[msg] || msg;
+        if (typeof window.showToast === 'function') window.showToast(friendly, 'ti-x');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-tool"></i> Repair a missed day <span class="ck-repair-cost">(15 <i class="ti ti-flame"></i>)</span>'; }
+        return;
+      }
+      var el = document.getElementById('ds-ember-count');
+      if (el) {
+        var cur = parseInt((el.textContent || '0').replace(/,/g, '')) || 0;
+        el.textContent = Math.max(0, cur - (res.data.ember_cost || 15)).toLocaleString();
+      }
+      s.claimedDates[res.data.repaired_date] = true;
+      s.streak.current_streak = res.data.new_streak;
+      s.streak.longest_streak = Math.max(s.streak.longest_streak || 0, res.data.new_streak);
+      s.repairedToday = true;
+      if (typeof window.showToast === 'function') window.showToast('Missed day repaired! Streak restored to ' + res.data.new_streak + ' \ud83d\udd25', 'ti-tool');
+      dsRenderCheckin();
+    } catch(e) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-tool"></i> Repair a missed day <span class="ck-repair-cost">(15 <i class="ti ti-flame"></i>)</span>'; }
+    }
+  };
 
   window.dsClaimDaily = async function() {
     var s = dsCkState;
