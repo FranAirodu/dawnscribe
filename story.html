@@ -189,10 +189,24 @@
     .glossary-entry:last-child{border-bottom:none;}
     .glossary-term{font-weight:600;font-size:14px;color:var(--text);min-width:120px;flex-shrink:0;}
     .glossary-def{font-size:13px;color:var(--text2);line-height:1.55;}
-    .glossary-edit-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
-    .glossary-edit-row input,.glossary-edit-row textarea,.glossary-edit-row select{background:var(--input-bg,var(--card));border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--text);font-family:inherit;}
-    .glossary-edit-row input{flex:1;min-width:120px;}
-    .glossary-edit-row textarea{flex:2;min-width:200px;resize:vertical;}
+    .glossary-edit-row{margin-top:14px;padding:14px;background:var(--bg2,rgba(255,255,255,0.02));border:1px dashed var(--border);border-radius:10px;}
+    .glossary-edit-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+    .glossary-edit-grid{display:flex;flex-direction:column;gap:8px;}
+    .glossary-edit-top{display:flex;gap:8px;flex-wrap:wrap;}
+    .glossary-edit-row input,.glossary-edit-row textarea{background:var(--input-bg,var(--card));border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text);font-family:inherit;transition:border-color .15s;}
+    .glossary-edit-row input:focus,.glossary-edit-row textarea:focus{outline:none;border-color:color-mix(in srgb, var(--accent) 55%, transparent);}
+    .glossary-edit-row input{flex:1;min-width:140px;}
+    .glossary-edit-row textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:56px;}
+    .glossary-edit-actions{display:flex;justify-content:flex-end;gap:8px;}
+    .glossary-save-btn{display:inline-flex;align-items:center;gap:6px;background:color-mix(in srgb, var(--accent) 12%, transparent);border:1px solid var(--accent);border-radius:8px;padding:8px 18px;color:var(--accent);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:background .15s;}
+    .glossary-save-btn:hover{background:color-mix(in srgb, var(--accent) 22%, transparent);}
+    .glossary-cancel-btn{display:none;align-items:center;gap:6px;background:none;border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
+    .glossary-empty{padding:10px 0;font-size:13px;color:var(--text3);font-style:italic;}
+    .glossary-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:none;border:1px solid transparent;border-radius:7px;color:var(--text3);font-size:14px;cursor:pointer;transition:all .15s;padding:0;}
+    .glossary-icon-btn:hover{color:var(--text);background:var(--bg3,rgba(255,255,255,0.06));border-color:var(--border);}
+    .glossary-icon-btn.danger:hover{color:#f87171;background:rgba(248,113,113,0.08);border-color:rgba(248,113,113,0.35);}
+    .glossary-entry:not(:hover) .glossary-entry-actions{opacity:0;}
+    .glossary-entry-actions{margin-left:auto;display:flex;gap:4px;flex-shrink:0;align-items:center;transition:opacity .15s;}
     .echoes-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
     .echo-count-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;font-size:12px;font-weight:700;background:color-mix(in srgb,#f59e0b 8%,transparent);border:1px solid color-mix(in srgb,#f59e0b 20%,transparent);color:#f59e0b;}
     .echo-count-chip.rare{background:color-mix(in srgb,#ef4444 8%,transparent);border-color:color-mix(in srgb,#ef4444 20%,transparent);color:#ef4444;}
@@ -1708,15 +1722,15 @@
           entryDiv.innerHTML = '<div class="glossary-term">' + escHtml(e.term) + '</div><div class="glossary-def">' + escHtml(e.definition) + '</div>';
           if (isAuthor) {
             var editBtns = document.createElement('div');
-            editBtns.style.cssText = 'margin-left:auto;display:flex;gap:6px;flex-shrink:0;';
+            editBtns.className = 'glossary-entry-actions';
             var eBtn = document.createElement('button');
-            eBtn.className = 'btn-icon'; eBtn.title = 'Edit';
+            eBtn.type = 'button'; eBtn.className = 'glossary-icon-btn'; eBtn.title = 'Edit';
             eBtn.innerHTML = '<i class="ti ti-pencil"></i>';
-            (function(eid){ eBtn.addEventListener('click', function(){ editGlossaryEntry(eid); }); })(e.id);
+            eBtn.setAttribute('onclick', 'editGlossaryEntry(' + JSON.stringify(String(e.id)) + ')');
             var dBtn = document.createElement('button');
-            dBtn.className = 'btn-icon'; dBtn.title = 'Delete';
+            dBtn.type = 'button'; dBtn.className = 'glossary-icon-btn danger'; dBtn.title = 'Delete';
             dBtn.innerHTML = '<i class="ti ti-trash"></i>';
-            (function(eid){ dBtn.addEventListener('click', function(){ deleteGlossaryEntry(eid); }); })(e.id);
+            dBtn.setAttribute('onclick', 'deleteGlossaryEntry(' + JSON.stringify(String(e.id)) + ')');
             editBtns.appendChild(eBtn); editBtns.appendChild(dBtn);
             entryDiv.appendChild(editBtns);
           }
@@ -1724,11 +1738,22 @@
         });
       });
       if (isAuthor) {
+        if (!glossaryEntries.length) {
+          html += '<div class="glossary-empty">No glossary entries yet. Add terms, places, or lore below \u2014 readers will see them here.</div>';
+        }
         html += '<div class="glossary-edit-row" id="glossary-add-row">' +
-          '<input id="gl-term" placeholder="Term" style="max-width:160px;">' +
-          '<textarea id="gl-def" placeholder="Definition" rows="2"></textarea>' +
-          '<input id="gl-cat" placeholder="Category (optional)" style="max-width:140px;">' +
-          '<button class="btn-sm" onclick="saveGlossaryEntry(null)"><i class="ti ti-plus"></i> Add</button>' +
+          '<div class="glossary-edit-title" id="gl-mode-label"><i class="ti ti-plus"></i> Add entry</div>' +
+          '<div class="glossary-edit-grid">' +
+            '<div class="glossary-edit-top">' +
+              '<input id="gl-term" placeholder="Term (e.g. Gotcha System)">' +
+              '<input id="gl-cat" placeholder="Category (optional, e.g. Magic)" style="max-width:220px;">' +
+            '</div>' +
+            '<textarea id="gl-def" placeholder="Definition \u2014 what should readers know about this term?" rows="2"></textarea>' +
+            '<div class="glossary-edit-actions">' +
+              '<button type="button" class="glossary-cancel-btn" id="gl-cancel-btn" onclick="cancelGlossaryEdit()"><i class="ti ti-x"></i> Cancel</button>' +
+              '<button type="button" class="glossary-save-btn" id="gl-save-btn" onclick="saveGlossaryEntry(null)"><i class="ti ti-plus"></i> Add</button>' +
+            '</div>' +
+          '</div>' +
         '</div>';
       }
       el.innerHTML = html;
@@ -1762,9 +1787,17 @@
       document.getElementById('gl-term').value = entry.term;
       document.getElementById('gl-def').value  = entry.definition;
       document.getElementById('gl-cat').value  = entry.category || '';
-      row.querySelector('button').onclick = function(){ saveGlossaryEntry(id); };
-      row.querySelector('button').innerHTML = '<i class="ti ti-check"></i> Save';
+      var lbl = document.getElementById('gl-mode-label');
+      if (lbl) lbl.innerHTML = '<i class="ti ti-pencil"></i> Editing \u201c' + escHtml(entry.term) + '\u201d';
+      var saveBtn = document.getElementById('gl-save-btn');
+      if (saveBtn) { saveBtn.onclick = function(){ saveGlossaryEntry(id); }; saveBtn.innerHTML = '<i class="ti ti-check"></i> Save'; }
+      var cancelBtn = document.getElementById('gl-cancel-btn');
+      if (cancelBtn) cancelBtn.style.display = 'inline-flex';
       row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function cancelGlossaryEdit() {
+      renderGlossary();
     }
 
     // ── REVIEWS ──────────────────────────────────────────────────

@@ -302,8 +302,13 @@
 
   <!-- LINKED NOVELS MANAGEMENT -->
   <div class="link-card" id="link-novel-card" style="display:none;">
-    <div class="card-title"><i class="ti ti-link"></i> Linked Novels</div>
+    <div class="card-title" onclick="lnToggleBody()" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;margin-bottom:0;">
+      <i class="ti ti-link"></i> Linked Novels
+      <span id="ln-count-badge" style="display:none;font-size:11px;font-weight:700;padding:2px 9px;border-radius:12px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);border:1px solid var(--accent);"></span>
+      <i class="ti ti-chevron-down" id="ln-chevron" style="margin-left:auto;font-size:16px;color:var(--text3);transition:transform 0.2s;"></i>
+    </div>
 
+    <div id="ln-body" style="display:none;margin-top:12px;">
     <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Connect this story to related ones. Own-story links go live immediately; friend collab links need their approval.</div>
 
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:8px;">Link Type</div>
@@ -340,6 +345,7 @@
 
     <div id="ln-current-links" style="margin-bottom:10px;"></div>
     <div id="ln-status" style="font-size:12px;color:var(--text3);"></div>
+    </div><!-- /ln-body -->
   </div>
 
   <!-- TWO COLUMNS -->
@@ -656,9 +662,6 @@
 
   async function confirmDeleteChapter() {
     if (!editingChapterId) return;
-    if (hasUnsavedChanges()) {
-      await submitChapter(currentChapterStatus, true); // silent save
-    }
     document.getElementById('delete-dialog').style.display = 'flex';
   }
   function closeDeleteDialog() {
@@ -725,19 +728,25 @@
   }
 
   function hasUnsavedChanges() {
-    if (!editingChapterId) return false;
     var currentTitle = document.getElementById('chapter-title-input').value.trim();
     var currentText = quill ? quill.getText().trim() : '';
+    if (!editingChapterId) return !!(currentTitle || currentText); // new unsaved chapter
     return currentTitle !== originalTitle || currentText !== originalText;
   }
 
+  // Warn before leaving the page with unsaved work (new or edited)
+  window.addEventListener('beforeunload', function(e) {
+    if (hasUnsavedChanges()) { e.preventDefault(); e.returnValue = ''; }
+  });
+
   async function setModeEdit(chapterId, btn, row) {
-    // If already editing a different chapter, warn first
-    if (editingChapterId && editingChapterId !== chapterId) {
+    // If already editing (or writing a new chapter) with unsaved changes, warn first
+    if (editingChapterId !== chapterId) {
       if (hasUnsavedChanges()) {
         var action = await showSwitchDialog();
         if (action === 'save') {
-          await submitChapter(currentChapterStatus);
+          // New unsaved chapters get saved as a draft; existing keep their status
+          await submitChapter(editingChapterId ? currentChapterStatus : 'draft');
         } else if (action === 'cancel') {
           return; // stay on current chapter
         }
@@ -924,7 +933,7 @@
           '<i class="ti ti-grip-vertical drag-handle"></i>' +
           '<input type="checkbox" class="chapter-checkbox" data-id="' + ch.id + '"/>' +
           '<div class="chapter-info">' +
-            '<div class="chapter-name">Ch.' + ch.chapter_number + ' — ' + (ch.title || 'Untitled Chapter') + '</div>' +
+            '<div class="chapter-name">Ch.' + ch.chapter_number + ' — ' + escXml(ch.title || 'Untitled Chapter') + '</div>' +
             '<div class="chapter-meta">' + (ch.word_count ? ch.word_count.toLocaleString() + ' words · ' : '') + formatDate(ch.created_at) + metaExtra + '</div>' +
           '</div>' +
         '</div>' +
@@ -965,13 +974,10 @@
     var moved = reordered.splice(fromIdx, 1)[0];
     reordered.splice(toIdx, 0, moved);
 
-    // Reassign chapter_number sequentially
-    var updates = reordered.map(function(c, i){ return { id: c.id, chapter_number: i + 1 }; });
-
     showToast('Reordering chapters…', 'ti-arrows-sort');
-    for (var i = 0; i < updates.length; i++) {
-      await db.from('chapters').update({ chapter_number: updates[i].chapter_number }).eq('id', updates[i].id);
-    }
+    var orderedIds = reordered.map(function(c){ return c.id; });
+    var { error } = await db.rpc('reorder_chapters', { p_work_id: workId, p_ids: orderedIds });
+    if (error) { showToast('Could not reorder: ' + (error.message||''), 'ti-x'); return; }
     showToast('Chapter order updated!', 'ti-check');
     await loadChapters();
   }
@@ -990,6 +996,8 @@
     var ids = getSelectedChapterIds();
     if (!ids.length) return;
     for (var i=0;i<ids.length;i++) await db.from('chapters').update({ status:'published', scheduled_for:null }).eq('id', ids[i]);
+    // Award publish badges once for the batch (never block the flow)
+    try { await db.rpc('award_chapter_publish_badges', { p_user_id: currentSession.user.id, p_work_id: workId }); } catch(e) {}
     showToast(ids.length + ' chapter(s) published!', 'ti-rocket');
     await loadChapters();
     updateBulkBar();
@@ -1114,15 +1122,24 @@
     var scheduleEnabled = document.getElementById('schedule-toggle').classList.contains('active');
     var scheduledFor = null;
     var finalStatus = status;
-    if (scheduleEnabled && status === 'published') {
+    if (scheduleEnabled && (status === 'published' || status === 'scheduled')) {
       var schedVal = document.getElementById('schedule-input').value;
       if (schedVal) {
         var schedDate = new Date(schedVal);
         if (schedDate > new Date()) {
           scheduledFor = schedDate.toISOString();
           finalStatus = 'scheduled';
+        } else if (status === 'scheduled') {
+          // Scheduled time already passed while editing — publish now
+          finalStatus = 'published';
         }
+      } else if (status === 'scheduled') {
+        // Toggle on but no date — treat as draft rather than a stuck schedule
+        finalStatus = 'draft';
       }
+    } else if (status === 'scheduled') {
+      // Author turned scheduling off on a scheduled chapter — revert to draft
+      finalStatus = 'draft';
     }
 
     var payload = {
@@ -1155,7 +1172,9 @@
       // INSERT new chapter
       payload.work_id = workId;
       payload.author_id = currentSession.user.id;
-      payload.chapter_number = chapterCount + 1;
+      payload.chapter_number = allChapters.length
+        ? Math.max.apply(null, allChapters.map(function(c){ return c.chapter_number || 0; })) + 1
+        : 1;
       res = await db.from('chapters').insert(payload).select('id').single();
       if (res.error) {
         if(!silent){ showToast('Error: ' + res.error.message, 'ti-x'); btn.disabled = false; btn.innerHTML = '<i class="ti ti-rocket"></i> <span id="publish-label">Publish Chapter</span>'; }
@@ -1507,6 +1526,26 @@
 
   // ── LINKED NOVELS MANAGER ──────────────────────────────────────
   var lnType = 'sequel';
+  var lnBodyOpen = false;
+
+  function lnToggleBody(force) {
+    lnBodyOpen = (typeof force === 'boolean') ? force : !lnBodyOpen;
+    var body = document.getElementById('ln-body');
+    var chev = document.getElementById('ln-chevron');
+    if (body) body.style.display = lnBodyOpen ? 'block' : 'none';
+    if (chev) chev.style.transform = lnBodyOpen ? 'rotate(180deg)' : '';
+  }
+
+  function lnUpdateBadge() {
+    var badge = document.getElementById('ln-count-badge');
+    if (!badge) return;
+    if (lnExisting.length) {
+      badge.textContent = lnExisting.length + ' linked';
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
   var lnMyWorks = [];
   var lnFriendWorks = [];
   var lnExisting = [];
@@ -1551,6 +1590,7 @@
   }
 
   function lnRenderExisting() {
+    lnUpdateBadge();
     var el = document.getElementById('ln-current-links');
     if (!el) return;
     if (!lnExisting.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text3);">No linked stories yet.</div>'; return; }
@@ -1696,6 +1736,8 @@
     document.getElementById('ln-friend-results').innerHTML = '';
     document.getElementById('ln-own-search').value = '';
     document.getElementById('ln-friend-search').value = '';
+    // Job done — tuck the panel away so the page stays focused on chapters
+    lnToggleBody(false);
   }
 
 </script>
