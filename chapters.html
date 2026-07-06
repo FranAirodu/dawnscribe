@@ -237,6 +237,9 @@
     .bulk-bar button{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--text2);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
     .bulk-bar button:hover{border-color:var(--accent);color:var(--accent);}
     .bulk-bar button.danger:hover{border-color:var(--red);color:var(--red);}
+    .ch-filter-tab{background:none;border:1px solid var(--border);border-radius:20px;padding:4px 12px;color:var(--text3);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .ch-filter-tab:hover{border-color:var(--accent);color:var(--accent);}
+    .ch-filter-tab.active{background:rgba(45,212,191,0.1);border-color:var(--accent);color:var(--accent);}
     .chapter-checkbox{flex-shrink:0;width:15px;height:15px;accent-color:var(--accent);cursor:pointer;}
 
     /* REVISION HISTORY */
@@ -296,6 +299,7 @@
     <div class="work-header-info">
       <div class="work-header-title" id="work-title-el">Loading…</div>
       <div class="work-header-meta" id="work-meta-el"></div>
+      <div class="work-header-meta" id="work-stats-el" style="margin-top:2px;"></div>
     </div>
     <div id="complete-story-area" style="flex-shrink:0;margin-left:auto;"></div>
   </div>
@@ -360,6 +364,12 @@
           <button onclick="toggleChapterPanel()" id="toggle-panel-btn" title="Collapse chapter list" style="background:none;border:1px solid var(--border);border-radius:7px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:14px;transition:all 0.2s;flex-shrink:0;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'"><i class="ti ti-layout-sidebar-left-collapse"></i></button>
         </div>
       </div>
+      <div id="chapter-filter-tabs" style="display:none;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+        <button class="ch-filter-tab active" data-filter="all" onclick="setChapterFilter('all')">All</button>
+        <button class="ch-filter-tab" data-filter="published" onclick="setChapterFilter('published')">Published</button>
+        <button class="ch-filter-tab" data-filter="draft" onclick="setChapterFilter('draft')">Drafts</button>
+        <button class="ch-filter-tab" data-filter="scheduled" onclick="setChapterFilter('scheduled')">Scheduled</button>
+      </div>
       <div class="bulk-bar" id="bulk-bar" style="display:none;">
         <span id="bulk-count">0 selected</span>
         <button onclick="bulkPublish()"><i class="ti ti-rocket"></i> Publish</button>
@@ -386,6 +396,12 @@
         </div>
       </div>
       <div id="autosave-indicator" class="autosave-indicator"><i class="ti ti-circle-dot"></i> <span>Not saved yet</span></div>
+      <div id="backup-banner" style="display:none;align-items:center;gap:10px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.35);border-radius:9px;padding:9px 14px;margin-bottom:12px;font-size:12px;color:var(--text2);">
+        <i class="ti ti-lifebuoy" style="color:var(--gold);font-size:15px;"></i>
+        <span style="flex:1;">Found unsaved work from a previous session (<span id="backup-banner-time"></span>).</span>
+        <button onclick="restoreBackup()" style="background:none;border:1px solid var(--gold);border-radius:6px;padding:4px 12px;color:var(--gold);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;">Restore</button>
+        <button onclick="dismissBackup()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 12px;color:var(--text3);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;">Dismiss</button>
+      </div>
       <div class="field-group">
         <label class="field-label">Chapter Title</label>
         <input class="field-input" type="text" id="chapter-title-input" placeholder='e.g. "Chapter 2 — Into the Dark"' maxlength="100"/>
@@ -408,6 +424,8 @@
           <div class="export-menu" id="export-menu">
             <button onclick="exportChapter('txt')"><i class="ti ti-file-text"></i> Export as .txt</button>
             <button onclick="exportChapter('docx')"><i class="ti ti-file-type-docx"></i> Export as .docx</button>
+            <button onclick="importChapter('txt')"><i class="ti ti-file-import"></i> Import .txt</button>
+            <button onclick="importChapter('docx')"><i class="ti ti-file-import"></i> Import .docx</button>
           </div>
         </div>
       </div>
@@ -417,7 +435,7 @@
         <label class="field-label"><i class="ti ti-calendar-clock" style="color:var(--gold);"></i> Schedule Publish Time</label>
         <div class="schedule-row">
           <input type="datetime-local" class="schedule-input" id="schedule-input"/>
-          <span style="font-size:11px;color:var(--text3);">Chapter auto-publishes at this time (your local time).</span>
+          <span style="font-size:11px;color:var(--text3);">Chapter auto-publishes at this time (your local time). Turning scheduling off saves the chapter as a draft.</span>
         </div>
       </div>
 
@@ -433,6 +451,16 @@
           <input type="number" class="word-goal-input" id="word-goal-input" placeholder="e.g. 2500" min="0"/>
           <div class="word-goal-bar-wrap"><div class="word-goal-bar" id="word-goal-bar" style="width:0%;"></div></div>
           <span class="word-goal-text" id="word-goal-pct">—</span>
+          <button class="word-goal-text" id="sprint-btn" onclick="toggleSprintUI()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--text2);font-family:'Lato',sans-serif;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'"><i class="ti ti-stopwatch"></i> Sprint</button>
+        </div>
+        <div class="word-goal-row" id="sprint-row" style="display:none;">
+          <select id="sprint-length" class="word-goal-input" style="width:auto;">
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+            <option value="60">60 min</option>
+          </select>
+          <button class="word-goal-text" id="sprint-start-btn" onclick="startStopSprint()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--green);font-family:'Lato',sans-serif;"><i class="ti ti-player-play"></i> Start</button>
+          <span class="word-goal-text" id="sprint-display">Pick a length and hit Start — words written this sprint get counted.</span>
         </div>
       </div>
 
@@ -453,6 +481,7 @@
       <div class="btn-row">
         <button class="btn-cancel" id="cancel-btn" onclick="setModeAdd()" style="display:none;"><i class="ti ti-x"></i> Cancel Edit</button>
         <button class="btn-draft" onclick="submitChapter('draft')"><i class="ti ti-device-floppy"></i> Save Draft</button>
+        <button id="duplicate-chapter-btn" onclick="duplicateChapter()" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 18px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;align-items:center;gap:6px;transition:all 0.2s;white-space:nowrap;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'"><i class="ti ti-copy"></i> Duplicate</button>
         <button id="view-chapter-btn" onclick="viewChapter()" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 18px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:none;align-items:center;gap:6px;transition:all 0.2s;white-space:nowrap;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'"><i class="ti ti-eye"></i> View Chapter</button>
         <button class="btn-publish" id="publish-btn" onclick="submitChapter('published')"><i class="ti ti-rocket"></i> <span id="publish-label">Publish Chapter</span></button>
       </div>
@@ -463,6 +492,8 @@
 
   </div>
 </div>
+
+<input type="file" id="import-file-input" style="display:none;"/>
 
 <div id="delete-dialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500;align-items:center;justify-content:center;">
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;max-width:460px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.5);">
@@ -592,6 +623,8 @@
   var editingChapterId = null;
   var originalTitle = '';
   var originalText = '';
+  var originalNoteTop = '';
+  var originalNoteBottom = '';
   var currentChapterStatus = 'published';
   var autosaveTimer = null;
   var allChapters = []; // cached list for prev/next nav + bulk actions
@@ -620,6 +653,8 @@
     editingChapterId = null;
     originalTitle = '';
     originalText = '';
+    originalNoteTop = '';
+    originalNoteBottom = '';
     document.getElementById('chapter-title-input').value = '';
     if (quill) quill.setContents([]);
     document.getElementById('word-count').textContent = '0';
@@ -629,6 +664,7 @@
     document.getElementById('cancel-btn').style.display = 'none';
     document.getElementById('delete-btn-wrap').style.display = 'none';
     document.getElementById('view-chapter-btn').style.display = 'none';
+    document.getElementById('duplicate-chapter-btn').style.display = 'none';
     document.getElementById('publish-label').textContent = 'Publish Chapter';
     document.querySelectorAll('.chapter-row').forEach(function(r){ r.classList.remove('active'); });
     document.querySelectorAll('.chapter-edit-btn').forEach(function(b){ b.classList.remove('active-edit'); });
@@ -653,6 +689,7 @@
     updateAutosaveIndicator('idle');
     updateReadingStats();
     if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
+    checkForBackup(null);
   }
 
   function viewChapter() {
@@ -730,8 +767,11 @@
   function hasUnsavedChanges() {
     var currentTitle = document.getElementById('chapter-title-input').value.trim();
     var currentText = quill ? quill.getText().trim() : '';
-    if (!editingChapterId) return !!(currentTitle || currentText); // new unsaved chapter
-    return currentTitle !== originalTitle || currentText !== originalText;
+    var currentNoteTop = document.getElementById('author-note-top').value.trim();
+    var currentNoteBottom = document.getElementById('author-note-bottom').value.trim();
+    if (!editingChapterId) return !!(currentTitle || currentText || currentNoteTop || currentNoteBottom); // new unsaved chapter
+    return currentTitle !== originalTitle || currentText !== originalText
+      || currentNoteTop !== originalNoteTop || currentNoteBottom !== originalNoteBottom;
   }
 
   // Warn before leaving the page with unsaved work (new or edited)
@@ -772,12 +812,15 @@
     document.getElementById('word-count').textContent = w;
     originalTitle = ch.title || '';
     originalText = quill ? quill.getText().trim() : '';
+    originalNoteTop = (ch.author_note_top || '').trim();
+    originalNoteBottom = (ch.author_note_bottom || '').trim();
     document.getElementById('editor-title-label').textContent = 'Editing: ' + (ch.title || 'Chapter');
     document.getElementById('editor-mode-tag').textContent = 'Editing';
     document.getElementById('editor-mode-tag').className = 'editor-mode-tag edit';
     document.getElementById('cancel-btn').style.display = 'flex';
     document.getElementById('delete-btn-wrap').style.display = 'block';
     document.getElementById('view-chapter-btn').style.display = 'flex';
+    document.getElementById('duplicate-chapter-btn').style.display = 'flex';
     document.getElementById('publish-label').textContent = ch.status === 'draft' ? 'Publish Chapter' : (ch.status === 'scheduled' ? 'Update Scheduled' : 'Save Changes');
 
     // ── Author's notes ──
@@ -831,6 +874,9 @@
 
     // Load character manager for this chapter
     await ctInit(workId, chapterId);
+
+    // Offer crash-recovery backup if one is newer than the last save
+    checkForBackup(ch.updated_at || ch.created_at);
   }
 
   async function loadWork() {
@@ -864,7 +910,8 @@
     document.getElementById('work-title-el').textContent = workData.title || 'Untitled';
     document.getElementById('work-meta-el').innerHTML =
       '<span><i class="ti ti-calendar" style="font-size:11px;"></i> Created ' + formatDate(workData.created_at) + '</span>' +
-      '<span><i class="ti ti-refresh" style="font-size:11px;"></i> Updated ' + formatDate(workData.updated_at) + '</span>';
+      '<span><i class="ti ti-refresh" style="font-size:11px;"></i> Updated ' + formatDate(workData.updated_at) + '</span>' +
+      '<span id="work-total-stats"></span>';
 
     // Render completed state in header
     var area = document.getElementById('complete-story-area');
@@ -880,6 +927,8 @@
     await loadChapters();
     initEditor();
     initToolbarTooltips();
+    // Offer crash-recovery backup for an unsaved new chapter from a prior session
+    if (!editingChapterId) checkForBackup(null);
     // Show linked novels card for novels only
     if (workData.type !== 'artwork') {
       document.getElementById('link-novel-card').style.display = 'block';
@@ -900,12 +949,25 @@
   }
 
   async function loadChapters() {
-    var res = await db.from('chapters').select('id,chapter_number,title,status,word_count,created_at,scheduled_for').eq('work_id', workId).order('chapter_number', { ascending: true });
+    var res = await db.from('chapters').select('id,chapter_number,title,status,word_count,created_at,updated_at,scheduled_for').eq('work_id', workId).order('chapter_number', { ascending: true });
     var list = document.getElementById('chapter-list');
     var chapters = res.data || [];
     chapterCount = chapters.length;
     allChapters = chapters;
 
+    // Total story stats in the work header
+    var statsEl = document.getElementById('work-total-stats');
+    if (statsEl) {
+      var pub = chapters.filter(function(c){ return c.status === 'published'; });
+      var totalWords = chapters.reduce(function(s,c){ return s + (c.word_count || 0); }, 0);
+      statsEl.innerHTML = chapters.length
+        ? '<i class="ti ti-book" style="font-size:11px;"></i> ' + chapters.length + ' chapter' + (chapters.length===1?'':'s')
+          + (pub.length !== chapters.length ? ' (' + pub.length + ' published)' : '')
+          + ' · ' + totalWords.toLocaleString() + ' words'
+        : '';
+    }
+
+    document.getElementById('chapter-filter-tabs').style.display = chapters.length ? 'flex' : 'none';
     if (!chapters.length) {
       list.innerHTML = '<div class="empty-state"><i class="ti ti-books"></i>No chapters yet.<br>Add your first one!</div>';
       return;
@@ -917,6 +979,7 @@
       row.className = 'chapter-row';
       row.draggable = true;
       row.dataset.id = ch.id;
+      row.dataset.status = ch.status;
       var btn = document.createElement('button');
       btn.className = 'chapter-edit-btn';
       btn.innerHTML = '<i class="ti ti-pencil"></i> Edit';
@@ -934,7 +997,7 @@
           '<input type="checkbox" class="chapter-checkbox" data-id="' + ch.id + '"/>' +
           '<div class="chapter-info">' +
             '<div class="chapter-name">Ch.' + ch.chapter_number + ' — ' + escXml(ch.title || 'Untitled Chapter') + '</div>' +
-            '<div class="chapter-meta">' + (ch.word_count ? ch.word_count.toLocaleString() + ' words · ' : '') + formatDate(ch.created_at) + metaExtra + '</div>' +
+            '<div class="chapter-meta">' + (ch.word_count ? ch.word_count.toLocaleString() + ' words · ' : '') + formatDate(ch.created_at) + ' · edited ' + timeAgo(ch.updated_at || ch.created_at) + metaExtra + '</div>' +
           '</div>' +
         '</div>' +
         '<div class="chapter-row-bottom">' +
@@ -962,7 +1025,116 @@
         if (draggedId && draggedId !== ch.id) reorderChapters(draggedId, ch.id);
       });
     });
+
+    applyChapterFilter();
   }
+
+  // ── CHAPTER STATUS FILTER ─────────────────────────────────────
+  var chapterFilter = 'all';
+  function setChapterFilter(f) {
+    chapterFilter = f;
+    document.querySelectorAll('.ch-filter-tab').forEach(function(t){
+      t.classList.toggle('active', t.dataset.filter === f);
+    });
+    applyChapterFilter();
+  }
+  function applyChapterFilter() {
+    var counts = { all: allChapters.length, published: 0, draft: 0, scheduled: 0 };
+    allChapters.forEach(function(c){ if (counts[c.status] !== undefined) counts[c.status]++; });
+    document.querySelectorAll('.ch-filter-tab').forEach(function(t){
+      var f = t.dataset.filter;
+      var label = f === 'all' ? 'All' : (f === 'published' ? 'Published' : (f === 'draft' ? 'Drafts' : 'Scheduled'));
+      t.textContent = label + ' (' + counts[f] + ')';
+    });
+    var filtered = chapterFilter !== 'all';
+    document.querySelectorAll('.chapter-row').forEach(function(row){
+      var show = !filtered || row.dataset.status === chapterFilter;
+      row.style.display = show ? '' : 'none';
+      // Reordering only makes sense with the full list visible
+      row.draggable = !filtered;
+      var handle = row.querySelector('.drag-handle');
+      if (handle) handle.style.opacity = filtered ? '0.2' : '';
+    });
+  }
+
+  // ── RELATIVE TIME ─────────────────────────────────────────────
+  function timeAgo(d) {
+    var s = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    var m = Math.floor(s / 60); if (m < 60) return m + 'm ago';
+    var h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
+    var days = Math.floor(h / 24); if (days < 30) return days + 'd ago';
+    var mo = Math.floor(days / 30); if (mo < 12) return mo + 'mo ago';
+    return Math.floor(mo / 12) + 'y ago';
+  }
+
+  // ── CRASH-RECOVERY BACKUP (localStorage) ──────────────────────
+  var _pendingBackup = null; // backup found for current chapter, awaiting user choice
+
+  function backupKey() {
+    return 'dsbk_' + workId + '_' + (editingChapterId || 'new');
+  }
+  function writeBackup() {
+    if (!quill || !workId) return;
+    try {
+      if (!hasUnsavedChanges()) return;
+      localStorage.setItem(backupKey(), JSON.stringify({
+        t: Date.now(),
+        title: document.getElementById('chapter-title-input').value,
+        content: quill.root.innerHTML,
+        noteTop: document.getElementById('author-note-top').value,
+        noteBottom: document.getElementById('author-note-bottom').value
+      }));
+    } catch (e) { /* storage full or unavailable — backup is best-effort */ }
+  }
+  function clearBackup(chapterId) {
+    try {
+      localStorage.removeItem('dsbk_' + workId + '_' + (chapterId || 'new'));
+    } catch (e) {}
+  }
+  function checkForBackup(lastSavedAt) {
+    _pendingBackup = null;
+    var banner = document.getElementById('backup-banner');
+    banner.style.display = 'none';
+    try {
+      var raw = localStorage.getItem(backupKey());
+      if (!raw) return;
+      var bk = JSON.parse(raw);
+      // Only offer if the backup is newer than the chapter's last save (+2s slack)
+      var savedTime = lastSavedAt ? new Date(lastSavedAt).getTime() : 0;
+      if (!bk || !bk.t || bk.t <= savedTime + 2000) { clearBackup(editingChapterId); return; }
+      _pendingBackup = bk;
+      document.getElementById('backup-banner-time').textContent = timeAgo(bk.t);
+      banner.style.display = 'flex';
+    } catch (e) {}
+  }
+  function restoreBackup() {
+    if (!_pendingBackup) return;
+    document.getElementById('chapter-title-input').value = _pendingBackup.title || '';
+    if (quill) quill.root.innerHTML = _pendingBackup.content || '<p></p>';
+    if (_pendingBackup.noteTop) {
+      document.getElementById('author-note-top').value = _pendingBackup.noteTop;
+      document.getElementById('author-note-top-wrap').style.display = 'flex';
+      document.getElementById('note-top-toggle').classList.add('active');
+    }
+    if (_pendingBackup.noteBottom) {
+      document.getElementById('author-note-bottom').value = _pendingBackup.noteBottom;
+      document.getElementById('author-note-bottom-wrap').style.display = 'flex';
+      document.getElementById('note-bottom-toggle').classList.add('active');
+    }
+    _pendingBackup = null;
+    document.getElementById('backup-banner').style.display = 'none';
+    updateReadingStats();
+    updateAutosaveIndicator('pending');
+    showToast('Backup restored — remember to save.', 'ti-lifebuoy');
+  }
+  function dismissBackup() {
+    clearBackup(editingChapterId);
+    _pendingBackup = null;
+    document.getElementById('backup-banner').style.display = 'none';
+  }
+  // Snapshot every 10s while there are unsaved changes
+  setInterval(writeBackup, 10000);
 
   // ── DRAG REORDER ──────────────────────────────────────────────
   async function reorderChapters(draggedId, targetId) {
@@ -999,6 +1171,11 @@
     // Award publish badges once for the batch (never block the flow)
     try { await db.rpc('award_chapter_publish_badges', { p_user_id: currentSession.user.id, p_work_id: workId }); } catch(e) {}
     showToast(ids.length + ' chapter(s) published!', 'ti-rocket');
+    // Keep the open editor in sync so autosave doesn't revert the status
+    if (ids.includes(editingChapterId)) {
+      currentChapterStatus = 'published';
+      document.getElementById('publish-label').textContent = 'Save Changes';
+    }
     await loadChapters();
     updateBulkBar();
   }
@@ -1007,6 +1184,10 @@
     if (!ids.length) return;
     for (var i=0;i<ids.length;i++) await db.from('chapters').update({ status:'draft', scheduled_for:null }).eq('id', ids[i]);
     showToast(ids.length + ' chapter(s) set to draft.', 'ti-device-floppy');
+    if (ids.includes(editingChapterId)) {
+      currentChapterStatus = 'draft';
+      document.getElementById('publish-label').textContent = 'Publish Chapter';
+    }
     await loadChapters();
     updateBulkBar();
   }
@@ -1196,7 +1377,26 @@
     // Update originals so hasUnsavedChanges() resets
     originalTitle = title;
     originalText = text;
+    originalNoteTop = noteTop;
+    originalNoteBottom = noteBottom;
     currentChapterStatus = finalStatus;
+
+    // Saved successfully — discard the crash-recovery backup
+    clearBackup(editingChapterId); // covers the 'new' key too when editingChapterId is null
+
+    // Chapter length hint vs. story average (manual saves only)
+    if (!silent && wordCount > 0) {
+      var others = allChapters.filter(function(c){ return c.id !== editingChapterId && (c.word_count || 0) > 0; });
+      if (others.length >= 3) {
+        var avg = others.reduce(function(s,c){ return s + c.word_count; }, 0) / others.length;
+        var ratio = wordCount / avg;
+        if (ratio < 0.6) {
+          showToast('Heads up: this chapter is ' + Math.round((1 - ratio) * 100) + '% shorter than your story\'s average (~' + Math.round(avg).toLocaleString() + ' words).', 'ti-ruler-measure');
+        } else if (ratio > 1.6) {
+          showToast('Heads up: this chapter is ' + Math.round((ratio - 1) * 100) + '% longer than your story\'s average (~' + Math.round(avg).toLocaleString() + ' words).', 'ti-ruler-measure');
+        }
+      }
+    }
 
     // Save chapter characters
     var savedChapterId = editingChapterId || (res.data && res.data.id);
@@ -1338,7 +1538,8 @@
     } else if (format === 'docx') {
       // Simple docx export via minimal OOXML (no external library)
       // Build a .doc (HTML-based, opens in Word) — widely compatible without external libraries
-      var bodyParas = text.split('\n').filter(function(l){return l.trim().length;}).map(function(l){ return '<p style="font-family:Calibri,sans-serif;font-size:12pt;text-indent:0.5in;">' + escXml(l) + '<' + '/p>'; }).join('');
+      // Export the rich HTML so bold/italics/headers survive into Word
+      var bodyParas = '<div style="font-family:Calibri,sans-serif;font-size:12pt;">' + (quill ? quill.root.innerHTML : escXml(text)) + '<' + '/div>';
       var htmlContent = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
         '<head><meta charset="utf-8"><' + '/head><body>' +
         '<h1 style="text-align:center;font-family:Cambria,serif;">' + escXml(title) + '<' + '/h1>' +
@@ -1354,6 +1555,154 @@
     }
   }
   function escXml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // ── CTRL+S / CMD+S TO SAVE ────────────────────────────────────
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      if (!hasUnsavedChanges() && editingChapterId) { showToast('No changes to save.', 'ti-check'); return; }
+      // Existing chapters keep their status; new chapters save as draft
+      submitChapter(editingChapterId ? currentChapterStatus : 'draft');
+    }
+  });
+
+  // ── DUPLICATE CHAPTER ─────────────────────────────────────────
+  async function duplicateChapter() {
+    if (!editingChapterId) return;
+    var { data: src } = await db.from('chapters').select('*').eq('id', editingChapterId).maybeSingle();
+    if (!src) { showToast('Could not load chapter to duplicate.', 'ti-x'); return; }
+    var nextNum = allChapters.length
+      ? Math.max.apply(null, allChapters.map(function(c){ return c.chapter_number || 0; })) + 1
+      : 1;
+    var { data: copy, error } = await db.from('chapters').insert({
+      work_id: workId, author_id: currentSession.user.id, chapter_number: nextNum,
+      title: (src.title || 'Untitled') + ' (copy)', content: src.content, word_count: src.word_count,
+      status: 'draft', author_note_top: src.author_note_top, author_note_bottom: src.author_note_bottom,
+      font: src.font,
+      comments_open: src.comments_open
+    }).select('id').single();
+    if (error) { showToast('Error: ' + error.message, 'ti-x'); return; }
+    showToast('Chapter duplicated as a draft.', 'ti-copy');
+    await loadChapters();
+    var row = document.querySelector('.chapter-row[data-id="' + copy.id + '"]');
+    var btn = row ? row.querySelector('.chapter-edit-btn') : null;
+    if (row && btn) await setModeEdit(copy.id, btn, row);
+  }
+
+  // ── WORD SPRINT TIMER ─────────────────────────────────────────
+  var sprintTimer = null;
+  var sprintEndsAt = 0;
+  var sprintStartWords = 0;
+
+  function sprintWordCount() {
+    return quill ? quill.getText().trim().split(/\s+/).filter(Boolean).length : 0;
+  }
+  function toggleSprintUI() {
+    var row = document.getElementById('sprint-row');
+    row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  }
+  function startStopSprint() {
+    if (sprintTimer) { endSprint(false); return; }
+    var mins = parseInt(document.getElementById('sprint-length').value) || 15;
+    sprintEndsAt = Date.now() + mins * 60000;
+    sprintStartWords = sprintWordCount();
+    document.getElementById('sprint-start-btn').innerHTML = '<i class="ti ti-player-stop"></i> Stop';
+    document.getElementById('sprint-start-btn').style.color = 'var(--red)';
+    sprintTimer = setInterval(sprintTick, 1000);
+    sprintTick();
+    showToast(mins + '-minute sprint started — go!', 'ti-stopwatch');
+  }
+  function sprintTick() {
+    var msLeft = sprintEndsAt - Date.now();
+    if (msLeft <= 0) { endSprint(true); return; }
+    var mm = Math.floor(msLeft / 60000);
+    var ss = Math.floor((msLeft % 60000) / 1000);
+    var written = Math.max(0, sprintWordCount() - sprintStartWords);
+    document.getElementById('sprint-display').textContent =
+      mm + ':' + (ss < 10 ? '0' : '') + ss + ' left · ' + written.toLocaleString() + ' words this sprint';
+  }
+  function endSprint(finished) {
+    clearInterval(sprintTimer);
+    sprintTimer = null;
+    var written = Math.max(0, sprintWordCount() - sprintStartWords);
+    document.getElementById('sprint-start-btn').innerHTML = '<i class="ti ti-player-play"></i> Start';
+    document.getElementById('sprint-start-btn').style.color = 'var(--green)';
+    document.getElementById('sprint-display').textContent =
+      (finished ? 'Sprint complete! ' : 'Sprint stopped. ') + written.toLocaleString() + ' words written.';
+    showToast(finished ? ('Sprint done — ' + written.toLocaleString() + ' words! 🎉') : ('Sprint stopped — ' + written.toLocaleString() + ' words.'), 'ti-stopwatch');
+  }
+
+  // ── IMPORT .TXT / .DOCX ───────────────────────────────────────
+  function importChapter(format) {
+    document.getElementById('export-menu').classList.remove('open');
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = format === 'txt' ? '.txt,text/plain' : '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    input.onchange = function() {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      if (format === 'txt') importTxtFile(file);
+      else importDocxFile(file);
+    };
+    input.click();
+  }
+  function importConfirmReplace() {
+    var existing = quill ? quill.getText().trim() : '';
+    if (existing && !confirm('The editor already has content. Importing will replace it — continue?')) return false;
+    return true;
+  }
+  function importTxtFile(file) {
+    if (!importConfirmReplace()) return;
+    var reader = new FileReader();
+    reader.onload = function() {
+      var text = String(reader.result || '');
+      var paras = text.split(/\r?\n/).map(function(l){ return l.trim(); });
+      var htmlOut = paras.map(function(l){ return l ? '<p>' + escXml(l) + '</p>' : ''; }).join('');
+      quill.root.innerHTML = htmlOut || '<p></p>';
+      afterImport(file.name);
+    };
+    reader.onerror = function(){ showToast('Could not read file.', 'ti-x'); };
+    reader.readAsText(file);
+  }
+  function importDocxFile(file) {
+    if (!importConfirmReplace()) return;
+    loadMammoth().then(function() {
+      var reader = new FileReader();
+      reader.onload = function() {
+        window.mammoth.convertToHtml({ arrayBuffer: reader.result })
+          .then(function(result) {
+            quill.clipboard.dangerouslyPasteHTML(result.value || '<p></p>');
+            afterImport(file.name);
+          })
+          .catch(function(){ showToast('Could not convert that .docx file.', 'ti-x'); });
+      };
+      reader.onerror = function(){ showToast('Could not read file.', 'ti-x'); };
+      reader.readAsArrayBuffer(file);
+    }).catch(function(){ showToast('Could not load the .docx converter — check your connection.', 'ti-x'); });
+  }
+  function afterImport(filename) {
+    // Prefill an empty title from the filename
+    var titleInput = document.getElementById('chapter-title-input');
+    if (!titleInput.value.trim()) {
+      titleInput.value = filename.replace(/\.(txt|docx)$/i, '').replace(/[_-]+/g, ' ').trim().slice(0, 100);
+    }
+    updateReadingStats();
+    updateAutosaveIndicator('pending');
+    showToast('Imported! Review, then save.', 'ti-file-import');
+  }
+  var _mammothPromise = null;
+  function loadMammoth() {
+    if (window.mammoth) return Promise.resolve();
+    if (_mammothPromise) return _mammothPromise;
+    _mammothPromise = new Promise(function(resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js';
+      s.onload = resolve;
+      s.onerror = function(){ _mammothPromise = null; reject(); };
+      document.head.appendChild(s);
+    });
+    return _mammothPromise;
+  }
 
   // ── REVISION HISTORY ──────────────────────────────────────────
   async function openRevisionHistory() {
@@ -1405,24 +1754,33 @@
     var caseSensitive = document.getElementById('fr-case-sensitive').checked;
     if (!find) { document.getElementById('fr-result').textContent = 'Enter text to find.'; return; }
 
-    var html = quill.root.innerHTML;
-    var flags = caseSensitive ? 'g' : 'gi';
+    // Search the plain text and replace via the Quill API so formatting
+    // and markup are never touched (regexing innerHTML corrupts tags).
+    var text = quill.getText();
     var escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    var re = new RegExp(escaped, flags);
-    var matches = html.match(re);
-    var count = matches ? matches.length : 0;
+    var re = new RegExp(escaped, caseSensitive ? 'g' : 'gi');
+    var matches = [];
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      matches.push({ index: m.index, len: m[0].length });
+      if (m.index === re.lastIndex) re.lastIndex++; // safety for zero-length
+    }
 
-    if (count === 0) {
+    if (!matches.length) {
       document.getElementById('fr-result').textContent = 'No matches found.';
       return;
     }
 
-    var newHtml = html.replace(re, replace);
-    quill.root.innerHTML = newHtml;
+    // Replace back-to-front so earlier indices stay valid
+    for (var i = matches.length - 1; i >= 0; i--) {
+      quill.deleteText(matches[i].index, matches[i].len, Quill.sources.USER);
+      if (replace) quill.insertText(matches[i].index, replace, Quill.sources.USER);
+    }
+
     updateReadingStats();
     if (editingChapterId) updateAutosaveIndicator('pending');
-    document.getElementById('fr-result').textContent = 'Replaced ' + count + ' occurrence(s).';
-    showToast('Replaced ' + count + ' occurrence(s)', 'ti-replace');
+    document.getElementById('fr-result').textContent = 'Replaced ' + matches.length + ' occurrence(s).';
+    showToast('Replaced ' + matches.length + ' occurrence(s)', 'ti-replace');
   }
 
   // ── POLL MODAL ────────────────────────────────────────────────
@@ -1465,6 +1823,7 @@
 
     var maxChoiceVal = document.querySelector('input[name="poll-max"]:checked').value;
     var maxChoices = maxChoiceVal === 'custom' ? (parseInt(document.getElementById('poll-max-custom').value) || 2) : parseInt(maxChoiceVal);
+    if (maxChoices > options.length) maxChoices = options.length; // can't allow more choices than options
 
     var closesAt = null;
     if (document.getElementById('poll-close-enable').checked) {
