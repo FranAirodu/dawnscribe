@@ -930,10 +930,10 @@ function dsApplyAccent(hex) {
       var meta = session.user.user_metadata || {};
       var username = meta.username || null;
       var displayName = meta.display_name || username || session.user.email.split('@')[0];
-      document.getElementById('dd-display-name').textContent = displayName;
-      document.getElementById('dd-handle').textContent = username ? '@'+username : session.user.email;
-      document.getElementById('user-avatar-initial').textContent = displayName.charAt(0).toUpperCase();
-      if(username) document.getElementById('dd-profile-link').href = 'profile.html?user='+username;
+      var _ddn0=document.getElementById('dd-display-name'); if(_ddn0) _ddn0.textContent = displayName;
+      var _ddh0=document.getElementById('dd-handle'); if(_ddh0) _ddh0.textContent = username ? '@'+username : session.user.email;
+      var _uai0=document.getElementById('user-avatar-initial'); if(_uai0) _uai0.textContent = displayName.charAt(0).toUpperCase();
+      var _dpl0=document.getElementById('dd-profile-link'); if(username && _dpl0) _dpl0.href = 'profile.html?user='+username;
 
       // Always fetch profile by uid — metadata may be missing/stale
       var res = await db.from('profiles').select('avatar_url,display_name,username,id,account_status').eq('id',session.user.id).maybeSingle();
@@ -956,8 +956,8 @@ function dsApplyAccent(hex) {
           document.getElementById('dd-profile-link').href = 'profile.html?user='+username;
         }
         if(res.data.display_name){
-          document.getElementById('dd-display-name').textContent = res.data.display_name;
-          document.getElementById('user-avatar-initial').textContent = res.data.display_name.charAt(0).toUpperCase();
+          var _ddn1=document.getElementById('dd-display-name'); if(_ddn1) _ddn1.textContent = res.data.display_name;
+          var _uai1=document.getElementById('user-avatar-initial'); if(_uai1) _uai1.textContent = res.data.display_name.charAt(0).toUpperCase();
         }
         // Apply avatar image immediately — not gated on username
         if(res.data.avatar_url){
@@ -1019,8 +1019,8 @@ function dsApplyAccent(hex) {
         var res = await db.from('profiles').select('avatar_url,display_name,id').eq('username',username).maybeSingle();
         if(res && !res.error && res.data){
           if(res.data.display_name){
-            document.getElementById('dd-display-name').textContent = res.data.display_name;
-            document.getElementById('user-avatar-initial').textContent = res.data.display_name.charAt(0).toUpperCase();
+            var _ddn2=document.getElementById('dd-display-name'); if(_ddn2) _ddn2.textContent = res.data.display_name;
+            var _uai2=document.getElementById('user-avatar-initial'); if(_uai2) _uai2.textContent = res.data.display_name.charAt(0).toUpperCase();
           }
           if(res.data.avatar_url){
             avatarBtn.innerHTML = '<img src="'+res.data.avatar_url+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
