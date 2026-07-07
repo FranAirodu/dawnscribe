@@ -722,12 +722,12 @@ window.CharacterTitles = (function() {
           '<i class="ti ti-heart"></i> ' + (votedToday ? 'Voted today' : 'Fan Vote') + '</button>';
       }
       var fanRowHtml =
-        '<div class="ct-fan-vote-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0 4px;">' +
+        '<div class="ct-fan-vote-row" style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;padding:2px 0 6px;">' +
           fanBtnHtml +
-          '<span class="ct-fan-counts" data-fan-counts="' + esc(char.id) + '" style="font-size:10.5px;color:var(--text3);">' +
+          '<span class="ct-fan-counts" data-fan-counts="' + esc(char.id) + '" style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:14px;border:1px solid rgba(236,72,153,0.3);font-size:10.5px;color:var(--text3);">' +
             '<i class="ti ti-heart" style="color:#ec4899;font-size:10px;"></i> ' +
-            '<strong style="color:var(--text2);">' + (fc.total_votes || 0) + '</strong> all-time \u00b7 ' +
-            '<strong style="color:var(--text2);">' + (fc.month_votes || 0) + '</strong> this month' +
+            '<strong style="color:var(--text2);">' + (fc.total_votes || 0) + '</strong>&nbsp;all-time \u00b7 ' +
+            '<strong style="color:var(--text2);">' + (fc.month_votes || 0) + '</strong>&nbsp;this month' +
           '</span>' +
         '</div>';
 
