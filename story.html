@@ -35,7 +35,7 @@
 
     /* STORY HEADER */
     .story-header-wrap{max-width:1000px;margin:0 auto;padding:0 24px;}
-    .story-header{display:grid;grid-template-columns:180px 1fr;gap:28px;margin-top:-80px;position:relative;z-index:2;align-items:flex-end;padding-bottom:24px;}
+    .story-header{display:grid;grid-template-columns:180px 1fr;gap:28px;margin-top:-80px;position:relative;z-index:2;align-items:flex-start;padding-bottom:24px;}
     @media(max-width:640px){.story-header{grid-template-columns:120px 1fr;gap:16px;margin-top:-50px;}}
 
     /* COVER */
@@ -501,6 +501,14 @@
         <a class="collab-view-all-btn" id="collab-view-all-btn" style="display:none;" href="#">View all fan art <i class="ti ti-arrow-right"></i></a>
       </div>
 
+      <!-- NOVEL COLLABORATIONS -->
+      <div class="collab-banner" id="novel-collab-banner" style="display:none;border-color:rgba(167,139,250,0.3);">
+        <div class="collab-banner-header" style="border-bottom-color:rgba(167,139,250,0.2);">
+          <div class="collab-banner-title" style="color:#a78bfa;"><i class="ti ti-books" style="color:#a78bfa;"></i> Collab Novels</div>
+        </div>
+        <div class="collab-strip" id="novel-collab-strip"></div>
+      </div>
+
       <!-- AI ART NOTICE -->
       <div class="ai-notice" id="ai-notice" style="display:none;">
         <div class="ai-notice-title"><i class="ti ti-robot"></i> This story uses AI-generated artwork</div>
@@ -706,6 +714,10 @@
     document.addEventListener('DOMContentLoaded', function() { if (window.CommentToolbar) CommentToolbar.init(db); });
     var currentSession = null;
     var workData = null;
+    // True when this novel is itself a collab work (written for an artwork via
+    // artwork_collabs). Collabed works can't be collabed on again, so the fan-art
+    // Collab button is hidden when this is set.
+    var storyIsCollabWork = false;
     var allChapters = [];
     var chaptersShown = 20;
     var readProgress = {};
@@ -1159,7 +1171,7 @@
       // Offering button — shown to logged-in non-owners only, rendered into dedicated wrap
       renderOfferingButton();
       var isOwnerAct = currentSession && workData && currentSession.user.id === workData.author_id;
-      if(currentSession && !isOwnerAct && workData.type !== 'artwork') {
+      if(currentSession && !isOwnerAct && workData.type !== 'artwork' && !storyIsCollabWork) {
         var collabBtn = document.createElement('button');
         collabBtn.className = 'btn-collab';
         collabBtn.innerHTML = '<i class="ti ti-palette"></i> Collab';
@@ -2185,6 +2197,15 @@
       var chapResult = await db.from('chapters').select('id,chapter_number,title,word_count,created_at').eq('work_id', workId).eq('status','published').order('chapter_number', { ascending: true });
       allChapters = chapResult.data || [];
 
+      // Is this novel itself a collab work? (pending or approved link to an artwork)
+      // Promise.resolve wrapper: PostgrestFilterBuilder has no .catch()
+      try {
+        var collabChk = await Promise.resolve(
+          db.from('artwork_collabs').select('id').eq('work_id', workId).in('status',['pending','approved']).limit(1)
+        ).catch(function(){ return {}; });
+        storyIsCollabWork = !!(collabChk && collabChk.data && collabChk.data.length);
+      } catch(e) {}
+
       renderWork(workData, authors);
       renderChapters();
 
@@ -2193,7 +2214,7 @@
       await Promise.all([
         loadFollowState(), loadOfferingState(), loadEngagementState(),
         loadGoalState(), loadKindlingState(), loadGlossary(),
-        loadReviews(), loadRecommendations(), loadCollabs()
+        loadReviews(), loadRecommendations(), loadCollabs(), loadNovelCollabs()
       ].map(function(p){ return Promise.resolve(p).catch(function(e){ console.error('story section load failed:', e); }); }));
 
       renderActions();
@@ -2381,6 +2402,74 @@
 
     // ── COLLAB ART ───────────────────────────────────────────────
     var collabsData = []; var collabDeleteTarget = null; var collabFileData = null; var activeCollabId = null;
+
+    // ── NOVEL COLLABORATIONS (artwork ↔ novel links) ──────────────
+    async function loadNovelCollabs() {
+      try {
+        var entries = [];
+
+        // Direction A: this novel was written in collab with artwork(s)
+        var { data: asNovel } = await db.from('artwork_collabs')
+          .select('id,artwork_id,created_at')
+          .eq('work_id', workData.id).eq('status', 'approved');
+        (asNovel || []).forEach(function(r){ entries.push({ otherId: r.artwork_id, kind: 'artwork' }); });
+
+        // Direction B: this artwork inspired collab novel(s)
+        var { data: asArt } = await db.from('artwork_collabs')
+          .select('id,work_id,created_at')
+          .eq('artwork_id', workData.id).eq('status', 'approved');
+        (asArt || []).forEach(function(r){ entries.push({ otherId: r.work_id, kind: 'novel' }); });
+
+        if (!entries.length) return;
+
+        var otherIds = [...new Set(entries.map(function(e){ return e.otherId; }))];
+        var { data: otherWorks } = await db.from('works')
+          .select('id,title,cover_url,author_id,type').in('id', otherIds);
+        var workMap = {};
+        (otherWorks || []).forEach(function(w){ workMap[w.id] = w; });
+
+        var authorIds = [...new Set((otherWorks || []).map(function(w){ return w.author_id; }))];
+        var authorMap = {};
+        if (authorIds.length) {
+          var { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', authorIds);
+          (profs || []).forEach(function(p){ authorMap[p.id] = p; });
+        }
+
+        var strip = document.getElementById('novel-collab-strip');
+        var banner = document.getElementById('novel-collab-banner');
+        if (!strip || !banner) return;
+        // Title the section by what the linked works actually are
+        var linkedTypes = [...new Set(entries.map(function(e){ var w = workMap[e.otherId]; return w ? w.type : null; }).filter(Boolean))];
+        var sectionTitle = linkedTypes.length === 1
+          ? (linkedTypes[0] === 'artwork' ? 'Collab Artwork' : 'Collab Novels')
+          : 'Collabs';
+        var titleEl = banner.querySelector('.collab-banner-title');
+        if (titleEl) titleEl.innerHTML = '<i class="ti ti-books" style="color:#a78bfa;"></i> ' + sectionTitle;
+        var html = '';
+        entries.forEach(function(e) {
+          var w = workMap[e.otherId];
+          if (!w) return;
+          var a = authorMap[w.author_id] || {};
+          var authorName = escHtml(a.display_name || a.username || 'Unknown');
+          var href = (w.type === 'artwork' ? 'artwork.html?id=' : 'story.html?id=') + w.id;
+          var label = w.type === 'artwork' ? 'Collab Artwork' : 'Collab Novel';
+          var coverHtml = w.cover_url
+            ? '<img src="' + escHtml(w.cover_url) + '" alt="" style="width:160px;height:220px;object-fit:cover;display:block;"/>'
+            : '<div style="width:160px;height:220px;background:linear-gradient(135deg,#a78bfa,#7c3aed);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:40px;color:white;">' + escHtml((w.title || '?').charAt(0).toUpperCase()) + '</div>';
+          html += '<a class="collab-art-card" href="' + href + '" style="text-decoration:none;color:inherit;border-color:rgba(167,139,250,0.4);">' +
+            coverHtml +
+            '<div style="position:absolute;top:6px;left:6px;background:rgba(124,58,237,0.85);color:#fff;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:3px 8px;border-radius:20px;backdrop-filter:blur(4px);"><i class="ti ti-books" style="font-size:9px;"></i> ' + label + '</div>' +
+            '<div style="padding:8px 10px;">' +
+              '<div style="font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(w.title) + '</div>' +
+              '<div style="font-size:11px;color:var(--text3);">by ' + authorName + '</div>' +
+            '</div>' +
+          '</a>';
+        });
+        if (!html) return;
+        strip.innerHTML = html;
+        banner.style.display = 'block';
+      } catch(e) {}
+    }
 
     async function loadCollabs() {
       if(!workData || workData.type === 'artwork') return;
