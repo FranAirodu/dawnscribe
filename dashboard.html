@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Author Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <script src="accessibilityPrefs.js"></script>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f0c040;--amber:#f59e0b;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#a16207;--amber:#b45309;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;display:flex;flex-direction:column;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:16px;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;flex-shrink:0;}
+    .logo span{color:var(--text);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;flex-shrink:0;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    .page{max-width:960px;margin:0 auto;padding:32px 24px 60px;width:100%;}
+    .page-header{margin-bottom:8px;display:flex;align-items:center;gap:12px;}
+    .page-header i{font-size:26px;color:var(--accent);}
+    .page-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--text);}
+    .page-subtitle{font-size:13px;color:var(--text3);margin:2px 0 28px;}
+
+    /* Work picker */
+    .picker-card{display:flex;align-items:center;gap:14px;padding:14px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;text-decoration:none;color:inherit;transition:border-color 0.2s;}
+    .picker-card:hover{border-color:var(--accent);}
+    .picker-cover{width:44px;height:62px;border-radius:6px;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text3);overflow:hidden;}
+    .picker-cover img{width:100%;height:100%;object-fit:cover;}
+    .picker-body{flex:1;min-width:0;}
+    .picker-title{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .picker-stats{font-size:12px;color:var(--text3);margin-top:3px;display:flex;gap:14px;flex-wrap:wrap;}
+    .picker-arrow{color:var(--text3);font-size:18px;flex-shrink:0;}
+
+    /* Work header */
+    .work-head{display:flex;align-items:center;gap:16px;margin-bottom:24px;}
+    .work-head-cover{width:56px;height:78px;border-radius:8px;background:var(--bg4);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text3);}
+    .work-head-cover img{width:100%;height:100%;object-fit:cover;}
+    .work-head-title{font-family:'Cinzel',serif;font-size:20px;font-weight:700;}
+    .work-head-links{font-size:12.5px;margin-top:5px;display:flex;gap:14px;}
+    .work-head-links a{color:var(--accent);text-decoration:none;}
+    .work-head-links a:hover{text-decoration:underline;}
+
+    /* Overview cards */
+    .stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:32px;}
+    .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+    .stat-value{font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:var(--text);}
+    .stat-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-top:4px;display:flex;align-items:center;gap:5px;}
+    .stat-label i{font-size:13px;color:var(--accent);}
+    .stat-sub{font-size:11px;color:var(--text3);margin-top:3px;}
+
+    .section{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:24px;}
+    .section-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+    .section-title i{color:var(--accent);font-size:17px;}
+    .section-sub{font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5;}
+
+    /* Retention table */
+    .ret-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .ret-table th{text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+    .ret-table th.num, .ret-table td.num{text-align:right;}
+    .ret-table td{padding:9px 10px;border-bottom:1px solid var(--border);}
+    .ret-table tr:last-child td{border-bottom:none;}
+    .ret-table tr:hover td{background:var(--bg3);}
+    .ret-ch-title{max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);}
+    .ret-ch-num{color:var(--text3);font-weight:700;margin-right:8px;}
+    .ret-pct{font-weight:800;padding:2px 8px;border-radius:10px;display:inline-block;min-width:52px;text-align:center;}
+    .ret-pct.good{color:var(--green);background:rgba(52,211,153,0.1);}
+    .ret-pct.warn{color:var(--amber);background:rgba(245,158,11,0.1);}
+    .ret-pct.bad{color:var(--red);background:rgba(248,113,113,0.1);}
+    .ret-pct.na{color:var(--text3);background:var(--bg3);}
+    .ret-scroll{overflow-x:auto;}
+
+    /* Charts */
+    .chart-wrap{width:100%;overflow-x:auto;}
+    .chart-svg{display:block;width:100%;height:auto;}
+    .chart-empty{text-align:center;padding:28px;color:var(--text3);font-size:13px;}
+    .legend{display:flex;gap:16px;font-size:11.5px;color:var(--text3);margin-top:10px;flex-wrap:wrap;}
+    .legend-item{display:flex;align-items:center;gap:6px;}
+    .legend-swatch{width:12px;height:12px;border-radius:3px;flex-shrink:0;}
+
+    /* Reading list chips */
+    .rl-chips{display:flex;gap:10px;flex-wrap:wrap;}
+    .rl-chip{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:7px 14px;font-size:12.5px;color:var(--text2);display:flex;align-items:center;gap:7px;}
+    .rl-chip b{color:var(--text);font-size:14px;}
+
+    .state-wrap{text-align:center;padding:70px 20px;}
+    .state-icon{font-size:44px;color:var(--text3);margin-bottom:14px;}
+    .state-title{font-family:'Cinzel',serif;font-size:19px;margin-bottom:8px;}
+    .state-body{font-size:13.5px;color:var(--text3);line-height:1.6;}
+    .state-body a{color:var(--accent);}
+
+    .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:11px 22px;border-radius:10px;font-size:13.5px;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:400;pointer-events:none;box-shadow:0 8px 30px rgba(0,0,0,0.4);}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+
+    @media(max-width:640px){
+      nav{padding:0 16px;}
+      .page{padding:24px 14px 50px;}
+      .ret-ch-title{max-width:150px;}
+    }
+  </style>
+</head>
+<body>
+<nav>
+  <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+  <a class="back-btn" id="nav-back" href="profile.html"><i class="ti ti-arrow-left"></i> Back</a>
+</nav>
+
+<div class="page" id="page">
+  <div class="state-wrap"><i class="ti ti-loader-2 state-icon" style="animation:spin 1s linear infinite;"></i></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+  const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+  window.db = db;
+
+  var session = null;
+  var workId = null;
+
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function fmt(n){ n = Number(n||0); if(n >= 1000000) return (n/1000000).toFixed(1) + 'M'; if(n >= 1000) return (n/1000).toFixed(1) + 'k'; return String(n); }
+  function showToast(msg, icon){
+    var t = document.getElementById('toast');
+    t.innerHTML = '<i class="ti ' + (icon||'ti-check') + '"></i> ' + msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 3000);
+  }
+  function showState(icon, title, body){
+    document.getElementById('page').innerHTML =
+      '<div class="state-wrap"><i class="ti ' + icon + ' state-icon"></i>'
+      + '<div class="state-title">' + title + '</div>'
+      + '<div class="state-body">' + body + '</div></div>';
+  }
+
+  // ── INIT ─────────────────────────────────────────────────────
+  async function init(){
+    var { data: { session: s } } = await db.auth.getSession();
+    session = s;
+    if(!session){
+      showState('ti-lock', 'Log in required', 'The author dashboard shows analytics for your own stories. <a href="auth.html">Sign in</a> to continue.');
+      return;
+    }
+    var params = new URLSearchParams(window.location.search);
+    workId = params.get('work');
+    if(workId) loadDashboard();
+    else loadPicker();
+  }
+
+  // ── WORK PICKER (no ?work= param) ────────────────────────────
+  async function loadPicker(){
+    var uid = session.user.id;
+    // Own novels + coauthored novels. Promise.resolve wrappers: builders lack .catch()
+    var [ownRes, coRes] = await Promise.all([
+      Promise.resolve(db.from('works')
+        .select('id,title,cover_url,views,rating_avg,rating_count,chapters_count')
+        .eq('author_id', uid).eq('type','novel')
+        .order('created_at', { ascending: false })).catch(function(){ return {}; }),
+      Promise.resolve(db.from('work_coauthors').select('work_id').eq('user_id', uid)).catch(function(){ return {}; })
+    ]);
+    var works = ownRes.data || [];
+    var coIds = (coRes.data || []).map(function(r){ return r.work_id; })
+      .filter(function(id){ return !works.some(function(w){ return w.id === id; }); });
+    if(coIds.length){
+      try {
+        var { data: coWorks } = await db.from('works')
+          .select('id,title,cover_url,views,rating_avg,rating_count,chapters_count')
+          .in('id', coIds).eq('type','novel');
+        works = works.concat(coWorks || []);
+      } catch(e) {}
+    }
+
+    var page = document.getElementById('page');
+    if(!works.length){
+      showState('ti-books-off', 'No stories yet',
+        'Once you publish a novel, its analytics will live here. <a href="publish.html">Publish your first story</a>.');
+      return;
+    }
+
+    // Follower counts in one query
+    var followerMap = {};
+    try {
+      var ids = works.map(function(w){ return w.id; });
+      var { data: fRows } = await db.from('work_follows').select('work_id').in('work_id', ids);
+      (fRows || []).forEach(function(r){ followerMap[r.work_id] = (followerMap[r.work_id]||0) + 1; });
+    } catch(e) {}
+
+    page.innerHTML =
+      '<div class="page-header"><i class="ti ti-chart-line"></i><div class="page-title">Author Dashboard</div></div>'
+      + '<div class="page-subtitle">Pick a story to see its readers, retention, and growth.</div>'
+      + works.map(function(w){
+          var cover = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>';
+          var rating = w.rating_avg ? Number(w.rating_avg).toFixed(1) + '★ (' + (w.rating_count||0) + ')' : 'No ratings';
+          return '<a class="picker-card" href="dashboard.html?work=' + w.id + '">'
+            + '<div class="picker-cover">' + cover + '</div>'
+            + '<div class="picker-body">'
+              + '<div class="picker-title">' + esc(w.title) + '</div>'
+              + '<div class="picker-stats">'
+                + '<span><i class="ti ti-eye"></i> ' + fmt(w.views) + ' views</span>'
+                + '<span><i class="ti ti-users"></i> ' + fmt(followerMap[w.id]||0) + ' followers</span>'
+                + '<span><i class="ti ti-star"></i> ' + rating + '</span>'
+                + '<span><i class="ti ti-file-text"></i> ' + (w.chapters_count||0) + ' chapters</span>'
+              + '</div>'
+            + '</div>'
+            + '<i class="ti ti-chevron-right picker-arrow"></i>'
+          + '</a>';
+        }).join('');
+  }
+
+  // ── DASHBOARD ────────────────────────────────────────────────
+  async function loadDashboard(){
+    var payload = null;
+    try {
+      var { data, error } = await db.rpc('get_work_dashboard', { p_work_id: workId });
+      if(error) throw error;
+      payload = data;
+    } catch(e) {
+      showState('ti-lock', 'Not available',
+        'This dashboard is only visible to the story\u2019s author and coauthors. <a href="dashboard.html">Back to your stories</a>.');
+      return;
+    }
+    if(!payload || !payload.overview){
+      showState('ti-alert-circle', 'Something went wrong', 'Could not load analytics for this story. <a href="dashboard.html">Back to your stories</a>.');
+      return;
+    }
+
+    var ov = payload.overview;
+    var chapters = payload.chapters || [];
+    var page = document.getElementById('page');
+    document.title = 'DawnScribe — Dashboard: ' + (ov.title || 'Story');
+
+    var cover = ov.cover_url ? '<img src="' + esc(ov.cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>';
+    var ratingVal = ov.rating_avg ? Number(ov.rating_avg).toFixed(1) : '—';
+
+    page.innerHTML =
+      '<div class="work-head">'
+        + '<div class="work-head-cover">' + cover + '</div>'
+        + '<div>'
+          + '<div class="work-head-title">' + esc(ov.title) + '</div>'
+          + '<div class="work-head-links">'
+            + '<a href="story.html?id=' + workId + '"><i class="ti ti-book-open"></i> Story page</a>'
+            + '<a href="chapters.html?edit=' + workId + '"><i class="ti ti-pencil"></i> Manage chapters</a>'
+            + '<a href="dashboard.html"><i class="ti ti-switch-horizontal"></i> Switch story</a>'
+          + '</div>'
+        + '</div>'
+      + '</div>'
+
+      + '<div class="stat-grid">'
+        + statCard(fmt(ov.views), 'ti-eye', 'Total Views')
+        + statCard(fmt(ov.followers), 'ti-users', 'Followers')
+        + statCard(fmt(ov.readers), 'ti-book-open', 'Readers', 'started reading')
+        + statCard(ratingVal + ' ★', 'ti-star', 'Rating', (ov.rating_count||0) + ' rating' + (ov.rating_count===1?'':'s'))
+        + statCard(fmt(ov.sparks_total), 'ti-flame', 'Sparks', fmt(ov.sparks_week) + ' this week')
+        + statCard(fmt(ov.comments), 'ti-message-circle', 'Comments')
+      + '</div>'
+
+      + '<div class="section">'
+        + '<div class="section-title"><i class="ti ti-stairs-down"></i> Chapter Retention</div>'
+        + '<div class="section-sub">Readers = accounts that finished each chapter. <b>% of previous</b> shows how many carried on from the chapter before — dips mark where readers drop off. Views started counting today, so that column grows from here on.</div>'
+        + '<div class="ret-scroll">' + retentionTable(chapters) + '</div>'
+      + '</div>'
+
+      + '<div class="section">'
+        + '<div class="section-title"><i class="ti ti-users"></i> Follower Growth</div>'
+        + '<div class="section-sub">Cumulative story followers over time. Vertical lines mark chapter releases.</div>'
+        + followerChart(payload.followers_daily || [], chapters)
+      + '</div>'
+
+      + '<div class="section">'
+        + '<div class="section-title"><i class="ti ti-eye"></i> Views — last 30 days</div>'
+        + '<div class="section-sub">Story page + chapter views per day. Daily tracking is new, so history builds from today.</div>'
+        + barChart(payload.views_daily || [], 'views', 'var(--accent)')
+      + '</div>'
+
+      + '<div class="section">'
+        + '<div class="section-title"><i class="ti ti-flame"></i> Sparks — last 30 days</div>'
+        + '<div class="section-sub">Dawn Sparks received per day.</div>'
+        + barChart(payload.sparks_daily || [], 'n', 'var(--gold)')
+      + '</div>'
+
+      + '<div class="section">'
+        + '<div class="section-title"><i class="ti ti-books"></i> Reading Lists</div>'
+        + '<div class="section-sub">How readers have shelved this story.</div>'
+        + readingListChips(payload.reading_list || [])
+      + '</div>';
+  }
+
+  function statCard(value, icon, label, sub){
+    return '<div class="stat-card">'
+      + '<div class="stat-value">' + value + '</div>'
+      + '<div class="stat-label"><i class="ti ' + icon + '"></i> ' + label + '</div>'
+      + (sub ? '<div class="stat-sub">' + sub + '</div>' : '')
+      + '</div>';
+  }
+
+  // ── RETENTION TABLE ──────────────────────────────────────────
+  function retentionTable(chapters){
+    if(!chapters.length) return '<div class="chart-empty"><i class="ti ti-file-off"></i> No published chapters yet.</div>';
+    var rows = chapters.map(function(c, i){
+      var prev = i > 0 ? chapters[i-1] : null;
+      var pctHtml;
+      if(i === 0){
+        pctHtml = '<span class="ret-pct na">—</span>';
+      } else if(!prev.readers){
+        pctHtml = '<span class="ret-pct na">n/a</span>';
+      } else {
+        var pct = Math.min(100, Math.round((c.readers / prev.readers) * 100));
+        var cls = pct >= 90 ? 'good' : (pct >= 70 ? 'warn' : 'bad');
+        pctHtml = '<span class="ret-pct ' + cls + '">' + pct + '%</span>';
+      }
+      return '<tr>'
+        + '<td class="ret-ch-title" title="' + esc(c.title||'') + '"><span class="ret-ch-num">' + c.chapter_number + '</span>' + esc(c.title || 'Untitled') + '</td>'
+        + '<td class="num">' + fmt(c.readers) + '</td>'
+        + '<td class="num">' + pctHtml + '</td>'
+        + '<td class="num">' + fmt(c.views) + '</td>'
+        + '<td class="num">' + fmt(c.comments) + '</td>'
+        + '<td class="num">' + fmt(c.word_count||0) + '</td>'
+      + '</tr>';
+    }).join('');
+    return '<table class="ret-table">'
+      + '<thead><tr><th>Chapter</th><th class="num">Readers</th><th class="num">% of previous</th><th class="num">Views</th><th class="num">Comments</th><th class="num">Words</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody></table>';
+  }
+
+  // ── FOLLOWER GROWTH (SVG line, chapter release markers) ──────
+  function followerChart(daily, chapters){
+    if(!daily.length) return '<div class="chart-empty"><i class="ti ti-chart-line"></i> No followers yet — the graph starts with your first.</div>';
+    var W = 900, H = 240, padL = 44, padR = 14, padT = 14, padB = 30;
+
+    // Cumulative series
+    var pts = [];
+    var total = 0;
+    daily.forEach(function(d){ total += Number(d.n); pts.push({ t: new Date(d.day).getTime(), v: total }); });
+    var t0 = pts[0].t, t1 = Math.max(Date.now(), pts[pts.length-1].t);
+    if(t1 === t0) t1 = t0 + 86400000;
+    var vMax = Math.max(total, 1);
+
+    function x(t){ return padL + ((t - t0) / (t1 - t0)) * (W - padL - padR); }
+    function y(v){ return H - padB - (v / vMax) * (H - padT - padB); }
+
+    // Step line (followers accumulate in jumps)
+    var d = 'M ' + x(pts[0].t).toFixed(1) + ' ' + y(0).toFixed(1);
+    var last = 0;
+    pts.forEach(function(p){
+      d += ' L ' + x(p.t).toFixed(1) + ' ' + y(last).toFixed(1);
+      d += ' L ' + x(p.t).toFixed(1) + ' ' + y(p.v).toFixed(1);
+      last = p.v;
+    });
+    d += ' L ' + x(t1).toFixed(1) + ' ' + y(last).toFixed(1);
+
+    // Chapter release markers within range
+    var markers = (chapters||[]).map(function(c){ return new Date(c.created_at).getTime(); })
+      .filter(function(t){ return t >= t0 && t <= t1; })
+      .map(function(t){
+        var xx = x(t).toFixed(1);
+        return '<line x1="' + xx + '" y1="' + padT + '" x2="' + xx + '" y2="' + (H-padB) + '" stroke="var(--green)" stroke-width="1" stroke-dasharray="3,3" opacity="0.55"/>';
+      }).join('');
+
+    // Y axis: 0, mid, max
+    var yTicks = [0, Math.round(vMax/2), vMax].map(function(v){
+      return '<text x="' + (padL-8) + '" y="' + (y(v)+4).toFixed(1) + '" text-anchor="end" font-size="11" fill="var(--text3)">' + fmt(v) + '</text>'
+        + '<line x1="' + padL + '" y1="' + y(v).toFixed(1) + '" x2="' + (W-padR) + '" y2="' + y(v).toFixed(1) + '" stroke="var(--border)" stroke-width="1"/>';
+    }).join('');
+    // X axis: first + last date
+    function dLabel(t){ return new Date(t).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }
+    var xTicks = '<text x="' + padL + '" y="' + (H-8) + '" font-size="11" fill="var(--text3)">' + dLabel(t0) + '</text>'
+      + '<text x="' + (W-padR) + '" y="' + (H-8) + '" text-anchor="end" font-size="11" fill="var(--text3)">' + dLabel(t1) + '</text>';
+
+    return '<div class="chart-wrap"><svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="min-width:560px;">'
+      + yTicks + markers
+      + '<path d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>'
+      + xTicks + '</svg></div>'
+      + '<div class="legend">'
+        + '<span class="legend-item"><span class="legend-swatch" style="background:var(--accent);"></span> Followers (cumulative)</span>'
+        + '<span class="legend-item"><span class="legend-swatch" style="background:var(--green);opacity:0.6;"></span> Chapter release</span>'
+      + '</div>';
+  }
+
+  // ── DAILY BAR CHART (views / sparks, last 30 days) ───────────
+  function barChart(daily, valueKey, color){
+    var W = 900, H = 200, padL = 40, padR = 10, padT = 12, padB = 28;
+    // Build a continuous 30-day window ending today
+    var byDay = {};
+    daily.forEach(function(d){ byDay[d.day] = Number(d[valueKey]||0); });
+    var days = [];
+    var today = new Date(); today.setHours(0,0,0,0);
+    for(var i = 29; i >= 0; i--){
+      var dt = new Date(today.getTime() - i*86400000);
+      var key = dt.toISOString().slice(0,10);
+      days.push({ key: key, label: dt, v: byDay[key] || 0 });
+    }
+    var vMax = Math.max.apply(null, days.map(function(d){ return d.v; }).concat([1]));
+    if(!days.some(function(d){ return d.v > 0; })){
+      return '<div class="chart-empty"><i class="ti ti-chart-bar"></i> Nothing logged yet — check back tomorrow.</div>';
+    }
+    var slot = (W - padL - padR) / 30;
+    var barW = Math.max(4, slot - 4);
+    var bars = days.map(function(d, i){
+      var h = (d.v / vMax) * (H - padT - padB);
+      var xx = padL + i*slot + (slot-barW)/2;
+      var yy = H - padB - h;
+      return '<rect x="' + xx.toFixed(1) + '" y="' + yy.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(h, d.v ? 2 : 0).toFixed(1) + '" rx="2" fill="' + color + '"><title>' + d.key + ': ' + d.v + '</title></rect>';
+    }).join('');
+    function dLabel(dt){ return dt.toLocaleDateString(undefined, { month:'short', day:'numeric' }); }
+    var axis = '<line x1="' + padL + '" y1="' + (H-padB) + '" x2="' + (W-padR) + '" y2="' + (H-padB) + '" stroke="var(--border)"/>'
+      + '<text x="' + (padL-8) + '" y="' + (padT+8) + '" text-anchor="end" font-size="11" fill="var(--text3)">' + fmt(vMax) + '</text>'
+      + '<text x="' + (padL-8) + '" y="' + (H-padB) + '" text-anchor="end" font-size="11" fill="var(--text3)">0</text>'
+      + '<text x="' + padL + '" y="' + (H-8) + '" font-size="11" fill="var(--text3)">' + dLabel(days[0].label) + '</text>'
+      + '<text x="' + (W-padR) + '" y="' + (H-8) + '" text-anchor="end" font-size="11" fill="var(--text3)">' + dLabel(days[29].label) + '</text>';
+    return '<div class="chart-wrap"><svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="min-width:560px;">' + axis + bars + '</svg></div>';
+  }
+
+  // ── READING LIST CHIPS ───────────────────────────────────────
+  function readingListChips(rows){
+    if(!rows.length) return '<div class="chart-empty"><i class="ti ti-books"></i> Not on any reading lists yet.</div>';
+    var labels = { reading: ['ti-book-open','Reading'], plan_to_read: ['ti-clock','Plan to Read'], completed: ['ti-circle-check','Completed'], on_hold: ['ti-player-pause','On Hold'], dropped: ['ti-x','Dropped'] };
+    var order = ['reading','plan_to_read','completed','on_hold','dropped'];
+    rows.sort(function(a,b){ return order.indexOf(a.status) - order.indexOf(b.status); });
+    return '<div class="rl-chips">' + rows.map(function(r){
+      var meta = labels[r.status] || ['ti-book', r.status];
+      return '<span class="rl-chip"><i class="ti ' + meta[0] + '"></i> ' + meta[1] + ' <b>' + fmt(r.n) + '</b></span>';
+    }).join('') + '</div>';
+  }
+
+  init();
+</script>
+
+<script src="footer.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

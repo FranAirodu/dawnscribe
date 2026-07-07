@@ -113,6 +113,7 @@
     .comment-avatar img{width:100%;height:100%;object-fit:cover;}
     .comment-name{font-size:13px;font-weight:700;color:var(--text);}
     .comment-date{font-size:11px;color:var(--text3);margin-left:auto;}
+    .cmt-attach{max-width:100%;border-radius:7px;margin-top:7px;display:block;}
     .comment-text{font-size:13px;color:var(--text2);line-height:1.6;}
     .comment-input-wrap{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
     .comment-textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;resize:none;min-height:70px;transition:border-color 0.2s;}
@@ -621,8 +622,8 @@
       // Load reaction counts + my reaction
       await loadReactions();
 
-      // Load follow status
-      if(session){
+      // Load follow status (guard: profiles row may be missing → no .id to query)
+      if(session && data.profiles.id){
         var { data: fw } = await db.from('follows')
           .select('id')
           .eq('follower_id', session.user.id)
@@ -754,7 +755,7 @@
             + '<a class="artist-name" href="profile.html?user=' + esc(p.username) + '">' + esc(artistName) + '</a>'
             + '<div class="artist-handle">@' + esc(p.username) + '</div>'
           + '</div>'
-          + (session && session.user.id !== workData.author_id
+          + (session && p.id && session.user.id !== workData.author_id
               ? '<button class="' + followBtnClass + '" id="follow-btn" onclick="toggleFollow()">' + followBtnContent + '</button>'
               : '')
         + '</div>'
@@ -808,7 +809,6 @@
           + '<div class="related-grid" id="related-grid"></div>'
         + '</div>';
 
-      renderReactionChips();
       renderReactionChips();
       if(!session){
         document.getElementById('reactions-login-note').style.display = 'block';
@@ -993,7 +993,7 @@
 
     // ── FOLLOW
     async function toggleFollow(){
-      if(!session) return;
+      if(!session || !workData.profiles.id) return;
       var btn = document.getElementById('follow-btn');
       var artistId = workData.profiles.id;
       if(isFollowing){
@@ -1012,7 +1012,7 @@
     }
 
     // ── COMMENTS (THREADED)
-    function buildCommentCard(c, profileMap, isOwner, isReply){
+    function buildCommentCard(c, profileMap, isOwner, isReply, rootId){
       var p = profileMap[c.user_id] || {};
       var name = p.display_name || p.username || 'User';
       var avatarHtml = p.avatar_url
@@ -1030,7 +1030,10 @@
           + '<div class="comment-date">' + timeAgo(c.created_at) + '</div>'
           + (canDelete ? '<button class="comment-delete-btn" title="Delete"><i class="ti ti-trash"></i></button>' : '')
         + '</div>'
-        + '<div class="comment-text">' + dsSpoiler.render(esc(c.content)) + '</div>'
+        + '<div class="comment-text">' + dsSpoiler.render(esc(c.content))
+          + (c.gif_url ? '<img class="cmt-attach" src="' + esc(c.gif_url) + '" alt="gif"/>' : '')
+          + (c.image_url ? '<img class="cmt-attach" src="' + esc(c.image_url) + '" alt="image"/>' : '')
+        + '</div>'
         + (session ? '<div class="comment-actions">'
             + '<button class="comment-reply-btn"><i class="ti ti-corner-down-right"></i> Reply</button>'
             + (session.user.id !== c.user_id ? '<button class="comment-block-btn"><i class="ti ti-ban"></i> Block</button>' : '')
@@ -1043,11 +1046,16 @@
       }
       if(session){
         card.querySelector('.comment-reply-btn').addEventListener('click', function(){
-          toggleReplyBox(c.id, card, name);
+          // Replies always thread to the ROOT comment: loadComments only renders
+          // one level deep, so a reply whose parent_id is another reply would be
+          // orphaned (invisible) on reload. rootId is the top-level comment's id.
+          var threadRoot = isReply ? rootId : c.id;
+          var threadCard = isReply ? (card.closest('.comment-card') || card) : card;
+          toggleReplyBox(threadRoot, threadCard, name);
         });
         if(session.user.id !== c.user_id){
           card.querySelector('.comment-block-btn').addEventListener('click', async function(){
-            if(!confirm('Block '+esc(name)+'? Their comments will be hidden.')) return;
+            if(!confirm('Block '+name+'? Their comments will be hidden.')) return;
             await dsBlock.block(c.user_id);
             document.querySelectorAll('.comment-card,.reply-card').forEach(function(el){ if(el.dataset.userId===c.user_id) el.remove(); });
             showToast('User blocked.','ti-ban');
@@ -1142,7 +1150,7 @@
         .select('id,username,display_name,avatar_url').eq('id', session.user.id).maybeSingle();
       var profMap = {}; if(myProfile) profMap[myProfile.id] = myProfile;
       var isOwner = session && workData && session.user.id === workData.author_id;
-      var replyCard = buildCommentCard(inserted, profMap, isOwner, true);
+      var replyCard = buildCommentCard(inserted, profMap, isOwner, true, parentId);
       repliesList.appendChild(replyCard);
 
       // Update count
@@ -1153,7 +1161,7 @@
 
     async function loadComments(){
       var { data, error } = await db.from('artwork_comments')
-        .select('id, content, created_at, user_id, parent_id')
+        .select('id, content, created_at, user_id, parent_id, gif_url, image_url')
         .eq('work_id', workId)
         .order('created_at', { ascending: true });
 
@@ -1200,7 +1208,7 @@
           var repliesList = document.createElement('div');
           repliesList.className = 'replies-list';
           childReplies.forEach(function(r){
-            repliesList.appendChild(buildCommentCard(r, profileMap, isOwner, true));
+            repliesList.appendChild(buildCommentCard(r, profileMap, isOwner, true, c.id));
           });
           card.appendChild(repliesList);
         }
@@ -1211,11 +1219,13 @@
     async function deleteComment(commentId, cardEl){
       if(!session) return;
       cardEl.style.opacity = '0.4';
-      var { error } = await db.from('artwork_comments').delete()
-        .eq('id', commentId).eq('user_id', session.user.id);
-      if(error){
-        var { error: err2 } = await db.from('artwork_comments').delete().eq('id', commentId);
-        if(err2){ cardEl.style.opacity = '1'; showToast('Could not delete comment.', 'ti-alert-circle'); return; }
+      // .select() so we can tell whether a row was actually deleted — a delete
+      // matching zero rows returns success, which previously let the owner-delete
+      // path remove the card from the DOM while the comment survived in the DB.
+      var { data: delRows, error } = await db.from('artwork_comments').delete()
+        .eq('id', commentId).select();
+      if(error || !delRows || !delRows.length){
+        cardEl.style.opacity = '1'; showToast('Could not delete comment.', 'ti-alert-circle'); return;
       }
       var countEl = document.getElementById('comment-count');
       if(countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent||'0') - 1);
@@ -1381,93 +1391,8 @@
       });
     }
 
-    async function approveCollab(collabId, novelId, authorId){
-      var card = document.getElementById('approval-card-' + collabId);
-      if(card){ card.style.opacity = '0.5'; card.querySelectorAll('button').forEach(function(b){ b.disabled = true; }); }
-
-      // Flip collab status to approved
-      var { error } = await db.from('artwork_collabs').update({ status: 'approved' }).eq('id', collabId);
-      if(error){ if(card){ card.style.opacity = '1'; card.querySelectorAll('button').forEach(function(b){ b.disabled = false; }); } showToast('Failed to approve.', 'ti-alert-circle'); return; }
-
-      // Publish the novel (make it visible)
-      await db.from('works').update({ is_published: true }).eq('id', novelId);
-
-      // Notify the author
-      if(authorId && authorId !== session.user.id){
-        var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
-        var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
-        try { await db.from('notifications').insert({
-          user_id: authorId,
-          type: 'collab_approved',
-          from_user_id: session.user.id,
-          work_id: workId,
-          message: myName + ' approved your collab story for "' + (workData.title||'Untitled') + '"'
-        }); } catch(e){}
-      }
-
-      if(card) card.remove();
-      updateApprovalCount(-1);
-      showToast('Collab approved! Story is now live.', 'ti-check');
-
-      // ── BADGE AWARDS: inline collab approved ──────────────
-      try {
-        var { data: collabBadges } = await db.rpc('award_artwork_inline_collab_badges', {
-          p_artist_id: session.user.id,
-          p_author_id: authorId
-        });
-        if (collabBadges && collabBadges.length > 0) {
-          collabBadges.forEach(function(r, i) {
-            if (r.newly_unlocked && r.newly_unlocked.length > 0) {
-              r.newly_unlocked.forEach(function(tier, j) {
-                setTimeout(function() {
-                  showToast('🏅 ' + (r.badge_slug || 'badge') + ' — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP', 'ti-award');
-                }, (i + j + 1) * 700);
-              });
-            }
-          });
-        }
-      } catch(e) {}
-
-      // Refresh the collab novels panel
-      var section = document.getElementById('collab-novels-section');
-      if(section){ section.style.display = 'none'; section.innerHTML = '<div class="collab-novels-label"><i class="ti ti-book-heart"></i> Stories Inspired by This Artwork</div><div id="collab-novels-list"></div>'; }
-      loadCollabNovels();
-    }
-
-    async function rejectCollab(collabId, novelId, authorId){
-      var card = document.getElementById('approval-card-' + collabId);
-      if(card){ card.style.opacity = '0.5'; card.querySelectorAll('button').forEach(function(b){ b.disabled = true; }); }
-
-      var { error } = await db.from('artwork_collabs').update({ status: 'rejected' }).eq('id', collabId);
-      if(error){ if(card){ card.style.opacity = '1'; card.querySelectorAll('button').forEach(function(b){ b.disabled = false; }); } showToast('Failed to reject.', 'ti-alert-circle'); return; }
-
-      // Notify the author
-      if(authorId && authorId !== session.user.id){
-        var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
-        var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
-        try { await db.from('notifications').insert({
-          user_id: authorId,
-          type: 'collab_rejected',
-          from_user_id: session.user.id,
-          work_id: workId,
-          message: myName + ' declined your collab story for "' + (workData.title||'Untitled') + '"'
-        }); } catch(e){}
-      }
-
-      if(card) card.remove();
-      updateApprovalCount(-1);
-      showToast('Proposal rejected.', 'ti-x');
-    }
-
-    function updateApprovalCount(delta){
-      var panel = document.getElementById('approval-panel');
-      var label = panel ? panel.querySelector('.approval-panel-label') : null;
-      if(!label) return;
-      var match = label.textContent.match(/(\d+) pending/);
-      var count = match ? parseInt(match[1]) + delta : 0;
-      if(count <= 0){ if(panel) panel.remove(); return; }
-      label.innerHTML = '<i class="ti ti-writing"></i> Collab Story Proposals — ' + count + ' pending';
-    }
+    // (approveCollab / rejectCollab / updateApprovalCount removed — approval
+    // now lives entirely in collab-review.html; the panel here only links out.)
 
     // ── COLLAB NOVELS — load approved collabs for this artwork
     async function loadCollabNovels(){
@@ -1561,7 +1486,7 @@
       var listEl = document.getElementById('ccl-' + collabId);
       if(!listEl) return;
 
-      var comments = rows || [];
+      var comments = (rows || []).filter(function(cm){ return !dsBlock.either(cm.user_id); });
       if(countEl) countEl.textContent = comments.length;
 
       if(!comments.length){
@@ -1776,6 +1701,15 @@
       btn.textContent = 'Deleting…';
       var { error } = await db.from('works').delete().eq('id', workId);
       if(error){ showToast('Delete failed: ' + error.message, 'ti-alert-circle'); btn.disabled = false; btn.textContent = 'Delete'; return; }
+      // Best-effort storage cleanup: remove the thumb + full image from 'covers'.
+      // Runs after the row delete succeeds; failures are non-fatal (orphaned file only).
+      try {
+        var paths = [workData.cover_url, workData.banner_url]
+          .filter(Boolean)
+          .map(function(u){ var p = u.split('/covers/')[1]; return p ? decodeURIComponent(p) : null; })
+          .filter(Boolean);
+        if(paths.length) await db.storage.from('covers').remove(paths);
+      } catch(e) {}
       showToast('Artwork deleted.', 'ti-trash');
       setTimeout(function(){ window.location.href = 'index.html'; }, 1200);
     }
