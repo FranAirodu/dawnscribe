@@ -378,6 +378,7 @@
       </div>
       <div id="chapter-list"><div class="empty-state"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i>Loading…</div></div>
       <button class="add-chapter-btn" onclick="setModeAdd()"><i class="ti ti-plus"></i> Add New Chapter</button>
+      <button class="add-chapter-btn" style="margin-top:8px;border-style:dashed;" onclick="openBulkImport()"><i class="ti ti-file-import"></i> Import Book (.docx)</button>
     </div>
 
     <!-- FLOATING RE-OPEN BUTTON (shown when chapter list is collapsed) -->
@@ -494,6 +495,42 @@
 </div>
 
 <input type="file" id="import-file-input" style="display:none;"/>
+<input type="file" id="bulk-import-input" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none;"/>
+
+<!-- BULK IMPORT MODAL -->
+<div class="ds-modal-overlay" id="bulk-import-overlay">
+  <div class="ds-modal" style="max-width:640px;width:94%;max-height:88vh;display:flex;flex-direction:column;position:relative;">
+    <button class="ds-modal-close" onclick="closeBulkImport()"><i class="ti ti-x"></i></button>
+    <div class="ds-modal-title"><i class="ti ti-file-import" style="color:var(--accent);"></i> Import Book</div>
+    <div id="bulk-import-body" style="overflow-y:auto;flex:1;">
+      <p style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px;">
+        Upload a .docx and it will be split into chapters using <b>Heading 1 / Heading 2</b> styles as chapter titles.
+        Review the split, pick how to release them, and import.
+      </p>
+      <button class="add-chapter-btn" onclick="document.getElementById('bulk-import-input').click()"><i class="ti ti-upload"></i> Choose .docx file</button>
+      <div id="bulk-preview" style="margin-top:14px;"></div>
+      <div id="bulk-options" style="display:none;margin-top:16px;">
+        <label class="field-label"><i class="ti ti-rocket" style="color:var(--gold);"></i> Release</label>
+        <select id="bulk-mode" class="field-input" onchange="document.getElementById('bulk-stagger-opts').style.display = this.value === 'stagger' ? 'flex' : 'none';">
+          <option value="draft">Import as drafts</option>
+          <option value="publish">Publish all immediately</option>
+          <option value="stagger">Stagger releases (scheduled)</option>
+        </select>
+        <div id="bulk-stagger-opts" style="display:none;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center;">
+          <span style="font-size:12.5px;color:var(--text2);">First chapter on</span>
+          <input type="datetime-local" id="bulk-start" class="field-input" style="width:auto;"/>
+          <span style="font-size:12.5px;color:var(--text2);">then every</span>
+          <input type="number" id="bulk-every" class="field-input" style="width:70px;" min="1" value="1"/>
+          <span style="font-size:12.5px;color:var(--text2);">day(s)</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="add-chapter-btn" id="bulk-go-btn" style="display:none;flex:1;" onclick="runBulkImport()"><i class="ti ti-file-import"></i> Import <span id="bulk-go-count"></span> chapters</button>
+      <button class="add-chapter-btn" style="flex:0 0 auto;border-style:dashed;" onclick="closeBulkImport()">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <div id="delete-dialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500;align-items:center;justify-content:center;">
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;max-width:460px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.5);">
@@ -1702,6 +1739,150 @@
       document.head.appendChild(s);
     });
     return _mammothPromise;
+  }
+
+  // ── BULK BOOK IMPORT (.docx → many chapters) ─────────────────
+  var bulkChapters = []; // [{title, html, words, include}]
+
+  function openBulkImport(){
+    bulkChapters = [];
+    document.getElementById('bulk-preview').innerHTML = '';
+    document.getElementById('bulk-options').style.display = 'none';
+    document.getElementById('bulk-go-btn').style.display = 'none';
+    document.getElementById('bulk-import-input').value = '';
+    // Default stagger start: tomorrow 09:00 local
+    var d = new Date(Date.now() + 86400000); d.setHours(9,0,0,0);
+    document.getElementById('bulk-start').value =
+      d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + 'T09:00';
+    document.getElementById('bulk-import-overlay').classList.add('open');
+  }
+  function closeBulkImport(){
+    document.getElementById('bulk-import-overlay').classList.remove('open');
+  }
+
+  document.getElementById('bulk-import-input').addEventListener('change', function(){
+    var file = this.files && this.files[0];
+    if(!file) return;
+    var preview = document.getElementById('bulk-preview');
+    preview.innerHTML = '<div class="empty-state"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i>Converting…</div>';
+    loadMammoth().then(function(){
+      var reader = new FileReader();
+      reader.onload = function(){
+        window.mammoth.convertToHtml({ arrayBuffer: reader.result })
+          .then(function(result){ splitIntoChapters(result.value || ''); })
+          .catch(function(){ preview.innerHTML = ''; showToast('Could not convert that .docx file.', 'ti-x'); });
+      };
+      reader.onerror = function(){ preview.innerHTML = ''; showToast('Could not read file.', 'ti-x'); };
+      reader.readAsArrayBuffer(file);
+    }).catch(function(){ preview.innerHTML = ''; showToast('Could not load the .docx converter — check your connection.', 'ti-x'); });
+  });
+
+  function countWordsHtml(html){
+    var text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    return text ? text.split(' ').length : 0;
+  }
+
+  function splitIntoChapters(html){
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    bulkChapters = [];
+    var current = null;
+    function push(){ if(current && (current.html.trim() || current.title)) bulkChapters.push(current); }
+    Array.prototype.forEach.call(doc.body.children, function(el){
+      var tag = el.tagName;
+      if(tag === 'H1' || tag === 'H2'){
+        push();
+        current = { title: (el.textContent || '').trim().slice(0, 100) || 'Untitled Chapter', html: '', include: true };
+      } else {
+        if(!current) current = { title: 'Prologue', html: '', include: true };
+        current.html += el.outerHTML;
+      }
+    });
+    push();
+    bulkChapters.forEach(function(ch){ ch.words = countWordsHtml(ch.html); });
+    // Drop empty shells (heading with no body AND no words)
+    bulkChapters = bulkChapters.filter(function(ch){ return ch.words > 0; });
+    renderBulkPreview();
+  }
+
+  function renderBulkPreview(){
+    var preview = document.getElementById('bulk-preview');
+    if(!bulkChapters.length){
+      preview.innerHTML = '<div class="empty-state"><i class="ti ti-file-off"></i>No chapters found. Make sure chapter titles use the <b>Heading 1</b> or <b>Heading 2</b> style in Word.</div>';
+      document.getElementById('bulk-options').style.display = 'none';
+      document.getElementById('bulk-go-btn').style.display = 'none';
+      return;
+    }
+    if(bulkChapters.length === 1){
+      preview.innerHTML = '<div style="font-size:12px;color:var(--amber);margin-bottom:8px;"><i class="ti ti-alert-triangle"></i> Only one chapter detected — if your book has chapters, style their titles as Heading 1/2 in Word and re-upload.</div>';
+    } else {
+      preview.innerHTML = '';
+    }
+    preview.innerHTML += bulkChapters.map(function(ch, i){
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border);">'
+        + '<input type="checkbox" ' + (ch.include ? 'checked' : '') + ' onchange="bulkChapters[' + i + '].include = this.checked; updateBulkCount();"/>'
+        + '<input class="field-input" style="flex:1;padding:6px 10px;font-size:13px;" value="' + escXml(ch.title).replace(/"/g,'&quot;') + '" oninput="bulkChapters[' + i + '].title = this.value;"/>'
+        + '<span style="font-size:11.5px;color:var(--text3);white-space:nowrap;">' + ch.words.toLocaleString() + ' words</span>'
+        + '</div>';
+    }).join('');
+    document.getElementById('bulk-options').style.display = 'block';
+    document.getElementById('bulk-go-btn').style.display = 'flex';
+    updateBulkCount();
+  }
+
+  function updateBulkCount(){
+    var n = bulkChapters.filter(function(ch){ return ch.include; }).length;
+    document.getElementById('bulk-go-count').textContent = n;
+    document.getElementById('bulk-go-btn').disabled = !n;
+  }
+
+  async function runBulkImport(){
+    var selected = bulkChapters.filter(function(ch){ return ch.include; });
+    if(!selected.length) return;
+    var mode = document.getElementById('bulk-mode').value;
+    var startVal = document.getElementById('bulk-start').value;
+    var everyDays = Math.max(1, parseInt(document.getElementById('bulk-every').value, 10) || 1);
+    if(mode === 'stagger' && !startVal){ showToast('Pick a start date for staggered release.', 'ti-alert-triangle'); return; }
+    var startTime = mode === 'stagger' ? new Date(startVal).getTime() : 0;
+    if(mode === 'stagger' && startTime <= Date.now()){ showToast('The first release must be in the future.', 'ti-alert-triangle'); return; }
+
+    var btn = document.getElementById('bulk-go-btn');
+    btn.disabled = true;
+
+    var nextNumber = allChapters.length
+      ? Math.max.apply(null, allChapters.map(function(ch){ return ch.chapter_number || 0; })) + 1
+      : 1;
+
+    var ok = 0, failed = 0;
+    for(var i = 0; i < selected.length; i++){
+      var ch = selected[i];
+      btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Importing ' + (i+1) + ' / ' + selected.length + '…';
+      var payload = {
+        work_id: workId,
+        author_id: currentSession.user.id,
+        chapter_number: nextNumber + i,
+        title: (ch.title || 'Untitled Chapter').trim().slice(0, 100),
+        content: ch.html,
+        word_count: ch.words,
+        status: mode === 'publish' ? 'published' : (mode === 'stagger' ? 'scheduled' : 'draft'),
+        scheduled_for: mode === 'stagger' ? new Date(startTime + i * everyDays * 86400000).toISOString() : null,
+        comments_open: true
+      };
+      try {
+        var { error } = await db.from('chapters').insert(payload);
+        if(error) throw error;
+        ok++;
+      } catch(e){ failed++; }
+    }
+
+    await db.from('works').update({ updated_at: new Date().toISOString() }).eq('id', workId);
+    closeBulkImport();
+    showToast(failed
+      ? 'Imported ' + ok + ' chapter(s), ' + failed + ' failed.'
+      : 'Imported ' + ok + ' chapter(s)' + (mode === 'stagger' ? ' — releases scheduled!' : (mode === 'publish' ? ' — all published!' : ' as drafts.')),
+      failed ? 'ti-alert-triangle' : 'ti-file-import');
+    btn.innerHTML = '<i class="ti ti-file-import"></i> Import <span id="bulk-go-count"></span> chapters';
+    btn.disabled = false;
+    await loadChapters();
   }
 
   // ── REVISION HISTORY ──────────────────────────────────────────

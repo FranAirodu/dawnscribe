@@ -213,6 +213,36 @@
     .echo-count-chip.ultra{background:color-mix(in srgb,#a855f7 8%,transparent);border-color:color-mix(in srgb,#a855f7 20%,transparent);color:#a855f7;}
     .echo-count-num{font-size:14px;}
     /* REVIEWS */
+    .review-sort-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+    .review-sort-btn{background:var(--bg3);border:1px solid var(--border);border-radius:16px;padding:5px 12px;color:var(--text3);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:all 0.2s;}
+    .review-sort-btn:hover{color:var(--text2);}
+    .review-sort-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(45,212,191,0.08);}
+    .review-title-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:13.5px;margin-bottom:8px;}
+    .review-title-input:focus{outline:none;border-color:var(--accent);}
+    .subscore-toggle{background:transparent;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;padding:0;margin-bottom:8px;display:flex;align-items:center;gap:4px;}
+    .subscore-grid{display:none;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 18px;margin-bottom:10px;}
+    .subscore-grid.open{display:grid;}
+    .subscore-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+    .subscore-label{font-size:12px;color:var(--text2);font-weight:700;}
+    .subscore-stars{display:flex;gap:1px;}
+    .subscore-stars .star{font-size:16px;cursor:pointer;color:var(--text3);user-select:none;}
+    .subscore-stars .star.filled{color:var(--gold);}
+    .review-card-title{font-size:14px;font-weight:800;color:var(--text);margin:2px 0 4px;}
+    .review-subscores{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 2px;}
+    .review-subscore-chip{font-size:10.5px;font-weight:700;color:var(--text3);background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:2px 8px;}
+    .review-subscore-chip b{color:var(--gold);}
+    .review-foot{display:flex;align-items:center;gap:10px;margin-top:8px;}
+    .helpful-btn{background:transparent;border:1px solid var(--border);border-radius:14px;padding:4px 11px;color:var(--text3);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px;transition:all 0.2s;}
+    .helpful-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .helpful-btn.voted{border-color:var(--accent);color:var(--accent);background:rgba(45,212,191,0.08);}
+    .author-response{background:rgba(45,212,191,0.05);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:9px 12px;margin-top:10px;}
+    .author-response-label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:4px;display:flex;align-items:center;gap:5px;}
+    .author-response-text{font-size:13px;color:var(--text2);line-height:1.6;}
+    .respond-btn{background:transparent;border:none;color:var(--text3);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;padding:0;}
+    .respond-btn:hover{color:var(--accent);}
+    .respond-wrap{margin-top:8px;}
+    .respond-ta{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 11px;color:var(--text);font-family:inherit;font-size:13px;min-height:60px;resize:vertical;}
+    .respond-ta:focus{outline:none;border-color:var(--accent);}
     .stars-row{display:flex;gap:4px;margin-bottom:4px;}
     .star{font-size:20px;cursor:pointer;color:var(--bg4);transition:color 0.15s;}
     .star.filled{color:var(--gold);}
@@ -1848,15 +1878,32 @@
 
     // ── REVIEWS ──────────────────────────────────────────────────
     var reviewsShown = 20;
+    var reviewSort = 'newest'; // newest | helpful | highest | lowest
+    var myReviewVotes = {};    // review_id -> true
     function showMoreReviews() { reviewsShown += 20; loadReviews(); }
+    function setReviewSort(s) { reviewSort = s; reviewsShown = 20; loadReviews(); }
     async function loadReviews() {
       var chaptersRead = getChaptersRead(workData.id);
       var canReview = chaptersRead >= 5;
       var reviewsEl = document.getElementById('reviews-content');
 
       // Load existing reviews
-      var result = await db.from('reviews').select('id,rating,content,created_at,updated_at,user_id').eq('work_id', workData.id).order('created_at', { ascending: false });
+      var result = await db.from('reviews').select('id,rating,content,created_at,updated_at,user_id,title,score_style,score_story,score_grammar,score_character,author_response,author_response_at,helpful_count').eq('work_id', workData.id).order('created_at', { ascending: false });
       var reviews = (result.data || []);
+      // Client-side sort (all rows are already loaded)
+      if (reviewSort === 'helpful') reviews.sort(function(a,b){ return (b.helpful_count||0) - (a.helpful_count||0); });
+      else if (reviewSort === 'highest') reviews.sort(function(a,b){ return b.rating - a.rating; });
+      else if (reviewSort === 'lowest') reviews.sort(function(a,b){ return a.rating - b.rating; });
+      // My helpful votes for this story's reviews
+      myReviewVotes = {};
+      if (currentSession && reviews.length) {
+        try {
+          var { data: mv } = await db.from('review_votes').select('review_id')
+            .eq('user_id', currentSession.user.id)
+            .in('review_id', reviews.map(function(r){ return r.id; }));
+          (mv||[]).forEach(function(v){ myReviewVotes[v.review_id] = true; });
+        } catch(e) {}
+      }
       if(reviews.length){ var rvIds=[...new Set(reviews.slice(0, reviewsShown).map(function(r){return r.user_id;}))]; var {data:rvPs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',rvIds); var rvMap={};(rvPs||[]).forEach(function(p){rvMap[p.id]=p;}); reviews.forEach(function(r){r.profiles=rvMap[r.user_id]||null;});
         try { var {data:rvSt}=await db.from('user_streaks').select('user_id,current_streak,last_checkin').in('user_id',rvIds); var stMap={};(rvSt||[]).forEach(function(s){stMap[s.user_id]=s;}); reviews.forEach(function(r){r._streak=streakFlair(stMap[r.user_id]);}); } catch(e){}
       }
@@ -1891,6 +1938,12 @@
             html += '<div class="review-form">' +
               '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">Leave a Review</div>' +
               '<div class="stars-row" id="stars-row"></div>' +
+              '<input class="review-title-input" id="review-title-input" placeholder="Review title (optional)" maxlength="120"/>' +
+              '<button type="button" class="subscore-toggle" onclick="toggleSubscores()"><i class="ti ti-adjustments-star"></i> Detailed scores (optional)</button>' +
+              '<div class="subscore-grid" id="subscore-grid">' +
+                subscoreRow('style','Style') + subscoreRow('story','Story') +
+                subscoreRow('grammar','Grammar') + subscoreRow('character','Characters') +
+              '</div>' +
               '<textarea class="review-textarea" id="review-textarea" placeholder="Share your thoughts on this story…" maxlength="2000"></textarea>' +
               '<div style="display:flex;gap:8px;margin-top:8px;">' +
                 '<button type="button" class="spoiler-btn" onclick="dsSpoiler.wrapSelection(document.getElementById(\'review-textarea\'))"><i class="ti ti-eye-off"></i> Spoiler</button>' +
@@ -1914,6 +1967,14 @@
           '</div>';
       }
 
+      // Sort controls (only useful once there's something to sort)
+      if (reviews.length > 1) {
+        var sorts = [['newest','Newest'],['helpful','Most Helpful'],['highest','Highest'],['lowest','Lowest']];
+        html += '<div class="review-sort-row">' + sorts.map(function(s){
+          return '<button type="button" class="review-sort-btn' + (reviewSort === s[0] ? ' active' : '') + '" onclick="setReviewSort(\'' + s[0] + '\')">' + s[1] + '</button>';
+        }).join('') + '</div>';
+      }
+
       // Existing reviews — paged so 200-review stories don't render everything
       var visibleReviews = reviews.slice(0, reviewsShown);
       if (!reviews.length) {
@@ -1932,7 +1993,11 @@
               '</div>' +
               '<div class="review-stars">' + stars + '</div>' +
             '</div>' +
+            (r.title ? '<div class="review-card-title">' + escHtml(r.title) + '</div>' : '') +
+            subscoreChips(r) +
             (r.content ? '<div class="review-text">' + dsSpoiler.render(escHtml(r.content)) + '</div>' : '') +
+            reviewFooter(r) +
+            authorResponseHtml(r) +
             '</div>';
         });
         if (reviews.length > reviewsShown) {
@@ -1946,11 +2011,127 @@
         if (editingReviewId) {
           var mine = reviews.find(function(r){ return r.id === editingReviewId; });
           document.getElementById('review-textarea').value = (mine && mine.content) || '';
+          var ti = document.getElementById('review-title-input');
+          if (ti) ti.value = (mine && mine.title) || '';
+          subScores = {
+            style: (mine && mine.score_style) || 0,
+            story: (mine && mine.score_story) || 0,
+            grammar: (mine && mine.score_grammar) || 0,
+            character: (mine && mine.score_character) || 0
+          };
+          if (mine && (mine.score_style || mine.score_story || mine.score_grammar || mine.score_character)) {
+            var g = document.getElementById('subscore-grid'); if (g) g.classList.add('open');
+          }
+          paintSubscores();
           renderStars(mine ? mine.rating : 0);
         } else {
+          subScores = { style: 0, story: 0, grammar: 0, character: 0 };
           renderStars(0);
         }
       }
+    }
+
+    // ── Review helpers: sub-scores, helpful votes, author responses ──
+    var subScores = { style: 0, story: 0, grammar: 0, character: 0 };
+    function subscoreRow(key, label){
+      var stars = '';
+      for (var i = 1; i <= 5; i++) stars += '<span class="star" onclick="setSubscore(\'' + key + '\',' + i + ',this)">\u2605</span>';
+      return '<div class="subscore-row"><span class="subscore-label">' + label + '</span><span class="subscore-stars" data-sub="' + key + '">' + stars + '</span></div>';
+    }
+    function setSubscore(key, val, el){
+      // Tap the same star again to clear the sub-score
+      if (subScores[key] === val) val = 0;
+      subScores[key] = val;
+      var row = el.parentElement;
+      for (var j = 0; j < row.children.length; j++) row.children[j].className = 'star' + (j < val ? ' filled' : '');
+    }
+    function paintSubscores(){
+      Object.keys(subScores).forEach(function(key){
+        var row = document.querySelector('.subscore-stars[data-sub="' + key + '"]');
+        if (!row) return;
+        for (var j = 0; j < row.children.length; j++) row.children[j].className = 'star' + (j < subScores[key] ? ' filled' : '');
+      });
+    }
+    function toggleSubscores(){
+      var g = document.getElementById('subscore-grid');
+      if (g) g.classList.toggle('open');
+    }
+    function subscoreChips(r){
+      var parts = [];
+      if (r.score_style) parts.push('Style <b>' + r.score_style + '</b>');
+      if (r.score_story) parts.push('Story <b>' + r.score_story + '</b>');
+      if (r.score_grammar) parts.push('Grammar <b>' + r.score_grammar + '</b>');
+      if (r.score_character) parts.push('Characters <b>' + r.score_character + '</b>');
+      if (!parts.length) return '';
+      return '<div class="review-subscores">' + parts.map(function(p){ return '<span class="review-subscore-chip">' + p + ' \u2605</span>'; }).join('') + '</div>';
+    }
+    function reviewFooter(r){
+      var n = r.helpful_count || 0;
+      var voted = !!myReviewVotes[r.id];
+      var isMine = currentSession && currentSession.user.id === r.user_id;
+      var isAuthor = currentSession && workData && currentSession.user.id === workData.author_id;
+      var html = '<div class="review-foot">';
+      if (currentSession && !isMine) {
+        html += '<button type="button" class="helpful-btn' + (voted ? ' voted' : '') + '" onclick="toggleHelpful(\'' + r.id + '\')"><i class="ti ' + (voted ? 'ti-thumb-up-filled' : 'ti-thumb-up') + '"></i> Helpful' + (n ? ' \u00b7 ' + n : '') + '</button>';
+      } else if (n) {
+        html += '<span style="font-size:11.5px;color:var(--text3);font-weight:700;"><i class="ti ti-thumb-up"></i> ' + n + ' found this helpful</span>';
+      }
+      if (isAuthor && !r.author_response) {
+        html += '<button type="button" class="respond-btn" onclick="openRespond(\'' + r.id + '\')"><i class="ti ti-corner-down-right"></i> Respond as author</button>';
+      }
+      html += '</div>';
+      html += '<div class="respond-wrap" id="respond-wrap-' + r.id + '" style="display:none;">' +
+        '<textarea class="respond-ta" id="respond-ta-' + r.id + '" placeholder="Reply publicly to this review\u2026" maxlength="1000"></textarea>' +
+        '<div style="display:flex;gap:8px;margin-top:6px;">' +
+          '<button type="button" class="review-submit" onclick="sendRespond(\'' + r.id + '\')"><i class="ti ti-send"></i> Post Response</button>' +
+          '<button type="button" class="review-submit" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);" onclick="document.getElementById(\'respond-wrap-' + r.id + '\').style.display=\'none\'">Cancel</button>' +
+        '</div></div>';
+      return html;
+    }
+    function authorResponseHtml(r){
+      if (!r.author_response) return '';
+      var isAuthor = currentSession && workData && currentSession.user.id === workData.author_id;
+      return '<div class="author-response">' +
+        '<div class="author-response-label"><i class="ti ti-feather"></i> Author\u2019s Response' +
+          (isAuthor ? ' <button type="button" class="respond-btn" style="margin-left:auto;" onclick="removeRespond(\'' + r.id + '\')" title="Remove response"><i class="ti ti-trash"></i></button>' : '') +
+        '</div>' +
+        '<div class="author-response-text">' + dsSpoiler.render(escHtml(r.author_response)) + '</div>' +
+        '</div>';
+    }
+    async function toggleHelpful(reviewId){
+      if (!currentSession) return;
+      var uid = currentSession.user.id;
+      try {
+        if (myReviewVotes[reviewId]) {
+          await db.from('review_votes').delete().eq('review_id', reviewId).eq('user_id', uid);
+        } else {
+          await db.from('review_votes').insert({ review_id: reviewId, user_id: uid });
+        }
+        loadReviews();
+      } catch(e) { showToast('Could not save your vote.', 'ti-alert-circle'); }
+    }
+    function openRespond(reviewId){
+      var w = document.getElementById('respond-wrap-' + reviewId);
+      if (w) { w.style.display = 'block'; var ta = document.getElementById('respond-ta-' + reviewId); if (ta) ta.focus(); }
+    }
+    async function sendRespond(reviewId){
+      var ta = document.getElementById('respond-ta-' + reviewId);
+      var text = ta ? ta.value.trim() : '';
+      if (!text) return;
+      try {
+        var { error } = await db.rpc('respond_to_review', { p_review_id: reviewId, p_response: text });
+        if (error) throw error;
+        showToast('Response posted!');
+        loadReviews();
+      } catch(e) { showToast('Could not post response.', 'ti-alert-circle'); }
+    }
+    async function removeRespond(reviewId){
+      if (!confirm('Remove your author response?')) return;
+      try {
+        var { error } = await db.rpc('respond_to_review', { p_review_id: reviewId, p_response: '' });
+        if (error) throw error;
+        loadReviews();
+      } catch(e) { showToast('Could not remove response.', 'ti-alert-circle'); }
     }
 
     function renderStars(rating) {
@@ -1991,18 +2172,26 @@
     async function submitReview() {
       if (!selectedRating) { showToast('Please select a star rating', 'ti-alert-triangle'); return; }
       var content = document.getElementById('review-textarea').value.trim();
+      var titleEl = document.getElementById('review-title-input');
+      var extras = {
+        title: (titleEl && titleEl.value.trim()) || null,
+        score_style: subScores.style || null,
+        score_story: subScores.story || null,
+        score_grammar: subScores.grammar || null,
+        score_character: subScores.character || null
+      };
       var result;
       if (editingReviewId) {
         result = await db.from('reviews')
-          .update({ rating: selectedRating, content: content || null, updated_at: new Date().toISOString() })
+          .update(Object.assign({ rating: selectedRating, content: content || null, updated_at: new Date().toISOString() }, extras))
           .eq('id', editingReviewId).eq('user_id', currentSession.user.id);
       } else {
-        result = await db.from('reviews').insert({
+        result = await db.from('reviews').insert(Object.assign({
           work_id: workData.id,
           user_id: currentSession.user.id,
           rating: selectedRating,
           content: content || null
-        });
+        }, extras));
       }
       if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
       showToast(editingReviewId ? 'Review updated!' : 'Review posted!');

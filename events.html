@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Writing Events</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <script src="accessibilityPrefs.js"></script>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f0c040;--amber:#f59e0b;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#a16207;--amber:#b45309;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;display:flex;flex-direction:column;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:16px;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;flex-shrink:0;}
+    .logo span{color:var(--text);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;flex-shrink:0;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    .page{max-width:860px;margin:0 auto;padding:32px 24px 60px;width:100%;}
+    .page-header{margin-bottom:8px;display:flex;align-items:center;gap:12px;}
+    .page-header i{font-size:26px;color:var(--gold);}
+    .page-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;}
+    .page-subtitle{font-size:13px;color:var(--text3);margin:2px 0 28px;line-height:1.6;}
+
+    .group-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;margin:26px 0 12px;display:flex;align-items:center;gap:8px;}
+    .group-title i{color:var(--gold);font-size:17px;}
+
+    .event-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:14px;}
+    .event-card.live{border-color:rgba(240,192,64,0.4);background:linear-gradient(135deg,rgba(240,192,64,0.06),var(--bg2) 40%);}
+    .event-top{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;}
+    .event-medal{width:46px;height:46px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;}
+    .event-name{font-family:'Cinzel',serif;font-size:17px;font-weight:700;}
+    .event-meta{font-size:12px;color:var(--text3);margin-top:3px;display:flex;gap:14px;flex-wrap:wrap;}
+    .event-meta b{color:var(--text2);}
+    .event-badge-pill{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:1px;padding:3px 10px;border-radius:12px;margin-left:auto;flex-shrink:0;}
+    .event-badge-pill.live{color:var(--gold);background:rgba(240,192,64,0.12);border:1px solid rgba(240,192,64,0.4);}
+    .event-badge-pill.upcoming{color:var(--accent);background:rgba(45,212,191,0.08);border:1px solid rgba(45,212,191,0.3);}
+    .event-badge-pill.past{color:var(--text3);background:var(--bg3);border:1px solid var(--border);}
+    .event-desc{font-size:13px;color:var(--text2);line-height:1.6;margin-top:12px;}
+    .event-rules{font-size:11.5px;color:var(--text3);margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;}
+    .event-rules span{display:flex;align-items:center;gap:4px;}
+
+    .event-actions{margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .join-btn{background:var(--accent);border:none;border-radius:8px;padding:9px 18px;color:#04211d;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;transition:opacity 0.2s;}
+    .join-btn:hover{opacity:0.85;}
+    .join-btn:disabled{opacity:0.5;cursor:default;}
+    .work-select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:13px;max-width:280px;}
+
+    .entry-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--border);}
+    .entry-title{flex:1;min-width:0;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .entry-title a{color:var(--text);text-decoration:none;}
+    .entry-title a:hover{color:var(--accent);}
+    .entry-mine{font-size:10px;font-weight:800;color:var(--accent);background:rgba(45,212,191,0.1);border-radius:8px;padding:2px 7px;margin-left:6px;}
+    .progress-wrap{flex:1;max-width:220px;display:flex;align-items:center;gap:8px;}
+    .progress-bar{flex:1;height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;}
+    .progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:4px;transition:width 0.4s;}
+    .progress-label{font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap;min-width:86px;text-align:right;}
+    .entry-status{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;padding:2px 8px;border-radius:10px;white-space:nowrap;}
+    .entry-status.qualified{color:var(--gold);background:rgba(240,192,64,0.12);}
+    .entry-status.flagged{color:var(--amber);background:rgba(245,158,11,0.12);}
+    .entry-status.disqualified,.entry-status.ended{color:var(--text3);background:var(--bg3);}
+    .entries-toggle{background:transparent;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;padding:0;margin-top:12px;display:flex;align-items:center;gap:4px;}
+
+    .admin-box{margin-top:14px;border:1px dashed rgba(245,158,11,0.5);border-radius:10px;padding:12px 14px;}
+    .admin-box-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--amber);margin-bottom:8px;display:flex;align-items:center;gap:5px;}
+    .admin-flag-row{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:12.5px;flex-wrap:wrap;}
+    .admin-flag-reason{color:var(--amber);font-size:11.5px;}
+    .admin-mini-btn{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--text2);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+    .admin-mini-btn.ok:hover{border-color:var(--green);color:var(--green);}
+    .admin-mini-btn.no:hover{border-color:var(--red);color:var(--red);}
+    .admin-mini-btn.gold{border-color:rgba(240,192,64,0.5);color:var(--gold);}
+
+    .empty-state{text-align:center;padding:40px 20px;color:var(--text3);font-size:13.5px;}
+    .empty-state i{font-size:34px;display:block;margin-bottom:10px;}
+
+    .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:11px 22px;border-radius:10px;font-size:13.5px;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:400;pointer-events:none;box-shadow:0 8px 30px rgba(0,0,0,0.4);}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+
+    @media(max-width:640px){
+      nav{padding:0 16px;}
+      .page{padding:24px 14px 50px;}
+      .progress-wrap{max-width:140px;}
+      .progress-label{min-width:70px;font-size:10px;}
+    }
+  </style>
+</head>
+<body>
+<nav>
+  <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+  <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Home</a>
+</nav>
+
+<div class="page">
+  <div class="page-header"><i class="ti ti-medal"></i><div class="page-title">Writing Events</div></div>
+  <div class="page-subtitle">Hit the word target before the deadline and earn the event medal for your profile. Only chapters <b>published during the event</b> count, and word counts are verified when the event closes.</div>
+  <div id="events-root"><div class="empty-state"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+  const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+  window.db = db;
+
+  var session = null;
+  var isAdmin = false;
+  var myNovels = [];
+  var eventsById = {};
+
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function fmt(n){ n = Number(n||0); if(n >= 1000000) return (n/1000000).toFixed(1) + 'M'; if(n >= 1000) return (n/1000).toFixed(1) + 'k'; return String(n); }
+  function fmtDate(d){ return new Date(d).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }); }
+  function daysLeft(d){ var ms = new Date(d) - Date.now(); return Math.max(0, Math.ceil(ms / 86400000)); }
+  function showToast(msg, icon){
+    var t = document.getElementById('toast');
+    t.innerHTML = '<i class="ti ' + (icon||'ti-check') + '"></i> ' + esc(msg);
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 3500);
+  }
+
+  async function init(){
+    var { data: { session: s } } = await db.auth.getSession();
+    session = s;
+    if(session){
+      try {
+        var [adminRes, novelRes] = await Promise.all([
+          Promise.resolve(db.from('admins').select('id').eq('id', session.user.id).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('works').select('id,title,created_at').eq('author_id', session.user.id).eq('type','novel').order('created_at', { ascending: false })).catch(function(){ return {}; })
+        ]);
+        isAdmin = !!(adminRes && adminRes.data);
+        myNovels = (novelRes && novelRes.data) || [];
+      } catch(e) {}
+    }
+    loadEvents();
+  }
+
+  async function loadEvents(){
+    var root = document.getElementById('events-root');
+    var evRes;
+    try {
+      evRes = await db.from('writing_events').select('*').order('starts_at', { ascending: false });
+    } catch(e) { evRes = {}; }
+    var events = evRes.data || [];
+    if(!events.length){
+      root.innerHTML = '<div class="empty-state"><i class="ti ti-calendar-off"></i>No events yet — the first challenge is coming soon!</div>';
+      return;
+    }
+    eventsById = {};
+    events.forEach(function(ev){ eventsById[ev.id] = ev; });
+
+    var now = Date.now();
+    var live = events.filter(function(e){ return new Date(e.starts_at) <= now && new Date(e.ends_at) > now; });
+    var upcoming = events.filter(function(e){ return new Date(e.starts_at) > now; });
+    var past = events.filter(function(e){ return new Date(e.ends_at) <= now; });
+
+    var html = '';
+    if(live.length) html += '<div class="group-title"><i class="ti ti-flame"></i> Happening Now</div>' + live.map(function(e){ return eventCard(e, 'live'); }).join('');
+    if(upcoming.length) html += '<div class="group-title"><i class="ti ti-calendar"></i> Upcoming</div>' + upcoming.map(function(e){ return eventCard(e, 'upcoming'); }).join('');
+    if(past.length) html += '<div class="group-title"><i class="ti ti-history"></i> Past Events</div>' + past.map(function(e){ return eventCard(e, 'past'); }).join('');
+    root.innerHTML = html;
+
+    // Load live progress for live + recent past events (visible entries)
+    live.concat(past.slice(0, 3)).forEach(function(e){ loadEntries(e.id); });
+  }
+
+  function eventCard(ev, phase){
+    var pill = phase === 'live'
+      ? '<span class="event-badge-pill live">' + daysLeft(ev.ends_at) + ' days left</span>'
+      : phase === 'upcoming'
+        ? '<span class="event-badge-pill upcoming">Starts ' + fmtDate(ev.starts_at) + '</span>'
+        : '<span class="event-badge-pill past">' + (ev.is_finalized ? 'Finished' : 'Ended — results pending') + '</span>';
+
+    var rules = '<div class="event-rules">'
+      + '<span><i class="ti ti-target"></i> ' + fmt(ev.word_target) + ' words</span>'
+      + '<span><i class="ti ti-calendar"></i> ' + fmtDate(ev.starts_at) + ' \u2013 ' + fmtDate(ev.ends_at) + '</span>'
+      + (ev.allow_existing_works ? '' : '<span><i class="ti ti-sparkles"></i> New stories only</span>')
+      + (ev.allow_repeat_works ? '' : '<span><i class="ti ti-ban"></i> Past medalists can\u2019t re-enter</span>')
+      + '</div>';
+
+    var actions = '';
+    if(phase === 'live' && session && myNovels.length){
+      var eligible = ev.allow_existing_works ? myNovels
+        : myNovels.filter(function(n){ return new Date(n.created_at) >= new Date(ev.starts_at); });
+      if(eligible.length){
+        actions = '<div class="event-actions">'
+          + '<select class="work-select" id="join-select-' + ev.id + '">'
+          + eligible.map(function(n){ return '<option value="' + n.id + '">' + esc(n.title) + '</option>'; }).join('')
+          + '</select>'
+          + '<button class="join-btn" onclick="joinEvent(\'' + ev.id + '\')"><i class="ti ti-medal"></i> Enter Story</button>'
+          + '</div>';
+      } else {
+        actions = '<div class="event-actions" style="font-size:12px;color:var(--text3);">This event only accepts stories created during the event window \u2014 <a href="publish.html" style="color:var(--accent);">start a new one</a>!</div>';
+      }
+    } else if(phase === 'live' && !session){
+      actions = '<div class="event-actions" style="font-size:12px;color:var(--text3);"><a href="auth.html" style="color:var(--accent);">Sign in</a> to enter your story.</div>';
+    }
+
+    var adminBits = '';
+    if(isAdmin && phase === 'past' && !ev.is_finalized){
+      adminBits = '<div class="event-actions"><button class="admin-mini-btn gold" onclick="finalizeEvent(\'' + ev.id + '\')"><i class="ti ti-gavel"></i> Finalize &amp; award medals</button></div>';
+    }
+
+    return '<div class="event-card ' + (phase === 'live' ? 'live' : '') + '" id="event-card-' + ev.id + '">'
+      + '<div class="event-top">'
+        + '<div class="event-medal">🏅</div>'
+        + '<div style="flex:1;min-width:0;">'
+          + '<div class="event-name">' + esc(ev.title) + '</div>'
+          + '<div class="event-meta"><span>Write <b>' + fmt(ev.word_target) + ' words</b> to earn the medal</span></div>'
+        + '</div>' + pill
+      + '</div>'
+      + (ev.description ? '<div class="event-desc">' + esc(ev.description) + '</div>' : '')
+      + rules + actions + adminBits
+      + '<div id="entries-' + ev.id + '"></div>'
+      + '</div>';
+  }
+
+  async function loadEntries(eventId){
+    var ev = eventsById[eventId];
+    var box = document.getElementById('entries-' + eventId);
+    if(!ev || !box) return;
+    var rows;
+    try {
+      var { data, error } = await db.rpc('get_event_progress', { p_event_id: eventId });
+      if(error) throw error;
+      rows = data || [];
+    } catch(e) { return; }
+    if(!rows.length){
+      box.innerHTML = '<div style="font-size:12px;color:var(--text3);margin-top:12px;">No entries yet' + (new Date(ev.ends_at) > Date.now() ? ' — be the first!' : '.') + '</div>';
+      return;
+    }
+    // Titles for entered works
+    var titleMap = {};
+    try {
+      var { data: ws } = await db.from('works').select('id,title')
+        .in('id', rows.map(function(r){ return r.work_id; }));
+      (ws || []).forEach(function(w){ titleMap[w.id] = w.title; });
+    } catch(e) {}
+
+    rows.sort(function(a,b){ return Number(b.words) - Number(a.words); });
+    var mine = session ? session.user.id : null;
+    var finished = ev.is_finalized;
+
+    box.innerHTML = '<div style="margin-top:14px;">' + rows.map(function(r){
+      var words = Number(r.words);
+      var pct = Math.min(100, Math.round((words / ev.word_target) * 100));
+      var statusChip = '';
+      if(finished || r.status !== 'active'){
+        var st = r.status === 'active' ? 'ended' : r.status;
+        if(st !== 'ended' || finished) statusChip = '<span class="entry-status ' + st + '">' + (st === 'qualified' ? '🏅 Medal' : st) + '</span>';
+      }
+      return '<div class="entry-row">'
+        + '<div class="entry-title"><a href="story.html?id=' + r.work_id + '">' + esc(titleMap[r.work_id] || 'Story') + '</a>'
+          + (mine && r.user_id === mine ? '<span class="entry-mine">YOURS</span>' : '') + '</div>'
+        + '<div class="progress-wrap">'
+          + '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%;"></div></div>'
+          + '<span class="progress-label">' + fmt(r.final_word_count != null ? r.final_word_count : words) + ' / ' + fmt(ev.word_target) + '</span>'
+        + '</div>'
+        + statusChip
+        + '</div>';
+    }).join('') + '</div>';
+
+    if(isAdmin) loadFlagged(eventId);
+  }
+
+  async function loadFlagged(eventId){
+    try {
+      var { data: flagged } = await db.from('event_entries')
+        .select('id,work_id,final_word_count,flag_reason').eq('event_id', eventId).eq('status','flagged');
+      if(!flagged || !flagged.length) return;
+      var { data: ws } = await db.from('works').select('id,title').in('id', flagged.map(function(f){ return f.work_id; }));
+      var tMap = {}; (ws || []).forEach(function(w){ tMap[w.id] = w.title; });
+      var box = document.getElementById('entries-' + eventId);
+      var div = document.createElement('div');
+      div.className = 'admin-box';
+      div.innerHTML = '<div class="admin-box-title"><i class="ti ti-flag"></i> Flagged entries — needs your review</div>'
+        + flagged.map(function(f){
+            return '<div class="admin-flag-row">'
+              + '<a href="story.html?id=' + f.work_id + '" style="color:var(--text);font-weight:700;">' + esc(tMap[f.work_id] || 'Story') + '</a>'
+              + '<span class="admin-flag-reason"><i class="ti ti-alert-triangle"></i> ' + esc(f.flag_reason || '') + ' \u00b7 ' + fmt(f.final_word_count) + ' words</span>'
+              + '<span style="margin-left:auto;display:flex;gap:6px;">'
+                + '<button class="admin-mini-btn ok" onclick="resolveEntry(\'' + f.id + '\', true, \'' + eventId + '\')"><i class="ti ti-check"></i> Approve</button>'
+                + '<button class="admin-mini-btn no" onclick="resolveEntry(\'' + f.id + '\', false, \'' + eventId + '\')"><i class="ti ti-x"></i> Disqualify</button>'
+              + '</span></div>';
+          }).join('');
+      box.appendChild(div);
+    } catch(e) {}
+  }
+
+  async function joinEvent(eventId){
+    if(!session) return;
+    var sel = document.getElementById('join-select-' + eventId);
+    if(!sel || !sel.value) return;
+    try {
+      var { error } = await db.rpc('join_writing_event', { p_event_id: eventId, p_work_id: sel.value });
+      if(error) throw error;
+      showToast('You\u2019re in! Every chapter you publish now counts.', 'ti-medal');
+      loadEntries(eventId);
+    } catch(e) {
+      showToast(e.message || 'Could not join the event.', 'ti-alert-circle');
+    }
+  }
+
+  async function finalizeEvent(eventId){
+    if(!confirm('Finalize this event? Word counts will be verified and medals awarded. This cannot be undone.')) return;
+    try {
+      var { data, error } = await db.rpc('finalize_writing_event', { p_event_id: eventId });
+      if(error) throw error;
+      showToast('Finalized — ' + (data.awarded||0) + ' medal(s), ' + (data.flagged||0) + ' flagged, ' + (data.ended||0) + ' short of target.', 'ti-gavel');
+      loadEvents();
+    } catch(e) {
+      showToast(e.message || 'Could not finalize.', 'ti-alert-circle');
+    }
+  }
+
+  async function resolveEntry(entryId, approve, eventId){
+    if(!approve && !confirm('Disqualify this entry?')) return;
+    try {
+      var { error } = await db.rpc('resolve_event_entry', { p_entry_id: entryId, p_approve: approve });
+      if(error) throw error;
+      showToast(approve ? 'Approved — medal awarded.' : 'Entry disqualified.');
+      loadEntries(eventId);
+    } catch(e) {
+      showToast(e.message || 'Could not resolve entry.', 'ti-alert-circle');
+    }
+  }
+
+  init();
+</script>
+
+<script src="footer.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

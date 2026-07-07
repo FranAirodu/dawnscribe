@@ -58,6 +58,23 @@
     .result-sub{font-size:11px;color:var(--text3);}
     .result-flavor{font-size:12px;color:var(--text2);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
     .result-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;}
+    /* Advanced filters */
+    .adv-toggle{background:transparent;border:none;border-bottom:2px solid transparent;padding:14px 16px;color:var(--text3);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;margin-left:auto;}
+    .adv-toggle:hover{color:var(--text2);}
+    .adv-toggle.on{color:var(--gold);}
+    .adv-panel{display:none;background:var(--bg2);border-bottom:1px solid var(--border);padding:16px 32px;}
+    .adv-panel.open{display:block;}
+    .adv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 18px;max-width:1100px;}
+    .adv-field label{display:block;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:5px;}
+    .adv-field input,.adv-field select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 11px;color:var(--text);font-family:inherit;font-size:13px;}
+    .adv-field input:focus,.adv-field select:focus{outline:none;border-color:var(--accent);}
+    .adv-actions{display:flex;gap:10px;margin-top:14px;align-items:center;}
+    .adv-apply{background:var(--accent);border:none;border-radius:8px;padding:8px 18px;color:#04211d;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;}
+    .adv-apply:hover{opacity:0.85;}
+    .adv-clear{background:transparent;border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text3);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+    .adv-clear:hover{color:var(--text2);border-color:var(--text3);}
+    .adv-hint{font-size:11px;color:var(--text3);}
+    @media(max-width:640px){.adv-panel{padding:14px 16px;}}
     .result-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);}
     .result-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;}
     .badge-author{background:rgba(45,212,191,0.1);border:1px solid rgba(45,212,191,0.3);color:var(--accent);}
@@ -118,6 +135,28 @@
     <button class="filter-tab" data-type="authors" onclick="switchTab(this)"><i class="ti ti-feather"></i> Authors <span class="filter-count" id="count-authors">—</span></button>
     <button class="filter-tab" data-type="artwork" onclick="switchTab(this)"><i class="ti ti-photo"></i> Artwork <span class="filter-count" id="count-artwork">—</span></button>
     <button class="filter-tab" data-type="artists" onclick="switchTab(this)"><i class="ti ti-brush"></i> Artists <span class="filter-count" id="count-artists">—</span></button>
+    <button class="adv-toggle" id="adv-toggle" onclick="toggleAdvanced()"><i class="ti ti-adjustments"></i> Filters</button>
+  </div>
+
+  <div class="adv-panel" id="adv-panel">
+    <div class="adv-grid">
+      <div class="adv-field"><label>Include tags</label><input id="adv-inc-tags" placeholder="fantasy, romance"/></div>
+      <div class="adv-field"><label>Exclude tags</label><input id="adv-exc-tags" placeholder="harem, isekai"/></div>
+      <div class="adv-field"><label>Type</label>
+        <select id="adv-fanfic"><option value="">Any</option><option value="original">Original only</option><option value="fanfic">Fanfiction only</option></select></div>
+      <div class="adv-field"><label>Status</label>
+        <select id="adv-status"><option value="">Any</option><option value="ongoing">Ongoing</option><option value="completed">Completed</option><option value="hiatus">On Hiatus</option></select></div>
+      <div class="adv-field"><label>Min chapters</label><input id="adv-min-ch" type="number" min="0" placeholder="e.g. 10"/></div>
+      <div class="adv-field"><label>Min rating</label>
+        <select id="adv-min-rating"><option value="">Any</option><option value="4.5">4.5★+</option><option value="4">4★+</option><option value="3">3★+</option></select></div>
+      <div class="adv-field"><label>Sort by</label>
+        <select id="adv-sort"><option value="newest">Newest</option><option value="rating">Highest rated</option><option value="views">Most viewed</option><option value="sparks">Most sparked</option></select></div>
+    </div>
+    <div class="adv-actions">
+      <button class="adv-apply" onclick="applyAdvanced()"><i class="ti ti-search"></i> Apply</button>
+      <button class="adv-clear" onclick="clearAdvanced()">Clear</button>
+      <span class="adv-hint">Tag, status, chapter, and rating filters apply to Titles &amp; Artwork. Leave the search box empty to browse everything with just filters.</span>
+    </div>
   </div>
 
   <div class="page-wrap">
@@ -189,7 +228,78 @@
       url.searchParams.set('type', state.type);
       url.searchParams.set('q', state.query);
       if (tagMode) { url.searchParams.set('tagmode', '1'); } else { url.searchParams.delete('tagmode'); }
+      var advParams = { inc: adv.inc.join(','), exc: adv.exc.join(','), ftype: adv.fanfic, status: adv.status,
+        minch: adv.minCh || '', minr: adv.minRating || '', sort: adv.sort !== 'newest' ? adv.sort : '' };
+      Object.keys(advParams).forEach(function(k){
+        if (advParams[k]) url.searchParams.set(k, advParams[k]); else url.searchParams.delete(k);
+      });
       history.replaceState(null, '', url.toString());
+    }
+
+    // ── ADVANCED FILTERS ─────────────────────────────────────────
+    var adv = { inc: [], exc: [], fanfic: '', status: '', minCh: 0, minRating: 0, sort: 'newest' };
+
+    function parseTagList(s){
+      return String(s||'').split(',').map(function(t){ return t.trim().toLowerCase(); }).filter(Boolean).slice(0, 8);
+    }
+    function advActive(){
+      return adv.inc.length || adv.exc.length || adv.fanfic || adv.status || adv.minCh || adv.minRating || adv.sort !== 'newest';
+    }
+    function toggleAdvanced(){
+      document.getElementById('adv-panel').classList.toggle('open');
+    }
+    function readAdvInputs(){
+      adv.inc = parseTagList(document.getElementById('adv-inc-tags').value);
+      adv.exc = parseTagList(document.getElementById('adv-exc-tags').value);
+      adv.fanfic = document.getElementById('adv-fanfic').value;
+      adv.status = document.getElementById('adv-status').value;
+      adv.minCh = parseInt(document.getElementById('adv-min-ch').value, 10) || 0;
+      adv.minRating = parseFloat(document.getElementById('adv-min-rating').value) || 0;
+      adv.sort = document.getElementById('adv-sort').value || 'newest';
+    }
+    function writeAdvInputs(){
+      document.getElementById('adv-inc-tags').value = adv.inc.join(', ');
+      document.getElementById('adv-exc-tags').value = adv.exc.join(', ');
+      document.getElementById('adv-fanfic').value = adv.fanfic;
+      document.getElementById('adv-status').value = adv.status;
+      document.getElementById('adv-min-ch').value = adv.minCh || '';
+      document.getElementById('adv-min-rating').value = adv.minRating || '';
+      document.getElementById('adv-sort').value = adv.sort;
+    }
+    function applyAdvanced(){
+      readAdvInputs();
+      document.getElementById('adv-toggle').classList.toggle('on', !!advActive());
+      state.offset = 0; state.results = [];
+      updateUrl();
+      runSearch(true);
+    }
+    function clearAdvanced(){
+      adv = { inc: [], exc: [], fanfic: '', status: '', minCh: 0, minRating: 0, sort: 'newest' };
+      writeAdvInputs();
+      document.getElementById('adv-toggle').classList.remove('on');
+      state.offset = 0; state.results = [];
+      updateUrl();
+      runSearch(true);
+    }
+    // Escape a value for PostgREST ilike patterns (%, _ are wildcards)
+    function ilikeEsc(s){ return s.replace(/[%_]/g, '\\$&').replace(/"/g, ''); }
+    function applyAdvancedFilters(q, isNovel){
+      adv.inc.forEach(function(t){ q = q.ilike('tags_all', '%"' + ilikeEsc(t) + '"%'); });
+      adv.exc.forEach(function(t){ q = q.not('tags_all', 'ilike', '%"' + ilikeEsc(t) + '"%'); });
+      if (adv.fanfic === 'original') q = q.neq('is_fanfiction', true);
+      if (adv.fanfic === 'fanfic') q = q.eq('is_fanfiction', true);
+      if (isNovel) {
+        if (adv.status) q = q.eq('status', adv.status);
+        if (adv.minCh) q = q.gte('chapters_count', adv.minCh);
+      }
+      if (adv.minRating) q = q.gte('rating_avg', adv.minRating);
+      return q;
+    }
+    function advOrder(q){
+      if (adv.sort === 'rating') return q.order('rating_avg', { ascending: false, nullsFirst: false }).order('rating_count', { ascending: false });
+      if (adv.sort === 'views') return q.order('views', { ascending: false, nullsFirst: false });
+      if (adv.sort === 'sparks') return q.order('spark_count_total', { ascending: false, nullsFirst: false });
+      return q.order('created_at', { ascending: false });
     }
 
     // ── TAG MODE ──────────────────────────────────────────────────
@@ -240,13 +350,13 @@
       var col = tagMode ? 'tags_all' : 'title';
       var query = db.from('works')
         .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id, language', { count: 'exact' })
-        .ilike(col, '%' + q + '%')
         .eq('type', 'novel')
         .eq('is_published', true);
+      if (q) query = query.ilike(col, '%' + q + '%');
       query = applyContentFilters(query);
       query = applyLanguageFilters(query);
-      return await query
-        .order('created_at', { ascending: false })
+      query = applyAdvancedFilters(query, true);
+      return await advOrder(query)
         .range(offset, offset + PAGE_SIZE - 1);
     }
 
@@ -262,12 +372,12 @@
       var col = tagMode ? 'tags_all' : 'title';
       var query = db.from('works')
         .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id', { count: 'exact' })
-        .ilike(col, '%' + q + '%')
         .eq('type', 'artwork')
         .eq('is_published', true);
+      if (q) query = query.ilike(col, '%' + q + '%');
       query = applyContentFilters(query);
-      return await query
-        .order('created_at', { ascending: false })
+      query = applyAdvancedFilters(query, false);
+      return await advOrder(query)
         .range(offset, offset + PAGE_SIZE - 1);
     }
 
@@ -538,6 +648,21 @@
       state.type = params.type;
       state.query = params.q;
 
+      // Restore advanced filters from URL (shareable filtered searches)
+      var up = new URLSearchParams(window.location.search);
+      adv.inc = parseTagList(up.get('inc'));
+      adv.exc = parseTagList(up.get('exc'));
+      adv.fanfic = up.get('ftype') || '';
+      adv.status = up.get('status') || '';
+      adv.minCh = parseInt(up.get('minch'), 10) || 0;
+      adv.minRating = parseFloat(up.get('minr')) || 0;
+      adv.sort = up.get('sort') || 'newest';
+      writeAdvInputs();
+      if (advActive()) {
+        document.getElementById('adv-toggle').classList.add('on');
+        document.getElementById('adv-panel').classList.add('open');
+      }
+
       // Auto-activate tag mode if coming from nav tag search
       if (params.tagmode) {
         tagMode = true;
@@ -558,18 +683,21 @@
       navInput.value = state.query;
       document.getElementById('query-display').textContent = state.query ? '"' + state.query + '"' : '';
 
-      if (!state.query) {
+      // Empty query is fine when advanced filters are set (browse mode) —
+      // but Authors/Artists tabs still need a text query.
+      var browseMode = !state.query && advActive() && (state.type === 'titles' || state.type === 'artwork');
+      if (!state.query && !browseMode) {
         document.getElementById('results-container').innerHTML =
           '<div class="state-wrap">'
           + '<div class="state-icon"><i class="ti ti-search"></i></div>'
           + '<div class="state-title">Start searching</div>'
-          + '<div class="state-body">Type something in the search bar above to find novels, authors, artwork, and artists.</div>'
+          + '<div class="state-body">Type something in the search bar above, or open <b>Filters</b> to browse by tag, status, and rating.</div>'
           + '</div>';
         return;
       }
 
       runSearch(true);
-      fetchAllCounts(state.query);
+      if (state.query) fetchAllCounts(state.query);
     })();
   </script>
 
