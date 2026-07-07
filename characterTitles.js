@@ -824,7 +824,7 @@ window.CharacterTitles = (function() {
               : '';
             var starBtn = isOwner
               ? '<button class="ct-song-feature-btn" data-song-id="' + esc(s.id) + '" data-char-id="' + esc(char.id) + '" title="' + (s.is_featured ? 'Unfeature' : 'Set as featured') + '">' +
-                '<i class="ti ' + (s.is_featured ? 'ti-star-filled' : 'ti-star') + '"></i></button>'
+                (s.is_featured ? '<span style="font-size:13px;line-height:1;">★</span>' : '<i class="ti ti-star"></i>') + '</button>'
               : '';
             var deleteBtn = isOwner
               ? '<button class="ct-song-delete-btn" data-song-id="' + esc(s.id) + '" title="Delete song"><i class="ti ti-trash"></i></button>'
@@ -930,7 +930,7 @@ window.CharacterTitles = (function() {
               (approvedOpinions.length ? approvedOpinions.map(function(o) {
                 var featuredBtnHtml = isOwner
                   ? '<button class="ct-opinion-feature-inline' + (o.is_featured ? ' active' : '') + '" data-opinion-id="' + esc(o.id) + '" data-char-id="' + esc(char.id) + '" title="' + (o.is_featured ? 'Unfeature' : 'Feature on card') + '">' +
-                      '<i class="ti ' + (o.is_featured ? 'ti-star-filled' : 'ti-star') + '"></i>' +
+                      (o.is_featured ? '<span style="font-size:13px;line-height:1;">★</span>' : '<i class="ti ti-star"></i>') +
                     '</button>'
                   : '';
                 return '<div class="ct-opinion-back-row' + (o.is_featured ? ' featured' : '') + '">' +
