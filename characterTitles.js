@@ -605,8 +605,17 @@ window.CharacterTitles = (function() {
       // No character association available — collabsByChar stays empty.
     } catch(e) {}
 
+    var currentUserSession = window._ctSession || null;
+
     // Load aura votes
     var charIds = chars.map(function(c){ return c.id; });
+
+    // Load fan vote counts (total + this month + whether I voted today)
+    var fanCounts = {};
+    try {
+      var { data: fanRows } = await db().rpc('get_character_fan_counts', { p_work_id: workId });
+      (fanRows || []).forEach(function(r){ fanCounts[r.character_id] = r; });
+    } catch(e) {}
     var auraByChar = await loadAuraVotes(charIds);
 
     // Load featured opinions per character
@@ -642,8 +651,6 @@ window.CharacterTitles = (function() {
         .in('id', [...new Set(allChapterIds)]);
       (chapRows||[]).forEach(function(c){ chapterMap[c.id] = c; });
     }
-    var currentUserSession = window._ctSession || null;
-
     container.innerHTML = '';
     var grid = document.createElement('div');
     grid.className = 'ct-story-grid';
@@ -704,6 +711,25 @@ window.CharacterTitles = (function() {
         .filter(function(e){ return e.title; })
         .sort(function(a,b){ return b.count - a.count; })
         .slice(0, 3);
+
+      // ── FAN VOTES (total + monthly) ───────────────────────────
+      var fc = fanCounts[char.id] || { total_votes: 0, month_votes: 0, voted_today: false };
+      var fanBtnHtml = '';
+      if (currentUserSession && !isOwner && char.status !== 'ended') {
+        var votedToday = !!fc.voted_today;
+        fanBtnHtml = '<button class="ct-fan-vote-btn" data-fan-char="' + esc(char.id) + '"' + (votedToday ? ' disabled' : '') +
+          ' style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:14px;border:1px solid rgba(236,72,153,0.45);background:' + (votedToday ? 'rgba(236,72,153,0.18)' : 'transparent') + ';color:#ec4899;font-size:11px;font-weight:700;cursor:' + (votedToday ? 'default' : 'pointer') + ';font-family:inherit;">' +
+          '<i class="ti ti-heart"></i> ' + (votedToday ? 'Voted today' : 'Fan Vote') + '</button>';
+      }
+      var fanRowHtml =
+        '<div class="ct-fan-vote-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0 4px;">' +
+          fanBtnHtml +
+          '<span class="ct-fan-counts" data-fan-counts="' + esc(char.id) + '" style="font-size:10.5px;color:var(--text3);">' +
+            '<i class="ti ti-heart" style="color:#ec4899;font-size:10px;"></i> ' +
+            '<strong style="color:var(--text2);">' + (fc.total_votes || 0) + '</strong> all-time \u00b7 ' +
+            '<strong style="color:var(--text2);">' + (fc.month_votes || 0) + '</strong> this month' +
+          '</span>' +
+        '</div>';
 
       var card = document.createElement('div');
       card.className = 'ct-story-char-card' + (char.status === 'ended' ? ' ct-char-ended' : '');
@@ -885,6 +911,7 @@ window.CharacterTitles = (function() {
               endedBadge + editBtn +
             '</div>' +
             '<div class="ct-story-titles-wrap">' + titlesHtml + '</div>' +
+            fanRowHtml +
             featuredOpinionHtml +
             featuredHtml +
             collabsHtml +
@@ -963,9 +990,47 @@ window.CharacterTitles = (function() {
           }
         });
       });
-      flipCloses.forEach(function(fc) {
-        fc.addEventListener('click', function(e) { e.stopPropagation(); hideBack(); });
+      flipCloses.forEach(function(fcBtn) {
+        fcBtn.addEventListener('click', function(e) { e.stopPropagation(); hideBack(); });
       });
+
+      // Wire fan vote button
+      var fanVoteBtn = card.querySelector('.ct-fan-vote-btn');
+      if (fanVoteBtn) {
+        fanVoteBtn.addEventListener('click', async function(e) {
+          e.stopPropagation();
+          if (fanVoteBtn.disabled) return;
+          fanVoteBtn.disabled = true;
+          fanVoteBtn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>';
+          try {
+            var { data: fvData, error: fvErr } = await db().rpc('vote_character_fan', { p_character_id: char.id });
+            var countsEl = card.querySelector('[data-fan-counts="' + char.id + '"]');
+            if (fvData && (fvData.total_votes !== undefined) && countsEl) {
+              countsEl.innerHTML = '<i class="ti ti-heart" style="color:#ec4899;font-size:10px;"></i> ' +
+                '<strong style="color:var(--text2);">' + fvData.total_votes + '</strong> all-time \u00b7 ' +
+                '<strong style="color:var(--text2);">' + fvData.month_votes + '</strong> this month';
+            }
+            if (fvErr || !fvData || !fvData.success) {
+              var fvMsg = (fvData && fvData.error) || (fvErr && fvErr.message) || '';
+              if (fvMsg === 'already_voted_today') {
+                fanVoteBtn.innerHTML = '<i class="ti ti-heart"></i> Voted today';
+                fanVoteBtn.style.background = 'rgba(236,72,153,0.18)';
+                fanVoteBtn.style.cursor = 'default';
+              } else {
+                fanVoteBtn.disabled = false;
+                fanVoteBtn.innerHTML = '<i class="ti ti-heart"></i> Fan Vote';
+              }
+              return;
+            }
+            fanVoteBtn.innerHTML = '<i class="ti ti-heart"></i> Voted today';
+            fanVoteBtn.style.background = 'rgba(236,72,153,0.18)';
+            fanVoteBtn.style.cursor = 'default';
+          } catch(err) {
+            fanVoteBtn.disabled = false;
+            fanVoteBtn.innerHTML = '<i class="ti ti-heart"></i> Fan Vote';
+          }
+        });
+      }
 
       // Wire inline feature buttons (author only) in the opinions panel
       if (isOwner && opinionsBack) {

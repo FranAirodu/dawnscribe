@@ -869,7 +869,7 @@
       // Banner
       // If this is an artwork, redirect to artwork.html instead
       if (work.type === 'artwork') {
-        window.location.replace('artwork.html?id=' + workId);
+        window.location.replace('artwork.html?id=' + work.id);
         return;
       }
 
@@ -1166,6 +1166,28 @@
         collabBtn.addEventListener('click', function(){ openCollabModal(); });
         actionsEl.appendChild(collabBtn);
       }
+
+      // Share button — native share sheet on mobile, copy link on desktop
+      var shareBtn = document.createElement('button');
+      shareBtn.className = 'btn-outline';
+      shareBtn.innerHTML = '<i class="ti ti-share"></i> Share';
+      shareBtn.addEventListener('click', function(){ shareStory(); });
+      actionsEl.appendChild(shareBtn);
+    }
+
+    async function shareStory() {
+      var url = 'https://www.dawnscribe.com/story.html?id=' + workData.id;
+      var payload = { title: workData.title || 'A story on DawnScribe', text: 'Read "' + (workData.title || 'this story') + '" on DawnScribe', url: url };
+      if (navigator.share) {
+        try { await navigator.share(payload); return; } catch(e) { if (e && e.name === 'AbortError') return; }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('Link copied to clipboard!', 'ti-copy');
+      } catch(e) {
+        // Clipboard API unavailable (http/older browser) — fall back to prompt
+        window.prompt('Copy this link:', url);
+      }
     }
 
     // ── FOLLOW STORY ─────────────────────────────────────────────
@@ -1203,7 +1225,7 @@
       var { data: offerRow } = await db.from('work_offerings')
         .select('id').eq('work_id', workData.id).eq('user_id', currentSession.user.id).maybeSingle();
       offeringState.hasOffered = !!(offerRow);
-      // Count completed chapters for this work (check both local + DB)
+      // Count completed chapters from local progress (init already synced it from the DB)
       var localRead = readProgress[workData.id] ? Object.keys(readProgress[workData.id]).filter(function(k){ return readProgress[workData.id][k]; }).length : 0;
       offeringState.chaptersRead = localRead;
     }
@@ -1424,9 +1446,15 @@
       } catch(e) { showToast('Error giving flame.', 'ti-x'); }
     }
 
+    var topFansExpanded = false;
+    window.toggleTopFansExpand = function() {
+      topFansExpanded = !topFansExpanded;
+      loadTopFans();
+    };
+
     async function loadTopFans() {
       try {
-        var { data, error } = await db.rpc('get_work_top_fans', { p_work_id: workData.id, p_limit: 5 });
+        var { data, error } = await db.rpc('get_work_top_fans', { p_work_id: workData.id, p_limit: topFansExpanded ? 25 : 5 });
         var fans = data || [];
         var sec = document.getElementById('top-fans-section');
         var el = document.getElementById('top-fans-content');
@@ -1446,6 +1474,11 @@
             '</div>' +
           '</div>';
         });
+        if (fans.length >= 5 || topFansExpanded) {
+          html += '<button onclick="toggleTopFansExpand()" style="width:100%;margin-top:6px;padding:7px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text3);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;">' +
+            (topFansExpanded ? '<i class="ti ti-chevron-up"></i> Show top 5' : '<i class="ti ti-chevron-down"></i> View full ranking') +
+          '</button>';
+        }
         el.innerHTML = html;
         sec.style.display = 'block';
       } catch(e) {}
@@ -1801,6 +1834,8 @@
     }
 
     // ── REVIEWS ──────────────────────────────────────────────────
+    var reviewsShown = 20;
+    function showMoreReviews() { reviewsShown += 20; loadReviews(); }
     async function loadReviews() {
       var chaptersRead = getChaptersRead(workData.id);
       var canReview = chaptersRead >= 5;
@@ -1809,7 +1844,7 @@
       // Load existing reviews
       var result = await db.from('reviews').select('id,rating,content,created_at,updated_at,user_id').eq('work_id', workData.id).order('created_at', { ascending: false });
       var reviews = (result.data || []);
-      if(reviews.length){ var rvIds=[...new Set(reviews.map(function(r){return r.user_id;}))]; var {data:rvPs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',rvIds); var rvMap={};(rvPs||[]).forEach(function(p){rvMap[p.id]=p;}); reviews.forEach(function(r){r.profiles=rvMap[r.user_id]||null;});
+      if(reviews.length){ var rvIds=[...new Set(reviews.slice(0, reviewsShown).map(function(r){return r.user_id;}))]; var {data:rvPs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',rvIds); var rvMap={};(rvPs||[]).forEach(function(p){rvMap[p.id]=p;}); reviews.forEach(function(r){r.profiles=rvMap[r.user_id]||null;});
         try { var {data:rvSt}=await db.from('user_streaks').select('user_id,current_streak,last_checkin').in('user_id',rvIds); var stMap={};(rvSt||[]).forEach(function(s){stMap[s.user_id]=s;}); reviews.forEach(function(r){r._streak=streakFlair(stMap[r.user_id]);}); } catch(e){}
       }
       document.getElementById('review-count').textContent = '(' + reviews.length + ')';
@@ -1866,11 +1901,12 @@
           '</div>';
       }
 
-      // Existing reviews
+      // Existing reviews — paged so 200-review stories don't render everything
+      var visibleReviews = reviews.slice(0, reviewsShown);
       if (!reviews.length) {
         html += '<div class="empty-state"><i class="ti ti-star-off"></i>No reviews yet — be the first!</div>';
       } else {
-        reviews.forEach(function(r) {
+        visibleReviews.forEach(function(r) {
           var p = r.profiles || {};
           var stars = '';
           for (var i = 1; i <= 5; i++) stars += '<span class="review-star">' + (i <= r.rating ? '★' : '☆') + '</span>';
@@ -1886,6 +1922,9 @@
             (r.content ? '<div class="review-text">' + dsSpoiler.render(escHtml(r.content)) + '</div>' : '') +
             '</div>';
         });
+        if (reviews.length > reviewsShown) {
+          html += '<button type="button" class="review-submit" style="width:100%;background:var(--bg3);color:var(--text2);border:1px solid var(--border);margin-top:4px;" onclick="showMoreReviews()"><i class="ti ti-chevron-down"></i> Show more reviews (' + (reviews.length - reviewsShown) + ' remaining)</button>';
+        }
       }
 
       reviewsEl.innerHTML = html;
@@ -2012,17 +2051,17 @@
       btn.disabled = true;
       try {
         var wid = workData.id;
-        var uid = currentSession.user.id;
-        // Delete in order: comments → reviews → reading progress → work_follows → chapters → work
-        var dc=await db.from('chapters').select('id').eq('work_id',wid); var dci=(dc.data||[]).map(function(c){return c.id;}); if(dci.length){ await db.from('chapter_comments').delete().in('chapter_id',dci); }
-        await db.from('reviews').delete().eq('work_id', wid);
-        await db.from('reading_progress').delete().eq('work_id', wid);
-        await db.from('work_follows').delete().eq('work_id', wid);
-        await db.from('work_tag_suggestions').delete().eq('work_id', wid);
-        await db.from('chapters').delete().eq('work_id', wid);
-        var delResult = await db.from('works').delete().eq('id', wid).eq('author_id', uid);
-        if (delResult.error) throw delResult.error;
-        // Clear local view key
+        // One transactional RPC — verifies ownership and removes every
+        // dependent row; no partial deletes if something fails midway.
+        var { data: delRes, error: delErr } = await db.rpc('delete_work', { p_work_id: wid });
+        if (delErr) throw delErr;
+        if (!delRes || !delRes.success) {
+          var friendly = {
+            not_authorized: 'Only the story\u2019s author can delete it.',
+            has_licensed_characters: 'This story has characters with active license agreements \u2014 licensing grants are irrevocable, so the story can\u2019t be deleted while they exist.'
+          }[delRes && delRes.error] || 'Delete failed.';
+          throw new Error(friendly);
+        }
         localStorage.removeItem('ds_viewed_' + wid);
         showToast('Story deleted.', 'ti-trash');
         setTimeout(function(){ window.location.href = 'profile.html'; }, 1500);
@@ -2035,6 +2074,69 @@
     });
 
     // ── INIT ─────────────────────────────────────────────────────
+    // ── MATURE CONTENT GATE ──────────────────────────────────────
+    async function maybeShowContentGate(authorIds) {
+      var hasGore = !!workData.content_rating_gore;
+      var hasErotica = !!workData.content_rating_erotica;
+      if (!hasGore && !hasErotica) return;
+
+      var gateKey = 'ds_cw_ok_' + workData.id;
+      try { if (sessionStorage.getItem(gateKey)) return; } catch(e) {}
+
+      // Authors and coauthors are exempt
+      if (currentSession && authorIds.indexOf(currentSession.user.id) !== -1) return;
+
+      // Same opt-in semantics as browse: filter flag truthy = allowed, safe mode overrides.
+      // Guests have never opted in.
+      var allowGore = false, allowErotica = false;
+      if (currentSession) {
+        try {
+          var { data: pref } = await db.from('profiles')
+            .select('settings_filter_safe,settings_filter_gore,settings_filter_erotica')
+            .eq('id', currentSession.user.id).maybeSingle();
+          if (pref) {
+            var safe = !!pref.settings_filter_safe;
+            allowGore = !!pref.settings_filter_gore && !safe;
+            allowErotica = !!pref.settings_filter_erotica && !safe;
+          }
+        } catch(e) {}
+      }
+
+      var blocked = (hasGore && !allowGore) || (hasErotica && !allowErotica);
+      if (!blocked) return;
+
+      var labels = [];
+      if (hasGore) labels.push('Gore / Graphic Violence');
+      if (hasErotica) labels.push('Erotica / Sexual Content');
+      var warnings = Array.isArray(workData.content_warnings) && workData.content_warnings.length
+        ? '<div style="font-size:12px;color:var(--text3);margin-top:10px;">Content warnings: ' + workData.content_warnings.map(escHtml).join(', ') + '</div>'
+        : '';
+
+      var overlay = document.createElement('div');
+      overlay.id = 'content-gate-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(8,10,14,0.97);display:flex;align-items:center;justify-content:center;padding:24px;';
+      overlay.innerHTML =
+        '<div style="max-width:440px;text-align:center;background:var(--card,#14161c);border:1px solid var(--border,#2a2d36);border-radius:16px;padding:36px 32px;">' +
+          '<i class="ti ti-alert-triangle" style="font-size:40px;color:var(--gold,#f59e0b);display:block;margin-bottom:14px;"></i>' +
+          '<div style="font-family:Cinzel,serif;font-size:19px;font-weight:700;margin-bottom:10px;">Mature Content</div>' +
+          '<div style="font-size:13px;color:var(--text2,#b8bcc8);line-height:1.6;">This story is marked as containing:<br><b>' + labels.join('</b> and <b>') + '</b></div>' +
+          warnings +
+          '<div style="display:flex;gap:10px;justify-content:center;margin-top:24px;">' +
+            '<button onclick="window.history.length > 1 ? window.history.back() : window.location.href=\'index.html\'" style="background:none;border:1px solid var(--border,#2a2d36);border-radius:9px;padding:10px 20px;color:var(--text2,#b8bcc8);font-size:13px;font-weight:700;cursor:pointer;font-family:Lato,sans-serif;">Take me back</button>' +
+            '<button onclick="confirmContentGate()" style="background:var(--gold,#f59e0b);border:none;border-radius:9px;padding:10px 20px;color:#14161c;font-size:13px;font-weight:700;cursor:pointer;font-family:Lato,sans-serif;">View anyway</button>' +
+          '</div>' +
+          (currentSession ? '' : '<div style="font-size:11px;color:var(--text3,#7a7f8c);margin-top:14px;">Sign in to set permanent content preferences in Settings.</div>') +
+        '</div>';
+      document.body.appendChild(overlay);
+      document.body.style.overflow = 'hidden';
+    }
+    function confirmContentGate() {
+      try { sessionStorage.setItem('ds_cw_ok_' + workData.id, '1'); } catch(e) {}
+      var o = document.getElementById('content-gate-overlay');
+      if (o) o.remove();
+      document.body.style.overflow = '';
+    }
+
     (async function init() {
       var workId = getWorkId();
       if (!workId) { document.getElementById('story-title').textContent = 'Story not found.'; return; }
@@ -2074,28 +2176,33 @@
       // Put main author first
       authors.sort(function(a, b){ return a.id === workData.author_id ? -1 : 1; });
 
+      // ── MATURE CONTENT GATE ────────────────────────────────────
+      // Direct links must respect the same gore/erotica filters as browse.
+      // Authors/coauthors exempt; "View anyway" remembered per session.
+      await maybeShowContentGate(authorIds);
+
       // Load chapters
       var chapResult = await db.from('chapters').select('id,chapter_number,title,word_count,created_at').eq('work_id', workId).eq('status','published').order('chapter_number', { ascending: true });
       allChapters = chapResult.data || [];
 
       renderWork(workData, authors);
       renderChapters();
-      await loadFollowState();
-      await loadOfferingState();
+
+      // Load independent sections in parallel — one slow query no longer
+      // stalls the whole page. Each is isolated so a failure can't sink the rest.
+      await Promise.all([
+        loadFollowState(), loadOfferingState(), loadEngagementState(),
+        loadGoalState(), loadKindlingState(), loadGlossary(),
+        loadReviews(), loadRecommendations(), loadCollabs()
+      ].map(function(p){ return Promise.resolve(p).catch(function(e){ console.error('story section load failed:', e); }); }));
+
       renderActions();
       renderOfferingTierBadge();
-      await loadEngagementState();
       renderEngagement();
       renderFlameCounter();
       loadTopFans();
-      await loadGoalState();
       renderGoal();
-      await loadKindlingState();
       renderKindlingUI();
-      await loadGlossary();
-      await loadReviews();
-      await loadRecommendations();
-      await loadCollabs();
 
       // CHARACTER CARDS
       if (workData.type !== 'artwork') {
@@ -2114,11 +2221,11 @@
         setupOwnerBar(workData.id);
       }
 
-      // Increment view count (once per session per work)
+      // Increment view count (once per session per work) — atomic RPC, no read-modify-write
       var viewKey = 'ds_viewed_' + workId;
       if (!localStorage.getItem(viewKey)) {
         localStorage.setItem(viewKey, '1');
-        await db.from('works').update({ views: (workData.views || 0) + 1 }).eq('id', workId);
+        try { await db.rpc('increment_work_views', { p_work_id: workId }); } catch(e) {}
       }
 
       // ── STORY VIEW BADGES ──────────────────────────────────────

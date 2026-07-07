@@ -29,6 +29,9 @@
     .page-subtitle{font-size:13px;color:var(--text3);margin:2px 0 28px;}
 
     .section-block{margin-bottom:36px;}
+    .board-tab{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg2);color:var(--text3);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all 0.2s;}
+    .board-tab:hover{border-color:rgba(240,192,64,0.35);color:var(--text2);}
+    .board-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(240,192,64,0.08);}
     .section-block-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
     .section-block-title i{color:var(--gold);}
     .section-block-sub{font-size:12.5px;color:var(--text3);margin-bottom:14px;line-height:1.5;}
@@ -97,12 +100,18 @@
         <div class="page-title">Rising with the <span>Dawn</span></div>
       </div>
     </div>
-    <div class="page-subtitle">This week's most-Sparked novels, plus this month's Kindling vote for new voices.</div>
+    <div class="page-subtitle">Ranking boards for Sparks, Flames, fresh arrivals, and consistency — plus this month's Kindling vote for new voices.</div>
 
-    <!-- WEEKLY LEADERBOARD -->
+    <!-- RANKING BOARDS -->
     <div class="section-block">
-      <div class="section-block-title"><i class="ti ti-bolt"></i> Weekly Dawn Ranking</div>
-      <div class="section-block-sub">Ranked by Sparks of Dawn given this week. Resets every Monday.</div>
+      <div class="board-tabs" id="board-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <button class="board-tab active" data-board="sparks" onclick="switchBoard('sparks')"><i class="ti ti-bolt"></i> Weekly Sparks</button>
+        <button class="board-tab" data-board="flames" onclick="switchBoard('flames')"><i class="ti ti-flare"></i> Blazing Hearths</button>
+        <button class="board-tab" data-board="fresh" onclick="switchBoard('fresh')"><i class="ti ti-sunrise-2"></i> Fresh Dawns</button>
+        <button class="board-tab" data-board="steady" onclick="switchBoard('steady')"><i class="ti ti-clock-bolt"></i> Steadfast Quills</button>
+      </div>
+      <div class="section-block-title" id="board-title"><i class="ti ti-bolt"></i> Weekly Dawn Ranking</div>
+      <div class="section-block-sub" id="board-sub">Ranked by Sparks of Dawn given this week. Resets every Monday.</div>
       <div id="leaderboard-list">
         <div class="state-wrap"><div class="state-icon"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div></div>
       </div>
@@ -147,6 +156,87 @@
       return coverUrl
         ? '<div class="' + cls + '"><img src="' + escHtml(coverUrl) + '" alt=""/></div>'
         : '<div class="' + cls + '" style="' + bg + '">' + initial + '</div>';
+    }
+
+    // ── RANKING BOARDS ─────────────────────────────────────────
+    var BOARDS = {
+      sparks: { icon: 'ti-bolt', title: 'Weekly Dawn Ranking', sub: 'Ranked by Sparks of Dawn given this week. Resets every Monday.' },
+      flames: { icon: 'ti-flare', title: 'Blazing Hearths', sub: 'The most Celestial Flames ever bestowed — the all-time hall of beloved novels.' },
+      fresh:  { icon: 'ti-sunrise-2', title: 'Fresh Dawns', sub: 'Stories published in the last 30 days, ranked by total Sparks. New voices on the rise.' },
+      steady: { icon: 'ti-clock-bolt', title: 'Steadfast Quills', sub: 'The most consistent updaters on DawnScribe — lowest average days between chapters (minimum 5 chapters).' }
+    };
+    var currentBoard = 'sparks';
+
+    window.switchBoard = function(kind) {
+      if (!BOARDS[kind]) return;
+      currentBoard = kind;
+      document.querySelectorAll('.board-tab').forEach(function(t){ t.classList.toggle('active', t.dataset.board === kind); });
+      var b = BOARDS[kind];
+      document.getElementById('board-title').innerHTML = '<i class="ti ' + b.icon + '"></i> ' + b.title;
+      document.getElementById('board-sub').textContent = b.sub;
+      var el = document.getElementById('leaderboard-list');
+      el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div></div>';
+      if (kind === 'sparks') loadLeaderboard();
+      else loadGenericBoard(kind);
+    };
+
+    async function loadGenericBoard(kind) {
+      var el = document.getElementById('leaderboard-list');
+      try {
+        var q = db.from('works')
+          .select('id,title,cover_url,author_id,celestial_flame_count,spark_count_total,avg_chapter_days,chapters_count,created_at')
+          .eq('is_published', true);
+
+        if (kind === 'flames') {
+          q = q.gt('celestial_flame_count', 0).order('celestial_flame_count', { ascending: false });
+        } else if (kind === 'fresh') {
+          var cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+          q = q.gte('created_at', cutoff).order('spark_count_total', { ascending: false, nullsFirst: false });
+        } else if (kind === 'steady') {
+          q = q.gte('chapters_count', 5).not('avg_chapter_days', 'is', null)
+               .order('avg_chapter_days', { ascending: true });
+        }
+
+        var { data: works, error } = await q.limit(25);
+        if (error) throw error;
+        works = works || [];
+        if (kind === 'fresh') works = works.filter(function(w){ return (w.spark_count_total || 0) > 0; });
+
+        if (!works.length) {
+          var emptyMsg = {
+            flames: 'No Celestial Flames have been bestowed yet.',
+            fresh: 'No new stories have earned Sparks in the last 30 days \u2014 check back soon!',
+            steady: 'No stories with 5+ chapters and a posting rhythm yet.'
+          }[kind] || 'Nothing to rank yet.';
+          el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ' + BOARDS[kind].icon + '"></i></div><div class="state-body">' + emptyMsg + '</div></div>';
+          return;
+        }
+
+        var authorIds = [...new Set(works.map(function(w){ return w.author_id; }))];
+        var { data: authors } = await db.from('profiles').select('id,username,display_name').in('id', authorIds);
+        var authorMap = {};
+        (authors || []).forEach(function(a){ authorMap[a.id] = a; });
+
+        var html = '';
+        works.forEach(function(w, i) {
+          var rank = i + 1;
+          var a = authorMap[w.author_id] || {};
+          var authorName = escHtml(a.display_name || a.username || 'Unknown');
+          var metricHtml = '';
+          if (kind === 'flames') metricHtml = '<i class="ti ti-flare"></i> ' + (w.celestial_flame_count || 0);
+          else if (kind === 'fresh') metricHtml = '<i class="ti ti-bolt"></i> ' + (w.spark_count_total || 0);
+          else if (kind === 'steady') metricHtml = '<i class="ti ti-clock-bolt"></i> ' + w.avg_chapter_days + 'd/ch';
+          html += '<a class="rank-row" href="story.html?id=' + w.id + '">' +
+            '<div class="rank-num' + (rank <= 3 ? ' top3' : '') + '">' + (rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank) + '</div>' +
+            coverBlock('rank-cover', w.cover_url, w.title) +
+            '<div class="rank-body"><div class="rank-title">' + escHtml(w.title) + '</div><div class="rank-author">by ' + authorName + '</div></div>' +
+            '<div class="rank-right"><div class="rank-sparks">' + metricHtml + '</div></div>' +
+          '</a>';
+        });
+        el.innerHTML = html;
+      } catch(e) {
+        el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-alert-triangle"></i></div><div class="state-body">Could not load this ranking right now.</div></div>';
+      }
     }
 
     async function loadLeaderboard() {
