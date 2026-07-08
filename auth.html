@@ -59,6 +59,9 @@
     .pw-checklist li i { font-size: 13px; }
     .pw-checklist li.met { color: var(--green); }
     .resend-wrap { text-align: center; margin-top: -8px; font-size: 12px; }
+    .auth-reason-banner { display: none; margin-bottom: 18px; padding: 12px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: #f87171; }
+    .auth-reason-banner a { color: var(--accent); font-weight: 700; text-decoration: none; }
+    .auth-reason-banner i { margin-right: 4px; }
     .form-hint { font-size: 12px; color: var(--text3); margin-top: 2px; }
     .form-hint.error { color: var(--red); }
     .form-hint.success { color: var(--green); }
@@ -119,6 +122,8 @@
 
       <a class="auth-logo" href="index.html">Dawn<span>Scribe</span></a>
       <p class="auth-tagline">Where creative minds unite</p>
+
+      <div class="auth-reason-banner" id="auth-reason-banner" role="alert" aria-live="assertive"></div>
 
       <div class="auth-tabs">
         <button id="tab-signup-btn" class="auth-tab">Create Account</button>
@@ -239,7 +244,7 @@
           <label class="form-label">Email</label>
           <div class="input-wrap">
             <i class="ti ti-mail input-icon"></i>
-            <input class="form-input" type="email" placeholder="your@email.com" id="login-email" name="email" autocomplete="off"/>
+            <input class="form-input" type="email" placeholder="your@email.com" id="login-email" name="email" autocomplete="email"/>
           </div>
         </div>
 
@@ -247,7 +252,7 @@
           <label class="form-label">Password</label>
           <div class="input-wrap">
             <i class="ti ti-lock input-icon"></i>
-            <input class="form-input" type="password" placeholder="Your password" id="login-password" name="password" autocomplete="off"/>
+            <input class="form-input" type="password" placeholder="Your password" id="login-password" name="password" autocomplete="current-password"/>
             <button class="eye-btn" data-target="login-password" aria-label="Show password"><i class="ti ti-eye"></i></button>
           </div>
           <span class="form-hint error capslock-hint" id="login-password-capslock" style="display:none;"><i class="ti ti-alert-triangle"></i> Caps Lock is on</span>
@@ -316,11 +321,47 @@
     })();
 
     // ── ALREADY LOGGED IN / REAL-TIME AUTH STATE ───────────────────
-    db.auth.onAuthStateChange(function(event, session) {
-      if (session) {
+    // The ban check MUST live in the same gate as the redirect — otherwise
+    // banned users bounce auth -> index -> auth in a silent loop, because
+    // onAuthStateChange fires and navigates before any separate check runs.
+    var dsAuthRedirecting = false;
+    async function dsHandleSession(session) {
+      if (!session || dsAuthRedirecting) return;
+      try {
+        var banRes = await db.from('profiles').select('account_status').eq('id', session.user.id).maybeSingle();
+        if (banRes.data && banRes.data.account_status === 'banned') {
+          await db.auth.signOut();
+          dsShowReasonBanner('banned');
+          return;
+        }
+      } catch(e) { /* profiles unreachable — fall through to normal redirect */ }
+      if (dsAuthRedirecting) return; // another call finished while we awaited
+      dsAuthRedirecting = true;
+      // Optional same-site return path: auth.html?next=story.html?id=... —
+      // relative .html paths only, absolute URLs are never followed
+      var nextPath = new URLSearchParams(window.location.search).get('next');
+      if (nextPath && /^[a-zA-Z0-9_-]+[.]html([?#]\S*)?$/.test(nextPath)) {
+        window.location.href = nextPath;
+      } else {
         window.location.href = 'index.html';
       }
-    });
+    }
+    db.auth.onAuthStateChange(function(event, session) { dsHandleSession(session); });
+
+    // ── REASON BANNER (?reason=banned / expired / signedout) ──────
+    function dsShowReasonBanner(reason) {
+      var el = document.getElementById('auth-reason-banner');
+      if (!el) return;
+      var msgs = {
+        banned: '<i class="ti ti-ban"></i> This account has been suspended for violating our <a href="guidelines.html">Community Guidelines</a>. If you believe this is a mistake, <a href="contact.html">contact us</a> to appeal.',
+        expired: '<i class="ti ti-clock"></i> Your session expired \u2014 please sign in again.',
+        signedout: '<i class="ti ti-logout"></i> You have been signed out.'
+      };
+      if (!msgs[reason]) { el.style.display = 'none'; return; }
+      el.innerHTML = msgs[reason];
+      el.style.display = 'block';
+      showTab('login');
+    }
 
     // ── FORGOT PASSWORD ───────────────────────────────────────────
     document.getElementById('forgot-link').addEventListener('click', async function(e) {
@@ -359,11 +400,22 @@
       document.getElementById('form-login').classList.toggle('active', tab === 'login');
       document.getElementById('tab-signup-btn').classList.toggle('active', tab === 'signup');
       document.getElementById('tab-login-btn').classList.toggle('active', tab === 'login');
+      // Don't carry stale messages across tabs ("Reset link sent", old errors)
+      clearLoginError();
+      clearSignupError();
     }
     document.getElementById('tab-signup-btn').addEventListener('click', function() { showTab('signup'); });
     document.getElementById('tab-login-btn').addEventListener('click', function() { showTab('login'); });
     document.getElementById('go-login').addEventListener('click', function() { showTab('login'); });
     document.getElementById('go-signup').addEventListener('click', function() { showTab('signup'); });
+    // Deep links: auth.html#login / auth.html#signup open the right tab
+    if (window.location.hash === '#login') showTab('login');
+    else if (window.location.hash === '#signup') showTab('signup');
+    // ?reason= banner (banned / expired / signedout)
+    (function(){
+      var r = new URLSearchParams(window.location.search).get('reason');
+      if (r) dsShowReasonBanner(r);
+    })();
 
     // ── ACCOUNT TYPE BUTTONS ──────────────────────────────────────
     document.getElementById('account-type-group').addEventListener('click', function(e) {
@@ -496,7 +548,7 @@
 
       usernameTimer = setTimeout(async function() {
         if (RESERVED_USERNAMES.indexOf(val.toLowerCase()) !== -1) {
-          hint.textContent = '✗ Username is already taken';
+          hint.textContent = '✗ That username is reserved';
           hint.className = 'form-hint error';
           return;
         }
@@ -511,18 +563,10 @@
       }, 500);
     });
 
-    // ── CLEAR STALE CREDENTIALS ON LOAD ──────────────────────────
-    (function clearCredentials() {
-      var attempts = 0;
-      var interval = setInterval(function() {
-        var emailField = document.getElementById('login-email');
-        var passField  = document.getElementById('login-password');
-        if (emailField) emailField.value = '';
-        if (passField)  passField.value  = '';
-        attempts++;
-        if (attempts >= 10) clearInterval(interval);
-      }, 100);
-    })();
+    // (Removed the credential-wiping interval: it raced against password
+    // managers and erased what users typed in the first second after load.
+    // Login inputs now use autocomplete="email"/"current-password" so saved
+    // credentials fill properly.)
     function getSelectedRole() {
       var selected = [];
       document.querySelectorAll('.type-btn.selected').forEach(function(b) { selected.push(b.dataset.role); });
@@ -576,6 +620,7 @@
       var role     = getSelectedRole();
 
       if (!email || !password || !username) { showSignupError('Please fill in all fields.'); return; }
+      if (username.length < 3) { showSignupError('Username must be at least 3 characters.'); return; }
       if (username.length > 20) { showSignupError('Username must be 20 characters or fewer.'); return; }
       if (!/^[a-zA-Z0-9_]+$/.test(username)) { showSignupError('Username can only contain letters, numbers and underscores.'); return; }
       if (RESERVED_USERNAMES.indexOf(username.toLowerCase()) !== -1) { showSignupError('That username is reserved. Please choose another.'); return; }
@@ -631,6 +676,13 @@
         showSignupError(msg);
         btn.innerHTML = '<i class="ti ti-user-plus"></i> Create My Account';
         btn.disabled = false;
+      } else if (result.data && result.data.user && Array.isArray(result.data.user.identities) && result.data.user.identities.length === 0) {
+        // Supabase's email-enumeration protection returns "success" with an
+        // empty identities array when the email is already registered — the
+        // old code showed "check your email" for a mail that never comes
+        showSignupError('That email is already registered. Try signing in instead, or use "Forgot password?" on the Sign In tab.');
+        btn.innerHTML = '<i class="ti ti-user-plus"></i> Create My Account';
+        btn.disabled = false;
       } else {
         lastSignupEmail = email;
         showSignupSuccess('Account created! Please check your email to confirm your account.');
@@ -652,7 +704,7 @@
       link.textContent = 'Sending...';
       var result = await db.auth.resend({ type: 'signup', email: lastSignupEmail });
       if (result.error) {
-        link.textContent = result.error.message || 'Could not resend — try again';
+        link.textContent = 'Could not resend — tap to try again';
       } else {
         link.textContent = 'Sent! Check your inbox.';
       }
@@ -662,6 +714,10 @@
     // ── LOGIN ─────────────────────────────────────────────────────
     function showLoginError(msg) {
       var el = document.getElementById('login-error');
+      // Restore error styling — the forgot-password success path turns this
+      // element green, and without this reset every later error renders green
+      el.className = 'form-hint error';
+      el.style.color = '';
       el.innerHTML = '<i class="ti ti-alert-circle"></i> ' + msg;
       el.style.display = 'block';
     }
@@ -669,6 +725,8 @@
       var el = document.getElementById('login-error');
       el.style.display = 'none';
       el.innerHTML = '';
+      el.className = 'form-hint error';
+      el.style.color = '';
     }
     document.getElementById('login-email').addEventListener('input', clearLoginError);
     document.getElementById('login-password').addEventListener('input', clearLoginError);
@@ -691,47 +749,40 @@
         this.innerHTML = '<i class="ti ti-login"></i> Sign In';
         this.disabled = false;
       } else {
-        window.location.href = 'index.html';
+        // dsHandleSession redirects on success, or signs out + shows the
+        // suspension banner if the account is banned
+        await dsHandleSession(result.data.session);
+        if (!dsAuthRedirecting) {
+          this.innerHTML = '<i class="ti ti-login"></i> Sign In';
+          this.disabled = false;
+        }
       }
     });
 
-    // ── GOOGLE ────────────────────────────────────────────────────
-    async function googleLogin() {
-      if (this.dataset.sending === 'true') return;
-      this.dataset.sending = 'true';
-      var btn = this;
-      var activeForm = document.getElementById('form-signup').classList.contains('active') ? 'signup' : 'login';
-      var result = await db.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: window.location.origin + '/index.html' }
-      });
-      if (result.error) {
-        if (activeForm === 'signup') { showSignupError(result.error.message); }
-        else { showLoginError(result.error.message); }
-      }
-      btn.dataset.sending = 'false';
+    // ── OAUTH (Google + Discord share one handler) ────────────────
+    function oauthLogin(provider) {
+      return async function() {
+        if (this.dataset.sending === 'true') return;
+        this.dataset.sending = 'true';
+        var btn = this;
+        var activeForm = document.getElementById('form-signup').classList.contains('active') ? 'signup' : 'login';
+        var result = await db.auth.signInWithOAuth({
+          provider: provider,
+          options: { redirectTo: window.location.origin + '/index.html' }
+        });
+        if (result.error) {
+          if (activeForm === 'signup') { showSignupError(result.error.message); }
+          else { showLoginError(result.error.message); }
+          // Only re-arm on error — success navigates away, and re-arming
+          // early allowed a double-fire on slow networks
+          btn.dataset.sending = 'false';
+        }
+      };
     }
-    document.getElementById('google-signup-btn').addEventListener('click', googleLogin);
-    document.getElementById('google-login-btn').addEventListener('click', googleLogin);
-
-    // ── DISCORD ───────────────────────────────────────────────────
-    async function discordLogin() {
-      if (this.dataset.sending === 'true') return;
-      this.dataset.sending = 'true';
-      var btn = this;
-      var activeForm = document.getElementById('form-signup').classList.contains('active') ? 'signup' : 'login';
-      var result = await db.auth.signInWithOAuth({
-        provider: 'discord',
-        options: { redirectTo: window.location.origin + '/index.html' }
-      });
-      if (result.error) {
-        if (activeForm === 'signup') { showSignupError(result.error.message); }
-        else { showLoginError(result.error.message); }
-      }
-      btn.dataset.sending = 'false';
-    }
-    document.getElementById('discord-signup-btn').addEventListener('click', discordLogin);
-    document.getElementById('discord-login-btn').addEventListener('click', discordLogin);
+    document.getElementById('google-signup-btn').addEventListener('click', oauthLogin('google'));
+    document.getElementById('google-login-btn').addEventListener('click', oauthLogin('google'));
+    document.getElementById('discord-signup-btn').addEventListener('click', oauthLogin('discord'));
+    document.getElementById('discord-login-btn').addEventListener('click', oauthLogin('discord'));
 
     // ── ENTER KEY SUBMITS ─────────────────────────────────────────
     function bindEnterSubmit(ids, btnId) {
@@ -746,7 +797,7 @@
       });
     }
     bindEnterSubmit(['login-email', 'login-password'], 'login-btn');
-    bindEnterSubmit(['signup-username', 'signup-email', 'signup-password', 'signup-confirm'], 'signup-btn');
+    bindEnterSubmit(['signup-username', 'signup-email', 'signup-password', 'signup-confirm', 'signup-dob'], 'signup-btn');
 
     // ── CAPS LOCK WARNING ─────────────────────────────────────────
     function bindCapsLockWarning(inputId, hintId) {

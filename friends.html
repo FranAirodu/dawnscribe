@@ -67,8 +67,12 @@
     .not-logged i{font-size:40px;display:block;margin-bottom:16px;color:var(--text3);}
     .not-logged h2{font-family:'Cinzel',serif;font-size:20px;color:var(--text);margin-bottom:8px;}
     .not-logged a{color:var(--accent);text-decoration:none;font-weight:700;}
+    @media(max-width:440px){
+      .friend-row{flex-wrap:wrap;}
+      .friend-actions{width:100%;justify-content:flex-end;}
+    }
 
-    .toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 22px;font-size:13px;font-weight:700;color:var(--text);z-index:600;transition:transform 0.3s;display:flex;align-items:center;gap:8px;white-space:nowrap;}
+    .toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 22px;font-size:13px;font-weight:700;color:var(--text);z-index:600;transition:transform 0.3s;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 40px);}
     .toast.show{transform:translateX(-50%) translateY(0);}
   </style>
 </head>
@@ -76,7 +80,7 @@
 
 <nav style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
   <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
-  <a class="back-btn" href="javascript:history.back()"><i class="ti ti-arrow-left"></i> Back</a>
+  <a class="back-btn" id="nav-back" href="profile.html"><i class="ti ti-arrow-left"></i> Back</a>
 </nav>
 
 <div class="page">
@@ -90,6 +94,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="blockUtils.js"></script>
 <script>
   const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
@@ -97,12 +102,16 @@
     window.db = db;
 
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-  function showToast(msg, icon){ var t=document.getElementById('toast'); t.innerHTML='<i class="ti '+(icon||'ti-check')+'"></i> '+msg; t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); },3000); }
+  function showToast(msg, icon){ var t=document.getElementById('toast'); t.innerHTML='<i class="ti '+(icon||'ti-check')+'"></i> '+esc(msg); t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); },3000); }
 
   var uid = null;
 
-  function avatarHtml(prof, size){
-    size = size || 46;
+  // Back = history when we have any, otherwise fall through to profile.html
+  document.getElementById('nav-back').addEventListener('click', function(e){
+    if(window.history.length > 1 && document.referrer){ e.preventDefault(); history.back(); }
+  });
+
+  function avatarHtml(prof){
     var name = (prof.display_name || prof.username || '?');
     var initial = name.charAt(0).toUpperCase();
     if(prof.avatar_url) return '<img src="' + esc(prof.avatar_url) + '" alt=""/>';
@@ -117,6 +126,7 @@
       return;
     }
     uid = session.user.id;
+    try { await dsBlock.load(uid); } catch(e) {}
     await renderAll();
   }
 
@@ -125,12 +135,21 @@
     content.innerHTML = '<div class="loading"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Loading…</div>';
 
     // Fetch all friendships involving this user
-    var { data: rows } = await db.from('friendships')
+    var { data: rows, error: rowsError } = await db.from('friendships')
       .select('id, requester_id, recipient_id, status, created_at')
       .or('requester_id.eq.' + uid + ',recipient_id.eq.' + uid)
       .order('created_at', { ascending: false });
 
+    if(rowsError){
+      content.innerHTML = '<div class="empty"><i class="ti ti-plug-x"></i><p>Could not load your friends right now.<br><a href="javascript:location.reload()" style="color:var(--accent);">Try again</a></p></div>';
+      return;
+    }
     rows = rows || [];
+    // Hide anyone in a block relationship (either direction)
+    rows = rows.filter(function(r){
+      var other = r.requester_id === uid ? r.recipient_id : r.requester_id;
+      return !dsBlock.either(other);
+    });
 
     // Collect all other user IDs
     var otherIds = [...new Set(rows.map(function(r){ return r.requester_id === uid ? r.recipient_id : r.requester_id; }))];
@@ -140,6 +159,12 @@
       (profs||[]).forEach(function(p){ profMap[p.id] = p; });
     }
 
+    // Skip rows whose profile no longer exists (deleted accounts)
+    rows = rows.filter(function(r){
+      var other = r.requester_id === uid ? r.recipient_id : r.requester_id;
+      return !!profMap[other];
+    });
+
     var incoming = rows.filter(function(r){ return r.recipient_id === uid && r.status === 'pending'; });
     var outgoing = rows.filter(function(r){ return r.requester_id === uid && r.status === 'pending'; });
     var accepted = rows.filter(function(r){ return r.status === 'accepted'; });
@@ -148,12 +173,12 @@
 
     // ── INCOMING REQUESTS
     var s1 = document.createElement('div');
-    s1.className = 'section';
+    s1.className = 'section'; s1.id = 's-incoming';
     s1.innerHTML =
       '<div class="section-header">'
         + '<div class="section-icon gold"><i class="ti ti-user-plus"></i></div>'
         + '<div class="section-title">Friend Requests</div>'
-        + '<div class="section-count ' + (incoming.length ? 'highlight' : '') + '">' + incoming.length + '</div>'
+        + '<div class="section-count ' + (incoming.length ? 'highlight' : '') + '" data-count-for="s-incoming">' + incoming.length + '</div>'
       + '</div>';
 
     if(!incoming.length){
@@ -182,12 +207,12 @@
 
     // ── FRIENDS
     var s2 = document.createElement('div');
-    s2.className = 'section';
+    s2.className = 'section'; s2.id = 's-friends';
     s2.innerHTML =
       '<div class="section-header">'
         + '<div class="section-icon teal"><i class="ti ti-users"></i></div>'
         + '<div class="section-title">My Friends</div>'
-        + '<div class="section-count">' + accepted.length + '</div>'
+        + '<div class="section-count" data-count-for="s-friends">' + accepted.length + '</div>'
       + '</div>';
 
     if(!accepted.length){
@@ -218,12 +243,12 @@
     // ── SENT REQUESTS
     if(outgoing.length){
       var s3 = document.createElement('div');
-      s3.className = 'section';
+      s3.className = 'section'; s3.id = 's-sent';
       s3.innerHTML =
         '<div class="section-header">'
           + '<div class="section-icon teal"><i class="ti ti-send"></i></div>'
           + '<div class="section-title">Sent Requests</div>'
-          + '<div class="section-count">' + outgoing.length + '</div>'
+          + '<div class="section-count" data-count-for="s-sent">' + outgoing.length + '</div>'
         + '</div>';
       outgoing.forEach(function(row){
         var prof = profMap[row.recipient_id] || {};
@@ -247,12 +272,53 @@
     }
   }
 
+  // Remove a row in place, fix the section count, and swap in the empty
+  // state when a section runs dry — no full re-render, no scroll reset.
+  function dropRow(rowEl, sectionId, emptyHtml){
+    var section = document.getElementById(sectionId);
+    rowEl.remove();
+    if(!section) return;
+    var remaining = section.querySelectorAll('.friend-row').length;
+    var badge = section.querySelector('[data-count-for="' + sectionId + '"]');
+    if(badge){
+      badge.textContent = remaining;
+      if(sectionId === 's-incoming') badge.classList.toggle('highlight', remaining > 0);
+    }
+    if(!remaining){
+      if(emptyHtml){
+        var d = document.createElement('div');
+        d.className = 'empty';
+        d.innerHTML = emptyHtml;
+        section.appendChild(d);
+      } else {
+        section.remove(); // Sent Requests section disappears entirely when empty
+      }
+    }
+  }
+
   async function acceptRequest(id, rowEl){
     rowEl.style.opacity = '0.5';
     var { error } = await db.from('friendships').update({ status: 'accepted' }).eq('id', id).eq('recipient_id', uid);
     if(error){ rowEl.style.opacity = '1'; showToast('Failed: ' + error.message, 'ti-alert-circle'); return; }
     showToast('Friend request accepted!', 'ti-check');
-    await renderAll();
+    // Move the row into My Friends: swap actions, then relocate
+    var friendsSection = document.getElementById('s-friends');
+    if(friendsSection){
+      var actions = rowEl.querySelector('.friend-actions');
+      var profileHref = (rowEl.querySelector('.friend-name')||{}).getAttribute ? rowEl.querySelector('.friend-name').getAttribute('href') : 'profile.html';
+      actions.innerHTML = '<a class="btn-profile" href="' + profileHref + '"><i class="ti ti-user"></i> Profile</a>'
+        + '<button class="btn-remove" onclick="removeFriend(\'' + id + '\', this.closest(\'.friend-row\'))"><i class="ti ti-user-minus"></i> Remove</button>';
+      rowEl.style.opacity = '1';
+      var emptyInFriends = friendsSection.querySelector('.empty');
+      if(emptyInFriends) emptyInFriends.remove();
+      friendsSection.appendChild(rowEl);
+      // Fix both counts
+      dropRow(document.createElement('div'), 's-incoming', '<i class="ti ti-user-check"></i><p>No pending friend requests.</p>');
+      var fBadge = friendsSection.querySelector('[data-count-for="s-friends"]');
+      if(fBadge) fBadge.textContent = friendsSection.querySelectorAll('.friend-row').length;
+    } else {
+      await renderAll();
+    }
   }
 
   async function declineRequest(id, rowEl){
@@ -260,7 +326,7 @@
     var { error } = await db.from('friendships').delete().eq('id', id).eq('recipient_id', uid);
     if(error){ rowEl.style.opacity = '1'; showToast('Failed: ' + error.message, 'ti-alert-circle'); return; }
     showToast('Request declined.', 'ti-x');
-    await renderAll();
+    dropRow(rowEl, 's-incoming', '<i class="ti ti-user-check"></i><p>No pending friend requests.</p>');
   }
 
   async function cancelRequest(id, rowEl){
@@ -268,7 +334,7 @@
     var { error } = await db.from('friendships').delete().eq('id', id).eq('requester_id', uid);
     if(error){ rowEl.style.opacity = '1'; showToast('Failed: ' + error.message, 'ti-alert-circle'); return; }
     showToast('Request cancelled.', 'ti-x');
-    await renderAll();
+    dropRow(rowEl, 's-sent', null);
   }
 
   async function removeFriend(id, rowEl){
@@ -277,7 +343,7 @@
     var { error } = await db.from('friendships').delete().eq('id', id);
     if(error){ rowEl.style.opacity = '1'; showToast('Failed: ' + error.message, 'ti-alert-circle'); return; }
     showToast('Friend removed.', 'ti-user-minus');
-    await renderAll();
+    dropRow(rowEl, 's-friends', '<i class="ti ti-users"></i><p>No friends yet.<br>Visit someone\'s profile and send them a friend request!</p>');
   }
 
   init();

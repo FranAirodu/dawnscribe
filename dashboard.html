@@ -42,7 +42,7 @@
     .work-head-cover{width:56px;height:78px;border-radius:8px;background:var(--bg4);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text3);}
     .work-head-cover img{width:100%;height:100%;object-fit:cover;}
     .work-head-title{font-family:'Cinzel',serif;font-size:20px;font-weight:700;}
-    .work-head-links{font-size:12.5px;margin-top:5px;display:flex;gap:14px;}
+    .work-head-links{font-size:12.5px;margin-top:5px;display:flex;gap:14px;flex-wrap:wrap;}
     .work-head-links a{color:var(--accent);text-decoration:none;}
     .work-head-links a:hover{text-decoration:underline;}
 
@@ -73,7 +73,10 @@
     .ret-pct.warn{color:var(--amber);background:rgba(245,158,11,0.1);}
     .ret-pct.bad{color:var(--red);background:rgba(248,113,113,0.1);}
     .ret-pct.na{color:var(--text3);background:var(--bg3);}
+    .ret-wrap{position:relative;}
     .ret-scroll{overflow-x:auto;}
+    .ret-wrap::after{content:'';position:absolute;top:0;right:0;bottom:0;width:28px;background:linear-gradient(to left,var(--bg2),transparent);pointer-events:none;opacity:0;transition:opacity 0.2s;}
+    .ret-wrap.scrollable::after{opacity:1;}
 
     /* Charts */
     .chart-wrap{width:100%;overflow-x:auto;}
@@ -94,10 +97,6 @@
     .state-body{font-size:13.5px;color:var(--text3);line-height:1.6;}
     .state-body a{color:var(--accent);}
 
-    .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:11px 22px;border-radius:10px;font-size:13.5px;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:400;pointer-events:none;box-shadow:0 8px 30px rgba(0,0,0,0.4);}
-    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-    .toast i{color:var(--accent);}
-
     @media(max-width:640px){
       nav{padding:0 16px;}
       .page{padding:24px 14px 50px;}
@@ -115,8 +114,6 @@
   <div class="state-wrap"><i class="ti ti-loader-2 state-icon" style="animation:spin 1s linear infinite;"></i></div>
 </div>
 
-<div class="toast" id="toast"></div>
-
 <script>
   const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
@@ -127,12 +124,13 @@
   var workId = null;
 
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-  function fmt(n){ n = Number(n||0); if(n >= 1000000) return (n/1000000).toFixed(1) + 'M'; if(n >= 1000) return (n/1000).toFixed(1) + 'k'; return String(n); }
-  function showToast(msg, icon){
-    var t = document.getElementById('toast');
-    t.innerHTML = '<i class="ti ' + (icon||'ti-check') + '"></i> ' + msg;
-    t.classList.add('show');
-    setTimeout(function(){ t.classList.remove('show'); }, 3000);
+  function fmt(n){
+    n = Number(n||0);
+    function s(v, suf){ var t = v.toFixed(1); if(t.slice(-2) === '.0') t = t.slice(0, -2); return t + suf; }
+    if(n >= 999500000) return s(n/1000000000, 'B');
+    if(n >= 999500) return s(n/1000000, 'M');
+    if(n >= 1000) return s(n/1000, 'k');
+    return String(n);
   }
   function showState(icon, title, body){
     document.getElementById('page').innerHTML =
@@ -151,8 +149,13 @@
     }
     var params = new URLSearchParams(window.location.search);
     workId = params.get('work');
-    if(workId) loadDashboard();
-    else loadPicker();
+    if(workId){
+      var back = document.getElementById('nav-back');
+      if(back){ back.href = 'dashboard.html'; back.innerHTML = '<i class="ti ti-arrow-left"></i> Your stories'; }
+      loadDashboard();
+    } else {
+      loadPicker();
+    }
   }
 
   // ── WORK PICKER (no ?work= param) ────────────────────────────
@@ -161,7 +164,7 @@
     // Own novels + coauthored novels. Promise.resolve wrappers: builders lack .catch()
     var [ownRes, coRes] = await Promise.all([
       Promise.resolve(db.from('works')
-        .select('id,title,cover_url,views,rating_avg,rating_count,chapters_count')
+        .select('id,title,cover_url,views,rating_avg,rating_count,chapters_count,created_at')
         .eq('author_id', uid).eq('type','novel')
         .order('created_at', { ascending: false })).catch(function(){ return {}; }),
       Promise.resolve(db.from('work_coauthors').select('work_id').eq('user_id', uid)).catch(function(){ return {}; })
@@ -172,9 +175,10 @@
     if(coIds.length){
       try {
         var { data: coWorks } = await db.from('works')
-          .select('id,title,cover_url,views,rating_avg,rating_count,chapters_count')
+          .select('id,title,cover_url,views,rating_avg,rating_count,chapters_count,created_at')
           .in('id', coIds).eq('type','novel');
         works = works.concat(coWorks || []);
+        works.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
       } catch(e) {}
     }
 
@@ -223,8 +227,14 @@
       if(error) throw error;
       payload = data;
     } catch(e) {
-      showState('ti-lock', 'Not available',
-        'This dashboard is only visible to the story\u2019s author and coauthors. <a href="dashboard.html">Back to your stories</a>.');
+      var msg = String((e && e.message) || '');
+      if(msg.indexOf('not authorized') !== -1 || msg.indexOf('invalid input syntax') !== -1){
+        showState('ti-lock', 'Not available',
+          'This dashboard is only visible to the story\u2019s author and coauthors. <a href="dashboard.html">Back to your stories</a>.');
+      } else {
+        showState('ti-plug-x', 'Connection hiccup',
+          'Could not reach the analytics service. <a href="javascript:location.reload()">Try again</a> or <a href="dashboard.html">go back to your stories</a>.');
+      }
       return;
     }
     if(!payload || !payload.overview){
@@ -246,8 +256,8 @@
         + '<div>'
           + '<div class="work-head-title">' + esc(ov.title) + '</div>'
           + '<div class="work-head-links">'
-            + '<a href="story.html?id=' + workId + '"><i class="ti ti-book-open"></i> Story page</a>'
-            + '<a href="chapters.html?edit=' + workId + '"><i class="ti ti-pencil"></i> Manage chapters</a>'
+            + '<a href="story.html?id=' + encodeURIComponent(workId) + '"><i class="ti ti-book-open"></i> Story page</a>'
+            + '<a href="chapters.html?edit=' + encodeURIComponent(workId) + '"><i class="ti ti-pencil"></i> Manage chapters</a>'
             + '<a href="dashboard.html"><i class="ti ti-switch-horizontal"></i> Switch story</a>'
           + '</div>'
         + '</div>'
@@ -264,8 +274,8 @@
 
       + '<div class="section">'
         + '<div class="section-title"><i class="ti ti-stairs-down"></i> Chapter Retention</div>'
-        + '<div class="section-sub">Readers = accounts that finished each chapter. <b>% of previous</b> shows how many carried on from the chapter before — dips mark where readers drop off. Views started counting today, so that column grows from here on.</div>'
-        + '<div class="ret-scroll">' + retentionTable(chapters) + '</div>'
+        + '<div class="section-sub">Readers = accounts that finished each chapter. <b>% of previous</b> shows how many carried on from the chapter before — dips mark where readers drop off; over 100% means more readers finished than the chapter before it.</div>'
+        + '<div class="ret-wrap"><div class="ret-scroll" id="ret-scroll">' + retentionTable(chapters) + '</div></div>'
       + '</div>'
 
       + '<div class="section">'
@@ -276,14 +286,14 @@
 
       + '<div class="section">'
         + '<div class="section-title"><i class="ti ti-eye"></i> Views — last 30 days</div>'
-        + '<div class="section-sub">Story page + chapter views per day. Daily tracking is new, so history builds from today.</div>'
-        + barChart(payload.views_daily || [], 'views', 'var(--accent)')
+        + '<div class="section-sub">Story page + chapter views per day.</div>'
+        + barChart(payload.views_daily || [], 'views', 'var(--accent)', 'No views recorded in the last 30 days.', 'Daily views bar chart, last 30 days')
       + '</div>'
 
       + '<div class="section">'
         + '<div class="section-title"><i class="ti ti-flame"></i> Sparks — last 30 days</div>'
         + '<div class="section-sub">Dawn Sparks received per day.</div>'
-        + barChart(payload.sparks_daily || [], 'n', 'var(--gold)')
+        + barChart(payload.sparks_daily || [], 'n', 'var(--gold)', 'No sparks received in the last 30 days.', 'Daily sparks bar chart, last 30 days')
       + '</div>'
 
       + '<div class="section">'
@@ -291,6 +301,20 @@
         + '<div class="section-sub">How readers have shelved this story.</div>'
         + readingListChips(payload.reading_list || [])
       + '</div>';
+
+    // Show a right-edge fade on the retention table only while more columns
+    // are hidden off-screen; hide it once the user scrolls to the end.
+    var rs = document.getElementById('ret-scroll');
+    if(rs){
+      var rw = rs.parentElement;
+      function retFade(){
+        var more = rs.scrollWidth - rs.clientWidth - rs.scrollLeft > 4;
+        rw.classList.toggle('scrollable', more);
+      }
+      rs.addEventListener('scroll', retFade);
+      window.addEventListener('resize', retFade);
+      retFade();
+    }
   }
 
   function statCard(value, icon, label, sub){
@@ -312,7 +336,7 @@
       } else if(!prev.readers){
         pctHtml = '<span class="ret-pct na">n/a</span>';
       } else {
-        var pct = Math.min(100, Math.round((c.readers / prev.readers) * 100));
+        var pct = Math.round((c.readers / prev.readers) * 100);
         var cls = pct >= 90 ? 'good' : (pct >= 70 ? 'warn' : 'bad');
         pctHtml = '<span class="ret-pct ' + cls + '">' + pct + '%</span>';
       }
@@ -357,7 +381,7 @@
     d += ' L ' + x(t1).toFixed(1) + ' ' + y(last).toFixed(1);
 
     // Chapter release markers within range
-    var markers = (chapters||[]).map(function(c){ return new Date(c.created_at).getTime(); })
+    var markers = (chapters||[]).map(function(c){ return new Date(c.published_at || c.created_at).getTime(); })
       .filter(function(t){ return t >= t0 && t <= t1; })
       .map(function(t){
         var xx = x(t).toFixed(1);
@@ -365,16 +389,16 @@
       }).join('');
 
     // Y axis: 0, mid, max
-    var yTicks = [0, Math.round(vMax/2), vMax].map(function(v){
+    var yTicks = [0, Math.round(vMax/2), vMax].filter(function(v, i, a){ return a.indexOf(v) === i; }).map(function(v){
       return '<text x="' + (padL-8) + '" y="' + (y(v)+4).toFixed(1) + '" text-anchor="end" font-size="11" fill="var(--text3)">' + fmt(v) + '</text>'
         + '<line x1="' + padL + '" y1="' + y(v).toFixed(1) + '" x2="' + (W-padR) + '" y2="' + y(v).toFixed(1) + '" stroke="var(--border)" stroke-width="1"/>';
     }).join('');
     // X axis: first + last date
-    function dLabel(t){ return new Date(t).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }
+    function dLabel(t){ return new Date(t).toLocaleDateString(undefined, { month:'short', day:'numeric', timeZone:'UTC' }); }
     var xTicks = '<text x="' + padL + '" y="' + (H-8) + '" font-size="11" fill="var(--text3)">' + dLabel(t0) + '</text>'
       + '<text x="' + (W-padR) + '" y="' + (H-8) + '" text-anchor="end" font-size="11" fill="var(--text3)">' + dLabel(t1) + '</text>';
 
-    return '<div class="chart-wrap"><svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="min-width:560px;">'
+    return '<div class="chart-wrap"><svg class="chart-svg" role="img" aria-label="Cumulative follower growth over time with chapter release markers" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="min-width:560px;">'
       + yTicks + markers
       + '<path d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>'
       + xTicks + '</svg></div>'
@@ -385,21 +409,24 @@
   }
 
   // ── DAILY BAR CHART (views / sparks, last 30 days) ───────────
-  function barChart(daily, valueKey, color){
+  function barChart(daily, valueKey, color, emptyLabel, ariaLabel){
     var W = 900, H = 200, padL = 40, padR = 10, padT = 12, padB = 28;
     // Build a continuous 30-day window ending today
     var byDay = {};
     daily.forEach(function(d){ byDay[d.day] = Number(d[valueKey]||0); });
     var days = [];
-    var today = new Date(); today.setHours(0,0,0,0);
+    // Server days are UTC dates (CURRENT_DATE / ::date), so build the 30-day
+    // window in UTC too — local-midnight keys drift a day for users east of UTC.
+    var now = new Date();
+    var todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     for(var i = 29; i >= 0; i--){
-      var dt = new Date(today.getTime() - i*86400000);
-      var key = dt.toISOString().slice(0,10);
-      days.push({ key: key, label: dt, v: byDay[key] || 0 });
+      var t = todayUTC - i*86400000;
+      var key = new Date(t).toISOString().slice(0,10);
+      days.push({ key: key, t: t, v: byDay[key] || 0 });
     }
     var vMax = Math.max.apply(null, days.map(function(d){ return d.v; }).concat([1]));
     if(!days.some(function(d){ return d.v > 0; })){
-      return '<div class="chart-empty"><i class="ti ti-chart-bar"></i> Nothing logged yet — check back tomorrow.</div>';
+      return '<div class="chart-empty"><i class="ti ti-chart-bar"></i> ' + (emptyLabel || 'Nothing in the last 30 days.') + '</div>';
     }
     var slot = (W - padL - padR) / 30;
     var barW = Math.max(4, slot - 4);
@@ -409,13 +436,13 @@
       var yy = H - padB - h;
       return '<rect x="' + xx.toFixed(1) + '" y="' + yy.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(h, d.v ? 2 : 0).toFixed(1) + '" rx="2" fill="' + color + '"><title>' + d.key + ': ' + d.v + '</title></rect>';
     }).join('');
-    function dLabel(dt){ return dt.toLocaleDateString(undefined, { month:'short', day:'numeric' }); }
+    function dLabel(t){ return new Date(t).toLocaleDateString(undefined, { month:'short', day:'numeric', timeZone:'UTC' }); }
     var axis = '<line x1="' + padL + '" y1="' + (H-padB) + '" x2="' + (W-padR) + '" y2="' + (H-padB) + '" stroke="var(--border)"/>'
       + '<text x="' + (padL-8) + '" y="' + (padT+8) + '" text-anchor="end" font-size="11" fill="var(--text3)">' + fmt(vMax) + '</text>'
       + '<text x="' + (padL-8) + '" y="' + (H-padB) + '" text-anchor="end" font-size="11" fill="var(--text3)">0</text>'
-      + '<text x="' + padL + '" y="' + (H-8) + '" font-size="11" fill="var(--text3)">' + dLabel(days[0].label) + '</text>'
-      + '<text x="' + (W-padR) + '" y="' + (H-8) + '" text-anchor="end" font-size="11" fill="var(--text3)">' + dLabel(days[29].label) + '</text>';
-    return '<div class="chart-wrap"><svg class="chart-svg" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="min-width:560px;">' + axis + bars + '</svg></div>';
+      + '<text x="' + padL + '" y="' + (H-8) + '" font-size="11" fill="var(--text3)">' + dLabel(days[0].t) + '</text>'
+      + '<text x="' + (W-padR) + '" y="' + (H-8) + '" text-anchor="end" font-size="11" fill="var(--text3)">' + dLabel(days[29].t) + '</text>';
+    return '<div class="chart-wrap"><svg class="chart-svg" role="img" aria-label="' + esc(ariaLabel || 'Bar chart') + '" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="min-width:560px;">' + axis + bars + '</svg></div>';
   }
 
   // ── READING LIST CHIPS ───────────────────────────────────────
