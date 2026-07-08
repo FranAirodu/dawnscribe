@@ -565,7 +565,7 @@
     <div class="tab-panel" id="panel-info">
       <div class="info-grid">
         <div class="info-card"><div class="info-label"><i class="ti ti-calendar"></i> Member since</div><div class="info-value" id="info-joined">March 12, 2025</div></div>
-        <div class="info-card"><div class="info-label"><i class="ti ti-clock"></i> Last active</div><div class="info-value">Today</div></div>
+        <div class="info-card"><div class="info-label"><i class="ti ti-clock"></i> Last active</div><div class="info-value" id="info-last-active">—</div></div>
         <div class="info-card"><div class="info-label"><i class="ti ti-map-pin"></i> Location</div><div class="info-value" id="info-location">São Paulo, Brazil</div></div>
         <div class="info-card"><div class="info-label"><i class="ti ti-gender-bigender"></i> Gender</div><div class="info-value muted" id="info-gender">Not specified</div></div>
         <div class="info-card"><div class="info-label"><i class="ti ti-message-2"></i> Pronouns</div><div class="info-value muted" id="info-pronouns">Not specified</div></div>
@@ -708,10 +708,15 @@
       btn.classList.add('active');
       var panel = document.getElementById('panel-' + name);
       if (panel) { panel.classList.add('active'); }
-      // Lazy-load badges on first open
-      if (name === 'badges' && !panel.dataset.loaded && currentProfileId) {
-        panel.dataset.loaded = '1';
-        loadBadgesTab(currentProfileId);
+      // Lazy-load badges on first open (currentProfileId may not be set yet if triggered from hash on load)
+      if (name === 'badges' && !panel.dataset.loaded) {
+        if (currentProfileId) {
+          panel.dataset.loaded = '1';
+          loadBadgesTab(currentProfileId);
+        } else {
+          // Will be triggered again once init() sets currentProfileId
+          panel.dataset.pendingLoad = '1';
+        }
       }
       // Update URL hash without scrolling
       try { history.replaceState(null, '', window.location.pathname + window.location.search + '#tab=' + name); } catch(e){}
@@ -734,8 +739,13 @@
       if (!isOwner && currentSession) {
         await dsBlock.load(currentSession.user.id);
         if (dsBlock.isBlockingMe(currentProfileData.id)) {
-          var main = document.getElementById('profile-tabs') || document.querySelector('.profile-main');
-          if (main) main.innerHTML = '<div class="blocked-profile-wall"><i class="ti ti-ban"></i><h3>Content Unavailable</h3><p>You cannot view this profile.</p></div>';
+          // Hide interactive content areas
+          var tabsWrap = document.querySelector('.profile-tabs-wrap');
+          var collabShort = document.getElementById('collab-shortcuts');
+          var announceSection = document.getElementById('announce-section');
+          if (tabsWrap) tabsWrap.innerHTML = '<div class="blocked-profile-wall"><i class="ti ti-ban"></i><h3>Content Unavailable</h3><p>You cannot view this profile.</p></div>';
+          if (collabShort) collabShort.style.display = 'none';
+          if (announceSection) announceSection.style.display = 'none';
         }
         if (blockBtn) { blockBtn.style.display = 'inline-flex'; setBlockUI(dsBlock.isBlockedByMe(currentProfileData.id)); }
       }
@@ -960,6 +970,14 @@
       if (data.role) { document.getElementById('info-role').textContent = data.role; }
       if (data.language) { document.getElementById('info-language').textContent = data.language; }
       if (data.created_at) { document.getElementById('info-joined').textContent = new Date(data.created_at).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}); }
+      var lastActiveEl = document.getElementById('info-last-active');
+      if (lastActiveEl) {
+        var lastActive = data.last_active_at || data.updated_at || data.created_at;
+        if (lastActive) {
+          var daysAgo = Math.floor((Date.now() - new Date(lastActive).getTime()) / 86400000);
+          lastActiveEl.textContent = daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : daysAgo + ' days ago';
+        }
+      }
       if (data.avatar_url) {
         var d = document.getElementById('avatar-display');
         d.innerHTML = '<img src="' + data.avatar_url + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
@@ -977,7 +995,16 @@
         }
         img.src = data.banner_url;
       }
-      if (data.id) { currentProfileId = data.id; }
+      if (data.id) {
+        currentProfileId = data.id;
+        // Flush any pending tab loads that fired before profileId was known
+        var pendingPanel = document.querySelector('.tab-panel[data-pending-load]');
+        if (pendingPanel) {
+          pendingPanel.removeAttribute('data-pending-load');
+          pendingPanel.dataset.loaded = '1';
+          if (pendingPanel.id === 'panel-badges') loadBadgesTab(data.id);
+        }
+      }
       if (data.twitter || data.kofi) { renderSocialIcons(data.twitter || '', data.kofi || ''); }
       if (isOwner) { updateProfileCompletion(data); }
       if (data.currently_writing) { renderCurrentlyWriting(data.currently_writing); }
@@ -1762,9 +1789,19 @@ function setFollowUI(following, theyFollowMe) {
     label.textContent = 'Follow';
   }
   btn.style.visibility = 'visible';
-  // Show mutual follow indicator
+  // Show follow-back indicator
   var mutualEl = document.getElementById('mutual-follow-badge');
-  if (mutualEl) mutualEl.style.display = (following && theyFollowMe) ? 'inline-flex' : 'none';
+  if (mutualEl) {
+    if (following && theyFollowMe) {
+      mutualEl.innerHTML = '<i class="ti ti-arrows-exchange" style="font-size:12px;"></i> Follows you back';
+      mutualEl.style.display = 'inline-flex';
+    } else if (!following && theyFollowMe) {
+      mutualEl.innerHTML = '<i class="ti ti-user-check" style="font-size:12px;"></i> Follows you';
+      mutualEl.style.display = 'inline-flex';
+    } else {
+      mutualEl.style.display = 'none';
+    }
+  }
 }
 
 async function toggleFollow() {
@@ -1824,6 +1861,13 @@ async function toggleFollow() {
 // writer/artist distinction used elsewhere, e.g. following.html's
 // role icon logic). Re-checks the full follow list rather than just
 // incrementing a counter, since it must stay correct after unfollows.
+async function checkMutualFollow(myId, theirId) {
+  try {
+    var { data } = await db.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', theirId).eq('following_id', myId);
+    return data !== null && (data.count || 0) > 0;
+  } catch(e) { return false; }
+}
+
 async function checkFollowThreeAuthorsMission(myUserId) {
   try {
     var { data: followRows } = await db.from('follows').select('following_id').eq('follower_id', myUserId);
@@ -1952,6 +1996,8 @@ async function handleFriendBtn() {
     document.getElementById('avatar-input').addEventListener('change', async function(e) {
       var file = e.target.files[0];
       if (!file) { return; }
+      if (!file.type.startsWith('image/')) { showToast('Please select an image file', 'ti-alert-triangle'); this.value = ''; return; }
+      if (file.size > 5 * 1024 * 1024) { showToast('Image must be under 5MB', 'ti-alert-triangle'); this.value = ''; return; }
       var reader = new FileReader();
       reader.onload = function(ev) {
         document.getElementById('avatar-display').innerHTML = '<img src="' + ev.target.result + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
@@ -1974,6 +2020,8 @@ async function handleFriendBtn() {
     document.getElementById('banner-input').addEventListener('change', async function(e) {
       var file = e.target.files[0];
       if (!file) { return; }
+      if (!file.type.startsWith('image/')) { showToast('Please select an image file', 'ti-alert-triangle'); this.value = ''; return; }
+      if (file.size > 5 * 1024 * 1024) { showToast('Banner must be under 5MB', 'ti-alert-triangle'); this.value = ''; return; }
       var reader = new FileReader();
       reader.onload = function(ev) {
         var wrap = document.getElementById('banner-wrap');
@@ -2010,7 +2058,7 @@ async function handleFriendBtn() {
         var [followers, following, works, views] = await Promise.all([
           db.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', profileId),
           db.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', profileId),
-          db.from('works').select('id,type,views').eq('author_id', profileId),
+          db.from('works').select('id,type,views').eq('author_id', profileId).eq('is_published', true),
           Promise.resolve(null)
         ]);
         if (!followers.error) document.getElementById('stat-followers').textContent = fmtNum(followers.count || 0);
@@ -2165,9 +2213,10 @@ async function handleFriendBtn() {
         customInput.classList.add('visible');
       }
 
-      customInput.addEventListener('input', function() {
+      // Use direct assignment to avoid accumulating duplicate listeners each time modal opens
+      customInput.oninput = function() {
         _cwSelected = customInput.value.trim();
-      });
+      };
     }
 
     async function saveProfile() {
@@ -2201,12 +2250,14 @@ async function handleFriendBtn() {
       try {
         var s = (await db.auth.getSession()).data.session;
         if (s) {
-          var result = await db.from('profiles').upsert({
-            id: s.user.id, display_name: name,
-            role: role, location: location, gender: gender,
-            language: language, twitter: twitter, kofi: kofi,
-            currently_writing: currentlyWriting || null
-          }, { onConflict: 'id' });
+          // Only include fields that have a value (avoid overwriting with empty strings)
+          var profileUpdate = { id: s.user.id, display_name: name, role: role, currently_writing: currentlyWriting || null };
+          if (location !== undefined) profileUpdate.location = location || null;
+          if (gender !== undefined) profileUpdate.gender = gender || null;
+          if (language !== undefined) profileUpdate.language = language || null;
+          profileUpdate.twitter = twitter || null;
+          profileUpdate.kofi = kofi || null;
+          var result = await db.from('profiles').upsert(profileUpdate, { onConflict: 'id' });
           if (result.error) { console.error('Supabase save error:', result.error); showToast('Save failed: ' + result.error.message, 'ti-alert-triangle'); }
         }
       } catch(err) { console.error(err); }
@@ -2223,6 +2274,7 @@ async function handleFriendBtn() {
     function openPostModal() {
       document.getElementById('post-title').value = '';
       document.getElementById('post-body').value = '';
+      document.getElementById('post-body-count').textContent = '0 / 600';
       document.getElementById('post-modal').classList.add('open');
       setTimeout(function() { document.getElementById('post-title').focus(); }, 50);
     }
@@ -2277,7 +2329,10 @@ async function handleFriendBtn() {
       var titleEl = el.querySelector('.ann-title-text');
       var bodyEl  = el.querySelector('.ann-body');
       document.getElementById('edit-ann-title').value = titleEl ? titleEl.textContent : '';
-      document.getElementById('edit-ann-body').value  = bodyEl  ? bodyEl.textContent  : '';
+      // Restore newlines that were stored as <br> tags
+      document.getElementById('edit-ann-body').value  = bodyEl  ? bodyEl.innerHTML.replace(/<br\s*\/?>/gi, '\n').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>') : '';
+      var editBodyEl = document.getElementById('edit-ann-body');
+      document.getElementById('edit-ann-body-count').textContent = (editBodyEl ? editBodyEl.value.length : 0) + ' / 600';
       document.getElementById('edit-ann-modal').classList.add('open');
     }
     async function saveAnn() {
@@ -2523,7 +2578,7 @@ async function handleFriendBtn() {
             item.innerHTML = '<div class="activity-item-on"><span class="act-badge novel">Novel</span> ' + escHtml(workTitle) + ' · Ch. ' + chNum + '</div>' +
               '<div class="activity-text">"' + (typeof dsSpoiler!=='undefined'?dsSpoiler.render(escHtml((c.content||'').slice(0,120))):escHtml((c.content||'').slice(0,120))) + (c.content&&c.content.length>120?'...':'') + '"</div>' +
               '<div class="activity-time"><i class="ti ti-clock"></i> ' + timeStr + '</div>';
-            if (workId) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'chapter.html?work='+workId+'&chapter='+c.chapter_id; }; }
+            if (c.chapter_id) { item.style.cursor='pointer'; (function(cid){ item.onclick = function(){ window.location.href = 'chapter.html?id='+cid; }; })(c.chapter_id); }
             commentsCol.appendChild(item);
           });
         } else { commentsCol.innerHTML += '<div style="font-size:13px;color:var(--text3);">No comments yet.</div>'; }
@@ -2540,7 +2595,7 @@ async function handleFriendBtn() {
               '<div class="review-stars">'+stars+'</div>' +
               '<div class="activity-text">"' + (typeof dsSpoiler!=='undefined'?dsSpoiler.render(escHtml((r.content||'').slice(0,120))):escHtml((r.content||'').slice(0,120))) + (r.content&&r.content.length>120?'...':'') + '"</div>' +
               '<div class="activity-time"><i class="ti ti-clock"></i> ' + timeStr + '</div>';
-            if (r.work_id) { item.style.cursor='pointer'; item.onclick = function(){ window.location.href = 'story.html?id='+r.work_id; }; }
+            if (r.work_id) { item.style.cursor='pointer'; (function(wid){ item.onclick = function(){ window.location.href = 'story.html?id='+wid; }; })(r.work_id); }
             reviewsCol.appendChild(item);
           });
         } else { reviewsCol.innerHTML += '<div style="font-size:13px;color:var(--text3);">No reviews yet.</div>'; }
@@ -2585,7 +2640,7 @@ async function handleFriendBtn() {
 
     /* ── HELPERS ────────────────────────────────────────────────── */
     function escHtml(s) {
-      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
   
     // ── ARTWORK EDIT MODAL

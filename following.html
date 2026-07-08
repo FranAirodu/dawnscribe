@@ -76,7 +76,9 @@
     .auth-wall a{background:#0d9488;color:white;padding:10px 28px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:7px;transition:all 0.2s;}
     .auth-wall a:hover{background:#2dd4bf;color:#0a0a0f;}
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;}
-    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto;}
+    .toast-undo{margin-left:6px;background:rgba(45,212,191,0.12);border:1px solid rgba(45,212,191,0.4);border-radius:7px;color:#2dd4bf;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;padding:3px 12px;cursor:pointer;transition:all 0.15s;}
+    .toast-undo:hover{background:rgba(45,212,191,0.25);}
     .toast i{color:#2dd4bf;}
     footer{background:var(--bg2);border-top:1px solid var(--border);padding:32px;text-align:center;color:var(--text3);font-size:13px;}
     footer .footer-logo{font-family:'Cinzel',serif;font-size:20px;color:#2dd4bf;margin-bottom:10px;}
@@ -127,7 +129,7 @@
 </head>
 <body>
 
-  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Done!</span></div>
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Done!</span><button id="toast-undo" class="toast-undo" style="display:none;">Undo</button></div>
 
   <nav style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
     <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
@@ -266,14 +268,17 @@
     var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     window.db = db;
     var currentSession = null;
-    var myContentFilters = { gore: false, erotica: false, safe: true };
+    // Platform convention: null/true = filtering ON, only explicit false = off.
+    // gore/erotica here mean "the viewer filters this out"; safe is opt-in.
+    var myContentFilters = { gore: true, erotica: true, safe: false };
 
     // Followed content isn't filtered out — you chose to follow it. Instead, a
-    // small warning badge shows when a work is flagged gore/erotica and the
-    // viewer hasn't opted into that filter, so they know before clicking in.
+    // small warning badge shows when a work is flagged with mature content that
+    // the viewer's Settings filters would normally hide, so they know before
+    // clicking in.
     function contentWarningBadge(work) {
-      var warnGore = work.content_rating_gore && (myContentFilters.safe || !myContentFilters.gore);
-      var warnErotica = work.content_rating_erotica && (myContentFilters.safe || !myContentFilters.erotica);
+      var warnGore = work.content_rating_gore === true && (myContentFilters.safe || myContentFilters.gore);
+      var warnErotica = work.content_rating_erotica === true && (myContentFilters.safe || myContentFilters.erotica);
       if (!warnGore && !warnErotica) return '';
       var label = warnGore && warnErotica ? 'Gore & Erotica' : (warnGore ? 'Gore' : 'Erotica');
       return '<span title="This story is flagged for mature content you\'ve filtered in Settings" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#f87171;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);border-radius:20px;padding:1px 7px;"><i class="ti ti-alert-triangle" style="font-size:11px;"></i> ' + label + '</span>';
@@ -326,12 +331,27 @@
     }
 
     /* ── TOAST ──────────────────────────────────────────────────── */
-    function showToast(msg, icon) {
+    var toastTimer = null;
+    function showToast(msg, icon, undoFn) {
       var t = document.getElementById('toast');
       document.getElementById('toast-msg').textContent = msg || 'Done!';
       t.querySelector('i').className = 'ti ' + (icon || 'ti-check');
+      var undoBtn = document.getElementById('toast-undo');
+      if (undoFn) {
+        undoBtn.style.display = 'inline-flex';
+        undoBtn.onclick = function() {
+          undoBtn.style.display = 'none';
+          t.classList.remove('show');
+          undoFn();
+        };
+      } else {
+        undoBtn.style.display = 'none';
+        undoBtn.onclick = null;
+      }
       t.classList.add('show');
-      setTimeout(function() { t.classList.remove('show'); }, 2800);
+      clearTimeout(toastTimer);
+      // Undo toasts linger a little longer so there's time to hit the button
+      toastTimer = setTimeout(function() { t.classList.remove('show'); }, undoFn ? 5000 : 2800);
     }
 
     /* ── AVATAR HELPER ──────────────────────────────────────────── */
@@ -344,22 +364,35 @@
     }
 
     /* ── BUILD PERSON CARD ──────────────────────────────────────── */
-    function buildPersonCard(followingId, p, gridId, countId, emptyId) {
+    // People data lives in this map so onclick attributes only ever carry a
+    // UUID — never a user-controlled string that could break out of the
+    // attribute (names with apostrophes used to kill the Unfollow button)
+    var dsPeople = {};
+    function buildPersonCard(followingId, p, gridId) {
+      dsPeople[followingId] = p;
       var card = document.createElement('div');
       card.className = 'person-card';
-      card.id = 'card-' + followingId;
-      var roleIcon = (p.role && p.role.toLowerCase().indexOf('artist') !== -1) ? 'ti-palette' : 'ti-feather';
+      // ID is prefixed per grid: the same person can legitimately appear on
+      // both the Authors and Artists tabs, and duplicate DOM IDs made
+      // getElementById remove the wrong tab's card
+      card.id = gridId + '-card-' + followingId;
+      var role = (p.role || '').toLowerCase();
+      var isArtist = role.indexOf('artist') !== -1;
+      var isWriter = role.indexOf('writer') !== -1;
+      var roleIcons =
+        ((isWriter || !isArtist) ? '<i class="ti ti-feather"></i> ' : '') +
+        (isArtist ? '<i class="ti ti-palette"></i> ' : '');
       card.innerHTML =
         '<div class="person-avatar">' + makeAvatar(p) + '</div>' +
         '<div class="person-body">' +
           '<div class="person-name">' + escHtml(p.display_name || p.username || 'Unknown') + '</div>' +
           '<div class="person-handle">@' + escHtml(p.username || '') + '</div>' +
-          '<div class="person-role"><i class="ti ' + roleIcon + '"></i> ' + escHtml(p.role || 'Creator') + '</div>' +
+          '<div class="person-role">' + roleIcons + escHtml(p.role || 'Creator') + '</div>' +
           '<div class="person-btns">' +
-            '<a class="person-btn" href="profile.html?user=' + escHtml(p.username || '') + '">' +
+            '<a class="person-btn" href="profile.html?user=' + encodeURIComponent(p.username || '') + '">' +
               '<i class="ti ti-user"></i> Profile' +
             '</a>' +
-            '<button class="person-btn unfollow" onclick="unfollowPerson(\'' + followingId + '\',\'' + escHtml(p.display_name || p.username || 'this user') + '\',\'' + gridId + '\',\'' + countId + '\',\'' + emptyId + '\')">' +
+            '<button class="person-btn unfollow" onclick="unfollowPerson(\'' + followingId + '\')">' +
               '<i class="ti ti-user-minus"></i> Unfollow' +
             '</button>' +
           '</div>' +
@@ -368,27 +401,46 @@
     }
 
     /* ── UNFOLLOW ───────────────────────────────────────────────── */
-    async function unfollowPerson(followingId, name, gridId, countId, emptyId) {
+    var PEOPLE_GRIDS = [
+      ['authors-grid', 'authors-count', 'authors-empty'],
+      ['artists-grid', 'artists-count', 'artists-empty']
+    ];
+    async function unfollowPerson(followingId) {
+      var p = dsPeople[followingId] || {};
+      var name = p.display_name || p.username || 'this user';
       try {
-        await db.from('follows')
+        var delRes = await db.from('follows')
           .delete()
           .eq('follower_id', currentSession.user.id)
           .eq('following_id', followingId);
-        var card = document.getElementById('card-' + followingId);
-        if (card) {
+        if (delRes.error) { showToast('Error: ' + delRes.error.message, 'ti-x'); return; }
+        // Dual-role people appear on both tabs — remove the card from every
+        // grid it lives in and keep both counts/empty states in sync
+        PEOPLE_GRIDS.forEach(function(g) {
+          var card = document.getElementById(g[0] + '-card-' + followingId);
+          if (!card) return;
           card.style.opacity = '0';
           card.style.transition = 'opacity 0.3s';
           setTimeout(function() {
             card.remove();
-            var remaining = document.querySelectorAll('#' + gridId + ' .person-card').length;
-            document.getElementById(countId).textContent = remaining;
+            var remaining = document.querySelectorAll('#' + g[0] + ' .person-card').length;
+            document.getElementById(g[1]).textContent = remaining;
             if (remaining === 0) {
-              document.getElementById(gridId).style.display = 'none';
-              document.getElementById(emptyId).style.display = 'block';
+              document.getElementById(g[0]).style.display = 'none';
+              document.getElementById(g[2]).style.display = 'block';
             }
           }, 300);
-        }
-        showToast('Unfollowed ' + name, 'ti-user-minus');
+        });
+        var followerId = currentSession.user.id;
+        showToast('Unfollowed ' + name, 'ti-user-minus', async function() {
+          try {
+            var ins = await db.from('follows').insert({ follower_id: followerId, following_id: followingId });
+            if (ins.error) { showToast('Could not undo: ' + ins.error.message, 'ti-x'); return; }
+            loadPeople('writer', 'authors-grid', 'authors-count', 'authors-loading', 'authors-empty');
+            loadPeople('artist', 'artists-grid', 'artists-count', 'artists-loading', 'artists-empty');
+            showToast('Follow restored', 'ti-user-plus');
+          } catch(e) { showToast('Could not undo', 'ti-x'); }
+        });
       } catch(err) {
         console.error('Unfollow error:', err);
         showToast('Something went wrong', 'ti-alert-triangle');
@@ -401,9 +453,11 @@
         var followRes = await db
           .from('follows')
           .select('following_id')
-          .eq('follower_id', currentSession.user.id);
+          .eq('follower_id', currentSession.user.id)
+          .order('created_at', { ascending: false });
 
         document.getElementById(loadingId).style.display = 'none';
+        document.getElementById(emptyId).style.display = 'none';
 
         if (followRes.error || !followRes.data || !followRes.data.length) {
           document.getElementById(emptyId).style.display = 'block';
@@ -424,9 +478,20 @@
           return;
         }
 
-        // Show all followed users — don't filter by role so users with no role
-        // or an unexpected role value still appear in the list
-        var filtered = profileRes.data;
+        // Artists tab: role mentions artist. Authors tab: everyone else —
+        // writers, readers, and no-role users all land here so nobody
+        // vanishes. "Writer & Artist" people correctly appear on both tabs.
+        var filtered = profileRes.data.filter(function(p) {
+          var role = (p.role || '').toLowerCase();
+          if (roleKeyword === 'artist') return role.indexOf('artist') !== -1;
+          return role.indexOf('artist') === -1 || role.indexOf('writer') !== -1;
+        });
+
+        // .in() returns rows in arbitrary order — restore follow order
+        // (most recently followed first, matching the query above)
+        var followOrder = {};
+        ids.forEach(function(id, i) { followOrder[id] = i; });
+        filtered.sort(function(a, b) { return followOrder[a.id] - followOrder[b.id]; });
 
         document.getElementById(countId).textContent = filtered.length;
 
@@ -439,7 +504,7 @@
         grid.style.display = 'grid';
         grid.innerHTML = '';
         for (var i = 0; i < filtered.length; i++) {
-          var card = buildPersonCard(filtered[i].id, filtered[i], gridId, countId, emptyId);
+          var card = buildPersonCard(filtered[i].id, filtered[i], gridId);
           grid.appendChild(card);
         }
       } catch(err) {
@@ -459,6 +524,7 @@
           .order('created_at', { ascending: false });
 
         document.getElementById('titles-loading').style.display = 'none';
+        document.getElementById('titles-empty').style.display = 'none';
 
         if (followRes.error || !followRes.data || !followRes.data.length) {
           document.getElementById('titles-empty').style.display = 'block';
@@ -502,8 +568,23 @@
         }
 
         var workMap = {};
-        worksRes.data.forEach(function(w) { workMap[w.id] = w; });
+        worksRes.data.forEach(function(w) { workMap[w.id] = w; dsWorks[w.id] = w; });
         var works = workIds.map(function(id) { return workMap[id]; }).filter(Boolean);
+
+        // Unread-first: stories with chapters you haven't read float to the
+        // top (this page doubles as a reading queue), caught-up sinks to the
+        // bottom, follow order preserved within each group
+        works = works.map(function(w, i) { return { w: w, i: i }; }).sort(function(a, b) {
+          function rank(w) {
+            var latest = w.chapters_count || 0;
+            var read = progressMap[w.id] || 0;
+            if (latest > 0 && read >= latest) return 1; // caught up → last
+            return 0; // unread or not started → first
+          }
+          var ra = rank(a.w), rb = rank(b.w);
+          if (ra !== rb) return ra - rb;
+          return a.i - b.i;
+        }).map(function(x) { return x.w; });
 
         document.getElementById('titles-count').textContent = works.length;
         var grid = document.getElementById('titles-grid');
@@ -527,6 +608,7 @@
 
           var card = document.createElement('div');
           card.className = 'title-card' + (caughtUp ? ' caught-up' : '');
+          card.id = 'titles-card-' + w.id;
           card.innerHTML =
             (w.cover_url
               ? '<img src="' + escHtml(w.cover_url) + '" alt="cover" class="title-cover" style="object-fit:cover;border-radius:8px;"/>'
@@ -546,7 +628,7 @@
               '</div>' +
               '<div style="display:flex;gap:6px;margin-top:10px;">' +
                 '<a href="'+(w.type==="artwork"?"artwork.html":"story.html")+'?id=' + w.id + '" style="flex:1;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:12px;font-weight:700;font-family:\'Lato\',sans-serif;transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:5px;text-decoration:none;" onmouseover="this.style.borderColor=\'#2dd4bf\';this.style.color=\'#2dd4bf\';" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text2)\';"><i class="ti ti-book"></i> '+(w.type==="artwork"?"View":"Read")+'</a>' +
-                '<button onclick="unfollowWork(\'' + w.id + '\',\'' + escHtml(w.title) + '\',this)" style="flex:1;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:12px;font-weight:700;font-family:\'Lato\',sans-serif;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:5px;" onmouseover="this.style.borderColor=\'var(--red)\';this.style.color=\'var(--red)\';" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text2)\';"><i class="ti ti-bookmark-off"></i> Unfollow</button>' +
+                '<button onclick="unfollowWork(\'' + w.id + '\')" style="flex:1;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:12px;font-weight:700;font-family:\'Lato\',sans-serif;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:5px;" onmouseover="this.style.borderColor=\'var(--red)\';this.style.color=\'var(--red)\';" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text2)\';"><i class="ti ti-bookmark-off"></i> Unfollow</button>' +
               '</div>' +
             '</div>';
           grid.appendChild(card);
@@ -558,24 +640,40 @@
       }
     }
 
-    async function unfollowWork(workId, title, btn) {
-      var result = await db.from('work_follows').delete().eq('user_id', currentSession.user.id).eq('work_id', workId);
-      if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
-      var card = btn.closest('.title-card');
-      if (card) {
-        card.style.opacity = '0';
-        card.style.transition = 'opacity 0.3s';
-        setTimeout(function(){
-          card.remove();
-          var remaining = document.querySelectorAll('#titles-grid .title-card').length;
-          document.getElementById('titles-count').textContent = remaining;
-          if (!remaining) {
-            document.getElementById('titles-grid').style.display = 'none';
-            document.getElementById('titles-empty').style.display = 'block';
-          }
-        }, 300);
+    var dsWorks = {};
+    async function unfollowWork(workId) {
+      var w = dsWorks[workId] || {};
+      var title = w.title || 'this title';
+      try {
+        var result = await db.from('work_follows').delete().eq('user_id', currentSession.user.id).eq('work_id', workId);
+        if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
+        var card = document.getElementById('titles-card-' + workId);
+        if (card) {
+          card.style.opacity = '0';
+          card.style.transition = 'opacity 0.3s';
+          setTimeout(function(){
+            card.remove();
+            var remaining = document.querySelectorAll('#titles-grid .title-card').length;
+            document.getElementById('titles-count').textContent = remaining;
+            if (!remaining) {
+              document.getElementById('titles-grid').style.display = 'none';
+              document.getElementById('titles-empty').style.display = 'block';
+            }
+          }, 300);
+        }
+        var userId = currentSession.user.id;
+        showToast('Unfollowed "' + title + '"', 'ti-bookmark-off', async function() {
+          try {
+            var ins = await db.from('work_follows').insert({ user_id: userId, work_id: workId });
+            if (ins.error) { showToast('Could not undo: ' + ins.error.message, 'ti-x'); return; }
+            loadTitles();
+            showToast('Follow restored', 'ti-bookmark');
+          } catch(e) { showToast('Could not undo', 'ti-x'); }
+        });
+      } catch(err) {
+        console.error('Unfollow work error:', err);
+        showToast('Something went wrong', 'ti-alert-triangle');
       }
-      showToast('Unfollowed "' + title + '"', 'ti-bookmark-off');
     }
 
     /* ── INIT ───────────────────────────────────────────────────── */
@@ -589,16 +687,17 @@
         }
         currentSession = session;
         try {
-          var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,settings_filter_safe').eq('id', session.user.id).maybeSingle();
+          var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,settings_filter_safe,display_name,username').eq('id', session.user.id).maybeSingle();
           if (cfRow) {
-            myContentFilters.gore = !!cfRow.settings_filter_gore;
-            myContentFilters.erotica = !!cfRow.settings_filter_erotica;
-            myContentFilters.safe = cfRow.settings_filter_safe !== false;
+            // null/true = filtering ON (platform convention); safe mode is opt-in
+            myContentFilters.gore = cfRow.settings_filter_gore !== false;
+            myContentFilters.erotica = cfRow.settings_filter_erotica !== false;
+            myContentFilters.safe = cfRow.settings_filter_safe === true;
           }
         } catch(e) {}
-        var username = session.user.user_metadata && session.user.user_metadata.username;
-        if (username) {
-          document.getElementById('page-subtitle').textContent = 'People and titles ' + username + ' is following.';
+        var displayName = (cfRow && (cfRow.display_name || cfRow.username)) || (session.user.user_metadata && session.user.user_metadata.username);
+        if (displayName) {
+          document.getElementById('page-subtitle').textContent = 'People and titles ' + displayName + ' is following.';
         }
         document.getElementById('main-content').style.display = 'block';
 
@@ -624,9 +723,11 @@
           .from('reading_progress')
           .select('work_id, chapter_number, updated_at')
           .eq('user_id', currentSession.user.id)
-          .order('updated_at', { ascending: false });
+          .order('updated_at', { ascending: false })
+          .limit(200);
 
         document.getElementById('history-loading').style.display = 'none';
+        document.getElementById('history-empty').style.display = 'none';
 
         if (res.error || !res.data || !res.data.length) {
           document.getElementById('history-empty').style.display = 'block';
@@ -645,7 +746,7 @@
         var workIds = rows.map(function(r) { return r.work_id; });
         var worksRes = await db
           .from('works')
-          .select('id, title, cover_url, status, tags_main, author_id')
+          .select('id, title, cover_url, status, type, tags_main, author_id')
           .in('id', workIds)
           .eq('is_published', true);
 
@@ -706,7 +807,7 @@
                 '<i class="ti ti-clock" style="font-size:11px;"></i> Last read: ' + lastRead + ' · Ch. ' + (row.chapter_number || 1) +
               '</div>' +
               '<div style="display:flex;gap:6px;margin-top:10px;">' +
-                '<a href="story.html?id=' + w.id + '" style="flex:1;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:12px;font-weight:700;font-family:\'Lato\',sans-serif;transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:5px;text-decoration:none;" onmouseover="this.style.borderColor=\'#2dd4bf\';this.style.color=\'#2dd4bf\';" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text2)\';"><i class="ti ti-book"></i> Continue</a>' +
+                '<a href="' + (w.type === 'artwork' ? 'artwork.html' : 'story.html') + '?id=' + w.id + '" style="flex:1;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:12px;font-weight:700;font-family:\'Lato\',sans-serif;transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:5px;text-decoration:none;" onmouseover="this.style.borderColor=\'#2dd4bf\';this.style.color=\'#2dd4bf\';" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text2)\';"><i class="ti ti-book"></i> ' + (w.type === 'artwork' ? 'View' : 'Continue') + '</a>' +
               '</div>' +
             '</div>';
           grid.appendChild(card);
@@ -720,7 +821,9 @@
 
     /* ── HELPERS ────────────────────────────────────────────────── */
     function escHtml(s) {
-      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      // Quotes must be escaped too: this output lands inside double-quoted
+      // attributes (src, title) where a stray " breaks out of the attribute
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
   </script>
 <script src="footer.js"></script>
