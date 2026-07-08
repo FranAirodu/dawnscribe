@@ -8,6 +8,19 @@
       var s = localStorage.getItem('ds_reader_size');  if (s) document.documentElement.style.setProperty('--reader-size', s + 'px');
       var l = localStorage.getItem('ds_reader_lh');    if (l) document.documentElement.style.setProperty('--reader-lh', l);
     })();
+    (function() {
+      var h = localStorage.getItem('ds_accent_hex');
+      if (!h) return;
+      var d = h.replace('#','');
+      var r = Math.max(0, parseInt(d.slice(0,2),16) - 30);
+      var g = Math.max(0, parseInt(d.slice(2,4),16) - 30);
+      var b = Math.max(0, parseInt(d.slice(4,6),16) - 30);
+      var h2 = '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
+      var st = document.createElement('style');
+      st.id = 'ds-accent-override';
+      st.textContent = ':root{--accent:'+h+' !important;--accent2:'+h2+' !important;}html[data-theme="light"]{--accent:'+h+' !important;--accent2:'+h2+' !important;}';
+      document.head.appendChild(st);
+    })();
   </script>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -391,9 +404,47 @@
     #scroll-progress-bar { position:fixed; top:56px; left:0; right:0; height:2px; background:var(--bg3); z-index:101; pointer-events:none; }
     #scroll-progress-fill { height:100%; background:var(--accent); width:0%; transition:width 0.1s linear; }
 
+    body.tts-open .toast{bottom:76px !important;}
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:600;pointer-events:none;}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
     .toast i{color:var(--accent);}
+
+    /* ── TTS BAR ─────────────────────────────────────────────────── */
+    #tts-bar{position:fixed;bottom:0;left:0;right:0;z-index:500;background:var(--bg2);border-top:1px solid var(--border);box-shadow:0 -4px 24px rgba(0,0,0,0.35);transform:translateY(100%);transition:transform 0.28s cubic-bezier(.4,0,.2,1);font-family:'Lato',sans-serif;}
+    #tts-bar.open{transform:translateY(0);}
+    body.tts-open{padding-bottom:68px;}
+    .tts-inner{max-width:760px;margin:0 auto;padding:0 16px;height:64px;display:flex;align-items:center;gap:10px;}
+    .tts-btn{background:none;border:1px solid var(--border);border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:16px;transition:all 0.18s;flex-shrink:0;}
+    .tts-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .tts-btn.primary{background:var(--accent2);border-color:var(--accent2);color:white;width:40px;height:40px;font-size:18px;}
+    .tts-btn.primary:hover{background:var(--accent);border-color:var(--accent);}
+    .tts-btn:disabled{opacity:0.35;cursor:not-allowed;}
+    .tts-progress-wrap{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0;}
+    .tts-sentence-preview{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;}
+    .tts-progress-track{height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;cursor:pointer;}
+    .tts-progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width 0.15s linear;width:0%;}
+    .tts-speed-btn{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:4px 10px;color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;transition:all 0.15s;flex-shrink:0;font-family:'Lato',sans-serif;}
+    .tts-speed-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .tts-close-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;padding:4px;transition:color 0.15s;flex-shrink:0;line-height:1;}
+    .tts-close-btn:hover{color:var(--text);}
+    .tts-voice-btn{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:4px 10px;color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;transition:all 0.15s;flex-shrink:0;font-family:'Lato',sans-serif;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .tts-voice-btn:hover{border-color:var(--accent);color:var(--accent);}
+    /* Nav TTS launch button */
+    .tts-launch-btn{background:none;border:1px solid var(--border);border-radius:7px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:15px;transition:all 0.2s;flex-shrink:0;}
+    .tts-launch-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .tts-launch-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(45,212,191,0.1);}
+    /* Sentence highlight */
+    .tts-highlight{background:color-mix(in srgb,var(--accent) 22%,transparent);border-radius:3px;transition:background 0.2s;}
+    /* Voice picker modal */
+    .tts-voice-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9000;display:none;align-items:flex-end;justify-content:center;padding-bottom:72px;}
+    .tts-voice-modal-backdrop.open{display:flex;}
+    .tts-voice-modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px 16px 0 0;width:100%;max-width:500px;max-height:60vh;overflow-y:auto;padding:20px;}
+    .tts-voice-modal-title{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+    .tts-voice-list{display:flex;flex-direction:column;gap:6px;}
+    .tts-voice-item{padding:10px 14px;border-radius:9px;border:1px solid var(--border);cursor:pointer;transition:all 0.15s;font-size:13px;color:var(--text2);display:flex;align-items:center;gap:10px;background:var(--bg3);}
+    .tts-voice-item:hover{border-color:var(--accent);color:var(--accent);}
+    .tts-voice-item.selected{border-color:var(--accent);background:rgba(45,212,191,0.1);color:var(--accent);font-weight:700;}
+    .tts-voice-lang{font-size:10px;color:var(--text3);margin-left:auto;flex-shrink:0;}
     @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
   .echo-remove-btn {
     flex-shrink:0;width:18px;height:18px;border-radius:50%;
@@ -508,6 +559,7 @@
           </div>
         </div>
       </div>
+      <button class="tts-launch-btn" id="tts-launch-btn" onclick="ttsToggleBar()" title="Text to Speech (listen to this chapter)"><i class="ti ti-headphones"></i></button>
       <a class="nav-icon-btn" id="nav-story-link" href="#" title="Back to story"><i class="ti ti-arrow-left"></i></a>
     </div>
   </nav>
@@ -657,7 +709,7 @@
     var activeParaIndex = null;
     var readingProgress = {};
 
-    function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
     // Sets the real page language so the reader's browser (Chrome/Edge built-in
     // translate, Safari Translate, etc.) correctly offers to translate foreign-
     // language stories instead of assuming everything is English.
@@ -736,7 +788,8 @@
       // Show a subtle "jump back" prompt
       var bar = document.createElement('div');
       bar.id = 'para-resume-bar';
-      bar.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:400;background:var(--bg2);border:1px solid var(--accent);border-radius:10px;padding:8px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,0.4);font-family:Lato,sans-serif;font-size:13px;color:var(--text);white-space:nowrap;';
+      var ttsOpen = document.body.classList.contains('tts-open');
+      bar.style.cssText = 'position:fixed;bottom:' + (ttsOpen ? '76px' : '24px') + ';left:50%;transform:translateX(-50%);z-index:550;background:var(--bg2);border:1px solid var(--accent);border-radius:10px;padding:8px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,0.4);font-family:Lato,sans-serif;font-size:13px;color:var(--text);white-space:nowrap;';
       bar.innerHTML = '<i class="ti ti-bookmark" style="color:var(--accent);"></i> Jump to where you left off ' +
         '<button style="background:var(--accent2);border:none;border-radius:7px;padding:4px 12px;color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:Lato,sans-serif;" id="para-resume-yes">Jump</button>' +
         '<button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:2px;" id="para-resume-no">×</button>';
@@ -973,8 +1026,8 @@
       showToast('Vote recorded!', 'ti-check');
 
       // ── VOTER BADGE ───────────────────────────────────────
-      // Only award on a new vote (myVote was null before this vote)
-      if (currentSession) {
+      // Only award on a new vote (myVote was null before this vote), not on updates
+      if (currentSession && state.myVote === null) {
         try {
           await db.rpc('award_poll_vote_badge', { p_user_id: currentSession.user.id });
         } catch(e) {} // non-critical
@@ -1041,6 +1094,8 @@
       // Don't fire if focus is in a text input/textarea/contenteditable
       var tag = document.activeElement ? document.activeElement.tagName : '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement.isContentEditable) return;
+      // Don't fire chapter nav when TTS bar is open — TTS has its own arrow handlers
+      if (document.body.classList.contains('tts-open')) return;
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         var idx = allChapters.findIndex(function(c){ return c.id === (chapterData && chapterData.id); });
         if (e.key === 'ArrowRight') {
@@ -1257,8 +1312,13 @@
 
     // ── READING PROGRESS ─────────────────────────────────────────
     function loadReadingProgress() {
-      var saved = localStorage.getItem('ds_reading_progress');
-      readingProgress = saved ? JSON.parse(saved) : {};
+      try {
+        var saved = localStorage.getItem('ds_reading_progress');
+        readingProgress = saved ? JSON.parse(saved) : {};
+      } catch(e) {
+        readingProgress = {};
+        try { localStorage.removeItem('ds_reading_progress'); } catch(e2) {}
+      }
     }
     function isChapterRead() {
       if (!workData || !chapterData) return false;
@@ -1402,7 +1462,8 @@
       // Find the previous chapter
       var prev = allChapters.find(function(c){ return c.chapter_number === chapter.chapter_number - 1; });
       if (!prev) return true;
-      return isChapterRead() || !!(readingProgress[workData.id] && readingProgress[workData.id][prev.id]);
+      // Unlocked only if the previous chapter has been read (not the current one)
+      return !!(readingProgress[workData.id] && readingProgress[workData.id][prev.id]);
     }
 
     // ── CHAPTER NAV ──────────────────────────────────────────────
@@ -2509,7 +2570,7 @@
       var pendingGif = window.CommentToolbar ? CommentToolbar.getPendingGif('chapter') : (_pendingGifUrl.chapter || null);
       var pendingImg = window.CommentToolbar ? CommentToolbar.getPendingImage('chapter') : null;
       if(!val && !pendingGif && !pendingImg) return;
-      var btn = document.querySelector('.comment-submit');
+      var btn = document.querySelector('#chapter-comment-form .comment-submit');
       if(btn){ btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i>'; }
 
       var insertData = { chapter_id: chapterData.id, user_id: currentSession.user.id, content: val };
@@ -4068,8 +4129,523 @@
       if (gbtn) gbtn.classList.remove('has-gif');
     }
 
+  // ── TEXT TO SPEECH ENGINE ────────────────────────────────────────────────
+  (function() {
+    // Guard: bail silently on browsers without SpeechSynthesis
+    if (!window.speechSynthesis) return;
+
+    // ── State ──────────────────────────────────────────────────────────────
+    var tts = {
+      sentences:    [],   // array of plain-text sentence strings
+      current:      0,    // index of sentence currently speaking
+      playing:      false,
+      paused:       false,
+      speed:        1,
+      speeds:       [0.75, 1, 1.25, 1.5, 1.75, 2],
+      speedIdx:     1,
+      voice:        null, // SpeechSynthesisVoice or null (system default)
+      voices:       [],
+      utterance:    null,
+      barOpen:      false,
+      chapterId:    null, // for localStorage position persistence
+    };
+
+    var SPEEDS        = tts.speeds;
+    var STORAGE_KEY   = 'ds_tts_prefs';
+    var POS_KEY_PFX   = 'ds_tts_pos_';
+
+    // ── Persist & restore preferences ─────────────────────────────────────
+    function savePrefs() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          speed:     tts.speed,
+          speedIdx:  tts.speedIdx,
+          voiceName: tts.voice ? tts.voice.name : null
+        }));
+      } catch(e) {}
+    }
+    function loadPrefs() {
+      try {
+        var p = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        if (p.speedIdx !== undefined) { tts.speedIdx = p.speedIdx; tts.speed = SPEEDS[tts.speedIdx] || 1; }
+        // Voice is restored after voices load
+        tts._savedVoiceName = p.voiceName || null;
+      } catch(e) {}
+    }
+    function savePosForChapter() {
+      if (!tts.chapterId) return;
+      try { localStorage.setItem(POS_KEY_PFX + tts.chapterId, String(tts.current)); } catch(e) {}
+    }
+    function loadPosForChapter() {
+      if (!tts.chapterId) return 0;
+      try { return parseInt(localStorage.getItem(POS_KEY_PFX + tts.chapterId) || '0', 10) || 0; } catch(e) { return 0; }
+    }
+
+    // ── Text extraction ────────────────────────────────────────────────────
+    // Splits the visible page content into sentences, wrapping each in a
+    // <span data-tts-idx="N"> so we can highlight them during playback.
+    function extractSentences() {
+      tts.sentences = [];
+      var content = document.getElementById('page-content');
+      if (!content) return;
+
+      // Walk text-containing elements; skip author notes, polls, UI chrome
+      var blocks = content.querySelectorAll('p, h1, h2, h3, blockquote, li');
+      blocks.forEach(function(block) {
+        // Get the raw text of just this block (strip child HTML)
+        var text = (block.innerText || block.textContent || '').trim();
+        if (!text) return;
+
+        // Split into sentences on . ! ? followed by space or end, keeping delimiter
+        // We use a simple but reliable regex that handles abbreviations poorly
+        // but is far better than no splitting at all.
+        var raw = text.replace(/([.!?…]+)\s+/g, '$1\n').split('\n');
+        raw.forEach(function(s) {
+          s = s.trim();
+          if (s.length < 3) return; // skip stray punctuation
+          tts.sentences.push(s);
+
+        });
+      });
+    }
+
+    // Highlights sentence at idx in the DOM by searching for its text in
+    // .para-wrap children (approximate match — good enough for this use case).
+    var _currentHighlightEl = null;
+    function highlightSentence(idx) {
+      // Remove previous highlight
+      if (_currentHighlightEl) {
+        _currentHighlightEl.classList.remove('tts-highlight');
+        _currentHighlightEl = null;
+      }
+      var sentence = tts.sentences[idx];
+      if (!sentence) return;
+
+      // Search all text nodes inside page-content for the sentence
+      var content = document.getElementById('page-content');
+      if (!content) return;
+      var blocks = content.querySelectorAll('p, h1, h2, h3, blockquote, li');
+      var found = null;
+      var sentLower = sentence.toLowerCase().slice(0, 60);
+      blocks.forEach(function(block) {
+        if (found) return;
+        var bt = (block.innerText || block.textContent || '').toLowerCase();
+        if (bt.indexOf(sentLower) !== -1) found = block;
+      });
+      if (found) {
+        // Wrap in a parent .para-wrap if possible, otherwise highlight the block itself
+        var target = found.closest ? (found.closest('.para-wrap') || found) : found;
+        target.classList.add('tts-highlight');
+        _currentHighlightEl = target;
+        // Scroll into view — offset so sticky nav and TTS bar don't cover it
+        var rect = target.getBoundingClientRect();
+        if (rect.top < 80 || rect.bottom > window.innerHeight - 90) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+
+    // ── Utterance builder ──────────────────────────────────────────────────
+    function buildUtterance(text) {
+      var u = new SpeechSynthesisUtterance(text);
+      u.rate  = tts.speed;
+      u.pitch = 1;
+      if (tts.voice) u.voice = tts.voice;
+      return u;
+    }
+
+    // ── Core play/speak ────────────────────────────────────────────────────
+    function speakCurrent() {
+      if (tts.current >= tts.sentences.length) {
+        // Reached end of page
+        ttsStop();
+        updateUI();
+        showTTSToast('End of page reached. Use Next Page to continue.', 'ti-player-stop-filled');
+        return;
+      }
+      var sentence = tts.sentences[tts.current];
+      window.speechSynthesis.cancel(); // cancel any previous
+
+      var u = buildUtterance(sentence);
+      tts.utterance = u;
+      tts.playing   = true;
+      tts.paused    = false;
+
+      u.onstart = function() {
+        highlightSentence(tts.current);
+        updateProgressBar();
+        updatePreview();
+        updatePlayBtn(true);
+      };
+      u.onend = function() {
+        if (!tts.playing) return; // was stopped
+        tts.current++;
+        savePosForChapter();
+        speakCurrent();
+      };
+      u.onerror = function(e) {
+        // 'interrupted' fires when we cancel() before starting the next — ignore it
+        if (e.error === 'interrupted' || e.error === 'canceled') return;
+        console.warn('TTS error:', e.error);
+        tts.playing = false;
+        updatePlayBtn(false);
+      };
+
+      window.speechSynthesis.speak(u);
+    }
+
+    // ── Public controls ────────────────────────────────────────────────────
+    window.ttsPlayPause = function() {
+      if (!tts.barOpen) return;
+      if (tts.sentences.length === 0) extractSentences();
+      if (tts.sentences.length === 0) { showTTSToast('No text found on this page.', 'ti-alert-triangle'); return; }
+
+      if (tts.playing && !tts.paused) {
+        // Pause
+        window.speechSynthesis.pause();
+        tts.paused  = true;
+        tts.playing = false;
+        updatePlayBtn(false);
+        if (_currentHighlightEl) _currentHighlightEl.classList.remove('tts-highlight');
+      } else if (tts.paused) {
+        // Resume
+        window.speechSynthesis.resume();
+        tts.paused  = false;
+        tts.playing = true;
+        updatePlayBtn(true);
+        highlightSentence(tts.current);
+      } else {
+        // Start fresh from current position
+        speakCurrent();
+      }
+    };
+
+    window.ttsPrevSentence = function() {
+      if (tts.current > 0) tts.current--;
+      window.speechSynthesis.cancel();
+      tts.playing = false; tts.paused = false;
+      updateUI();
+      if (tts.barOpen) speakCurrent();
+    };
+
+    window.ttsNextSentence = function() {
+      if (tts.current < tts.sentences.length - 1) tts.current++;
+      window.speechSynthesis.cancel();
+      tts.playing = false; tts.paused = false;
+      updateUI();
+      if (tts.barOpen) speakCurrent();
+    };
+
+    function ttsStop() {
+      window.speechSynthesis.cancel();
+      tts.playing   = false;
+      tts.paused    = false;
+      tts.utterance = null;
+      if (_currentHighlightEl) { _currentHighlightEl.classList.remove('tts-highlight'); _currentHighlightEl = null; }
+    }
+
+    window.ttsClose = function() {
+      ttsStop();
+      tts.barOpen = false;
+      tts.current = 0;
+      document.getElementById('tts-bar').classList.remove('open');
+      document.body.classList.remove('tts-open');
+      document.getElementById('tts-launch-btn').classList.remove('active');
+      updateUI();
+    };
+
+    window.ttsToggleBar = function() {
+      if (tts.barOpen) { window.ttsClose(); return; }
+      tts.barOpen = true;
+      // Sync chapter ID from global chapterData if available
+      if (window.chapterData && window.chapterData.id) {
+        tts.chapterId = window.chapterData.id;
+        tts.current   = loadPosForChapter();
+      }
+      extractSentences();
+      document.getElementById('tts-bar').classList.add('open');
+      document.body.classList.add('tts-open');
+      document.getElementById('tts-launch-btn').classList.add('active');
+      updateUI();
+      // Auto-play if pref is set
+      try {
+        var ap = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        if (ap.autoPlay && tts.sentences.length) speakCurrent();
+      } catch(e) {}
+    };
+
+    // ── Auto-play toggle ──────────────────────────────────────────────────
+    window.ttsToggleAutoPlay = function() {
+      try {
+        var p = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        p.autoPlay = !p.autoPlay;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+        var btn = document.getElementById('tts-autoplay-btn');
+        if (btn) {
+          btn.title = p.autoPlay ? 'Auto-play: ON (tap to turn off)' : 'Auto-play on open';
+          btn.style.borderColor = p.autoPlay ? 'var(--accent)' : '';
+          btn.style.color = p.autoPlay ? 'var(--accent)' : '';
+          btn.style.background = p.autoPlay ? 'rgba(45,212,191,0.1)' : '';
+        }
+        showTTSToast(p.autoPlay ? 'Auto-play ON' : 'Auto-play OFF', 'ti-player-play');
+      } catch(e) {}
+    };
+    // Restore auto-play button state on init
+    (function() {
+      try {
+        var p = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        if (p.autoPlay) {
+          setTimeout(function() {
+            var btn = document.getElementById('tts-autoplay-btn');
+            if (btn) { btn.style.borderColor='var(--accent)'; btn.style.color='var(--accent)'; btn.style.background='rgba(45,212,191,0.1)'; btn.title='Auto-play: ON (tap to turn off)'; }
+          }, 0);
+        }
+      } catch(e) {}
+    })();
+
+    // Re-extract sentences when page changes (multi-page chapters)
+    var _origRenderPage = null;
+    function hookRenderPage() {
+      if (window.renderPage && !window.renderPage._ttswrapped) {
+        _origRenderPage = window.renderPage;
+        window.renderPage = function(idx) {
+          _origRenderPage(idx);
+          if (tts.barOpen) {
+            // Small delay so DOM settles after innerHTML assignment
+            setTimeout(function() {
+              ttsStop();
+              tts.current = 0;
+              extractSentences();
+              updateUI();
+            }, 80);
+          }
+        };
+        window.renderPage._ttswrapped = true;
+      }
+    }
+    // Hook immediately if renderPage already exists, else wait for DOMContentLoaded
+    if (window.renderPage) { hookRenderPage(); }
+    document.addEventListener('DOMContentLoaded', hookRenderPage);
+    // Also re-hook after init() sets window.renderPage (chapter.html sets it late)
+    var _hookTimer = setInterval(function() {
+      if (window.renderPage && !window.renderPage._ttswrapped) { hookRenderPage(); clearInterval(_hookTimer); }
+    }, 200);
+    // Safety valve: clear the interval after 15s regardless (page should be loaded by then)
+    setTimeout(function() { clearInterval(_hookTimer); }, 15000);
+
+    // ── Speed cycling ──────────────────────────────────────────────────────
+    window.ttsCycleSpeed = function() {
+      tts.speedIdx = (tts.speedIdx + 1) % SPEEDS.length;
+      tts.speed    = SPEEDS[tts.speedIdx];
+      document.getElementById('tts-speed-btn').textContent = tts.speed + '×';
+      savePrefs();
+      // If currently playing, restart current sentence at new speed
+      if (tts.playing) {
+        window.speechSynthesis.cancel();
+        tts.playing = false;
+        speakCurrent();
+      }
+    };
+
+    // ── Scrub by clicking progress bar ────────────────────────────────────
+    window.ttsScrub = function(e) {
+      if (!tts.sentences.length) return;
+      var track = document.getElementById('tts-progress-track');
+      var pct   = Math.max(0, Math.min(1, e.offsetX / track.offsetWidth));
+      tts.current = Math.floor(pct * tts.sentences.length);
+      window.speechSynthesis.cancel();
+      tts.playing = false; tts.paused = false;
+      updateUI();
+      speakCurrent();
+    };
+
+    // ── Voice picker ───────────────────────────────────────────────────────
+    function loadVoices() {
+      tts.voices = window.speechSynthesis.getVoices();
+      if (!tts.voices.length) return;
+      // Restore saved voice
+      if (tts._savedVoiceName) {
+        var saved = tts.voices.find(function(v){ return v.name === tts._savedVoiceName; });
+        if (saved) tts.voice = saved;
+      }
+      // Update voice button label
+      updateVoiceBtn();
+    }
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    loadVoices(); // may already be available on Chrome
+
+    function updateVoiceBtn() {
+      var btn = document.getElementById('tts-voice-btn');
+      if (!btn) return;
+      if (tts.voice) {
+        // Show a short label — first word of voice name
+        btn.textContent = tts.voice.name.split(' ')[0];
+        btn.title = tts.voice.name;
+      } else {
+        btn.textContent = 'Voice';
+        btn.title = 'Choose voice';
+      }
+    }
+
+    window.ttsOpenVoicePicker = function() {
+      loadVoices();
+      var list = document.getElementById('tts-voice-list');
+      if (!list) return;
+      list.innerHTML = '';
+      // "Default" option
+      var defItem = document.createElement('div');
+      defItem.className = 'tts-voice-item' + (!tts.voice ? ' selected' : '');
+      defItem.innerHTML = '<i class="ti ti-device-speaker" style="color:var(--accent);font-size:14px;"></i> System Default';
+      defItem.addEventListener('click', function() {
+        tts.voice = null;
+        savePrefs(); updateVoiceBtn(); ttsCloseVoicePicker();
+      });
+      list.appendChild(defItem);
+
+      // Prioritise English voices at the top, then everything else
+      var sorted = tts.voices.slice().sort(function(a, b) {
+        var ae = a.lang.startsWith('en') ? 0 : 1;
+        var be = b.lang.startsWith('en') ? 0 : 1;
+        if (ae !== be) return ae - be;
+        return a.name.localeCompare(b.name);
+      });
+
+      sorted.forEach(function(v) {
+        var item = document.createElement('div');
+        item.className = 'tts-voice-item' + (tts.voice && tts.voice.name === v.name ? ' selected' : '');
+        item.innerHTML =
+          '<i class="ti ti-microphone" style="font-size:13px;color:var(--text3);"></i>' +
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + v.name + '</span>' +
+          '<span class="tts-voice-lang">' + v.lang + '</span>';
+        item.addEventListener('click', function() {
+          tts.voice = v;
+          savePrefs(); updateVoiceBtn(); ttsCloseVoicePicker();
+          if (tts.playing) { window.speechSynthesis.cancel(); tts.playing = false; speakCurrent(); }
+        });
+        list.appendChild(item);
+      });
+
+      document.getElementById('tts-voice-modal-backdrop').classList.add('open');
+    };
+
+    window.ttsCloseVoicePicker = function() {
+      document.getElementById('tts-voice-modal-backdrop').classList.remove('open');
+    };
+
+    // ── UI updates ─────────────────────────────────────────────────────────
+    function updatePlayBtn(playing) {
+      var btn  = document.getElementById('tts-play-btn');
+      if (!btn) return;
+      btn.innerHTML = playing
+        ? '<i class="ti ti-player-pause"></i>'
+        : '<i class="ti ti-player-play"></i>';
+      btn.title = playing ? 'Pause' : 'Play';
+    }
+
+    function updateProgressBar() {
+      var fill = document.getElementById('tts-progress-fill');
+      if (!fill || !tts.sentences.length) return;
+      var pct = Math.round((tts.current / tts.sentences.length) * 100);
+      fill.style.width = pct + '%';
+    }
+
+    function updatePreview() {
+      var el = document.getElementById('tts-preview');
+      if (!el) return;
+      var s = tts.sentences[tts.current];
+      el.textContent = s ? s.slice(0, 100) + (s.length > 100 ? '…' : '') : 'Ready to read…';
+    }
+
+    function updateUI() {
+      updatePlayBtn(tts.playing && !tts.paused);
+      updateProgressBar();
+      updatePreview();
+      document.getElementById('tts-speed-btn').textContent = tts.speed + '×';
+      var prevBtn = document.getElementById('tts-prev-btn');
+      var nextBtn = document.getElementById('tts-next-btn');
+      if (prevBtn) prevBtn.disabled = (tts.current <= 0);
+      if (nextBtn) nextBtn.disabled = (tts.current >= tts.sentences.length - 1);
+      // Sentence counter
+      var counter = document.getElementById('tts-counter');
+      if (counter) {
+        counter.textContent = tts.sentences.length
+          ? (tts.current + 1) + ' / ' + tts.sentences.length
+          : '';
+      }
+    }
+
+    // ── Toast helper (uses chapter page's own toast) ───────────────────────
+    function showTTSToast(msg, icon) {
+      if (window.showToast) { window.showToast(msg, icon || 'ti-headphones'); return; }
+      // Fallback if showToast not available yet
+      var t = document.getElementById('toast');
+      if (!t) return;
+      document.getElementById('toast-msg').textContent = msg;
+      t.querySelector('i').className = 'ti ' + (icon || 'ti-headphones');
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 2800);
+    }
+
+    // ── Keyboard shortcuts for TTS ─────────────────────────────────────────
+    document.addEventListener('keydown', function(e) {
+      if (!tts.barOpen) return;
+      var tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); window.ttsPlayPause(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); window.ttsNextSentence(); }
+      else if (e.key === 'ArrowLeft')  { e.preventDefault(); window.ttsPrevSentence(); }
+      else if (e.key === 'Escape')     { window.ttsClose(); }
+    });
+
+    // Stop speech when the user navigates away
+    window.addEventListener('beforeunload', function() {
+      window.speechSynthesis.cancel();
+    });
+    // Safari/iOS: speech synthesis pauses on background tab — auto-resume
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden && tts.playing && !tts.paused) {
+        // iOS sometimes pauses the synth on tab switch
+        if (!window.speechSynthesis.speaking) speakCurrent();
+      }
+    });
+
+    // ── Init ───────────────────────────────────────────────────────────────
+    loadPrefs();
+    updateUI();
+
+  })(); // end TTS IIFE
 
   </script>
+  <!-- TTS BAR -->
+  <div id="tts-bar">
+    <div class="tts-inner">
+      <button class="tts-btn" id="tts-prev-btn" onclick="ttsPrevSentence()" title="Previous sentence" disabled><i class="ti ti-player-skip-back"></i></button>
+      <button class="tts-btn primary" id="tts-play-btn" onclick="ttsPlayPause()" title="Play / Pause"><i class="ti ti-player-play"></i></button>
+      <button class="tts-btn" id="tts-next-btn" onclick="ttsNextSentence()" title="Next sentence" disabled><i class="ti ti-player-skip-forward"></i></button>
+      <div class="tts-progress-wrap">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <div class="tts-sentence-preview" id="tts-preview" style="flex:1;">Ready to read…</div>
+          <div id="tts-counter" style="font-size:10px;color:var(--text3);font-weight:700;white-space:nowrap;flex-shrink:0;"></div>
+        </div>
+        <div class="tts-progress-track" id="tts-progress-track" onclick="ttsScrub(event)" title="Click to jump">
+          <div class="tts-progress-fill" id="tts-progress-fill"></div>
+        </div>
+      </div>
+      <button class="tts-speed-btn" id="tts-speed-btn" onclick="ttsCycleSpeed()" title="Playback speed">1×</button>
+      <button class="tts-voice-btn" id="tts-voice-btn" onclick="ttsOpenVoicePicker()" title="Choose voice">Voice</button>
+      <button class="tts-btn" id="tts-autoplay-btn" onclick="ttsToggleAutoPlay()" title="Auto-play on open"><i class="ti ti-player-play"></i></button>
+      <button class="tts-close-btn" onclick="ttsClose()" title="Close TTS">✕</button>
+    </div>
+  </div>
+
+  <!-- TTS VOICE PICKER -->
+  <div class="tts-voice-modal-backdrop" id="tts-voice-modal-backdrop" onclick="if(event.target===this)ttsCloseVoicePicker()">
+    <div class="tts-voice-modal">
+      <div class="tts-voice-modal-title"><i class="ti ti-microphone" style="color:var(--accent);"></i> Choose a Voice</div>
+      <div class="tts-voice-list" id="tts-voice-list"></div>
+    </div>
+  </div>
+
   <!-- GIF PICKER MODAL -->
   <div class="gif-modal-overlay" id="gif-modal-overlay">
     <div class="gif-modal">

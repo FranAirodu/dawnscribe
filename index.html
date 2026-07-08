@@ -1668,8 +1668,14 @@
         });
         var workIds = [...new Set(res.data.map(function(r){ return r.work_id; }))];
         var worksRes = await db.from('works').select('id,title,cover_url,author_id,chapters_count,content_rating_gore,content_rating_erotica').in('id', workIds).eq('is_published', true);
+        // Apply content filters to reading history too
+        var _rhcf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
         var workMap = {};
-        (worksRes.data||[]).forEach(function(w){ workMap[w.id] = w; });
+        (worksRes.data||[]).forEach(function(w){
+          if((_rhcf.safe||_rhcf.gore) && w.content_rating_gore===true) return;
+          if((_rhcf.safe||_rhcf.erotica) && w.content_rating_erotica===true) return;
+          workMap[w.id] = w;
+        });
         var authorIds = [...new Set((worksRes.data||[]).map(function(w){ return w.author_id; }).filter(Boolean))];
         var profMap = {};
         if (authorIds.length) {
@@ -1719,8 +1725,9 @@
 
     async function loadSidebarCollabs(){
       var feed = document.getElementById('sidebar-feed-collabs');
+      if (!feed) return;
       feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div>';
-
+      try {
       // Fetch recently approved story collabs (novel written for artwork)
       var { data: storyCollabs } = await db.from('artwork_collabs')
         .select('id, artwork_id, work_id, author_id')
@@ -1769,11 +1776,12 @@
       feed.innerHTML = '';
 
       // Render story collabs (novel × artwork)
+      // artwork_collabs.author_id is the artist/submitter; the novelist is the novel's author_id
       (storyCollabs||[]).forEach(function(collab){
         var novel = workMap[collab.work_id] || {};
         var artwork = workMap[collab.artwork_id] || {};
-        var author = profMap[collab.author_id] || {};
-        var artist = profMap[artwork.author_id] || {};
+        var author = profMap[novel.author_id] || {};
+        var artist = profMap[collab.author_id] || {};
         var authorName = author.display_name || author.username || 'Author';
         var artistName = artist.display_name || artist.username || 'Artist';
         var el = document.createElement('div');
@@ -1781,7 +1789,7 @@
         el.style.borderColor = 'rgba(245,158,11,0.2)';
         el.innerHTML =
           (novel.cover_url
-            ? '<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid rgba(245,158,11,0.3);"><img src="'+esc(novel.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" alt=""/></div>'
+            ? '<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid rgba(245,158,11,0.3);"><img src="'+esc(novel.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" loading="lazy" alt=""/></div>'
             : '<div class="collab-cover" style="background:rgba(245,158,11,0.1);color:#f59e0b;font-size:20px;">✍</div>')
           + '<div class="collab-body">'
             + '<div style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#f59e0b;margin-bottom:4px;"><i class="ti ti-writing"></i> Collab Story</div>'
@@ -1807,7 +1815,7 @@
         el.style.borderColor = 'color-mix(in srgb, '+(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#2dd4bf')+' 20%, transparent)';
         el.innerHTML =
           (collab.image_url
-            ? '<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);"><img src="'+esc(collab.image_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" alt=""/></div>'
+            ? '<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);"><img src="'+esc(collab.image_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" loading="lazy" alt=""/></div>'
             : '<div class="collab-cover" style="background:color-mix(in srgb, var(--accent) 8%, transparent);color:var(--accent);font-size:20px;">🎨</div>')
           + '<div class="collab-body">'
             + '<div style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#f59e0b;margin-bottom:4px;"><i class="ti ti-palette"></i> Collab Art</div>'
@@ -1819,6 +1827,9 @@
           + '</div>';
         feed.appendChild(el);
       });
+      } catch(e) {
+        if (feed) feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">Could not load collabs.</div>';
+      }
     }
 
     async function loadSidebarComments(){
@@ -1894,11 +1905,11 @@
         var userHandle=user?(user.username||''):'';
         var workTitle=work?work.title:'Unknown';
         var workType=cm._src==='artwork'?'art':'novel';
-        var destUrl=cm._src==='artwork'?'artwork.html?id='+cm.work_id:'story.html?id='+cm.work_id;
+        var destUrl=cm._src==='artwork'?'artwork.html?id='+cm.work_id:(cm.chapter_id?'chapter.html?id='+cm.chapter_id:'story.html?id='+cm.work_id);
 
         // Work cover or color block
         var coverHtml = work && work.cover_url
-          ? '<img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;" alt=""/>'
+          ? '<img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy" alt=""/>'
           : esc(coverLetter(workTitle));
         var coverClass = work && work.cover_url ? '' : ' '+coverColor(cm.work_id||cm.id);
 
@@ -1928,15 +1939,22 @@
       var res = await db.from('chapters')
         .select('id,chapter_number,title,created_at,work_id')
         .eq('status','published')
-        .order('created_at',{ascending:false}).limit(6);
+        .order('created_at',{ascending:false}).limit(12);
       if(!res.data||!res.data.length){
         feed.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No updates yet.</div>';
         return;
       }
       // Fetch works + authors separately
       var suWorkIds=[...new Set(res.data.map(function(c){return c.work_id;}))];
-      var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id,is_published').in('id',suWorkIds);
-      var suWorkMap={};(suWorks||[]).forEach(function(w){if(w.is_published)suWorkMap[w.id]=w;});
+      var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id,is_published,content_rating_gore,content_rating_erotica').in('id',suWorkIds);
+      // Apply content filters (same safe-default logic as other rows)
+      var _ucf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
+      var suWorkMap={};(suWorks||[]).forEach(function(w){
+        if(!w.is_published) return;
+        if((_ucf.safe||_ucf.gore) && w.content_rating_gore===true) return;
+        if((_ucf.safe||_ucf.erotica) && w.content_rating_erotica===true) return;
+        suWorkMap[w.id]=w;
+      });
       res.data=res.data.filter(function(ch){return !!suWorkMap[ch.work_id];});
       if(!res.data.length){
         feed.innerHTML='<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">No updates yet.</div>';
@@ -1962,7 +1980,7 @@
         el.innerHTML=
           (work && work.cover_url
             ? '<div class="update-cover" style="padding:0;overflow:hidden;position:relative;">'+
-                '<img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" alt=""/>'+
+                '<img src="'+esc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:6px;" loading="lazy" alt=""/>'+
                 (prof && prof.avatar_url ? '<div class="comment-thumb-avatar"><img src="'+esc(prof.avatar_url)+'" alt=""/></div>' : '')+
               '</div>'
             : '<div class="update-cover '+coverColor(ch.work_id)+'" style="position:relative;">'+esc(coverLetter(title))+
@@ -2376,7 +2394,7 @@
         var sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
         var { data: works } = await db.from('works')
           .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,content_warnings,spark_count_week')
-          .eq('type','novel').eq('is_published',true).order('created_at',{ascending:false}).limit(60);
+          .eq('type','novel').eq('is_published',true).order('spark_count_week',{ascending:false}).limit(60);
         if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Nothing trending yet.</div>'; return; }
         var workIds = works.map(function(w){ return w.id; });
@@ -2385,28 +2403,31 @@
         var scores = {};
         workIds.forEach(function(id){ scores[id] = 0; });
 
-        // Follows in window (work_follows has work_id + created_at)
-        var { data: recentFollows } = await db.from('work_follows').select('work_id,created_at').in('work_id', workIds).gte('created_at', sevenDaysAgo);
-        (recentFollows||[]).forEach(function(f){ if(scores[f.work_id]!==undefined) scores[f.work_id] += 2; });
+        // Fire all 3 signal queries in parallel for speed
+        var [trFollowsRes, trChapsRes, trOfferingsRes] = await Promise.all([
+          db.from('work_follows').select('work_id,created_at').in('work_id', workIds).gte('created_at', sevenDaysAgo),
+          db.from('chapters').select('id,work_id').in('work_id', workIds),
+          db.from('work_offerings').select('work_id,created_at').in('work_id', workIds).gte('created_at', sevenDaysAgo)
+        ]);
 
-        // Chapter comments in window — chapter_comments has NO work_id column
-        // (verified against schema), so resolve chapter → work via chapters.
-        var { data: trChaps } = await db.from('chapters').select('id,work_id').in('work_id', workIds);
-        var trChapMap = {}; (trChaps||[]).forEach(function(ch){ trChapMap[ch.id] = ch.work_id; });
-        var trChapIds = (trChaps||[]).map(function(ch){ return ch.id; });
+        // Follows in window (+2 each)
+        (trFollowsRes.data||[]).forEach(function(f){ if(scores[f.work_id]!==undefined) scores[f.work_id] += 2; });
+
+        // Chapter comments in window — chapter_comments has NO work_id column,
+        // so resolve chapter → work via the chapters result we already fetched.
+        var trChapMap = {}; (trChapsRes.data||[]).forEach(function(ch){ trChapMap[ch.id] = ch.work_id; });
+        var trChapIds = (trChapsRes.data||[]).map(function(ch){ return ch.id; });
         if (trChapIds.length) {
           var { data: recentComments } = await db.from('chapter_comments').select('chapter_id,created_at').in('chapter_id', trChapIds).gte('created_at', sevenDaysAgo);
           (recentComments||[]).forEach(function(cm){ var wid = trChapMap[cm.chapter_id]; if(wid && scores[wid]!==undefined) scores[wid] += 2; });
         }
 
-        // Sparks of Dawn as a trending signal — spark_count_week already
-        // accumulates on works (resets Mondays via pg_cron), zero extra queries.
+        // Sparks of Dawn — spark_count_week accumulates on works (resets Mondays via pg_cron).
         // Capped so one viral spark-storm can't drown out follows/comments.
         works.forEach(function(w){ if(w.spark_count_week > 0 && scores[w.id]!==undefined) scores[w.id] += Math.min(10, w.spark_count_week); });
 
-        // Offerings as a light trending signal too (1pt each, all-time count proxy since we don't have a date column requirement beyond creation)
-        var { data: recentOfferings } = await db.from('work_offerings').select('work_id,created_at').in('work_id', workIds).gte('created_at', sevenDaysAgo);
-        (recentOfferings||[]).forEach(function(o){ if(scores[o.work_id]!==undefined) scores[o.work_id] += 1; });
+        // Offerings (+1 each)
+        (trOfferingsRes.data||[]).forEach(function(o){ if(scores[o.work_id]!==undefined) scores[o.work_id] += 1; });
 
         var ranked = works.filter(function(w){ return scores[w.id] > 0; })
           .sort(function(a,b){ return scores[b.id] - scores[a.id]; })
@@ -2438,7 +2459,8 @@
         if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">No new rising stories yet.</div>'; return; }
         var workIds = works.map(function(w){ return w.id; });
-        var { data: follows } = await db.from('work_follows').select('work_id').in('work_id', workIds);
+        // Use date-windowed follows for true velocity (recent follows per day, not all-time)
+        var { data: follows } = await db.from('work_follows').select('work_id,created_at').in('work_id', workIds).gte('created_at', thirtyDaysAgo);
         var followCounts = {}; (follows||[]).forEach(function(f){ followCounts[f.work_id] = (followCounts[f.work_id]||0) + 1; });
         works.forEach(function(w){
           var ageMs = Date.now() - new Date(w.created_at).getTime();
@@ -2464,7 +2486,7 @@
       try {
         var { data: works } = await db.from('works')
           .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
-          .eq('type','novel').eq('is_published',true).order('created_at',{ascending:false}).limit(80);
+          .eq('type','novel').eq('is_published',true).order('rating',{ascending:false}).limit(80);
         if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Nothing here yet.</div>'; return; }
         var workIds = works.map(function(w){ return w.id; });
@@ -2516,8 +2538,10 @@
       var track = document.getElementById('track-rally');
       if (!track) return;
       try {
+        // Ideally this aggregation would be an RPC; for now we fetch open rallies and count client-side.
+        // Limited to 500 rows to avoid huge payloads; popular works will still surface.
         var { data: rallies } = await db.from('chapter_rallies')
-          .select('work_id').is('fulfilled_at', null).limit(1000);
+          .select('work_id').is('fulfilled_at', null).limit(500);
         var counts = {};
         (rallies||[]).forEach(function(r){ if(r.work_id) counts[r.work_id] = (counts[r.work_id]||0) + 1; });
         var rallyIds = Object.keys(counts);
@@ -2570,7 +2594,7 @@
         var { data: pool } = await db.from('works')
           .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
           .eq('type','novel').eq('is_published',true)
-          .order('created_at',{ascending:false}).limit(80);
+          .order('rating',{ascending:false}).limit(120);
         var matches = (pool||[]).filter(function(w){
           if (readIds.indexOf(w.id) !== -1) return false;   // already read
           if (uid && w.author_id === uid) return false;      // own work
@@ -2613,6 +2637,14 @@
           .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica')
           .in('id', listIds).eq('is_published', true);
         if (!works || !works.length) return;
+        // Apply content filters so opted-out content doesn't appear in the reading list row
+        var _rlcf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
+        works = works.filter(function(w){
+          if ((_rlcf.safe||_rlcf.gore) && w.content_rating_gore===true) return false;
+          if ((_rlcf.safe||_rlcf.erotica) && w.content_rating_erotica===true) return false;
+          return true;
+        });
+        if (!works.length) return;
         // Preserve the list's recency order (works come back unordered)
         var orderMap = {}; listIds.forEach(function(id, i){ orderMap[id] = i; });
         works.sort(function(a,b){ return orderMap[a.id] - orderMap[b.id]; });
@@ -2645,6 +2677,7 @@
         // Cover image
         var cover = document.createElement('div');
         cover.className = 'mini-cover ' + coverColor(mapped.id);
+        cover.style.position = 'relative'; // set once; badges/badges reference it
         if(mapped.cover){
           cover.style.backgroundImage = 'url('+esc(mapped.cover)+')';
           cover.style.backgroundSize = 'cover';
@@ -2660,7 +2693,6 @@
           var collabBadge = document.createElement('div');
           collabBadge.className = 'collab-badge';
           collabBadge.innerHTML = '<i class="ti ti-users"></i> Collab';
-          cover.style.position = 'relative';
           cover.appendChild(collabBadge);
         }
 
@@ -2669,7 +2701,6 @@
           var wildcardBadge = document.createElement('div');
           wildcardBadge.className = 'wildcard-badge';
           wildcardBadge.innerHTML = '<i class="ti ti-cards"></i> Wild Card';
-          cover.style.position = 'relative';
           cover.appendChild(wildcardBadge);
         }
 
@@ -2678,7 +2709,6 @@
           var badge = document.createElement('div');
           badge.className = 'cover-card-chapter-badge';
           badge.innerHTML = '<i class="ti ti-bookmark"></i> Ch.' + mapped.chapterNumber;
-          cover.style.position = 'relative';
           cover.appendChild(badge);
         }
 
@@ -2687,14 +2717,12 @@
           var cntBadge = document.createElement('div');
           cntBadge.className = 'cover-card-chapter-badge';
           cntBadge.innerHTML = '<i class="ti ti-books"></i> Ch.' + mapped.chaptersCount;
-          cover.style.position = 'relative';
           cover.appendChild(cntBadge);
         }
 
         // Content rating badge (novels only — bottom-right corner)
         if(mapped.contentRatingErotica || mapped.contentRatingGore){
           var ratingBadge = document.createElement('div');
-          cover.style.position = 'relative';
           if(mapped.contentRatingErotica){
             ratingBadge.className = 'content-rating-badge rating-erotica';
             ratingBadge.innerHTML = '<i class="ti ti-heart"></i> 18+';
@@ -3201,8 +3229,10 @@
           .ilike('title', '%' + q + '%')
           .eq('type', 'novel')
           .eq('is_published', true)
-          .limit(4);
+          .limit(5);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No titles found.'); return; }
+        var hasMore = data.length === 5;
+        data = data.slice(0, 4);
         var authorIds = data.map(function(w){ return w.author_id; }).filter(Boolean);
         var profileMap = {};
         if (authorIds.length) {
@@ -3224,7 +3254,7 @@
             + '<div class="search-preview-sub">by ' + esc(author) + '</div>'
             + '</div></a>';
         });
-        if (data.length === 4) {
+        if (hasMore) {
           html += '<button class="search-preview-more" onclick="srchGoTo(&apos;titles&apos;,document.getElementById(&apos;srch-titles&apos;).value)">See all results &rarr;</button>';
         }
         document.getElementById(previewId).innerHTML = html;
@@ -3242,11 +3272,13 @@
         var { data, error } = await db.from('profiles')
           .select('id, username, display_name, avatar_url, role')
           .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
-          .limit(4);
+          .limit(5);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No authors found.'); return; }
-        // Suggestion 3: filter out blocked users using the already-loaded block list
+        // Filter out blocked users using the already-loaded block list
         data = data.filter(function(p){ return !isHiddenAuthor(p.id); });
         if (!data.length) { srchShowEmpty(previewId, 'No authors found.'); return; }
+        var hasMoreAuthors = data.length === 5;
+        data = data.slice(0, 4);
         var html = '<div class="search-preview-label">Authors</div>';
         data.forEach(function(p) {
           var name = p.display_name || p.username;
@@ -3261,7 +3293,7 @@
             + '<div class="search-preview-sub">@' + esc(p.username) + '</div>'
             + '</div></a>';
         });
-        if (data.length === 4) {
+        if (hasMoreAuthors) {
           html += '<button class="search-preview-more" onclick="srchGoTo(&apos;authors&apos;,document.getElementById(&apos;srch-authors&apos;).value)">See all results &rarr;</button>';
         }
         document.getElementById(previewId).innerHTML = html;
@@ -3281,8 +3313,10 @@
           .ilike('title', '%' + q + '%')
           .eq('type', 'artwork')
           .eq('is_published', true)
-          .limit(4);
+          .limit(5);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No artwork found.'); return; }
+        var hasMoreArtwork = data.length === 5;
+        data = data.slice(0, 4);
         var authorIds = data.map(function(w){ return w.author_id; }).filter(Boolean);
         var profileMap = {};
         if (authorIds.length) {
@@ -3301,7 +3335,7 @@
             + '<div class="search-preview-sub">by ' + esc(artist) + '</div>'
             + '</div></a>';
         });
-        if (data.length === 4) {
+        if (hasMoreArtwork) {
           html += '<button class="search-preview-more" onclick="srchGoTo(&apos;artwork&apos;,document.getElementById(&apos;srch-artwork&apos;).value)">See all results &rarr;</button>';
         }
         document.getElementById(previewId).innerHTML = html;
@@ -3320,11 +3354,13 @@
           .select('id, username, display_name, avatar_url, role')
           .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
           .ilike('role', '%Artist%')
-          .limit(4);
+          .limit(5);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No artists found.'); return; }
-        // Suggestion 3: filter blocked artists
+        // Filter blocked artists
         data = data.filter(function(p){ return !isHiddenAuthor(p.id); });
         if (!data.length) { srchShowEmpty(previewId, 'No artists found.'); return; }
+        var hasMoreArtists = data.length === 5;
+        data = data.slice(0, 4);
         var html = '<div class="search-preview-label">Artists</div>';
         data.forEach(function(p) {
           var name = p.display_name || p.username;
@@ -3337,7 +3373,7 @@
             + '<div class="search-preview-sub">@' + esc(p.username) + '</div>'
             + '</div></a>';
         });
-        if (data.length === 4) {
+        if (hasMoreArtists) {
           html += '<button class="search-preview-more" onclick="srchGoTo(&apos;artists&apos;,document.getElementById(&apos;srch-artists&apos;).value)">See all results &rarr;</button>';
         }
         document.getElementById(previewId).innerHTML = html;
@@ -3370,7 +3406,10 @@
           var thumb = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt=""/>' : '<span>' + letter + '</span>';
           html += '<a class="search-preview-item" href="story.html?id=' + w.id + '">'
             + '<div class="search-preview-thumb" style="background:' + srchCoverColor(w.id) + ';">' + thumb + '</div>'
-            + '<div class="search-preview-info"><div class="search-preview-title">' + esc(w.title) + '</div></div></a>';
+            + '<div class="search-preview-info">'
+            + '<div class="search-preview-title">' + esc(w.title) + '</div>'
+            + '<div class="search-preview-sub" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;"><span style="background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);border-radius:4px;padding:0 5px;font-size:10px;font-weight:700;"><i class="ti ti-tag" style="font-size:9px;"></i> ' + esc(q) + '</span></div>'
+            + '</div></a>';
         });
         document.getElementById(previewId).innerHTML = html;
         document.getElementById(previewId).classList.add('visible');
@@ -3432,7 +3471,6 @@
       }
       var notifWrap = document.querySelector('.notif-wrap');
       if (notifWrap && !notifWrap.contains(e.target)) { document.getElementById('notifDropdown').classList.remove('open'); }
-      var dmWrap = document.querySelector('.dm-wrap');
       var userNavWrap = document.querySelector('.user-nav-wrap');
       if (userNavWrap && !userNavWrap.contains(e.target)) { document.getElementById('user-dropdown').classList.remove('open'); }
     });
@@ -4015,7 +4053,7 @@
         // Seed nav from session metadata immediately (no flicker)
         var meta = session.user.user_metadata || {};
         var username = meta.username || null;
-        var displayName = meta.display_name || username || session.user.email.split('@')[0];
+        var displayName = meta.display_name || username || (session.user.email || '').split('@')[0] || 'User';
         document.getElementById('dd-display-name').textContent = displayName;
         document.getElementById('dd-handle').textContent = username ? '@' + username : session.user.email;
         document.getElementById('user-avatar-initial').textContent = displayName.charAt(0).toUpperCase();
@@ -4222,6 +4260,7 @@
 
     function openShowcase(){
       scTags = []; scCollabWorkId = null; scImageFile = null;
+      if(scSearchTimer){ clearTimeout(scSearchTimer); scSearchTimer = null; }
       document.getElementById('sc-title').value = '';
       document.getElementById('sc-flavor').value = '';
       document.getElementById('sc-inspiration').value = '';
@@ -4255,11 +4294,16 @@
     });
 
     // Image upload
-    document.getElementById('sc-file-input').addEventListener('change', function(){
-      var file = this.files[0];
+    function scHandleImageFile(file) {
       if(!file) return;
       if(file.size > 8*1024*1024){
         document.getElementById('sc-image-hint').textContent = 'File is too large. Max 8MB.';
+        document.getElementById('sc-image-hint').style.display = 'block';
+        return;
+      }
+      var SAFE_IMG_EXTS = ['image/png','image/jpeg','image/webp','image/gif'];
+      if(!SAFE_IMG_EXTS.includes(file.type)){
+        document.getElementById('sc-image-hint').textContent = 'Unsupported file type. Please upload a PNG, JPG, WebP, or GIF.';
         document.getElementById('sc-image-hint').style.display = 'block';
         return;
       }
@@ -4274,6 +4318,30 @@
         document.getElementById('sc-upload-zone').classList.add('has-image');
       };
       reader.readAsDataURL(file);
+    }
+
+    document.getElementById('sc-file-input').addEventListener('change', function(){
+      scHandleImageFile(this.files[0]);
+    });
+
+    // Drag-and-drop support on the upload zone
+    var scUploadZone = document.getElementById('sc-upload-zone');
+    scUploadZone.addEventListener('dragover', function(e){
+      e.preventDefault(); e.stopPropagation();
+      this.style.borderColor = 'var(--accent)';
+      this.style.background = 'color-mix(in srgb, var(--accent) 6%, transparent)';
+    });
+    scUploadZone.addEventListener('dragleave', function(e){
+      e.preventDefault(); e.stopPropagation();
+      this.style.borderColor = '';
+      this.style.background = '';
+    });
+    scUploadZone.addEventListener('drop', function(e){
+      e.preventDefault(); e.stopPropagation();
+      this.style.borderColor = '';
+      this.style.background = '';
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if(file) scHandleImageFile(file);
     });
 
     // Tags

@@ -3,10 +3,34 @@
 <head>
   <script>
     (function() { var t = localStorage.getItem('ds_theme'); if (t) document.documentElement.setAttribute('data-theme', t); })();
+    (function() {
+      var h = localStorage.getItem('ds_accent_hex');
+      if (!h) return;
+      var d = h.replace('#','');
+      var r = Math.max(0, parseInt(d.slice(0,2),16) - 30);
+      var g = Math.max(0, parseInt(d.slice(2,4),16) - 30);
+      var b = Math.max(0, parseInt(d.slice(4,6),16) - 30);
+      var h2 = '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
+      var s = document.createElement('style');
+      s.id = 'ds-accent-override';
+      s.textContent = ':root{--accent:'+h+' !important;--accent2:'+h2+' !important;}html[data-theme="light"]{--accent:'+h+' !important;--accent2:'+h2+' !important;}';
+      document.head.appendChild(s);
+    })();
   </script>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DawnScribe — Story</title>
+  <!-- Open Graph — updated dynamically once story data loads -->
+  <meta property="og:site_name" content="DawnScribe"/>
+  <meta property="og:type" content="book"/>
+  <meta property="og:title" id="og-title" content="DawnScribe — Story"/>
+  <meta property="og:description" id="og-description" content="Read on DawnScribe — a home for stories, art, and the people who love them."/>
+  <meta property="og:image" id="og-image" content=""/>
+  <meta property="og:url" id="og-url" content=""/>
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:title" id="tw-title" content="DawnScribe — Story"/>
+  <meta name="twitter:description" id="tw-description" content="Read on DawnScribe."/>
+  <meta name="twitter:image" id="tw-image" content=""/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="spoilerUtils.js"></script>
   <script src="translateHint.js"></script>
@@ -193,7 +217,7 @@
     .glossary-edit-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
     .glossary-edit-grid{display:flex;flex-direction:column;gap:8px;}
     .glossary-edit-top{display:flex;gap:8px;flex-wrap:wrap;}
-    .glossary-edit-row input,.glossary-edit-row textarea{background:var(--input-bg,var(--card));border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text);font-family:inherit;transition:border-color .15s;}
+    .glossary-edit-row input,.glossary-edit-row textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text);font-family:inherit;transition:border-color .15s;}
     .glossary-edit-row input:focus,.glossary-edit-row textarea:focus{outline:none;border-color:color-mix(in srgb, var(--accent) 55%, transparent);}
     .glossary-edit-row input{flex:1;min-width:140px;}
     .glossary-edit-row textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:56px;}
@@ -756,7 +780,7 @@
     var synopsisExpanded = false;
 
     // ── HELPERS ──────────────────────────────────────────────────
-    function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
     // ── LINKED TRANSLATIONS ─────────────────────────────────────────
     async function loadLinkedTranslations() {
@@ -846,8 +870,13 @@
 
     // ── LOAD READING PROGRESS ────────────────────────────────────
     function loadReadingProgress() {
-      var saved = localStorage.getItem('ds_reading_progress');
-      readProgress = saved ? JSON.parse(saved) : {};
+      try {
+        var saved = localStorage.getItem('ds_reading_progress');
+        readProgress = saved ? JSON.parse(saved) : {};
+      } catch(e) {
+        readProgress = {};
+        try { localStorage.removeItem('ds_reading_progress'); } catch(e2) {}
+      }
     }
     function getChaptersRead(workId) {
       if (!readProgress[workId]) return 0;
@@ -907,7 +936,7 @@
 
     // ── RENDER WORK ──────────────────────────────────────────────
     function renderWork(work, authors) {
-      document.title = 'DawnScribe — ' + work.title;
+      document.title = work.title + ' — DawnScribe';
 
       // Banner
       // If this is an artwork, redirect to artwork.html instead
@@ -939,6 +968,21 @@
 
       // Title
       document.getElementById('story-title').textContent = work.title;
+      document.title = work.title + ' — DawnScribe';
+      // Update Open Graph / Twitter Card meta for link previews
+      (function() {
+        var pageUrl = 'https://www.dawnscribe.com/story.html?id=' + work.id;
+        var desc = (work.synopsis || '').slice(0, 200) || 'Read on DawnScribe — a home for stories, art, and the people who love them.';
+        var img = work.cover_url || '';
+        var setMeta = function(id, val) { var el = document.getElementById(id); if (el) el.setAttribute('content', val); };
+        setMeta('og-title',        work.title + ' — DawnScribe');
+        setMeta('og-description',  desc);
+        setMeta('og-image',        img);
+        setMeta('og-url',          pageUrl);
+        setMeta('tw-title',        work.title + ' — DawnScribe');
+        setMeta('tw-description',  desc);
+        setMeta('tw-image',        img);
+      })();
 
       // Authors
       var authorRow = document.getElementById('story-author-row');
@@ -1052,6 +1096,8 @@
         '<div class="info-row"><span class="info-label">Status</span>' + statusValueHtml + '</div>' +
         '<div class="info-row"><span class="info-label">Type</span><span class="info-value">' + (work.is_fanfiction ? 'Fanfiction' : 'Original') + '</span></div>' +
         '<div class="info-row"><span class="info-label">Language</span><span class="info-value">' + escHtml(getLanguageName(work.language)) + '</span></div>' +
+        '<div class="info-row"><span class="info-label">Words</span><span class="info-value" id="sidebar-word-count">—</span></div>' +
+        '<div class="info-row"><span class="info-label">Chapters</span><span class="info-value" id="sidebar-chapter-count">—</span></div>' +
         '<div class="info-row"><span class="info-label">Published</span><span class="info-value">' + formatDate(work.created_at) + '</span></div>' +
         '<div class="info-row"><span class="info-label">Updated</span><span class="info-value">' + formatDate(work.updated_at || work.created_at) + '</span></div>' +
         noticeHtml;
@@ -1105,7 +1151,7 @@
         item.innerHTML =
           '<div class="chapter-num">Ch.' + ch.chapter_number + '</div>' +
           '<div class="chapter-info">' +
-            '<div class="chapter-name">' + escHtml(ch.title) + (isNew && unlocked ? '<span class="chapter-new">NEW</span>' : '') + '</div>' +
+            '<div class="chapter-name">' + escHtml(ch.title) + (isNew && unlocked && !isRead ? '<span class="chapter-new">NEW</span>' : '') + '</div>' +
             '<div class="chapter-meta">' + (words ? words + ' · ' : '') + formatDate(ch.created_at) + '</div>' +
           '</div>' +
           (isRead ? '<i class="ti ti-circle-check chapter-read-check"></i>' :
@@ -1114,6 +1160,20 @@
         list.appendChild(item);
       });
       document.getElementById('chapter-count').textContent = '(' + allChapters.length + ')';
+      // Show read progress count if any chapters are read
+      var readCount = getChaptersRead(workData.id);
+      var progressEl = document.getElementById('chapter-read-progress');
+      if (!progressEl && readCount > 0) {
+        progressEl = document.createElement('div');
+        progressEl.id = 'chapter-read-progress';
+        progressEl.style.cssText = 'font-size:11px;color:var(--text3);margin-bottom:12px;display:flex;align-items:center;gap:5px;';
+        progressEl.innerHTML = '<i class="ti ti-circle-check" style="color:var(--green);font-size:13px;"></i> ' + readCount + ' of ' + allChapters.length + ' read';
+        var chapterList = document.getElementById('chapter-list');
+        if (chapterList) chapterList.parentNode.insertBefore(progressEl, chapterList);
+      } else if (progressEl) {
+        progressEl.innerHTML = '<i class="ti ti-circle-check" style="color:var(--green);font-size:13px;"></i> ' + readCount + ' of ' + allChapters.length + ' read';
+        progressEl.style.display = readCount > 0 ? 'flex' : 'none';
+      }
       document.getElementById('load-more-btn').style.display = allChapters.length > chaptersShown ? 'block' : 'none';
     }
 
@@ -1129,13 +1189,16 @@
       var readBtn = document.createElement('a');
       readBtn.className = 'btn-read';
 
+      readBtn.title = 'Press R to start reading';
       if (lastRead) {
         var lastIdx = allChapters.findIndex(function(c){ return c.id === lastRead.id; });
         var nextChapter = allChapters[lastIdx + 1] || lastRead;
         var isFinished = lastIdx >= allChapters.length - 1;
-        readBtn.href = 'chapter.html?id=' + nextChapter.id;
+        readBtn.href = isFinished
+          ? 'chapter.html?id=' + allChapters[0].id
+          : 'chapter.html?id=' + nextChapter.id;
         readBtn.innerHTML = isFinished
-          ? '<i class="ti ti-refresh"></i> Re-read'
+          ? '<i class="ti ti-refresh"></i> Re-read from start'
           : '<i class="ti ti-player-play"></i> Continue — Ch.' + nextChapter.chapter_number;
       } else {
         readBtn.href = 'chapter.html?id=' + allChapters[0].id;
@@ -1161,7 +1224,7 @@
         ? '<i class="ti ' + (rlIcons[rls]||'ti-books') + '"></i> ' + (rlLabels[rls]||rls)
         : '<i class="ti ti-books"></i> Add to List';
       var rlDropdown = document.createElement('div');
-      rlDropdown.style.cssText = 'display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:160px;overflow:hidden;margin-top:4px;';
+      rlDropdown.style.cssText = 'display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:160px;overflow:hidden;margin-top:4px;';
       var rlOptions = [
         { key:'reading',      label:'Reading',       icon:'ti-book-2' },
         { key:'plan_to_read', label:'Plan to Read',  icon:'ti-bookmark' },
@@ -1171,13 +1234,13 @@
       ];
       rlOptions.forEach(function(opt) {
         var item = document.createElement('button');
-        item.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text);text-align:left;' + (rls === opt.key ? 'background:var(--accent1);color:#fff;' : '');
+        item.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text);text-align:left;' + (rls === opt.key ? 'background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);' : '');
         item.innerHTML = '<i class="ti ' + opt.icon + '" style="font-size:14px;"></i>' + opt.label;
         item.addEventListener('click', function() {
           rlDropdown.style.display = 'none';
           setReadingListStatus(opt.key);
         });
-        item.addEventListener('mouseover', function() { if (rls !== opt.key) this.style.background = 'var(--hover)'; });
+        item.addEventListener('mouseover', function() { if (rls !== opt.key) this.style.background = 'var(--bg3)'; });
         item.addEventListener('mouseout',  function() { if (rls !== opt.key) this.style.background = ''; });
         rlDropdown.appendChild(item);
       });
@@ -1186,7 +1249,7 @@
         removeItem.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text3);text-align:left;border-top:1px solid var(--border);';
         removeItem.innerHTML = '<i class="ti ti-trash" style="font-size:14px;"></i>Remove from List';
         removeItem.addEventListener('click', function() { rlDropdown.style.display = 'none'; setReadingListStatus(null); });
-        removeItem.addEventListener('mouseover', function() { this.style.background = 'var(--hover)'; });
+        removeItem.addEventListener('mouseover', function() { this.style.background = 'var(--bg3)'; });
         removeItem.addEventListener('mouseout',  function() { this.style.background = ''; });
         rlDropdown.appendChild(removeItem);
       }
@@ -1194,7 +1257,10 @@
         e.stopPropagation();
         rlDropdown.style.display = rlDropdown.style.display === 'none' ? 'block' : 'none';
       });
-      document.addEventListener('click', function() { rlDropdown.style.display = 'none'; }, { once: false });
+      // Use a named function stored on the element so we can remove it next time renderActions runs
+      if (window._rlDropdownClose) document.removeEventListener('click', window._rlDropdownClose);
+      window._rlDropdownClose = function(ev) { if (!rlWrap.contains(ev.target)) rlDropdown.style.display = 'none'; };
+      document.addEventListener('click', window._rlDropdownClose);
       rlWrap.appendChild(rlBtn);
       rlWrap.appendChild(rlDropdown);
       actionsEl.appendChild(rlWrap);
@@ -1511,7 +1577,7 @@
           html += '<div class="top-fan-row">' +
             '<div class="top-fan-rank">' + medal + '</div>' +
             '<div class="top-fan-avatar">' + (f.avatar_url ? '<img src="' + escHtml(f.avatar_url) + '" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
-            '<span class="top-fan-name" onclick="window.location.href=\'profile.html?u=' + encodeURIComponent(f.username || '') + '\'">' + name + '</span>' +
+            '<span class="top-fan-name" onclick="window.location.href=\'profile.html?user=' + encodeURIComponent(f.username || '') + '\'">' + name + '</span>' +
             '<div class="top-fan-stats" title="' + escHtml(statsTitle) + '">🔥 ' + f.embers_total +
               (Number(f.flames) > 0 ? ' · <i class="ti ti-flare" style="color:#f0c040;"></i> ' + f.flames : '') +
             '</div>' +
@@ -1851,12 +1917,12 @@
 
     async function deleteGlossaryEntry(id) {
       if (!confirm('Delete this glossary entry?')) return;
-      await db.from('work_glossary').delete().eq('id', id);
+      await db.from('work_glossary').delete().eq('id', String(id));
       await loadGlossary();
     }
 
     function editGlossaryEntry(id) {
-      var entry = glossaryEntries.find(function(e){ return e.id === id; });
+      var entry = glossaryEntries.find(function(e){ return String(e.id) === String(id); });
       if (!entry) return;
       var row = document.getElementById('glossary-add-row');
       if (!row) return;
@@ -1887,13 +1953,11 @@
       var canReview = chaptersRead >= 5;
       var reviewsEl = document.getElementById('reviews-content');
 
-      // Load existing reviews
-      var result = await db.from('reviews').select('id,rating,content,created_at,updated_at,user_id,title,score_style,score_story,score_grammar,score_character,author_response,author_response_at,helpful_count').eq('work_id', workData.id).order('created_at', { ascending: false });
+      // Load existing reviews - server-side sort + reasonable limit to avoid loading hundreds of rows
+      var sortCol = reviewSort === 'helpful' ? 'helpful_count' : (reviewSort === 'highest' || reviewSort === 'lowest' ? 'rating' : 'created_at');
+      var sortAsc = reviewSort === 'lowest';
+      var result = await db.from('reviews').select('id,rating,content,created_at,updated_at,user_id,title,score_style,score_story,score_grammar,score_character,author_response,author_response_at,helpful_count').eq('work_id', workData.id).order(sortCol, { ascending: sortAsc }).limit(200);
       var reviews = (result.data || []);
-      // Client-side sort (all rows are already loaded)
-      if (reviewSort === 'helpful') reviews.sort(function(a,b){ return (b.helpful_count||0) - (a.helpful_count||0); });
-      else if (reviewSort === 'highest') reviews.sort(function(a,b){ return b.rating - a.rating; });
-      else if (reviewSort === 'lowest') reviews.sort(function(a,b){ return a.rating - b.rating; });
       // My helpful votes for this story's reviews
       myReviewVotes = {};
       if (currentSession && reviews.length) {
@@ -1904,19 +1968,44 @@
           (mv||[]).forEach(function(v){ myReviewVotes[v.review_id] = true; });
         } catch(e) {}
       }
-      if(reviews.length){ var rvIds=[...new Set(reviews.slice(0, reviewsShown).map(function(r){return r.user_id;}))]; var {data:rvPs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',rvIds); var rvMap={};(rvPs||[]).forEach(function(p){rvMap[p.id]=p;}); reviews.forEach(function(r){r.profiles=rvMap[r.user_id]||null;});
+      if(reviews.length){ var rvIds=[...new Set(reviews.map(function(r){return r.user_id;}))]; var {data:rvPs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',rvIds); var rvMap={};(rvPs||[]).forEach(function(p){rvMap[p.id]=p;}); reviews.forEach(function(r){r.profiles=rvMap[r.user_id]||null;});
         try { var {data:rvSt}=await db.from('user_streaks').select('user_id,current_streak,last_checkin').in('user_id',rvIds); var stMap={};(rvSt||[]).forEach(function(s){stMap[s.user_id]=s;}); reviews.forEach(function(r){r._streak=streakFlair(stMap[r.user_id]);}); } catch(e){}
       }
       document.getElementById('review-count').textContent = '(' + reviews.length + ')';
 
-      // Rating summary
+      // Rating summary + distribution bars
+      var ratingEl  = document.getElementById('sidebar-rating');
       if (reviews.length) {
         var avg = reviews.reduce(function(s, r){ return s + r.rating; }, 0) / reviews.length;
         document.getElementById('avg-rating').textContent = avg.toFixed(1);
         document.getElementById('rating-count').textContent = reviews.length + ' review' + (reviews.length !== 1 ? 's' : '');
+        // Star distribution bars (5 → 1)
+        var dist = {1:0,2:0,3:0,4:0,5:0};
+        reviews.forEach(function(r){ if (dist[r.rating] !== undefined) dist[r.rating]++; });
+        var distHtml = '';
+        for (var s5 = 5; s5 >= 1; s5--) {
+          var pct = Math.round((dist[s5] / reviews.length) * 100);
+          distHtml += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">' +
+            '<span style="font-size:10px;color:var(--text3);width:8px;text-align:right;">' + s5 + '</span>' +
+            '<div style="flex:1;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;">' +
+              '<div style="height:100%;border-radius:3px;background:var(--gold);width:' + pct + '%;transition:width 0.4s;"></div>' +
+            '</div>' +
+            '<span style="font-size:10px;color:var(--text3);min-width:24px;text-align:right;">' + dist[s5] + '</span>' +
+          '</div>';
+        }
+        var distWrap = document.getElementById('rating-dist-bars');
+        if (!distWrap) {
+          distWrap = document.createElement('div');
+          distWrap.id = 'rating-dist-bars';
+          distWrap.style.cssText = 'margin-top:10px;padding-top:10px;border-top:1px solid var(--border);';
+          ratingEl.appendChild(distWrap);
+        }
+        distWrap.innerHTML = distHtml;
       } else {
         document.getElementById('avg-rating').textContent = '—';
         document.getElementById('rating-count').textContent = 'No reviews yet';
+        var dw = document.getElementById('rating-dist-bars');
+        if (dw) dw.innerHTML = '';
       }
 
       // Build ALL of the section's HTML first, assign once, and only then
@@ -1989,7 +2078,7 @@
               '<div class="review-avatar">' + (p.avatar_url ? '<img src="'+escHtml(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
               '<div style="flex:1;">' +
                 '<div class="review-name">' + escHtml(p.display_name || p.username || 'User') + (r._streak || '') + '</div>' +
-                '<div class="review-date">' + timeAgo(r.created_at) + (r.updated_at ? ' <span style="opacity:0.7;">(edited)</span>' : '') + '</div>' +
+                '<div class="review-date">' + timeAgo(r.created_at) + (r.updated_at && (new Date(r.updated_at) - new Date(r.created_at) > 30000) ? ' <span style="opacity:0.7;">(edited)</span>' : '') + '</div>' +
               '</div>' +
               '<div class="review-stars">' + stars + '</div>' +
             '</div>' +
@@ -2104,8 +2193,16 @@
       try {
         if (myReviewVotes[reviewId]) {
           await db.from('review_votes').delete().eq('review_id', reviewId).eq('user_id', uid);
+          // Decrement helpful_count on the review row
+          await db.rpc('decrement_review_helpful', { p_review_id: reviewId });
+          myReviewVotes[reviewId] = false;
         } else {
-          await db.from('review_votes').insert({ review_id: reviewId, user_id: uid });
+          var { error } = await db.from('review_votes').insert({ review_id: reviewId, user_id: uid });
+          if (!error) {
+            // Increment helpful_count on the review row
+            await db.rpc('increment_review_helpful', { p_review_id: reviewId });
+            myReviewVotes[reviewId] = true;
+          }
         }
         loadReviews();
       } catch(e) { showToast('Could not save your vote.', 'ti-alert-circle'); }
@@ -2170,6 +2267,8 @@
       loadReviews();
     }
     async function submitReview() {
+      if (!currentSession) { showToast('Please sign in to leave a review', 'ti-alert-triangle'); return; }
+      if (workData && currentSession.user.id === workData.author_id) { showToast('You cannot review your own story', 'ti-alert-triangle'); return; }
       if (!selectedRating) { showToast('Please select a star rating', 'ti-alert-triangle'); return; }
       var content = document.getElementById('review-textarea').value.trim();
       var titleEl = document.getElementById('review-title-input');
@@ -2298,7 +2397,8 @@
             .select('settings_filter_safe,settings_filter_gore,settings_filter_erotica')
             .eq('id', currentSession.user.id).maybeSingle();
           if (pref) {
-            var safe = !!pref.settings_filter_safe;
+            // Platform convention: safe mode is ON by default (null = on, only explicit false = off)
+            var safe = pref.settings_filter_safe !== false;
             allowGore = !!pref.settings_filter_gore && !safe;
             allowErotica = !!pref.settings_filter_erotica && !safe;
           }
@@ -2332,6 +2432,14 @@
         '</div>';
       document.body.appendChild(overlay);
       document.body.style.overflow = 'hidden';
+      // Safety net: if the overlay is removed by any means, restore scroll
+      var _gateObserver = new MutationObserver(function() {
+        if (!document.getElementById('content-gate-overlay')) {
+          document.body.style.overflow = '';
+          _gateObserver.disconnect();
+        }
+      });
+      _gateObserver.observe(document.body, { childList: true });
     }
     function confirmContentGate() {
       try { sessionStorage.setItem('ds_cw_ok_' + workData.id, '1'); } catch(e) {}
@@ -2399,6 +2507,14 @@
 
       renderWork(workData, authors);
       renderChapters();
+      // Populate total word count in sidebar
+      (function() {
+        var total = allChapters.reduce(function(sum, ch){ return sum + (ch.word_count || 0); }, 0);
+        var el = document.getElementById('sidebar-word-count');
+        if (el && total > 0) el.textContent = total.toLocaleString();
+        var chEl = document.getElementById('sidebar-chapter-count');
+        if (chEl) chEl.textContent = allChapters.length || '0';
+      })();
 
       // Load independent sections in parallel — one slow query no longer
       // stalls the whole page. Each is isolated so a failure can't sink the rest.
@@ -2535,17 +2651,17 @@
 
     async function notifyAuthorRec(recId, voteCount) {
       var rec = recData.find(function(r){ return r.id===recId; });
-      if(!rec) return;
-      var { data: sw } = await db.from('works').select('title').eq('id',rec.suggested_work_id).maybeSingle();
-      var { data: ap } = await db.from('profiles').select('email,display_name,username').eq('id',workData.author_id).maybeSingle();
-      if(!ap || !ap.email) return;
+      if(!rec || !workData.author_id) return;
       try {
-        await fetch('https://api.web3forms.com/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
-          access_key:'7c5348e7-291b-4149-be36-67172729ef34',
-          subject:'DawnScribe — Recommendation for "'+workData.title+'"',
-          to: ap.email,
-          message:'Hi '+(ap.display_name||ap.username||'there')+',\n\n'+voteCount+' readers have suggested adding "'+(sw?sw.title:'a novel')+'" as a recommendation on your novel "'+workData.title+'".\n\nLog in to DawnScribe and visit your story page to approve or reject this suggestion.\n\n— The DawnScribe Team'
-        })});
+        var { data: sw } = await db.from('works').select('title').eq('id',rec.suggested_work_id).maybeSingle();
+        var suggestedTitle = sw ? sw.title : 'a novel';
+        // Insert a platform notification — don't fetch the author's email client-side
+        await db.from('notifications').insert({
+          user_id: workData.author_id,
+          type: 'recommendation_threshold',
+          work_id: workData.id,
+          message: voteCount + ' readers suggested adding "' + suggestedTitle + '" as a recommendation on "' + workData.title + '". Visit your story page to approve or reject it.'
+        });
       } catch(e) {}
     }
     async function approveRec(recId, status) { var { error } = await db.from('recommendations').update({status:status}).eq('id',recId); if(!error) loadRecommendations(); }
@@ -2555,7 +2671,8 @@
     async function recSearchWorks(query) {
       var el = document.getElementById('rec-search-results');
       el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div>';
-      var { data: works } = await db.from('works').select('id,title,cover_url,author_id').eq('type','novel').eq('is_published',true).neq('id',workData.id).ilike('title','%'+query+'%').limit(8);
+      var safeQuery = query.replace(/%/g, '').replace(/_/g, '\\_');
+      var { data: works } = await db.from('works').select('id,title,cover_url,author_id').eq('type','novel').eq('is_published',true).neq('id',workData.id).ilike('title','%'+safeQuery+'%').limit(8);
       if(!works||!works.length) { el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px;">No novels found.</div>'; return; }
       var aIds = [...new Set(works.map(function(w){ return w.author_id; }))];
       var aMap = {};
@@ -2596,6 +2713,7 @@
 
     // ── NOVEL COLLABORATIONS (artwork ↔ novel links) ──────────────
     async function loadNovelCollabs() {
+      if (!workData || workData.type === 'artwork') return; // artworks don't have novel collabs
       try {
         var entries = [];
 
@@ -2665,7 +2783,10 @@
     async function loadCollabs() {
       if(!workData || workData.type === 'artwork') return;
       var isOwner = currentSession && workData.author_id === currentSession.user.id;
-      var { data: collabs } = await db.from('story_collabs').select('id,image_url,artist_id,created_at,description,inspiration').eq('work_id',workData.id).eq('status','approved').order('created_at',{ascending:false});
+      // Owner sees pending too (so they know they have submissions to review)
+      var collabQuery = db.from('story_collabs').select('id,image_url,artist_id,created_at,description,inspiration,status').eq('work_id',workData.id).order('created_at',{ascending:false});
+      if (!isOwner) collabQuery = collabQuery.eq('status','approved');
+      var { data: collabs } = await collabQuery;
       collabs = collabs || []; collabsData = collabs;
       if(!collabs.length) return;
       var artistIds = [...new Set(collabs.map(function(c){ return c.artist_id; }))];
@@ -2683,8 +2804,9 @@
         var descHtml = c.description ? '<div class="collab-art-desc">'+escHtml(c.description.slice(0,120))+(c.description.length>120?'…':'')+'</div>' : '';
         var inspoHtml = c.inspiration ? '<div class="collab-art-inspo"><i class="ti ti-bulb" style="font-size:10px;"></i> '+escHtml(c.inspiration.slice(0,80))+(c.inspiration.length>80?'…':'')+'</div>' : '';
         var card = document.createElement('div'); card.className='collab-art-card';
+        var pendingBadge = (isOwner && c.status === 'pending') ? '<div style="position:absolute;top:8px;left:8px;background:rgba(245,158,11,0.9);color:#0a0a0f;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;z-index:2;">Pending</div>' : '';
         var delBtn = canDelete ? '<button class="collab-delete-btn" data-cid="'+c.id+'" data-url="'+escHtml(c.image_url)+'"><i class="ti ti-trash"></i> Delete</button>' : '';
-        card.innerHTML = '<img src="'+escHtml(c.image_url)+'" alt="Fan art"/>'+delBtn;
+        card.innerHTML = '<img src="'+escHtml(c.image_url)+'" alt="Fan art"/>'+pendingBadge+delBtn;
         if(descHtml||inspoHtml) { var infoEl=document.createElement('div'); infoEl.style.cssText='padding:8px 10px 0;'; infoEl.innerHTML=descHtml+inspoHtml; card.appendChild(infoEl); }
         var footer = document.createElement('a'); footer.className='collab-artist-footer'; footer.href=profileHref;
         footer.innerHTML = '<div class="collab-artist-avatar">'+avatarInner+'</div><span class="collab-artist-name">'+escHtml(artistName)+'</span>';
@@ -2699,14 +2821,21 @@
         strip.addEventListener('scroll',function(){ leftBtn.disabled=strip.scrollLeft<=0; rightBtn.disabled=strip.scrollLeft+strip.clientWidth>=strip.scrollWidth-4; });
         leftBtn.disabled=true;
       }
-      if(collabs.length >= 30) { var va=document.getElementById('collab-view-all-btn'); va.href='collab-gallery.html?work='+workData.id; va.style.display='block'; }
+      if(collabs.length >= 6) { var va=document.getElementById('collab-view-all-btn'); va.href='collab-gallery.html?work='+workData.id; va.style.display='block'; }
     }
 
     function scrollCollabStrip(dir){ var s=document.getElementById('collab-strip'); s.scrollBy({left:dir*340,behavior:'smooth'}); }
 
     async function openCollabDetail(collabId) {
       var c = collabsData.find(function(x){ return x.id===collabId; });
-      if(!c) return; activeCollabId=collabId;
+      if(!c) return;
+      // Owner clicking a pending collab: take them straight to the review page
+      var isOwner = currentSession && workData && currentSession.user.id === workData.author_id;
+      if (isOwner && c.status === 'pending') {
+        window.open('collab-inbox.html', '_blank');
+        return;
+      }
+      activeCollabId=collabId;
       document.getElementById('collab-detail-img').src = c.image_url;
       var { data: artist } = await db.from('profiles').select('id,username,display_name,avatar_url').eq('id',c.artist_id).maybeSingle();
       artist = artist||{};
@@ -2769,11 +2898,13 @@
       loadCollabComments(activeCollabId);
     }
 
-    async function deleteCollabComment(cmId,cardEl) {
+    async function deleteCollabComment(cmId,cardEl,collabId) {
       cardEl.style.opacity='0.4';
       var { error }=await db.from('collab_comments').delete().eq('id',cmId);
       if(error){ cardEl.style.opacity='1'; showToast('Could not delete.','ti-x'); return; }
       cardEl.remove();
+      // Refresh the full comment thread so counts/ordering stay correct
+      if (collabId) { setTimeout(function(){ loadCollabComments(collabId); }, 200); }
     }
 
     function openCollabModal() {
@@ -2831,6 +2962,15 @@
       btn.disabled=false; btn.innerHTML='<i class="ti ti-upload"></i> Submit';
     }
 
+    // Keyboard shortcut: press R to start/continue reading (only when not in an input)
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'r' && e.key !== 'R') return;
+      var tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      var readBtn = document.querySelector('.btn-read');
+      if (readBtn && readBtn.href) window.location.href = readBtn.href;
+    });
+
     document.addEventListener('DOMContentLoaded',function(){
       // Rec modal
       var rb=document.getElementById('rec-modal-backdrop'); if(rb) rb.addEventListener('click',function(e){ if(e.target===this) closeRecModal(); });
@@ -2844,7 +2984,7 @@
       var ci=document.getElementById('collab-comment-input'); if(ci) ci.addEventListener('keydown',function(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); postCollabComment(); } });
       // File drop
       var fileInput=document.getElementById('collab-file-input'); var dropZone=document.getElementById('collab-drop-zone'); var preview=document.getElementById('collab-preview');
-      function handleFile(file){ if(!file||!file.type.startsWith('image/')) return; collabFileData=file; var reader=new FileReader(); reader.onload=function(e){ preview.src=e.target.result; preview.style.display='block'; document.getElementById('collab-submit-btn').disabled=false; dropZone.innerHTML='<i class="ti ti-check" style="color:var(--accent);font-size:20px;display:block;margin-bottom:6px;"></i> Image ready'; }; reader.readAsDataURL(file); }
+      function handleFile(file){ if(!file||!file.type.startsWith('image/')) return; if(file.size > 5 * 1024 * 1024){ showToast('Image must be under 5MB', 'ti-alert-triangle'); return; } collabFileData=file; var reader=new FileReader(); reader.onload=function(e){ preview.src=e.target.result; preview.style.display='block'; document.getElementById('collab-submit-btn').disabled=false; dropZone.innerHTML='<i class="ti ti-check" style="color:var(--accent);font-size:20px;display:block;margin-bottom:6px;"></i> Image ready'; }; reader.readAsDataURL(file); }
       if(fileInput) fileInput.addEventListener('change',function(){ handleFile(this.files[0]); });
       if(dropZone){ dropZone.addEventListener('dragover',function(e){ e.preventDefault(); this.classList.add('drag-over'); }); dropZone.addEventListener('dragleave',function(){ this.classList.remove('drag-over'); }); dropZone.addEventListener('drop',function(e){ e.preventDefault(); this.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); }); }
     });

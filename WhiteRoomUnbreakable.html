@@ -54,7 +54,7 @@
     .section-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
     .section-title i{color:#2dd4bf;}
     /* ── ADMIN TAB BAR ── */
-    .admin-tabs-wrap{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);padding:0 48px;margin:0 -48px 28px;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;}
+    .admin-tabs-wrap{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);padding:0 24px;margin:0 -24px 28px;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;}
     .admin-tabs-wrap::-webkit-scrollbar{display:none;}
     .admin-tab{flex-shrink:0;padding:14px 18px;border:none;background:transparent;color:var(--text3);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.18s;display:flex;align-items:center;gap:7px;white-space:nowrap;}
     .admin-tab:hover{color:var(--text2);}
@@ -227,6 +227,12 @@
     .modal-action-btn i{font-size:15px;}
 
     @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    /* ── REPORT FILTER BUTTONS ── */
+    .report-filter-btn{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:11px;font-weight:700;color:var(--text3);cursor:pointer;font-family:'Lato',sans-serif;transition:all 0.15s;}
+    .report-filter-btn:hover{color:var(--text2);}
+    .report-filter-btn.active{background:color-mix(in srgb,var(--accent) 12%,transparent);border-color:var(--accent);color:var(--accent);}
+    /* ── TAG CATEGORY SELECT ── */
+    .tag-add-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   </style>
 </head>
 <body>
@@ -396,6 +402,11 @@
     <div class="section" id="sec-reports" data-tab="moderation">
       <div class="section-title"><i class="ti ti-flag"></i> Content Reports</div>
       <div class="section-sub">User-submitted reports waiting for review. Dismiss to ignore, Remove to delete the content.</div>
+      <div style="display:flex;gap:6px;margin-bottom:16px;">
+        <button class="report-filter-btn active" data-status="open" onclick="setReportFilter(this,'open')">Open</button>
+        <button class="report-filter-btn" data-status="resolved" onclick="setReportFilter(this,'resolved')">Resolved</button>
+        <button class="report-filter-btn" data-status="all" onclick="setReportFilter(this,'all')">All</button>
+      </div>
       <div id="reports-list"><div class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...</div></div>
     </div>
 
@@ -426,6 +437,15 @@
       <div class="tags-wrap" id="tags-wrap"></div>
       <div class="tag-add-row">
         <input class="form-input" type="text" id="tag-input" placeholder="New tag name…" maxlength="30"/>
+        <select class="form-select" id="tag-category-input" style="max-width:160px;">
+          <option value="General">General</option>
+          <option value="Genre">Genre</option>
+          <option value="Theme">Theme</option>
+          <option value="Content">Content</option>
+          <option value="Format">Format</option>
+          <option value="Setting">Setting</option>
+          <option value="Character">Character</option>
+        </select>
         <button class="save-btn" id="add-tag-btn" style="padding:10px 18px;"><i class="ti ti-plus"></i> Add</button>
       </div>
     </div>
@@ -447,7 +467,7 @@
     <!-- ── AUDIT LOG ─────────────────────────────────────────────── -->
     <div class="section" id="sec-audit" data-tab="audit">
       <div class="section-title"><i class="ti ti-notebook"></i> Audit Log</div>
-      <div class="section-sub">A record of admin actions taken in this panel. Stored locally in your browser.</div>
+      <div class="section-sub">A record of admin actions taken in this panel. Stored in the database — persists across browsers and supports multiple admins.</div>
       <div id="audit-log-list"></div>
       <div class="btn-row" style="margin-top:12px;">
         <button class="danger-btn" id="clear-audit-btn" style="padding:8px 18px;font-size:13px;"><i class="ti ti-trash"></i> Clear Log</button>
@@ -510,7 +530,7 @@
 
     // ── HELPERS ───────────────────────────────────────────────────
     function escHtml(str) {
-      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
     function formatDate(str) {
       if (!str) return '—';
@@ -533,11 +553,12 @@
     // ── AUDIT LOG ─────────────────────────────────────────────────
     async function auditLog(action, icon) {
       // Write to DB (server-side, survives browser clearing, supports multiple admins)
-      await db.from('admin_audit_log').insert({
+      var res = await db.from('admin_audit_log').insert({
         admin_id: currentAdminId,
         action: action,
         icon: icon || 'ti-edit'
       });
+      if (res.error) { console.warn('Audit log write failed:', res.error.message); return; }
       renderAuditLog();
     }
     async function renderAuditLog() {
@@ -558,7 +579,7 @@
     }
     document.getElementById('clear-audit-btn').addEventListener('click', async function() {
       if (confirm('Clear the entire audit log?')) {
-        await db.from('admin_audit_log').delete().neq('id', 0); // delete all
+        await db.from('admin_audit_log').delete().gte('created_at', '1970-01-01'); // delete all
         renderAuditLog();
         showToast('Audit log cleared', 'ti-trash');
       }
@@ -574,7 +595,7 @@
         db.from('profiles').select('id', { count: 'exact', head: true }).eq('is_moderator', true),
         db.from('follows').select('id', { count: 'exact', head: true }),
         db.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'open'),
-        db.from('works').select('id', { count: 'exact', head: true })
+        db.from('works').select('id', { count: 'exact', head: true }).eq('is_published', true)
       ]);
       document.getElementById('stat-users').textContent = totalUsers.count ?? '—';
       document.getElementById('stat-users-new').textContent = newUsers.count ? '+' + newUsers.count + ' this week' : '';
@@ -621,13 +642,15 @@
         overlay.innerHTML = `
           <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:28px 32px;max-width:420px;width:90%;font-family:Lato,sans-serif;">
             <div style="font-family:Cinzel,serif;font-size:16px;color:var(--text);margin-bottom:12px;">${title}</div>
-            <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:24px;">${body}</div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:24px;" id="cm-body"></div>
             <div style="display:flex;gap:10px;justify-content:flex-end;">
               <button id="cm-cancel" style="padding:8px 18px;border-radius:7px;border:1px solid var(--border);background:var(--bg4);color:var(--text2);cursor:pointer;font-size:13px;">${cancelLabel}</button>
               <button id="cm-confirm" style="padding:8px 18px;border-radius:7px;border:none;background:${confirmColor || 'var(--accent)'};color:#fff;cursor:pointer;font-size:13px;font-weight:700;">${confirmLabel}</button>
             </div>
           </div>`;
         document.body.appendChild(overlay);
+        // Set body via innerHTML only for trusted static strings; use textContent for dynamic
+        overlay.querySelector('#cm-body').innerHTML = body;
         overlay.querySelector('#cm-confirm').onclick = function() { document.body.removeChild(overlay); resolve(true); };
         overlay.querySelector('#cm-cancel').onclick = function() { document.body.removeChild(overlay); resolve(false); };
       });
@@ -794,99 +817,9 @@
     });
 
     // ── CONTENT REPORTS ───────────────────────────────────────────
-    async function loadFeedback() {
-      var el = document.getElementById('feedback-list');
-      var result = await db.from('feedback').select('*').order('created_at', { ascending: false }).limit(50);
-      if (result.error) {
-        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-circle-off"></i>No feedback table found yet.</div>';
-        return;
-      }
-      if (!result.data || result.data.length === 0) {
-        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-mood-happy"></i>No feedback yet.</div>';
-        return;
-      }
-      var userIds = Array.from(new Set(result.data.map(function(f){ return f.user_id; }).filter(Boolean)));
-      var profMap = {};
-      if (userIds.length) {
-        var { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', userIds);
-        (profs || []).forEach(function(p){ profMap[p.id] = p; });
-      }
-      el.innerHTML = '';
-      result.data.forEach(function(fb) {
-        var prof = profMap[fb.user_id] || {};
-        var authorName = prof.display_name || prof.username || 'Unknown user';
-        var card = document.createElement('div');
-        card.className = 'report-card' + (fb.status === 'reviewed' ? ' resolved' : '');
-        card.innerHTML =
-          '<div class="report-header">' +
-            '<span class="report-type">' + escHtml(fb.page_context || 'feedback') + '</span>' +
-            (fb.status === 'reviewed' ? '<span style="font-size:11px;color:var(--text3);">Reviewed</span>' : '') +
-          '</div>' +
-          '<div class="report-body">' + escHtml(fb.message || '') + '</div>' +
-          '<div class="report-meta">From @' + escHtml(authorName) + ' · ' + formatDateTime(fb.created_at) + '</div>' +
-          (fb.status !== 'reviewed' ?
-          '<div class="report-actions">' +
-            '<button class="report-btn dismiss"><i class="ti ti-check"></i> Mark Reviewed</button>' +
-          '</div>' : '');
-        if (fb.status !== 'reviewed') {
-          card.querySelector('.dismiss').addEventListener('click', async function() {
-            await db.from('feedback').update({ status: 'reviewed' }).eq('id', fb.id);
-            showToast('Feedback marked reviewed');
-            loadFeedback();
-          });
-        }
-        el.appendChild(card);
-      });
-    }
+    // loadFeedback defined below (paginated version)
 
-    async function loadReports() {
-      var el = document.getElementById('reports-list');
-      var result = await db.from('reports').select('*').order('created_at', { ascending: false }).limit(30);
-      if (result.error) {
-        // Table may not exist yet
-        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-circle-off"></i>No reports table found yet. Create a <code style="background:var(--bg4);padding:1px 5px;border-radius:4px;font-size:11px;">reports</code> table in Supabase to enable this.</div>';
-        return;
-      }
-      if (!result.data || result.data.length === 0) {
-        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-mood-happy"></i>No open reports. All clear!</div>';
-        return;
-      }
-      el.innerHTML = '';
-      result.data.forEach(function(report) {
-        var card = document.createElement('div');
-        card.className = 'report-card' + (report.status === 'resolved' ? ' resolved' : '');
-        var typeClass = report.reason === 'spam' ? 'spam' : report.reason === 'other' ? 'other' : '';
-        card.innerHTML =
-          '<div class="report-header">' +
-            '<span class="report-type ' + typeClass + '">' + escHtml(report.reason || 'violation') + '</span>' +
-            (report.status === 'resolved' ? '<span style="font-size:11px;color:var(--text3);">Resolved</span>' : '') +
-          '</div>' +
-          '<div class="report-body">' + escHtml(report.description || 'No description provided.') + '</div>' +
-          '<div class="report-meta">Reported by user · ' + formatDateTime(report.created_at) + ' · Content ID: <code style="background:var(--bg4);padding:1px 5px;border-radius:3px;">' + escHtml(report.content_id || '—') + '</code></div>' +
-          (report.status !== 'resolved' ?
-          '<div class="report-actions">' +
-            '<button class="report-btn dismiss"><i class="ti ti-check"></i> Dismiss</button>' +
-            '<button class="report-btn remove"><i class="ti ti-trash"></i> Remove Content</button>' +
-          '</div>' : '');
-        if (report.status !== 'resolved') {
-          card.querySelector('.dismiss').addEventListener('click', async function() {
-            await db.from('reports').update({ status: 'resolved' }).eq('id', report.id);
-            showToast('Report dismissed');
-            auditLog('Dismissed report #' + report.id, 'ti-check');
-            loadReports(); loadStats();
-          });
-          card.querySelector('.remove').addEventListener('click', async function() {
-            if (confirm('Mark report resolved and remove this content?')) {
-              await db.from('reports').update({ status: 'resolved' }).eq('id', report.id);
-              showToast('Content removed & report resolved', 'ti-trash');
-              auditLog('Removed content for report #' + report.id, 'ti-trash');
-              loadReports(); loadStats();
-            }
-          });
-        }
-        el.appendChild(card);
-      });
-    }
+    // loadReports defined below (paginated version)
 
     // ── USER MANAGEMENT ──────────────────────────────────────────
     var currentModalUser = null;
@@ -1114,7 +1047,8 @@
       var val = input.value.trim();
       if (!val) { showToast('Enter a tag name first', 'ti-alert-triangle'); return; }
       var btn = this; btn.disabled = true;
-      var result = await db.from('tags').insert({ name: val, category: 'General' });
+      var cat = document.getElementById('tag-category-input').value || 'General';
+      var result = await db.from('tags').insert({ name: val, category: cat });
       if (result.error) {
         showToast(result.error.message.includes('unique') ? 'Tag already exists' : 'Error: ' + result.error.message, 'ti-alert-triangle');
       } else {
@@ -1127,17 +1061,59 @@
     });
     document.getElementById('tag-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') document.getElementById('add-tag-btn').click(); });
 
+    // ── NOTIFICATION BLAST ────────────────────────────────────────
+    document.getElementById('send-blast-btn').addEventListener('click', async function() {
+      var msg = document.getElementById('blast-message').value.trim();
+      if (!msg) { showToast('Please write a message first', 'ti-alert-triangle'); return; }
+      var confirmed = await showConfirmModal(
+        'Send notification blast?',
+        'This will insert a notification for <strong>every user</strong> on the platform. This cannot be undone.',
+        'Send to All', 'Cancel', 'var(--red)'
+      );
+      if (!confirmed) return;
+      var btn = this;
+      btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Sending…';
+      try {
+        // Fetch all user IDs
+        var { data: users, error: usersErr } = await db.from('profiles').select('id');
+        if (usersErr) throw usersErr;
+        if (!users || !users.length) { showToast('No users found', 'ti-alert-triangle'); return; }
+        // Insert in batches of 100 to avoid payload limits
+        var rows = users.map(function(u){ return { user_id: u.id, type: 'admin_blast', message: msg }; });
+        var batchSize = 100, errors = 0;
+        for (var i = 0; i < rows.length; i += batchSize) {
+          var res = await db.from('notifications').insert(rows.slice(i, i + batchSize));
+          if (res.error) errors++;
+        }
+        if (errors) { showToast('Sent with ' + errors + ' batch error(s)', 'ti-alert-triangle'); }
+        else { showToast('Blast sent to ' + users.length + ' users!', 'ti-bell-ringing'); }
+        document.getElementById('blast-message').value = '';
+        document.getElementById('blast-chars').textContent = '0/200';
+        auditLog('Sent notification blast to ' + users.length + ' users: "' + msg.slice(0,40) + (msg.length>40?'…':'') + '"', 'ti-bell-ringing');
+      } catch(err) {
+        showToast('Error: ' + err.message, 'ti-x');
+      } finally {
+        btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Send to All Users';
+      }
+    });
+
     // ── REPORTS / FEEDBACK PAGINATION ─────────────────────────────
     var reportOffset = 0, feedbackOffset = 0;
     var pageSize = 20;
 
-    // Wrap loadReports/loadFeedback to support pagination
-    var _origLoadReports = loadReports;
+    var currentReportStatusFilter = 'open';
+    function setReportFilter(btn, status) {
+      currentReportStatusFilter = status;
+      document.querySelectorAll('.report-filter-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
+      loadReports(0);
+    }
     async function loadReports(offset) {
       offset = offset || 0;
       reportOffset = offset;
       var el = document.getElementById('reports-list');
-      var result = await db.from('reports').select('*').order('created_at', { ascending: false }).range(offset, offset + pageSize - 1);
+      var q = db.from('reports').select('*').order('created_at', { ascending: false }).range(offset, offset + pageSize - 1);
+      if (currentReportStatusFilter !== 'all') q = q.eq('status', currentReportStatusFilter);
+      var result = await q;
       if (result.error) {
         el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-circle-off"></i>No reports table found yet.</div>';
         return;
@@ -1170,10 +1146,23 @@
             loadReports(0); loadStats();
           });
           card.querySelector('.remove').addEventListener('click', async function() {
-            if (confirm('Mark report resolved and remove this content?')) {
+            var contentLabel = report.content_type || 'content';
+            if (confirm('Remove this ' + contentLabel + ' (ID: ' + (report.content_id || '?') + ') and resolve the report? This cannot be undone.')) {
+              // Delete the actual content if we know its type
+              if (report.content_id) {
+                var table = report.content_type === 'chapter' ? 'chapters'
+                          : report.content_type === 'comment' ? 'chapter_comments'
+                          : report.content_type === 'review'  ? 'reviews'
+                          : report.content_type === 'work'    ? 'works'
+                          : null;
+                if (table) {
+                  var delRes = await db.from(table).delete().eq('id', report.content_id);
+                  if (delRes.error) { showToast('Could not delete content: ' + delRes.error.message, 'ti-x'); return; }
+                }
+              }
               await db.from('reports').update({ status: 'resolved' }).eq('id', report.id);
               showToast('Content removed & report resolved', 'ti-trash');
-              auditLog('Removed content for report #' + report.id, 'ti-trash');
+              auditLog('Removed ' + contentLabel + ' ' + report.content_id + ' (report #' + report.id + ')', 'ti-trash');
               loadReports(0); loadStats();
             }
           });
@@ -1255,7 +1244,11 @@
     (async function init() {
       // Get session for audit log attribution
       var sess = await db.auth.getSession();
-      if (sess.data && sess.data.session) currentAdminId = sess.data.session.user.id;
+      if (sess.data && sess.data.session) {
+        currentAdminId = sess.data.session.user.id;
+      } else {
+        console.warn('Admin panel: no active session found — audit log entries will use fallback ID.');
+      }
 
       loadCurrent();
       loadAnnouncementHistory();
@@ -1329,7 +1322,7 @@
           '</div>' +
           '<div class="report-body">' +
             '<strong>' + escHtml(work.title || 'Unknown Story') + '</strong>' +
-            ' by <a href="profile.html?id=' + escHtml(work.author_id || '') + '" target="_blank" style="color:var(--accent);text-decoration:none;">@' + escHtml(authorName) + '</a>' +
+            ' by <a href="profile.html?' + (author.username ? 'user=' + encodeURIComponent(author.username) : 'id=' + escHtml(work.author_id || '')) + '" target="_blank" style="color:var(--accent);text-decoration:none;">@' + escHtml(authorName) + '</a>' +
           '</div>' +
           '<div class="report-meta">' +
             '<a href="story.html?id=' + escHtml(workId) + '" target="_blank" style="color:var(--accent);font-size:11px;text-decoration:none;"><i class="ti ti-external-link"></i> View Story</a>' +
