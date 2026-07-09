@@ -20,7 +20,6 @@
     @keyframes shimmer{0%{background-position:200% center;}100%{background-position:-200% center;}}
     @keyframes glow-pulse{0%,100%{box-shadow:0 0 20px rgba(245,158,11,0.3),0 0 60px rgba(245,158,11,0.1);}50%{box-shadow:0 0 40px rgba(245,158,11,0.6),0 0 100px rgba(245,158,11,0.25);}}
     @keyframes float{0%,100%{transform:translateY(0);}50%{transform:translateY(-8px);}}
-    @keyframes particle-fall{0%{transform:translateY(-20px) rotate(0deg);opacity:1;}100%{transform:translateY(100vh) rotate(720deg);opacity:0;}}
     @keyframes badge-pop{0%{transform:scale(0) rotate(-15deg);opacity:0;}70%{transform:scale(1.15) rotate(3deg);}100%{transform:scale(1) rotate(0deg);opacity:1;}}
     @keyframes connector-grow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
 
@@ -28,6 +27,8 @@
     nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
     .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;}
     .logo span{color:var(--text);}
+    .nav-back{display:flex;align-items:center;gap:6px;color:var(--text3);font-size:13px;font-weight:700;text-decoration:none;transition:color 0.2s;}
+    .nav-back:hover{color:var(--accent);}
 
     /* ── PARTICLE CANVAS ── */
     #particle-canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;}
@@ -45,7 +46,7 @@
     .achievement-sub strong{color:var(--text);}
 
     /* ── COLLAB BOND ── */
-    .bond-wrap{width:100%;animation:fadeUp 0.6s ease 0.25s both;margin-bottom:48px;}
+    .bond-wrap{width:100%;animation:fadeUp 0.6s ease 0.25s both;margin-bottom:24px;}
     .bond-card{background:var(--bg2);border:1px solid rgba(245,158,11,0.2);border-radius:20px;padding:28px 32px;position:relative;overflow:hidden;}
     .bond-card::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(245,158,11,0.06) 0%,transparent 70%);pointer-events:none;}
     .bond-card-label{text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin-bottom:20px;}
@@ -61,6 +62,15 @@
     .bond-icon{width:36px;height:36px;border-radius:50%;background:rgba(245,158,11,0.12);border:1.5px solid rgba(245,158,11,0.4);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--gold);}
     .bond-artist{text-align:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text3);}
     .bond-artist strong{color:var(--gold);}
+
+    /* ── REVENUE CALLOUT ── */
+    .revenue-callout{width:100%;animation:fadeUp 0.6s ease 0.35s both;margin-bottom:32px;}
+    .revenue-card{background:var(--bg2);border:1px solid rgba(45,212,191,0.15);border-radius:16px;padding:18px 24px;display:flex;align-items:center;gap:16px;}
+    .revenue-icon{width:44px;height:44px;border-radius:12px;background:rgba(45,212,191,0.1);border:1px solid rgba(45,212,191,0.2);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);flex-shrink:0;}
+    .revenue-text{flex:1;min-width:0;}
+    .revenue-text strong{font-size:13px;color:var(--text);display:block;margin-bottom:3px;}
+    .revenue-text span{font-size:12px;color:var(--text3);line-height:1.5;}
+    .revenue-pct{font-size:22px;font-weight:700;color:var(--accent);flex-shrink:0;}
 
     /* ── ACTIONS ── */
     .actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;animation:fadeUp 0.6s ease 0.45s both;margin-bottom:32px;}
@@ -91,6 +101,7 @@
       .achievement-title{font-size:24px;}
       .actions{flex-direction:column;align-items:stretch;}
       .btn-primary,.btn-secondary{justify-content:center;}
+      .revenue-card{flex-wrap:wrap;}
     }
   </style>
 </head>
@@ -98,6 +109,7 @@
 
 <nav>
   <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+  <a class="nav-back" href="collab-outbox.html"><i class="ti ti-arrow-left"></i> My Submissions</a>
 </nav>
 
 <canvas id="particle-canvas"></canvas>
@@ -117,17 +129,32 @@
   const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
 
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-  function showToast(msg, icon){ var t=document.getElementById('toast'); t.innerHTML='<i class="ti '+(icon||'ti-check')+'"></i> '+msg; t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); },3000); }
+
+  var _toastTimer = null;
+  function showToast(msg, icon){
+    var t = document.getElementById('toast');
+    t.innerHTML = '<i class="ti ' + (icon||'ti-check') + '"></i> ' + msg;
+    t.classList.add('show');
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 3000);
+  }
+
   function showError(msg){
     document.getElementById('page').innerHTML = '<div class="state"><i class="ti ti-alert-circle"></i><h2>Oops</h2><p>'+msg+'</p><br><a href="collab-outbox.html" style="color:var(--accent);text-decoration:none;font-weight:700;">← View my submissions</a></div>';
   }
 
   // ── PARTICLE SYSTEM ─────────────────────────────────────────────
+  var _particleAnimId = null;
   function launchParticles(){
     var canvas = document.getElementById('particle-canvas');
     var ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+
+    function resize(){
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
 
     var colors = ['#f59e0b','#fbbf24','#fde68a','#2dd4bf','#ffffff','#f97316'];
     var shapes = ['circle','rect','triangle'];
@@ -176,10 +203,59 @@
         ctx.restore();
       });
       frame++;
-      if(alive || frame < 120) requestAnimationFrame(animate);
+      if(alive || frame < 120) _particleAnimId = requestAnimationFrame(animate);
       else { ctx.clearRect(0,0,canvas.width,canvas.height); }
     }
     animate();
+  }
+
+  // ── COPY WITH FALLBACK ───────────────────────────────────────────
+  function copyToClipboard(text, onSuccess, onFail){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(onSuccess).catch(function(){
+        execCommandCopy(text, onSuccess, onFail);
+      });
+    } else {
+      execCommandCopy(text, onSuccess, onFail);
+    }
+  }
+  function execCommandCopy(text, onSuccess, onFail){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if(ok) onSuccess(); else onFail();
+    } catch(e){ onFail(); }
+  }
+
+  // ── SHARE ───────────────────────────────────────────────────────
+  function shareStory(url, title){
+    var fullUrl = new URL(url, window.location.href).href;
+    var btn = document.getElementById('share-btn');
+
+    // Use native share sheet on mobile if available
+    if(navigator.share){
+      navigator.share({ title: title || 'Check out my story on DawnScribe!', url: fullUrl })
+        .catch(function(){}); // user cancelled — no toast needed
+      return;
+    }
+
+    // Fallback: clipboard copy
+    copyToClipboard(fullUrl,
+      function(){
+        showToast('Link copied!', 'ti-check');
+        if(btn){
+          btn.classList.add('copied');
+          btn.innerHTML = '<i class="ti ti-check"></i> Copied!';
+          setTimeout(function(){ btn.classList.remove('copied'); btn.innerHTML = '<i class="ti ti-share"></i> Share'; }, 2000);
+        }
+      },
+      function(){ showToast('Could not copy link.', 'ti-alert-circle'); }
+    );
   }
 
   // ── INIT ─────────────────────────────────────────────────────────
@@ -217,7 +293,7 @@
       if(artistProf) artistName = artistProf.display_name || artistProf.username || 'the artist';
     }
 
-    // Load novel cover (try live works table first, fall back to stored cover)
+    // Load novel data (live from works table, fall back to stored snapshot)
     var novelCover = collab.novel_cover_url || '';
     var novelTitle = collab.novel_title || 'Your Story';
     if(collab.work_id){
@@ -228,26 +304,53 @@
       }
     }
 
+    // Check milestone: how many approved collabs does this user have total?
+    var milestoneMsg = null;
+    try {
+      var { count } = await db.from('artwork_collabs')
+        .select('id', { count: 'exact', head: true })
+        .eq('author_id', session.user.id)
+        .eq('status', 'approved');
+      if(count === 1) milestoneMsg = 'Your first approved collab! The journey begins. 🎉';
+      else if(count === 5) milestoneMsg = '5 approved collabs! You\'re on a roll. 🔥';
+      else if(count === 10) milestoneMsg = '10 approved collabs! A true collab legend. 🏆';
+      else if(count === 25) milestoneMsg = '25 approved collabs! Unstoppable. ✨';
+    } catch(e) {}
+
+    // Build URLs — guard against null work_id
+    var storyUrl = collab.work_id ? ('story.html?id=' + collab.work_id) : null;
+    var artworkUrl = 'artwork.html?id=' + collab.artwork_id + '#collabs';
+
     render({
       collab, artwork, novelTitle, novelCover,
       artworkTitle: artwork ? (artwork.title || 'Untitled Artwork') : 'Untitled Artwork',
       artworkCover: artwork ? (artwork.cover_url || '') : '',
-      artistName,
-      storyUrl: 'story.html?id=' + collab.work_id,
-      artworkUrl: 'artwork.html?id=' + collab.artwork_id
+      artistName, storyUrl, artworkUrl
     });
 
     // Launch celebration after a short delay
     setTimeout(launchParticles, 400);
+
+    // Show milestone toast after animations settle
+    if(milestoneMsg) setTimeout(function(){ showToast(milestoneMsg, 'ti-award'); }, 1800);
   }
 
   function render(d){
     var page = document.getElementById('page');
+
+    // Share / read buttons — guard if story URL is missing
+    var storyBtnHtml = d.storyUrl
+      ? '<a class="btn-primary" href="' + esc(d.storyUrl) + '"><i class="ti ti-book-open"></i> Read Your Story</a>'
+      : '<span class="btn-primary" style="opacity:0.4;cursor:default;pointer-events:none;"><i class="ti ti-book-open"></i> Story Unavailable</span>';
+    var shareBtnHtml = d.storyUrl
+      ? '<button id="share-btn" class="btn-secondary" onclick="shareStory(\'' + esc(d.storyUrl) + '\',\'' + esc(d.novelTitle||'') + '\')"><i class="ti ti-share"></i> Share</button>'
+      : '';
+
     page.innerHTML =
 
       // Achievement badge + title
       '<div class="achievement-wrap">'
-        + '<div class="achievement-badge"><i class="ti ti-star-filled"></i></div>'
+        + '<div class="achievement-badge"><i class="ti ti-trophy"></i></div>'
         + '<div class="achievement-label">✦ Collab Achievement Unlocked ✦</div>'
         + '<h1 class="achievement-title">Your Collab Was Approved!</h1>'
         + '<p class="achievement-sub"><strong>' + esc(d.artistName) + '</strong> loved your story and gave it the green light.<br>It\'s now live on their artwork page for the whole community to read.</p>'
@@ -271,7 +374,7 @@
             // Connector
             + '<div class="bond-connector">'
               + '<div class="bond-line"></div>'
-              + '<div class="bond-icon"><i class="ti ti-writing"></i></div>'
+              + '<div class="bond-icon"><i class="ti ti-heart-handshake"></i></div>'
               + '<div class="bond-line"></div>'
             + '</div>'
 
@@ -289,11 +392,23 @@
         + '</div>'
       + '</div>'
 
+      // Revenue split callout
+      + '<div class="revenue-callout">'
+        + '<div class="revenue-card">'
+          + '<div class="revenue-icon"><i class="ti ti-coin"></i></div>'
+          + '<div class="revenue-text">'
+            + '<strong>You earn from this collab</strong>'
+            + '<span>When readers use Sparks on this artwork, you receive <strong style="color:var(--accent);">30% of the Ember revenue</strong> as the collab author — automatically credited to your balance.</span>'
+          + '</div>'
+          + '<div class="revenue-pct">30%</div>'
+        + '</div>'
+      + '</div>'
+
       // Action buttons
       + '<div class="actions">'
-        + '<a class="btn-primary" href="' + esc(d.storyUrl) + '"><i class="ti ti-book-open"></i> Read Your Story</a>'
-        + '<button class="btn-secondary" onclick="copyLink(\'' + esc(d.storyUrl) + '\')"><i class="ti ti-share"></i> Share</button>'
-        + '<a class="btn-secondary" href="' + esc(d.artworkUrl) + '"><i class="ti ti-palette"></i> View Artwork</a>'
+        + storyBtnHtml
+        + shareBtnHtml
+        + '<a class="btn-secondary" href="' + esc(d.artworkUrl) + '"><i class="ti ti-palette"></i> View on Artwork</a>'
       + '</div>'
 
       // Footer note
@@ -301,17 +416,6 @@
         + 'Your story appears in the <strong>Collab Stories</strong> section on the artwork page.<br>'
         + '<a href="collab-outbox.html">View all your collab submissions →</a>'
       + '</p>';
-  }
-
-  function copyLink(url){
-    var full = window.location.origin + '/' + url;
-    navigator.clipboard.writeText(full).then(function(){
-      showToast('Link copied!', 'ti-check');
-      var btn = document.querySelector('.btn-secondary');
-      if(btn){ btn.classList.add('copied'); btn.innerHTML = '<i class="ti ti-check"></i> Copied!'; setTimeout(function(){ btn.classList.remove('copied'); btn.innerHTML = '<i class="ti ti-share"></i> Share'; }, 2000); }
-    }).catch(function(){
-      showToast('Could not copy link.', 'ti-alert-circle');
-    });
   }
 
   init();

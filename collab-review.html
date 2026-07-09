@@ -5,6 +5,7 @@
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DawnScribe — Review Collab Story</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <style>
@@ -55,13 +56,14 @@
 
     /* CHAPTER NAV */
     .chapter-nav{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;}
-    .chapter-tab{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--text3);cursor:pointer;transition:all 0.2s;font-family:'Lato',sans-serif;}
+    .chapter-tab{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--text3);cursor:pointer;transition:all 0.2s;font-family:'Lato',sans-serif;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .chapter-tab:hover{border-color:rgba(245,158,11,0.4);color:#f59e0b;}
     .chapter-tab.active{border-color:#f59e0b;background:rgba(245,158,11,0.1);color:#f59e0b;}
 
     /* CHAPTER READER */
     .chapter-reader{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:32px 36px;margin-bottom:32px;}
-    .chapter-reader-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border);}
+    .chapter-reader-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border);display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
+    .chapter-progress-label{font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0.5px;white-space:nowrap;font-family:'Lato',sans-serif;}
     .chapter-content{font-size:15px;line-height:1.9;color:var(--text2);}
     .chapter-content p{margin-bottom:1.2em;}
     .chapter-content h1,.chapter-content h2,.chapter-content h3{font-family:'Cinzel',serif;color:var(--text);margin:1.5em 0 0.6em;}
@@ -99,6 +101,15 @@
     .deny-confirm{background:var(--red);border:none;border-radius:8px;padding:9px 22px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:6px;}
     .deny-confirm:hover{opacity:0.85;}
     .deny-confirm:disabled{opacity:0.5;cursor:not-allowed;}
+
+    /* LIGHTBOX */
+    .lightbox-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:800;display:none;align-items:center;justify-content:center;padding:24px;cursor:zoom-out;}
+    .lightbox-backdrop.show{display:flex;}
+    .lightbox-backdrop img{max-width:90vw;max-height:85vh;border-radius:10px;object-fit:contain;box-shadow:0 0 60px rgba(0,0,0,0.8);}
+    .lightbox-close{position:absolute;top:20px;right:24px;background:rgba(255,255,255,0.1);border:none;border-radius:50%;width:38px;height:38px;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.2s;}
+    .lightbox-close:hover{background:rgba(255,255,255,0.2);}
+    .fanart-img-thumb{cursor:zoom-in;transition:opacity 0.2s;}
+    .fanart-img-thumb:hover{opacity:0.85;}
 
     /* STATES */
     .state-wrap{text-align:center;padding:80px 24px;}
@@ -149,7 +160,7 @@
         <button class="deny-modal-close" onclick="closeDenyModal()"><i class="ti ti-x"></i></button>
       </div>
       <div class="deny-modal-body">
-        <p class="deny-modal-desc">Let the author know why you're declining. Your reason will be sent to them as a direct message.</p>
+        <p class="deny-modal-desc" id="deny-modal-desc">Let the author know why you're declining. Your reason will be sent to them as a direct message.</p>
         <textarea class="deny-reason-input" id="deny-reason" placeholder="e.g. The tone of this story doesn't quite match the artwork's atmosphere. Feel free to try again with a different approach!"></textarea>
       </div>
       <div class="deny-modal-footer">
@@ -157,6 +168,12 @@
         <button class="deny-confirm" id="deny-confirm-btn" onclick="confirmDeny()"><i class="ti ti-send"></i> Send & Deny</button>
       </div>
     </div>
+  </div>
+
+  <!-- LIGHTBOX -->
+  <div class="lightbox-backdrop" id="lightbox-backdrop" onclick="closeLightbox()">
+    <button class="lightbox-close" onclick="closeLightbox()" title="Close"><i class="ti ti-x"></i></button>
+    <img id="lightbox-img" src="" alt="Fan art full size"/>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -272,9 +289,10 @@
           + '</div></div>'
         + '<div class="artwork-strip">'
           + '<div class="artwork-strip-img">'
-            + (collabData.image_url ? '<img src="' + esc(collabData.image_url) + '" alt="Fan art"/>' : '<i class="ti ti-photo"></i>')
+            + (collabData.image_url ? '<img class="fanart-img-thumb" src="' + esc(collabData.image_url) + '" alt="Fan art" onclick="openLightbox(' + JSON.stringify(collabData.image_url) + ')" title="Click to expand"/>' : '<i class="ti ti-photo"></i>')
           + '</div>'
           + '<div style="flex:1;">'
+            + (collabData.image_url ? '<div style="font-size:10px;color:var(--text3);margin-bottom:6px;"><i class="ti ti-zoom-in" style="font-size:11px;"></i> Click image to expand</div>' : '')
             + '<div class="artwork-strip-label">Fan Art Submission</div>'
             + '<div class="artwork-strip-title">' + esc(collabData.description || 'Untitled Artwork') + '</div>'
             + '<div class="artwork-strip-artist">by <strong>' + esc(artistName) + '</strong> &middot; for <strong>' + esc(novel.title) + '</strong></div>'
@@ -292,9 +310,9 @@
     }
 
     function renderAlreadyDecidedFanArt(status, novelId){
-      var color = status === 'approved' ? 'var(--green)' : 'var(--red)';
-      var icon = status === 'approved' ? 'ti-circle-check' : 'ti-circle-x';
-      var label = status === 'approved' ? 'Already Approved' : 'Already Denied';
+      var color = status === 'approved' ? 'var(--green)' : status === 'rejected' ? 'var(--red)' : 'var(--text3)';
+      var icon = status === 'approved' ? 'ti-circle-check' : status === 'rejected' ? 'ti-circle-x' : 'ti-info-circle';
+      var label = status === 'approved' ? 'Already Approved' : status === 'rejected' ? 'Already Denied' : 'Already Reviewed';
       document.getElementById('page-wrap').innerHTML =
         '<div class="state-wrap"><div class="state-icon" style="color:' + color + '"><i class="ti ' + icon + '"></i></div>'
         + '<div class="state-title">' + label + '</div>'
@@ -365,8 +383,8 @@
         // Chapter reader
         + '<div class="chapter-reader" id="chapter-reader">'
           + (chapters.length
-              ? '<div class="chapter-reader-title" id="chapter-reader-title">' + esc(chapters[0].title) + '</div>'
-                + '<div class="chapter-content" id="chapter-content">' + (chapters[0].content || '') + '</div>'
+              ? '<div class="chapter-reader-title" id="chapter-reader-title"><span>' + esc(chapters[0].title) + '</span>' + (chapters.length > 1 ? '<span class="chapter-progress-label" id="chapter-progress">Chapter 1 of ' + chapters.length + '</span>' : '') + '</div>'
+                + '<div class="chapter-content" id="chapter-content">' + (typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(chapters[0].content || '') : esc(chapters[0].content || '')) + '</div>'
               : '<div style="text-align:center;padding:40px;color:var(--text3);">No chapters found.</div>')
         + '</div>';
 
@@ -380,8 +398,11 @@
       if(!c) return;
       var titleEl = document.getElementById('chapter-reader-title');
       var contentEl = document.getElementById('chapter-content');
-      if(titleEl) titleEl.textContent = c.title;
-      if(contentEl) contentEl.innerHTML = c.content || '';
+      if(titleEl){
+        var progressLabel = chapters.length > 1 ? '<span class="chapter-progress-label" id="chapter-progress">Chapter ' + (idx+1) + ' of ' + chapters.length + '</span>' : '';
+        titleEl.innerHTML = '<span>' + esc(c.title) + '</span>' + progressLabel;
+      }
+      if(contentEl) contentEl.innerHTML = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(c.content || '') : esc(c.content || '');
       // Update tab active state
       document.querySelectorAll('.chapter-tab').forEach(function(btn, i){
         btn.classList.toggle('active', i === idx);
@@ -392,12 +413,13 @@
     }
 
     function renderAlreadyDecided(status){
-      var icon = status === 'approved' ? 'ti-circle-check' : 'ti-circle-x';
-      var color = status === 'approved' ? 'var(--green)' : 'var(--red)';
-      var label = status === 'approved' ? 'Already Approved' : 'Already Denied';
+      var icon = status === 'approved' ? 'ti-circle-check' : status === 'rejected' ? 'ti-circle-x' : 'ti-info-circle';
+      var color = status === 'approved' ? 'var(--green)' : status === 'rejected' ? 'var(--red)' : 'var(--text3)';
+      var label = status === 'approved' ? 'Already Approved' : status === 'rejected' ? 'Already Denied' : 'Already Reviewed';
       var body = status === 'approved'
         ? 'You approved this collab story. It is now live on your artwork page.'
-        : 'You denied this collab request.';
+        : status === 'rejected' ? 'You denied this collab request.'
+        : 'This request has already been reviewed (status: ' + esc(status) + ').';
       document.getElementById('page-wrap').innerHTML =
         '<div class="state-wrap">'
           + '<div class="state-icon" style="color:' + color + ';"><i class="ti ' + icon + '"></i></div>'
@@ -410,13 +432,14 @@
     function showBadgeToasts(badgeResults) {
       if (!badgeResults || !badgeResults.length) return;
       badgeResults.forEach(function(r, i) {
+        var displayName = r.badge_name || r.badge_slug || 'Badge';
         var msg = null;
         if (r.awarded) {
-          msg = '🏅 Badge unlocked: ' + (r.badge_slug || '') + '!';
+          msg = '🏅 Badge unlocked: ' + displayName + '!';
         } else if (r.newly_unlocked && r.newly_unlocked.length > 0) {
           r.newly_unlocked.forEach(function(tier, j) {
             setTimeout(function() {
-              showToast('🏅 ' + (r.badge_slug || 'badge') + ' — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP', 'ti-award');
+              showToast('🏅 ' + displayName + ' — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP', 'ti-award');
             }, (i + j + 1) * 700);
           });
           return;
@@ -433,6 +456,11 @@
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Approving…';
 
       if(isFanArtFlow){
+        if(!collabData.image_url){
+          showToast('Cannot approve: fan art has no image attached.', 'ti-alert-circle');
+          btn.disabled=false; if(denyBtn) denyBtn.disabled=false;
+          btn.innerHTML='<i class="ti ti-check"></i> Approve'; return;
+        }
         var { error } = await db.from('story_collabs').update({ status: 'approved' }).eq('id', collabId);
         if(error){ showToast('Failed to approve: ' + error.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
         if(collabData.artist_id && collabData.artist_id !== session.user.id){
@@ -462,7 +490,8 @@
 
       var { error } = await db.from('artwork_collabs').update({ status: 'approved' }).eq('id', collabId);
       if(error){ showToast('Failed to approve: ' + error.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
-      await db.from('works').update({ is_published: true }).eq('id', collabData.artwork_id);
+      var { error: pubErr } = await db.from('works').update({ is_published: true }).eq('id', collabData.work_id);
+      if(pubErr){ showToast('Approved but failed to publish the story: ' + pubErr.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
       var denyTarget = isFanArtFlow ? collabData.artist_id : collabData.author_id;
       if(denyTarget && denyTarget !== session.user.id){
         var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
@@ -490,7 +519,15 @@
 
     // ── DENY MODAL
     function openDenyModal(){
-      document.getElementById('deny-reason').value = '';
+      // Update description to match flow (don't wipe existing reason text)
+      var descEl = document.getElementById('deny-modal-desc');
+      if(descEl){
+        descEl.textContent = isFanArtFlow
+          ? 'Let the artist know why you\'re declining. Your reason will be sent to them as a direct message.'
+          : 'Let the author know why you\'re declining. Your reason will be sent to them as a direct message.';
+      }
+      // Reset border in case of previous validation error
+      document.getElementById('deny-reason').style.borderColor = '';
       document.getElementById('deny-backdrop').classList.add('show');
       document.body.style.overflow = 'hidden';
       setTimeout(function(){ document.getElementById('deny-reason').focus(); }, 100);
@@ -500,6 +537,23 @@
       document.body.style.overflow = '';
     }
     document.getElementById('deny-backdrop').addEventListener('click', function(e){ if(e.target===this) closeDenyModal(); });
+    document.addEventListener('keydown', function(e){
+      if(e.key === 'Escape'){
+        if(document.getElementById('lightbox-backdrop').classList.contains('show')) closeLightbox();
+        else closeDenyModal();
+      }
+    });
+
+    function openLightbox(src){
+      var lb = document.getElementById('lightbox-backdrop');
+      document.getElementById('lightbox-img').src = src;
+      lb.classList.add('show');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox(){
+      document.getElementById('lightbox-backdrop').classList.remove('show');
+      document.body.style.overflow = '';
+    }
 
     async function confirmDeny(){
       var reason = document.getElementById('deny-reason').value.trim();
@@ -528,7 +582,7 @@
       }
 
       closeDenyModal();
-      showToast('Request denied. Reason sent to author.', 'ti-x');
+      showToast(isFanArtFlow ? 'Request denied. Reason sent to artist.' : 'Request denied. Reason sent to author.', 'ti-x');
       setTimeout(function(){ window.location.href = isFanArtFlow ? 'story.html?id=' + novelData.id : 'artwork.html?id=' + artworkData.id; }, 1800);
     }
 

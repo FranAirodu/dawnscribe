@@ -37,23 +37,37 @@
     .section-count{font-size:11px;font-weight:700;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:2px 8px;color:#f59e0b;margin-left:auto;}
     .section-count.zero{background:var(--bg3);border-color:var(--border);color:var(--text3);}
 
+    /* COLLAPSIBLE reviewed sections */
+    .section-toggle{background:transparent;border:none;cursor:pointer;color:var(--text3);font-size:12px;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:5px;padding:0;margin-left:auto;transition:color 0.2s;}
+    .section-toggle:hover{color:var(--accent);}
+    .section-toggle i{transition:transform 0.25s;}
+    .section-toggle.collapsed i.ti-chevron-up{transform:rotate(180deg);}
+    .section-body{overflow:hidden;transition:max-height 0.3s ease,opacity 0.3s ease;max-height:9999px;opacity:1;}
+    .section-body.collapsed{max-height:0;opacity:0;}
+
     /* ROW */
     .collab-row{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:14px;margin-bottom:10px;transition:border-color 0.2s;}
     .collab-row:last-child{margin-bottom:0;}
     .collab-row.pending{border-color:rgba(245,158,11,0.2);}
+    .collab-row.stale{border-color:rgba(245,158,11,0.45);background:rgba(245,158,11,0.03);}
     .collab-cover{width:42px;height:60px;border-radius:7px;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px;overflow:hidden;}
     .collab-cover img{width:100%;height:100%;object-fit:cover;}
     .collab-info{flex:1;min-width:0;}
     .collab-title{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;}
     .collab-meta{font-size:12px;color:var(--text3);line-height:1.5;}
     .collab-meta em{color:var(--text2);font-style:normal;}
-    .collab-actions{display:flex;gap:8px;flex-shrink:0;}
+    .collab-actions{display:flex;gap:8px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end;}
+
+    /* stale nudge chip */
+    .stale-chip{font-size:10px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:2px 7px;white-space:nowrap;}
 
     /* BUTTONS */
     .btn-review{background:#f59e0b;border:none;border-radius:8px;padding:7px 16px;color:#0a0a0f;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;}
     .btn-review:hover{background:#fbbf24;}
     .btn-view{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;text-decoration:none;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;}
     .btn-view:hover{border-color:var(--accent);color:var(--accent);}
+    .btn-delete{background:transparent;border:1px solid rgba(248,113,113,0.25);border-radius:8px;padding:7px 12px;color:var(--red);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.2s;white-space:nowrap;}
+    .btn-delete:hover{background:rgba(248,113,113,0.08);border-color:var(--red);}
     .badge-approved{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;border-radius:8px;padding:3px 10px;background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.3);color:var(--green);flex-shrink:0;}
     .badge-rejected{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;border-radius:8px;padding:3px 10px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);color:var(--red);flex-shrink:0;}
 
@@ -61,6 +75,11 @@
     .empty{text-align:center;padding:36px 24px;color:var(--text3);background:var(--bg2);border:1px solid var(--border);border-radius:12px;}
     .empty i{font-size:32px;display:block;margin-bottom:10px;}
     .empty p{font-size:13px;line-height:1.6;}
+    .empty-full{text-align:center;padding:80px 24px;color:var(--text3);}
+    .empty-full i{font-size:40px;display:block;margin-bottom:16px;}
+    .empty-full h2{font-family:'Cinzel',serif;font-size:20px;color:var(--text);margin-bottom:8px;}
+    .empty-full p{font-size:14px;line-height:1.6;}
+    .empty-full a{color:var(--accent);text-decoration:none;font-weight:700;}
 
     .loading{text-align:center;padding:32px;color:var(--text3);font-size:13px;}
     .not-logged{text-align:center;padding:80px 24px;color:var(--text3);}
@@ -92,12 +111,44 @@
 
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-  async function deleteInboxDeclined(collabId, table, rowEl){
+  // Returns a human-friendly relative time string
+  function timeAgo(isoStr){
+    if(!isoStr) return '';
+    var diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+    if(diff < 60) return 'just now';
+    if(diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if(diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    var d = Math.floor(diff/86400);
+    return d === 1 ? 'yesterday' : d + ' days ago';
+  }
+
+  // Returns true if submission is older than 7 days
+  function isStale(isoStr){
+    if(!isoStr) return false;
+    return (Date.now() - new Date(isoStr).getTime()) > 7 * 86400 * 1000;
+  }
+
+  // BUG FIX: table mapping corrected
+  // artwork_collabs = story submissions on your artwork (author_id)
+  // story_collabs   = fan artwork on your novels (artist_id)
+  async function deleteInboxDeclined(collabId, tableKey, rowEl){
     if(!confirm('Remove this declined submission from your inbox?')) return;
-    var tbl = table === 'art' ? 'story_collabs' : 'artwork_collabs';
+    // tableKey 'story' = artwork_collabs row; tableKey 'fanart' = story_collabs row
+    var tbl = tableKey === 'story' ? 'artwork_collabs' : 'story_collabs';
     var { error } = await db.from(tbl).delete().eq('id', collabId);
     if(error){ alert('Failed to delete: ' + error.message); return; }
     if(rowEl){ rowEl.style.transition='opacity 0.3s,transform 0.3s'; rowEl.style.opacity='0'; rowEl.style.transform='translateX(-12px)'; setTimeout(function(){ rowEl.remove(); },300); }
+  }
+
+  function makeToggle(bodyEl, label){
+    var btn = document.createElement('button');
+    btn.className = 'section-toggle';
+    btn.innerHTML = label + ' <i class="ti ti-chevron-up"></i>';
+    btn.onclick = function(){
+      var collapsed = bodyEl.classList.toggle('collapsed');
+      btn.classList.toggle('collapsed', collapsed);
+    };
+    return btn;
   }
 
   async function init(){
@@ -110,7 +161,7 @@
     }
     var uid = session.user.id;
 
-    // ── FIND USER'S ARTWORKS (for story submissions)
+    // ── FIND USER'S ARTWORKS (receive story submissions)
     var { data: myArtworks } = await db.from('works')
       .select('id, title, cover_url')
       .eq('author_id', uid)
@@ -119,7 +170,7 @@
     var artworkMap = {};
     (myArtworks||[]).forEach(function(a){ artworkMap[a.id] = a; });
 
-    // ── FIND USER'S NOVELS (for artwork submissions)
+    // ── FIND USER'S NOVELS (receive fan-art submissions)
     var { data: myNovels } = await db.from('works')
       .select('id, title, cover_url')
       .eq('author_id', uid)
@@ -128,7 +179,19 @@
     var novelMap = {};
     (myNovels||[]).forEach(function(n){ novelMap[n.id] = n; });
 
+    // User has no published works at all — show friendly empty state
+    if(!myArtworkIds.length && !myNovelIds.length){
+      content.innerHTML =
+        '<div class="empty-full"><i class="ti ti-inbox-off"></i>'
+        + '<h2>Nothing here yet</h2>'
+        + '<p>You haven\'t published any artworks or novels yet.<br>Once you do, collab submissions will appear here.</p>'
+        + '<p style="margin-top:16px;"><a href="publish.html">Publish your first work →</a></p>'
+        + '</div>';
+      return;
+    }
+
     // ── STORY SUBMISSIONS ON YOUR ARTWORK
+    // Table: artwork_collabs — author submits their novel to be illustrated by your artwork
     var storyRequests = [];
     if(myArtworkIds.length){
       var { data: sr } = await db.from('artwork_collabs')
@@ -138,7 +201,7 @@
       storyRequests = sr || [];
     }
 
-    // Fetch author profiles for story requests
+    // Author profiles for story requests
     var authorIds = [...new Set(storyRequests.map(function(r){ return r.author_id; }).filter(Boolean))];
     var authorMap = {};
     if(authorIds.length){
@@ -146,7 +209,8 @@
       (profs||[]).forEach(function(p){ authorMap[p.id] = p; });
     }
 
-    // ── ARTWORK SUBMISSIONS ON YOUR NOVELS
+    // ── FAN ARTWORK SUBMISSIONS ON YOUR NOVELS
+    // Table: story_collabs — artist submits fan-art for your novel
     var artRequests = [];
     if(myNovelIds.length){
       var { data: ar } = await db.from('story_collabs')
@@ -156,7 +220,7 @@
       artRequests = ar || [];
     }
 
-    // Fetch artist profiles for artwork requests
+    // Artist profiles for artwork requests
     var artistIds = [...new Set(artRequests.map(function(r){ return r.artist_id; }).filter(Boolean))];
     var artistMap = {};
     if(artistIds.length){
@@ -170,56 +234,71 @@
     var decidedStories = storyRequests.filter(function(r){ return r.status !== 'pending'; });
 
     // ── SECTION 1: Pending story submissions on your artwork
-    var s1 = document.createElement('div');
-    s1.className = 'section';
-    s1.innerHTML =
-      '<div class="section-header">'
-        + '<div class="section-icon gold"><i class="ti ti-writing"></i></div>'
-        + '<div class="section-title">Story Submissions — Pending</div>'
-        + '<div class="section-count' + (pendingStories.length ? '' : ' zero') + '">' + pendingStories.length + ' pending</div>'
-      + '</div>';
+    if(myArtworkIds.length){
+      var s1 = document.createElement('div');
+      s1.className = 'section';
+      s1.innerHTML =
+        '<div class="section-header">'
+          + '<div class="section-icon gold"><i class="ti ti-writing"></i></div>'
+          + '<div class="section-title">Story Submissions — Pending</div>'
+          + '<div class="section-count' + (pendingStories.length ? '' : ' zero') + '">' + pendingStories.length + ' pending</div>'
+        + '</div>';
 
-    if(!pendingStories.length){
-      s1.innerHTML += '<div class="empty"><i class="ti ti-writing"></i><p>No pending story submissions on your artwork.</p></div>';
-    } else {
-      pendingStories.forEach(function(row){
-        var art = artworkMap[row.artwork_id] || {};
-        var prof = authorMap[row.author_id] || {};
-        var authorName = prof.display_name || prof.username || 'Author';
-        var div = document.createElement('div');
-        div.className = 'collab-row pending';
-        div.innerHTML =
-          '<div class="collab-cover">'
-            + (row.novel_cover_url ? '<img src="' + esc(row.novel_cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>')
-          + '</div>'
-          + '<div class="collab-info">'
-            + '<div class="collab-title">' + esc(row.novel_title || 'Untitled Story') + '</div>'
-            + '<div class="collab-meta">by <em>' + esc(authorName) + '</em> · for your artwork <em>' + esc(art.title || 'Untitled') + '</em></div>'
-          + '</div>'
-          + '<div class="collab-actions">'
-            + '<a class="btn-review" href="collab-review.html?collab=' + row.id + '&artwork=' + row.artwork_id + '&work=' + row.work_id + '"><i class="ti ti-book-open"></i> Review</a>'
-          + '</div>';
-        s1.appendChild(div);
-      });
+      var s1body = document.createElement('div');
+      if(!pendingStories.length){
+        s1body.innerHTML = '<div class="empty"><i class="ti ti-writing"></i><p>No pending story submissions on your artwork.</p></div>';
+      } else {
+        pendingStories.forEach(function(row){
+          var art = artworkMap[row.artwork_id] || {};
+          var prof = authorMap[row.author_id] || {};
+          var authorName = prof.display_name || prof.username || 'Author';
+          var stale = isStale(row.created_at);
+          var div = document.createElement('div');
+          div.className = 'collab-row pending' + (stale ? ' stale' : '');
+          div.innerHTML =
+            '<div class="collab-cover">'
+              + (row.novel_cover_url ? '<img src="' + esc(row.novel_cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>')
+            + '</div>'
+            + '<div class="collab-info">'
+              + '<div class="collab-title">' + esc(row.novel_title || 'Untitled Story') + '</div>'
+              + '<div class="collab-meta">by <em>' + esc(authorName) + '</em> · for your artwork <em>' + esc(art.title || 'Untitled') + '</em></div>'
+              + '<div class="collab-meta" style="margin-top:3px;">' + esc(timeAgo(row.created_at)) + (stale ? ' &nbsp;<span class="stale-chip">⏳ Awaiting your review</span>' : '') + '</div>'
+            + '</div>'
+            + '<div class="collab-actions">'
+              + '<a class="btn-view" href="artwork.html?id=' + esc(row.artwork_id) + '" title="View your artwork"><i class="ti ti-photo"></i> Artwork</a>'
+              + '<a class="btn-review" href="collab-review.html?collab=' + esc(row.id) + '&artwork=' + esc(row.artwork_id) + '&work=' + esc(row.work_id) + '"><i class="ti ti-book-open"></i> Review</a>'
+            + '</div>';
+          s1body.appendChild(div);
+        });
+      }
+      s1.appendChild(s1body);
+      content.appendChild(s1);
     }
-    content.appendChild(s1);
 
-    // ── SECTION 2: Decided story submissions
+    // ── SECTION 2: Decided story submissions on your artwork
+    // BUG FIX: was appended out-of-order at bottom; now appended in correct position
     if(decidedStories.length){
       var s2 = document.createElement('div');
       s2.className = 'section';
-      s2.innerHTML =
-        '<div class="section-header">'
-          + '<div class="section-icon gold"><i class="ti ti-history"></i></div>'
-          + '<div class="section-title">Story Submissions — Reviewed</div>'
-          + '<div class="section-count zero">' + decidedStories.length + '</div>'
-        + '</div>';
+      var s2header = document.createElement('div');
+      s2header.className = 'section-header';
+      // BUG FIX: section-count was hardcoded 'zero'; now dynamic
+      s2header.innerHTML =
+        '<div class="section-icon gold"><i class="ti ti-history"></i></div>'
+        + '<div class="section-title">Story Submissions — Reviewed</div>';
+      var s2body = document.createElement('div');
+
       decidedStories.forEach(function(row){
         var art = artworkMap[row.artwork_id] || {};
         var prof = authorMap[row.author_id] || {};
         var authorName = prof.display_name || prof.username || 'Author';
         var div = document.createElement('div');
         div.className = 'collab-row';
+        var deleteBtn = '';
+        if(row.status !== 'approved'){
+          var rowId = JSON.stringify(row.id);
+          deleteBtn = '<button class="btn-delete" onclick="deleteInboxDeclined(' + rowId + ',\'story\',this.closest(\'.collab-row\'))"><i class="ti ti-trash"></i> Delete</button>';
+        }
         div.innerHTML =
           '<div class="collab-cover">'
             + (row.novel_cover_url ? '<img src="' + esc(row.novel_cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>')
@@ -227,13 +306,27 @@
           + '<div class="collab-info">'
             + '<div class="collab-title">' + esc(row.novel_title || 'Untitled Story') + '</div>'
             + '<div class="collab-meta">by <em>' + esc(authorName) + '</em> · for <em>' + esc(art.title || 'Untitled') + '</em></div>'
-            + (row.status === 'approved' ? '<div class="collab-meta" style="margin-top:3px;"><a href="story.html?id=' + row.work_id + '" style="color:var(--accent);font-size:12px;text-decoration:none;"><i class="ti ti-external-link"></i> View story</a></div>' : '')
+            + '<div class="collab-meta" style="margin-top:2px;">' + esc(timeAgo(row.created_at)) + '</div>'
+            + (row.status === 'approved' ? '<div class="collab-meta" style="margin-top:3px;"><a href="story.html?id=' + esc(row.work_id) + '" style="color:var(--accent);font-size:12px;text-decoration:none;"><i class="ti ti-external-link"></i> View story</a></div>' : '')
           + '</div>'
-          + (row.status === 'approved'
-            ? '<span class="badge-approved"><i class="ti ti-check"></i> Approved</span>'
-            : '<span class="badge-rejected"><i class="ti ti-x"></i> Declined</span>');
-        s2.appendChild(div);
+          + '<div class="collab-actions">'
+            + (row.status === 'approved'
+              ? '<span class="badge-approved"><i class="ti ti-check"></i> Approved</span>'
+              : '<span class="badge-rejected"><i class="ti ti-x"></i> Declined</span>' + deleteBtn)
+          + '</div>';
+        s2body.appendChild(div);
       });
+
+      // Collapsible toggle for reviewed section
+      var s2toggle = makeToggle(s2body, 'Show reviewed (' + decidedStories.length + ')');
+      var s2count = document.createElement('div');
+      s2count.className = 'section-count' + (decidedStories.length ? '' : ' zero');
+      s2count.textContent = decidedStories.length;
+      s2header.appendChild(s2count);
+      s2header.appendChild(s2toggle);
+      s2.appendChild(s2header);
+      s2.appendChild(s2body);
+      content.appendChild(s2);
     }
 
     // ── SECTION 3: Fan artwork on your novels (pending/reviewed split)
@@ -241,57 +334,71 @@
     var pendingArt = validArtRequests.filter(function(r){ return r.status === 'pending'; });
     var decidedArt = validArtRequests.filter(function(r){ return r.status !== 'pending'; });
 
-    // Section 3a — Pending
-    var s3 = document.createElement('div');
-    s3.className = 'section';
-    s3.innerHTML =
-      '<div class="section-header">'
-        + '<div class="section-icon gold"><i class="ti ti-palette"></i></div>'
-        + '<div class="section-title">Fan Artwork on Your Novels — Pending</div>'
-        + '<div class="section-count' + (pendingArt.length ? '' : ' zero') + '">' + pendingArt.length + ' pending</div>'
-      + '</div>';
+    // Section 3a — Pending fan artwork
+    if(myNovelIds.length){
+      var s3 = document.createElement('div');
+      s3.className = 'section';
+      s3.innerHTML =
+        '<div class="section-header">'
+          + '<div class="section-icon gold"><i class="ti ti-palette"></i></div>'
+          + '<div class="section-title">Fan Artwork on Your Novels — Pending</div>'
+          + '<div class="section-count' + (pendingArt.length ? '' : ' zero') + '">' + pendingArt.length + ' pending</div>'
+        + '</div>';
 
-    if(!pendingArt.length){
-      s3.innerHTML += '<div class="empty"><i class="ti ti-palette"></i><p>No pending fan artwork submissions.</p></div>';
-    } else {
-      pendingArt.forEach(function(row){
-        var novel = novelMap[row.work_id] || {};
-        var artist = artistMap[row.artist_id] || {};
-        var artistName = artist.display_name || artist.username || 'Artist';
-        var div = document.createElement('div');
-        div.className = 'collab-row pending';
-        div.innerHTML =
-          '<div class="collab-cover">'
-            + (row.image_url ? '<img src="' + esc(row.image_url) + '" alt=""/>' : '<i class="ti ti-photo"></i>')
-          + '</div>'
-          + '<div class="collab-info">'
-            + '<div class="collab-title">' + esc(row.description || 'Untitled Artwork') + '</div>'
-            + '<div class="collab-meta">by <em>' + esc(artistName) + '</em> for your novel <em>' + esc(novel.title || 'Untitled') + '</em></div>'
-          + '</div>'
-          + '<div class="collab-actions">'
-            + '<a class="btn-review" href="collab-review.html?fanart=' + row.id + '&novel=' + row.work_id + '"><i class="ti ti-eye"></i> Review</a>'
-          + '</div>';
-        s3.appendChild(div);
-      });
+      var s3body = document.createElement('div');
+      if(!pendingArt.length){
+        s3body.innerHTML = '<div class="empty"><i class="ti ti-palette"></i><p>No pending fan artwork submissions.</p></div>';
+      } else {
+        pendingArt.forEach(function(row){
+          var novel = novelMap[row.work_id] || {};
+          var artist = artistMap[row.artist_id] || {};
+          var artistName = artist.display_name || artist.username || 'Artist';
+          var stale = isStale(row.created_at);
+          var div = document.createElement('div');
+          div.className = 'collab-row pending' + (stale ? ' stale' : '');
+          div.innerHTML =
+            '<div class="collab-cover">'
+              + (row.image_url ? '<img src="' + esc(row.image_url) + '" alt=""/>' : '<i class="ti ti-photo"></i>')
+            + '</div>'
+            + '<div class="collab-info">'
+              + '<div class="collab-title">' + esc(row.description || 'Untitled Artwork') + '</div>'
+              + '<div class="collab-meta">by <em>' + esc(artistName) + '</em> for your novel <em>' + esc(novel.title || 'Untitled') + '</em></div>'
+              + '<div class="collab-meta" style="margin-top:3px;">' + esc(timeAgo(row.created_at)) + (stale ? ' &nbsp;<span class="stale-chip">⏳ Awaiting your review</span>' : '') + '</div>'
+            + '</div>'
+            + '<div class="collab-actions">'
+              + '<a class="btn-view" href="story.html?id=' + esc(row.work_id) + '" title="View your novel"><i class="ti ti-book"></i> Novel</a>'
+              + '<a class="btn-review" href="collab-review.html?fanart=' + esc(row.id) + '&novel=' + esc(row.work_id) + '"><i class="ti ti-eye"></i> Review</a>'
+            + '</div>';
+          s3body.appendChild(div);
+        });
+      }
+      s3.appendChild(s3body);
+      content.appendChild(s3);
     }
-    content.appendChild(s3);
 
-    // Section 3b — Reviewed
+    // Section 3b — Reviewed fan artwork
     if(decidedArt.length){
       var s3b = document.createElement('div');
       s3b.className = 'section';
-      s3b.innerHTML =
-        '<div class="section-header">'
-          + '<div class="section-icon gold"><i class="ti ti-history"></i></div>'
-          + '<div class="section-title">Fan Artwork on Your Novels — Reviewed</div>'
-          + '<div class="section-count zero">' + decidedArt.length + '</div>'
-        + '</div>';
+      var s3bheader = document.createElement('div');
+      s3bheader.className = 'section-header';
+      s3bheader.innerHTML =
+        '<div class="section-icon gold"><i class="ti ti-history"></i></div>'
+        + '<div class="section-title">Fan Artwork on Your Novels — Reviewed</div>';
+      var s3bbody = document.createElement('div');
+
       decidedArt.forEach(function(row){
         var novel = novelMap[row.work_id] || {};
         var artist = artistMap[row.artist_id] || {};
         var artistName = artist.display_name || artist.username || 'Artist';
         var div = document.createElement('div');
         div.className = 'collab-row';
+        // BUG FIX: deleteInboxDeclined table key corrected to 'fanart' (maps to story_collabs)
+        var deleteBtn = '';
+        if(row.status !== 'approved'){
+          var rowId = JSON.stringify(row.id);
+          deleteBtn = '<button class="btn-delete" onclick="deleteInboxDeclined(' + rowId + ',\'fanart\',this.closest(\'.collab-row\'))"><i class="ti ti-trash"></i> Delete</button>';
+        }
         div.innerHTML =
           '<div class="collab-cover">'
             + (row.image_url ? '<img src="' + esc(row.image_url) + '" alt=""/>' : '<i class="ti ti-photo"></i>')
@@ -299,22 +406,34 @@
           + '<div class="collab-info">'
             + '<div class="collab-title">' + esc(row.description || 'Untitled Artwork') + '</div>'
             + '<div class="collab-meta">by <em>' + esc(artistName) + '</em> for your novel <em>' + esc(novel.title || 'Untitled') + '</em></div>'
-            + (row.status === 'approved' ? '<div class="collab-meta" style="margin-top:3px;"><a href="story.html?id=' + row.work_id + '" style="color:var(--accent);font-size:12px;text-decoration:none;"><i class="ti ti-external-link"></i> View novel</a></div>' : '')
+            + '<div class="collab-meta" style="margin-top:2px;">' + esc(timeAgo(row.created_at)) + '</div>'
+            + (row.status === 'approved' ? '<div class="collab-meta" style="margin-top:3px;"><a href="story.html?id=' + esc(row.work_id) + '" style="color:var(--accent);font-size:12px;text-decoration:none;"><i class="ti ti-external-link"></i> View novel</a></div>' : '')
           + '</div>'
-          + (row.status === 'approved'
-            ? '<span class="badge-approved"><i class="ti ti-check"></i> Approved</span>'
-            : '<span class="badge-rejected"><i class="ti ti-x"></i> Declined</span>'
-              + '<button class="btn-withdraw" style="margin-left:6px;" onclick="deleteInboxDeclined(\'' + row.id + '\',\'art\',this.closest(\'.collab-row\'))"><i class="ti ti-trash"></i> Delete</button>');
-        s3b.appendChild(div);
+          + '<div class="collab-actions">'
+            + (row.status === 'approved'
+              ? '<span class="badge-approved"><i class="ti ti-check"></i> Approved</span>'
+              : '<span class="badge-rejected"><i class="ti ti-x"></i> Declined</span>' + deleteBtn)
+          + '</div>';
+        s3bbody.appendChild(div);
       });
+
+      // BUG FIX: section-count was hardcoded 'zero'; now dynamic
+      var s3bcount = document.createElement('div');
+      s3bcount.className = 'section-count' + (decidedArt.length ? '' : ' zero');
+      s3bcount.textContent = decidedArt.length;
+      var s3btoggle = makeToggle(s3bbody, 'Show reviewed (' + decidedArt.length + ')');
+      s3bheader.appendChild(s3bcount);
+      s3bheader.appendChild(s3btoggle);
+      s3b.appendChild(s3bheader);
+      s3b.appendChild(s3bbody);
       content.appendChild(s3b);
     }
-    if(typeof s2 !== 'undefined') content.appendChild(s2);
   }
 
   init();
 </script>
 <script src="spoilerUtils.js"></script>
+<script src="footer.js"></script>
 <script src="nav.js"></script>
 </body>
 </html>
