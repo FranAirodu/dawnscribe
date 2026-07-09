@@ -710,11 +710,14 @@
     var readingProgress = {};
 
     function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+    // ── CONFIG ────────────────────────────────────────────────────
+    var GIPHY_API_KEY = 'Gum2tzhKdWKmg03MVpAvAR1RNBrl5o95';
     // Sets the real page language so the reader's browser (Chrome/Edge built-in
     // translate, Safari Translate, etc.) correctly offers to translate foreign-
     // language stories instead of assuming everything is English.
     function applyDocumentLang(code){
-      var valid = ['en','pt','es','fr','de','ja','ko','zh','id'];
+      var valid = ['en','pt','es','fr','de','ja','ko','zh','id','ar','ru','it','pl','nl','tr','sv','da','fi','nb','vi','th','hi'];
       if (code && valid.indexOf(code) !== -1) document.documentElement.lang = code;
     }
     function formatDate(s){ if(!s) return '—'; return new Date(s).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
@@ -1020,14 +1023,17 @@
       state.selected.forEach(function(idx) {
         state.voteCounts[idx]++;
       });
-      if (state.myVote === null) state.totalVoters++;
-      state.myVote = state.selected.slice();
+      // totalVoters tracks unique voters (used for display consistency)
+      var _wasNewVote = (state.myVote === null);
+      if (_wasNewVote) state.totalVoters++;
 
       showToast('Vote recorded!', 'ti-check');
 
       // ── VOTER BADGE ───────────────────────────────────────
-      // Only award on a new vote (myVote was null before this vote), not on updates
-      if (currentSession && state.myVote === null) {
+      // Only award on a new vote (not on updates); _wasNewVote was captured above
+      state.myVote = state.selected.slice();
+
+      if (currentSession && _wasNewVote) {
         try {
           await db.rpc('award_poll_vote_badge', { p_user_id: currentSession.user.id });
         } catch(e) {} // non-critical
@@ -1488,8 +1494,7 @@
 
       // Next chapter — locked until current chapter is read
       if (next) {
-        var currentRead = isChapterRead();
-        var nextUnlocked = currentRead || isOwner;
+        var nextUnlocked = isChapterUnlocked(next) || isOwner;
         var nextBtn = document.createElement(nextUnlocked ? 'a' : 'div');
         nextBtn.className = 'chapter-nav-btn next' + (nextUnlocked ? '' : ' locked');
         if (nextUnlocked) {
@@ -2237,7 +2242,9 @@
       var { error } = await db.from('paragraph_comments').delete()
         .eq('id', commentId).eq('user_id', currentSession.user.id);
       if (error) {
-        if (!isOwner) { cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.','ti-x'); return; }
+        // Fallback: if user is the work author, try owner-delete (no user_id filter)
+        var _isWorkOwner = workData && currentSession.user.id === workData.author_id;
+        if (!_isWorkOwner) { cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.','ti-x'); return; }
         var { error: e2 } = await db.from('paragraph_comments').delete().eq('id', commentId);
         if (e2) { cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.','ti-x'); return; }
       }
@@ -2486,7 +2493,9 @@
         var { error: err2 } = await db.from('chapter_comments').delete().eq('id', commentId);
         if(err2){ cardEl.style.opacity=''; cardEl.style.pointerEvents=''; showToast('Could not delete.', 'ti-x'); return; }
       }
-      cardEl.remove();
+      cardEl.style.transition = 'opacity 0.3s';
+      cardEl.style.opacity = '0';
+      setTimeout(function(){ if (cardEl.parentNode) cardEl.remove(); }, 300);
       // Decrement the SP panel comment badge
       var spBadge = document.getElementById('sp-comment-count');
       if (spBadge) {
@@ -2503,7 +2512,8 @@
       var result = await db.from('chapter_comments')
         .select('id, content, created_at, user_id, parent_id, gif_url, image_url, upvotes, downvotes')
         .eq('chapter_id', chapterData.id)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(200);
 
       var comments = (result.data||[]).filter(function(cm){ return !dsBlock.either(cm.user_id); });
       var listEl = document.getElementById('chapter-comments-list');
@@ -2647,6 +2657,7 @@
         row.className = 'ct-mgr-row';
         var statusLabel = char.chapter_status === 'skipped' ? 'Skipped' : (char.status === 'ended' ? 'Ended' : 'Active');
         var statusClass = char.chapter_status === 'skipped' ? 'skipped' : (char.status === 'ended' ? 'ended' : 'active');
+        row.dataset.charId = char.id;
         row.innerHTML =
           '<div class="comment-avatar ct-mgr-avatar">' +
             (char.portrait_url ? '<img src="'+char.portrait_url+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : '<i class="ti ti-user"></i>') +
@@ -2695,8 +2706,7 @@
       var rows = list ? list.querySelectorAll('.ct-mgr-row') : [];
       var targetRow = null;
       rows.forEach(function(r) {
-        var nameEl = r.querySelector('.ct-mgr-name');
-        if (nameEl && nameEl.textContent === char.name) targetRow = r;
+        if (r.dataset.charId === id) targetRow = r;
       });
       if (!targetRow) return;
       // Don't double-inject
@@ -2755,6 +2765,8 @@
       closeParaPanel();
       spIsOpen = true;
       document.getElementById('sp-panel').style.display = 'flex';
+      // Always reset both classes before re-adding the right one
+      document.body.classList.remove('sp-panel-open', 'panel-open-overlay');
       var rw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--reader-width')) || 650;
       if (rw <= 800) {
         document.body.classList.add('panel-open-overlay');
@@ -3309,7 +3321,7 @@
         inserted.profiles = myP || {};
         inserted.upvotes = 0;
         inserted.downvotes = 0;
-        spComments.push(inserted);
+        spComments.unshift(inserted);
         var ct = document.getElementById('sp-comment-count');
         if (ct) ct.textContent = spComments.length;
         if (spIsOpen && spTab === 'comments') spRenderComments();
@@ -3337,8 +3349,10 @@
       var sessionRes = await db.auth.getSession();
       currentSession = sessionRes && sessionRes.data ? sessionRes.data.session : null;
       if (!currentSession) {
-        for (var _r = 0; _r < 5 && !currentSession; _r++) {
-          await new Promise(function(res){ setTimeout(res, 350); });
+        // Wait briefly for the Supabase client to hydrate the session from storage
+        // (shorter and fewer retries than before — onAuthStateChange handles the rest)
+        for (var _r = 0; _r < 2 && !currentSession; _r++) {
+          await new Promise(function(res){ setTimeout(res, 150); });
           sessionRes = await db.auth.getSession();
           currentSession = sessionRes && sessionRes.data ? sessionRes.data.session : null;
         }
@@ -3436,6 +3450,18 @@
       spMyVotes = {};
       paraCommentCountCache = null; // clear para comment count cache for new chapter
 
+      // Pre-populate para comment count cache now so injectParaWraps() never hits the DB
+      try {
+        var _pccRes = await db.from('paragraph_comments')
+          .select('paragraph_index')
+          .eq('chapter_id', chapterId)
+          .is('parent_id', null);
+        paraCommentCountCache = {};
+        (_pccRes.data || []).forEach(function(r){
+          paraCommentCountCache[r.paragraph_index] = (paraCommentCountCache[r.paragraph_index] || 0) + 1;
+        });
+      } catch(e) { paraCommentCountCache = null; }
+
       // ── ACCESS GUARD ──────────────────────────────────────────
       // Block access to locked chapters unless owner
       if (!isOwner && chapterData.chapter_number > 1) {
@@ -3444,11 +3470,13 @@
           var prevRead = readingProgress[workData.id] && readingProgress[workData.id][prevChapter.id];
           if (!prevRead) {
             // Find the last chapter they can access
+            // Use chapter_number-based lookup (safe with draft gaps in allChapters)
             var lastUnlocked = allChapters[0];
             for (var i = 0; i < allChapters.length; i++) {
               var ch = allChapters[i];
               if (ch.chapter_number === 1) { lastUnlocked = ch; continue; }
-              var pch = allChapters[i - 1];
+              var pch = allChapters.find(function(x){ return x.chapter_number === ch.chapter_number - 1; });
+              if (!pch) { lastUnlocked = ch; continue; }
               var pRead = readingProgress[workData.id] && readingProgress[workData.id][pch.id];
               if (pRead) { lastUnlocked = ch; } else { break; }
             }
@@ -3515,7 +3543,11 @@
         sessionStorage.setItem('ds_ch_visited_' + chapterData.id, '1');
         renderPage(savedPage);
         if (isResume) {
-          showToast('Resumed from page ' + (savedPage + 1), 'ti-bookmark');
+          // Only show the toast if restoreParaScrollPos won't show its own jump bar
+          var _hasSavedPara = !!sessionStorage.getItem('ds_para_pos_' + chapterData.id);
+          if (!_hasSavedPara) {
+            showToast('Resumed from page ' + (savedPage + 1), 'ti-bookmark');
+          }
           setTimeout(restoreParaScrollPos, 600);
         }
       }
@@ -3583,7 +3615,7 @@
     async function echoInit() {
       if (!currentSession || !chapterData) return;
       // Show FAB
-      document.getElementById('echo-fab').style.display = 'none';
+      document.getElementById('echo-fab').style.display = 'block';
       // Load echo types
       var { data: types } = await db.from('echo_types').select('*').order('rarity').order('label');
       echoTypes = types || [];
@@ -3628,7 +3660,15 @@
           var appliesHere = echoAppliesToHere(t);
           var cls = 'echo-item' + (isSelected ? ' selected' : '') + (isUsed && !isSelected ? ' used' : '') + (t.rarity !== 'common' ? ' ' + t.rarity : '');
           var whereText = t.applies_to === 'paragraph' ? 'Drag onto a paragraph or click 🔮' : t.applies_to === 'chapter' ? 'Applies to this chapter' : 'Applies to the whole story';
-          var placedText = placed ? ('Placed in Ch.' + (placed.chapter_id === chapterData.id ? 'this chapter' : '?')) : '';
+          var placedText = '';
+          if (placed) {
+            if (placed.chapter_id === chapterData.id) {
+              placedText = 'Placed in this chapter';
+            } else {
+              var _pc = allChapters.find(function(x){ return x.id === placed.chapter_id; });
+              placedText = 'Placed in Ch.' + (_pc ? _pc.chapter_number : '?');
+            }
+          }
           html += '<div class="' + cls + '" onclick="echoSelect(' + JSON.stringify(t.id) + ')">' +
             '<span class="echo-item-icon">' + t.icon + '</span>' +
             '<div class="echo-item-info">' +
@@ -3701,7 +3741,10 @@
       paras.forEach(function(p, idx) {
         if (!p.textContent.trim()) return;
         p.classList.add('para-echo-mode');
-        p.dataset.paraIdx = p.getAttribute('data-para-idx') || idx;
+        // Always use the absolute data-para-idx attribute (set during pagination),
+        // not the forEach loop index (which resets to 0 on each page).
+        var absIdx = p.getAttribute('data-para-idx');
+        p.dataset.paraIdx = absIdx !== null ? absIdx : String(idx);
         p.addEventListener('click', echoParaClick);
       });
     }
@@ -3985,7 +4028,7 @@
     }
 
     // ── GIF PICKER ────────────────────────────────────────────────
-    var GIPHY_KEY = 'Gum2tzhKdWKmg03MVpAvAR1RNBrl5o95';
+    // GIPHY_API_KEY is defined at the top of the script
     var _gifContext = null;
     var _gifSelected = null;
     var _pendingGifUrl = { para: null, chapter: null, sp: null };
@@ -4044,7 +4087,7 @@
       resultsEl.innerHTML = '<div class="gif-results-empty"><i class="ti ti-loader-2" style="font-size:28px;display:block;margin-bottom:8px;animation:spin 1s linear infinite;"></i>Searching…</div>';
       try {
         var offset = _gifPage * _gifPageSize;
-        var url = 'https://api.giphy.com/v1/gifs/search?api_key=' + GIPHY_KEY + '&q=' + encodeURIComponent(q) + '&limit=' + _gifPageSize + '&offset=' + offset + '&rating=pg-13';
+        var url = 'https://api.giphy.com/v1/gifs/search?api_key=' + GIPHY_API_KEY + '&q=' + encodeURIComponent(q) + '&limit=' + _gifPageSize + '&offset=' + offset + '&rating=pg-13';
         var res = await fetch(url);
         var json = await res.json();
         var gifs = json.data || [];
@@ -4100,8 +4143,30 @@
       var src = _gifSelected;
 
       if (ctx === 'para') {
+        // para-gif-inline-preview is a container div; replace its contents, not itself
         var previewDiv = document.getElementById('para-gif-inline-preview');
-        if (previewDiv) previewDiv.innerHTML = gifInlinePreviewHTML(src, 'para');
+        if (previewDiv) {
+          // Build inner content without wrapping in another .gif-inline-preview div
+        if (previewDiv) {
+          // Build inner content without wrapping in another .gif-inline-preview div
+          var _rmBtn = document.createElement('button');
+          _rmBtn.className = 'gif-inline-remove';
+          _rmBtn.innerHTML = '<i class="ti ti-x"></i> Remove';
+          _rmBtn.addEventListener('click', function(){ gifClear('para'); });
+          var _img = document.createElement('img');
+          _img.src = src; _img.alt = 'gif';
+          var _info = document.createElement('div');
+          _info.className = 'gif-inline-preview-info';
+          var _lbl = document.createElement('span');
+          _lbl.className = 'gif-inline-preview-label';
+          _lbl.textContent = 'GIF attached';
+          _info.appendChild(_lbl);
+          _info.appendChild(_rmBtn);
+          previewDiv.innerHTML = '';
+          previewDiv.appendChild(_img);
+          previewDiv.appendChild(_info);
+        }
+        }
         var gbtn = document.getElementById('para-gif-btn');
         if (gbtn) gbtn.classList.add('has-gif');
       } else {
@@ -4423,15 +4488,17 @@
         window.renderPage._ttswrapped = true;
       }
     }
-    // Hook immediately if renderPage already exists, else wait for DOMContentLoaded
+    // Hook immediately if renderPage already exists (it's set synchronously in the
+    // main script block), or wait for DOMContentLoaded as a fallback.
     if (window.renderPage) { hookRenderPage(); }
-    document.addEventListener('DOMContentLoaded', hookRenderPage);
-    // Also re-hook after init() sets window.renderPage (chapter.html sets it late)
-    var _hookTimer = setInterval(function() {
-      if (window.renderPage && !window.renderPage._ttswrapped) { hookRenderPage(); clearInterval(_hookTimer); }
-    }, 200);
-    // Safety valve: clear the interval after 15s regardless (page should be loaded by then)
-    setTimeout(function() { clearInterval(_hookTimer); }, 15000);
+    document.addEventListener('DOMContentLoaded', function() {
+      if (!window.renderPage || !window.renderPage._ttswrapped) hookRenderPage();
+    });
+    // Final safety: if init() hasn't run yet by DOMContentLoaded (very unlikely),
+    // try once more after a short delay — no polling loop needed.
+    setTimeout(function() {
+      if (window.renderPage && !window.renderPage._ttswrapped) hookRenderPage();
+    }, 500);
 
     // ── Speed cycling ──────────────────────────────────────────────────────
     window.ttsCycleSpeed = function() {
@@ -4603,9 +4670,15 @@
     });
     // Safari/iOS: speech synthesis pauses on background tab — auto-resume
     document.addEventListener('visibilitychange', function() {
-      if (!document.hidden && tts.playing && !tts.paused) {
-        // iOS sometimes pauses the synth on tab switch
-        if (!window.speechSynthesis.speaking) speakCurrent();
+      if (document.hidden || !tts.barOpen) return;
+      if (tts.playing && !tts.paused) {
+        if (window.speechSynthesis.paused) {
+          // Synthesis was paused by the browser — resume it
+          window.speechSynthesis.resume();
+        } else if (!window.speechSynthesis.speaking) {
+          // Synthesis silently stopped (iOS quirk) — restart current sentence
+          speakCurrent();
+        }
       }
     });
 

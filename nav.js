@@ -1100,7 +1100,7 @@ function dsApplyAccent(hex) {
               // is the fast path; user_streaks confirms cross-device claims.
               var ckBtn = document.getElementById('ds-checkin-btn');
               if (ckBtn) ckBtn.style.display = 'flex';
-              var dsCkToday = new Date().toISOString().slice(0, 10);
+              var _ckNow = new Date(); var dsCkToday = _ckNow.getFullYear() + '-' + String(_ckNow.getMonth()+1).padStart(2,'0') + '-' + String(_ckNow.getDate()).padStart(2,'0');
               var dsCkKey = 'ds_checkin_' + uid2;
               if (localStorage.getItem(dsCkKey) === dsCkToday) {
                 dsSetCheckinDot(false);
@@ -1242,11 +1242,13 @@ function dsApplyAccent(hex) {
       if (!session) { window.location.href = 'auth.html'; return; }
       var uid = session.user.id;
       var now = new Date();
-      var todayStr = now.toISOString().slice(0, 10);
-      var y = now.getUTCFullYear(), m = now.getUTCMonth();
-      var mStart = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
-      var mEnd = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
-      var yest = new Date(Date.UTC(y, m, now.getUTCDate() - 1)).toISOString().slice(0, 10);
+      var y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+      var todayStr = y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+      var mStart = y + '-' + String(m+1).padStart(2,'0') + '-01';
+      var daysInMo = new Date(y, m+1, 0).getDate();
+      var mEnd = y + '-' + String(m+1).padStart(2,'0') + '-' + String(daysInMo).padStart(2,'0');
+      var yestD = new Date(y, m, d - 1);
+      var yest = yestD.getFullYear() + '-' + String(yestD.getMonth()+1).padStart(2,'0') + '-' + String(yestD.getDate()).padStart(2,'0');
 
       var sRes = await db.from('user_streaks')
         .select('current_streak,longest_streak,last_checkin')
