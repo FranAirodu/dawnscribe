@@ -1262,10 +1262,12 @@ function dsApplyAccent(hex) {
       var claimedDates = {};
       (cRes.data || []).forEach(function(r){ claimedDates[r.checkin_date] = true; });
 
-      var claimedToday = (streak.last_checkin === todayStr);
+      // claimedToday: true if last_checkin matches local today OR calendar already
+      // has a row for today (guards against UTC/local date mismatch on old rows).
+      var claimedToday = (streak.last_checkin === todayStr) || !!(claimedDates[todayStr]);
       var effStreak;
       if (claimedToday) effStreak = streak.current_streak || 1;
-      else if (streak.last_checkin === yest) effStreak = (streak.current_streak || 0) + 1;
+      else if (streak.last_checkin === yest || claimedDates[yest]) effStreak = (streak.current_streak || 0) + 1;
       else effStreak = 1;
 
       var repairedToday = false;
@@ -1395,7 +1397,7 @@ function dsApplyAccent(hex) {
     var btn = document.getElementById('ck-claim-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Claiming\u2026'; }
     try {
-      var res = await db.rpc('daily_checkin');
+      var res = await db.rpc('daily_checkin', { p_local_date: s.todayStr });
       if (!res.data || !res.data.success) throw new Error('claim_failed');
       localStorage.setItem('ds_checkin_' + s.uid, s.todayStr);
       if (!res.data.already_checked_in) {
