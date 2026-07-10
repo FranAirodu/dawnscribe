@@ -404,6 +404,26 @@
     footer .footer-links a:hover{color:var(--accent);}
     @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
     @keyframes skeleton-pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+    /* ── SHOWCASE TAB ─────────────────────────────────────────── */
+    .showcase-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px;}
+    .showcase-card{background:var(--bg2);border:1px solid rgba(245,158,11,0.2);border-radius:14px;overflow:hidden;transition:all 0.2s;text-decoration:none;display:block;position:relative;}
+    .showcase-card:hover{border-color:rgba(245,158,11,0.55);transform:translateY(-3px);box-shadow:0 8px 24px rgba(245,158,11,0.1);}
+    .showcase-card-banner{width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:42px;overflow:hidden;position:relative;}
+    .showcase-card-banner img{width:100%;height:100%;object-fit:cover;display:block;}
+    .showcase-card-banner-emoji{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:42px;background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.03));}
+    .showcase-card-body{padding:14px 16px;}
+    .showcase-card-type{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#f59e0b;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);border-radius:8px;padding:2px 8px;margin-bottom:8px;}
+    .showcase-card-name{font-size:14px;font-weight:700;color:var(--text);margin-bottom:5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+    .showcase-card-desc{font-size:12px;color:var(--text3);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:10px;}
+    .showcase-card-meta{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--text3);}
+    .showcase-card-price{font-weight:700;color:var(--accent);}
+    .showcase-card-items{display:flex;align-items:center;gap:4px;}
+    .showcase-own-cta{margin-top:18px;display:flex;justify-content:center;}
+    .showcase-own-cta a{display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,0.08);border:1.5px solid rgba(245,158,11,0.35);border-radius:10px;padding:10px 20px;color:#f59e0b;font-size:13px;font-weight:700;text-decoration:none;transition:all 0.2s;}
+    .showcase-own-cta a:hover{background:rgba(245,158,11,0.15);border-color:#f59e0b;}
+    .showcase-status-badge{position:absolute;top:8px;right:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:3px 9px;border-radius:20px;}
+    .showcase-status-badge.pending{background:rgba(245,158,11,0.2);color:#f59e0b;border:1px solid rgba(245,158,11,0.4);}
+    .showcase-status-badge.draft{background:rgba(255,255,255,0.07);color:var(--text3);border:1px solid var(--border);}
   </style>
 </head>
 <body>
@@ -546,6 +566,7 @@
       <button class="profile-tab" data-tab="reading" onclick="switchTab(this)"><i class="ti ti-books"></i> Reading List</button>
       <button class="profile-tab" data-tab="artists" onclick="switchTab(this)"><i class="ti ti-brush"></i> Artist List</button>
       <button class="profile-tab" data-tab="activity" onclick="switchTab(this)"><i class="ti ti-message-circle"></i> Activity</button>
+      <button class="profile-tab" data-tab="showcase" id="tab-showcase" onclick="switchTab(this)" style="display:none;"><i class="ti ti-sparkles" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Showcase</span></button>
     </div>
 
     <!-- WORKS -->
@@ -619,6 +640,11 @@
     <!-- ACTIVITY -->
     <div class="tab-panel" id="panel-activity">
       <div id="activity-container"><div style="font-size:13px;color:var(--text3);padding:12px 0;text-align:center;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading…</div></div>
+    </div>
+
+    <!-- SHOWCASE -->
+    <div class="tab-panel" id="panel-showcase">
+      <div id="showcase-container"><div style="font-size:13px;color:var(--text3);padding:12px 0;text-align:center;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading…</div></div>
     </div>
   </div>
 
@@ -874,6 +900,7 @@
             loadReadingList(profileData.id);
             loadArtistList(profileData.id);
             loadActivity(profileData.id);
+            loadShowcase(profileData.id, true);
           }
           var uTarget = resolvedUsername || viewingUser || 'user';
           var msgBtn = document.getElementById('msg-btn');
@@ -887,6 +914,7 @@
             loadArtistList(profileData.id);
             loadActivity(profileData.id);
             loadReadingList(profileData.id);
+            loadShowcase(profileData.id, false);
           }
           if (!session) {
             // Logged-out visitor — show Follow button in default state
@@ -2647,6 +2675,87 @@ async function handleFriendBtn() {
       } catch(err) {
         console.error('loadActivity error:', err);
         container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">Could not load activity.</div>';
+      }
+    }
+
+    /* ── SHOWCASE TAB ───────────────────────────────────────────── */
+    async function loadShowcase(profileId, isOwner) {
+      var container = document.getElementById('showcase-container');
+      var tabBtn = document.getElementById('tab-showcase');
+      if (!container || !profileId) return;
+
+      try {
+        // Fetch approved scrolls where this user is the creator (artist_id)
+        var { data: scrolls, error } = await db
+          .from('scrolls')
+          .select('id,name,description,type,quill_price,banner_url,banner_emoji,item_count,status,submitted_at')
+          .eq('artist_id', profileId)
+          .in('status', isOwner ? ['approved','pending_review','draft'] : ['approved'])
+          .order('submitted_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Only show tab if there's something worth showing
+        var hasContent = scrolls && scrolls.length > 0;
+        if (!hasContent) {
+          if (isOwner) {
+            // Owner sees tab with CTA to create their first scroll
+            tabBtn.style.display = '';
+            container.innerHTML =
+              '<div style="text-align:center;padding:32px 0;">' +
+              '<i class="ti ti-scroll" style="font-size:40px;color:var(--text3);display:block;margin-bottom:12px;"></i>' +
+              '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px;">No Scrolls Yet</div>' +
+              '<div style="font-size:13px;color:var(--text3);margin-bottom:20px;">Create a cosmetic Scroll bundle and submit it to the Marketplace for readers to unlock.</div>' +
+              '<a href="scroll-create.html" style="display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,0.1);border:1.5px solid rgba(245,158,11,0.4);border-radius:10px;padding:10px 22px;color:#f59e0b;font-size:13px;font-weight:700;text-decoration:none;">' +
+              '<i class="ti ti-plus"></i> Create Your First Scroll</a>' +
+              '</div>';
+          }
+          // Non-owner: keep tab hidden, nothing to show
+          return;
+        }
+
+        // Show the tab
+        tabBtn.style.display = '';
+
+        var typeLabel = { artist_scroll: 'Artist Scroll', story_scroll: 'Story Scroll' };
+        var cards = scrolls.map(function(s) {
+          var banner = s.banner_url
+            ? '<img src="' + s.banner_url + '" alt="" loading="lazy">'
+            : '<div class="showcase-card-banner-emoji">' + (s.banner_emoji || '📜') + '</div>';
+
+          var statusBadge = '';
+          if (isOwner && s.status === 'pending_review') {
+            statusBadge = '<span class="showcase-status-badge pending">Pending Review</span>';
+          } else if (isOwner && s.status === 'draft') {
+            statusBadge = '<span class="showcase-status-badge draft">Draft</span>';
+          }
+
+          var price = s.quill_price ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + s.quill_price + ' Quills</span>' : '<span class="showcase-card-price" style="color:var(--accent);">Free</span>';
+          var items = s.item_count ? '<span class="showcase-card-items"><i class="ti ti-shirt" style="font-size:10px;"></i> ' + s.item_count + ' item' + (s.item_count === 1 ? '' : 's') + '</span>' : '';
+
+          var href = s.status === 'approved' ? 'marketplace.html?scroll=' + s.id : 'scroll-create.html?id=' + s.id;
+
+          return '<a class="showcase-card" href="' + href + '">' +
+            '<div class="showcase-card-banner">' + banner + statusBadge + '</div>' +
+            '<div class="showcase-card-body">' +
+            '<div class="showcase-card-type"><i class="ti ti-scroll"></i> ' + (typeLabel[s.type] || 'Scroll') + '</div>' +
+            '<div class="showcase-card-name">' + (s.name || 'Untitled Scroll') + '</div>' +
+            (s.description ? '<div class="showcase-card-desc">' + s.description + '</div>' : '') +
+            '<div class="showcase-card-meta">' + price + items + '</div>' +
+            '</div></a>';
+        });
+
+        var html = '<div class="showcase-grid">' + cards.join('') + '</div>';
+
+        // Owner CTA to create more
+        if (isOwner) {
+          html += '<div class="showcase-own-cta"><a href="scroll-create.html"><i class="ti ti-plus"></i> Create Another Scroll</a></div>';
+        }
+
+        container.innerHTML = html;
+      } catch(err) {
+        console.error('loadShowcase error:', err);
+        container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">Could not load showcase.</div>';
       }
     }
 

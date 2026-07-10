@@ -301,6 +301,7 @@ function dsApplyAccent(hex) {
           <a class="user-dropdown-item" href="following.html#artists"><i class="ti ti-palette"></i> Following Artists</a>
           <a class="user-dropdown-item" href="following.html#history"><i class="ti ti-history"></i> Reading History</a>
           <a class="user-dropdown-item" href="avatar.html"><i class="ti ti-shirt"></i> My Avatar</a>
+          <a class="user-dropdown-item" href="scroll-create.html"><i class="ti ti-scroll" style="color:var(--accent);"></i> <span style="color:var(--accent);">Submit a Scroll</span></a>
           <a class="user-dropdown-item" href="licensing.html"><i class="ti ti-license"></i> Character Licensing</a>
           <a class="user-dropdown-item" href="payouts.html"><i class="ti ti-wallet"></i> Creator Payouts</a>
           <a class="user-dropdown-item" href="rewards.html"><i class="ti ti-award"></i> My Rewards</a>
