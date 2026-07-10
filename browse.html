@@ -111,6 +111,9 @@
         <button class="view-toggle-btn" id="view-btn-list" onclick="setViewMode('list')"><i class="ti ti-list"></i> List</button>
       </div>
     </div>
+    <div id="complete-filter-bar" style="display:none;padding:0 0 10px;display:none;">
+      <button id="complete-only-btn" onclick="toggleCompleteOnly()" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;font-family:inherit;padding:5px 13px;border-radius:20px;cursor:pointer;border:1.5px solid var(--border);background:var(--bg2);color:var(--text2);transition:all 0.15s;"><i class="ti ti-circle-check"></i> Complete only</button>
+    </div>
     <div id="results-container">
       <div class="state-wrap"><div class="state-icon"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div></div>
     </div>
@@ -137,6 +140,7 @@
     var viewMode = localStorage.getItem('ds_browse_view_mode') || 'bubble';
 
     var myContentFilters = { safe: true, gore: false, erotica: false };
+    var completeOnly = false;
 
     async function surpriseMe(){
       var btn = document.getElementById('surprise-btn');
@@ -340,6 +344,7 @@
         var q = db.from('works').select('id,title,cover_url,rating,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,chapters_count,status', { count: 'exact' })
           .eq('type','novel').eq('is_published',true);
         q = applyContentFilters(q); q = applyLanguageFilters(q);
+        if (completeOnly) q = q.eq('status', 'completed');
         q = q.order(section === 'new-novels' ? 'created_at' : 'rating', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
         var { data, count, error } = await q;
         if (error) throw error;
@@ -450,6 +455,21 @@
     }
     function loadMore() { loadPage(false); }
 
+    function toggleCompleteOnly() {
+      completeOnly = !completeOnly;
+      var btn = document.getElementById('complete-only-btn');
+      if (completeOnly) {
+        btn.style.background = 'rgba(52,211,153,0.15)';
+        btn.style.borderColor = 'var(--green)';
+        btn.style.color = 'var(--green)';
+      } else {
+        btn.style.background = 'var(--bg2)';
+        btn.style.borderColor = 'var(--border)';
+        btn.style.color = 'var(--text2)';
+      }
+      loadPage(true);
+    }
+
     function setViewMode(mode) {
       viewMode = mode;
       localStorage.setItem('ds_browse_view_mode', mode);
@@ -461,6 +481,7 @@
       var toggle = document.getElementById('view-toggle');
       var isNovelSection = NOVEL_SECTIONS.indexOf(section) !== -1;
       toggle.style.display = isNovelSection ? 'flex' : 'none';
+      document.getElementById('complete-filter-bar').style.display = isNovelSection ? 'block' : 'none';
       if (!isNovelSection) viewMode = 'bubble'; // art sections always use the gallery layout
       document.getElementById('view-btn-bubble').classList.toggle('active', viewMode === 'bubble');
       document.getElementById('view-btn-list').classList.toggle('active', viewMode === 'list');

@@ -309,6 +309,12 @@
     .list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
     .reading-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;gap:12px;cursor:pointer;transition:border-color 0.2s;}
     .reading-card:hover{border-color:color-mix(in srgb, var(--accent) 30%, transparent);}
+    .named-list-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;transition:border-color 0.18s;}
+    .named-list-card:hover{border-color:var(--accent);}
+    .named-list-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:7px;}
+    .named-list-badge{font-size:10px;font-weight:700;background:rgba(45,212,191,0.12);color:var(--accent);border-radius:4px;padding:1px 7px;}
+    .named-list-private-badge{font-size:10px;font-weight:700;background:rgba(155,155,192,0.12);color:var(--text3);border-radius:4px;padding:1px 7px;}
+    .named-list-meta{font-size:11px;color:var(--text3);}
     .reading-cover{width:48px;height:66px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:18px;font-weight:700;flex-shrink:0;}
     .reading-body{flex:1;min-width:0;}
     .reading-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -578,6 +584,31 @@
     <!-- READING LIST -->
     <div class="tab-panel" id="panel-reading">
       <div id="reading-list-container"><div style="font-size:13px;color:var(--text3);padding:12px 0;text-align:center;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading…</div></div>
+
+        <!-- NAMED READING LISTS -->
+        <div id="named-lists-section" style="margin-top:24px;display:none;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div style="font-size:13px;font-weight:700;color:var(--text);"><i class="ti ti-playlist" style="color:var(--accent);"></i> Reading Lists</div>
+            <button id="new-list-btn" style="display:none;background:none;border:1px solid var(--border);border-radius:7px;padding:5px 12px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;" onclick="openNewListModal()"><i class="ti ti-plus"></i> New List</button>
+          </div>
+          <div id="named-lists-container" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+
+        <!-- NEW LIST MODAL -->
+        <div id="new-list-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeNewListModal()">
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;width:min(400px,90vw);">
+            <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:16px;font-family:'Cinzel',serif;"><i class="ti ti-playlist" style="color:var(--accent);"></i> New Reading List</div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <input id="new-list-name" type="text" maxlength="60" placeholder="List name…" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;outline:none;width:100%;box-sizing:border-box;"/>
+              <input id="new-list-desc" type="text" maxlength="120" placeholder="Description (optional)…" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;width:100%;box-sizing:border-box;"/>
+              <label style="font-size:13px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:8px;"><input type="checkbox" id="new-list-public" style="accent-color:var(--accent);"/> Make this list public</label>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;">
+              <button onclick="closeNewListModal()" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 16px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;">Cancel</button>
+              <button onclick="createNamedList()" style="background:var(--accent2);border:none;border-radius:8px;padding:8px 20px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;"><i class="ti ti-check"></i> Create</button>
+            </div>
+          </div>
+        </div>
     </div>
 
     <!-- ARTIST LIST -->
@@ -2372,7 +2403,14 @@ async function handleFriendBtn() {
     document.getElementById('edit-ann-modal').addEventListener('click', function(e) { if (e.target === this) { this.classList.remove('open'); } });
 
 
-    /* ── READING LIST (LIVE) ────────────────────────────────────── */
+    /* ── NAMED READING LISTS ──────────────────────────── */
+    function openNewListModal(){var m=document.getElementById('new-list-modal');if(m){m.style.display='flex';document.getElementById('new-list-name').value='';document.getElementById('new-list-desc').value='';document.getElementById('new-list-public').checked=false;}setTimeout(function(){var el=document.getElementById('new-list-name');if(el)el.focus();},80);}
+    function closeNewListModal(){var m=document.getElementById('new-list-modal');if(m)m.style.display='none';}
+    async function createNamedList(){var name=(document.getElementById('new-list-name').value||'').trim();if(!name){document.getElementById('new-list-name').focus();return;}var session=window._currentViewerSession;if(!session)return;var{data,error}=await db.from('user_reading_lists').insert({user_id:session.user.id,name:name,description:(document.getElementById('new-list-desc').value||'').trim()||null,is_public:document.getElementById('new-list-public').checked}).select().single();if(error){showToast('Could not create list.','ti-x');return;}closeNewListModal();showToast('List created!','ti-check');loadNamedLists(session.user.id,true);}
+    async function loadNamedLists(profileId,isOwner){var section=document.getElementById('named-lists-section');var container=document.getElementById('named-lists-container');if(!section||!container)return;var query=db.from('user_reading_lists').select('*').eq('user_id',profileId).order('created_at',{ascending:false});if(!isOwner)query=query.eq('is_public',true);var{data:lists}=await query;lists=lists||[];var newBtn=document.getElementById('new-list-btn');if(newBtn&&isOwner)newBtn.style.display='';if(!lists.length){section.style.display=isOwner?'':'none';container.innerHTML=isOwner?'<div style="font-size:12px;color:var(--text3);">No lists yet. Create your first!</div>':'';return;}section.style.display='';container.innerHTML='';lists.forEach(function(lst){var card=document.createElement('div');card.className='named-list-card';var badge=lst.is_public?'<span class="named-list-badge"><i class="ti ti-world" style="font-size:10px;"></i> Public</span>':(isOwner?'<span class="named-list-private-badge"><i class="ti ti-lock" style="font-size:10px;"></i> Private</span>':'');var headerRow=document.createElement('div');headerRow.style.cssText='display:flex;align-items:flex-start;justify-content:space-between;gap:8px;';var titleDiv=document.createElement('div');titleDiv.className='named-list-title';titleDiv.innerHTML='<i class="ti ti-playlist" style="color:var(--accent);font-size:13px;"></i>'+escHtml(lst.name)+badge;headerRow.appendChild(titleDiv);if(isOwner){var delBtn=document.createElement('button');delBtn.style.cssText='background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:0;flex-shrink:0;';delBtn.innerHTML='<i class="ti ti-trash"></i>';delBtn.title='Delete list';delBtn.onmouseover=function(){this.style.color='var(--red)';};delBtn.onmouseout=function(){this.style.color='var(--text3)';};delBtn.onclick=function(e){e.stopPropagation();deleteNamedList(lst.id,profileId,isOwner);};headerRow.appendChild(delBtn);}card.appendChild(headerRow);if(lst.description){var desc=document.createElement('div');desc.className='named-list-meta';desc.style.marginBottom='4px';desc.textContent=lst.description;card.appendChild(desc);}var meta=document.createElement('div');meta.className='named-list-meta';meta.textContent='Created '+new Date(lst.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});card.appendChild(meta);container.appendChild(card);});}
+    async function deleteNamedList(listId,profileId,isOwner){if(!confirm('Delete this reading list?'))return;var{error}=await db.from('user_reading_lists').delete().eq('id',listId);if(error){showToast('Could not delete.','ti-x');return;}showToast('List deleted.','ti-trash');loadNamedLists(profileId,isOwner);}
+
+        /* ── READING LIST (LIVE) ────────────────────────────────────── */
     async function loadReadingList(profileId) {
       var container = document.getElementById('reading-list-container');
       // Only show reading list if this is the owner's profile, or the owner has it set to public
@@ -2520,7 +2558,8 @@ async function handleFriendBtn() {
       var container = document.getElementById('activity-container');
       var isOwner = document.body.classList.contains('is-owner');
       var profileData = window._viewedProfileData;
-      if (!isOwner && !(profileData && profileData.privacy_activity)) {
+      var _nlIsOwner=!!(currentSession&&currentSession.user.id===profileData.id);window._currentViewerSession=currentSession;if(_nlIsOwner||profileData.privacy_readinglist!==false){loadNamedLists(profileData.id,_nlIsOwner);}
+        if (!isOwner && !(profileData && profileData.privacy_activity)) {
         container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">This user\'s activity is private.</div>';
         return;
       }
