@@ -333,6 +333,8 @@
           <select id="sc-type" onchange="onTypeChange()">
             <option value="artist">Artist Scroll (standalone, your original art)</option>
             <option value="novel">Novel Scroll (linked to one of your published novels)</option>
+            <option value="collab">Collab Scroll (you + a novelist co-create together)</option>
+            <option value="banner">Profile Banner (landscape image, sold directly)</option>
           </select>
         </div>
 
@@ -350,6 +352,33 @@
               <div class="toggle-row-hint">Completed novels require 16 regular items + 1 completion reward (for readers who finish every chapter) + 1 gacha teaser = 18 items total.</div>
             </div>
             <label class="toggle"><input type="checkbox" id="sc-complete" onchange="updateItemRequirements()"/><span class="toggle-slider"></span></label>
+          </div>
+        </div>
+
+        <!-- Collab Scroll: novelist picker -->
+        <div id="collab-novelist-field" style="display:none;margin-top:12px;">
+          <div class="field">
+            <label>Novelist Partner <span class="req">*</span></label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input type="text" id="sc-novelist-search" placeholder="Search by username…" oninput="searchNovelist(this.value)" autocomplete="off" style="flex:1;"/>
+              <div id="novelist-found-badge" style="display:none;align-items:center;gap:6px;background:rgba(45,212,191,.1);border:1px solid rgba(45,212,191,.3);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--accent);white-space:nowrap;">
+                <i class="ti ti-user-check"></i> <span id="novelist-found-name"></span>
+                <button onclick="clearNovelist()" style="background:none;border:none;cursor:pointer;color:var(--text3);margin-left:4px;padding:0;font-size:14px;" title="Clear"><i class="ti ti-x"></i></button>
+              </div>
+            </div>
+            <div id="novelist-search-results" style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;margin-top:4px;display:none;max-height:160px;overflow-y:auto;"></div>
+            <div class="hint">The novelist will receive an invite notification. The Scroll won't be submitted until they accept. Revenue split: 60% artist / 30% novelist / 10% platform.</div>
+          </div>
+          <input type="hidden" id="sc-novelist-id" value=""/>
+        </div>
+
+        <!-- Banner-only info -->
+        <div id="banner-only-info" style="display:none;margin-top:12px;">
+          <div class="toggle-row" style="border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.04);">
+            <div class="toggle-row-info">
+              <div class="toggle-row-label" style="color:#f59e0b;"><i class="ti ti-photo"></i> Banner Scroll</div>
+              <div class="toggle-row-hint">A profile banner is a landscape image (900×300px) buyers apply to their profile background. No cosmetic items needed — just set a Quill price, upload your banner image above, and submit. You keep 90% of each sale.</div>
+            </div>
           </div>
         </div>
 
@@ -448,9 +477,9 @@
         </div>
 
         <div id="submit-area">
-          <div style="margin-bottom:16px;">
-            <h4 style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;">Before you submit</h4>
-            <p style="font-size:13px;color:var(--text2);line-height:1.6;">Your Scroll will be reviewed for quality, originality, and compliance with community guidelines. You'll receive a notification with the result. If changes are needed, you can revise and resubmit.</p>
+          <div style="margin-bottom:16px;" id="submit-copy-wrap">
+            <h4 style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;" id="submit-copy-title">Before you submit</h4>
+            <p style="font-size:13px;color:var(--text2);line-height:1.6;" id="submit-copy-body">Your Scroll will be reviewed for quality, originality, and compliance with community guidelines. You'll receive a notification with the result. If changes are needed, you can revise and resubmit.</p>
           </div>
           <div class="btn-row">
             <button class="btn-secondary" id="back-from-submit" onclick="goToStepBeforeSubmit()"><i class="ti ti-arrow-left"></i> Back</button>
@@ -669,6 +698,16 @@
 
     onTypeChange();
     if (s.novel_id) { await loadUserNovels(s.novel_id); }
+    if (s.type === 'collab' && s.collab_novelist_id) {
+      document.getElementById('sc-novelist-id').value = s.collab_novelist_id;
+      _selectedNovelistId = s.collab_novelist_id;
+      // Fetch novelist username to display the badge
+      var { data: np } = await db.from('profiles').select('username').eq('id', s.collab_novelist_id).maybeSingle();
+      if (np) {
+        document.getElementById('novelist-found-name').textContent = np.username;
+        document.getElementById('novelist-found-badge').style.display = 'flex';
+      }
+    }
 
     // Load items
     var { data: items } = await db.from('scroll_items').select('*').eq('scroll_id', scrollId).order('sort_order');
@@ -719,7 +758,52 @@
     var type = document.getElementById('sc-type').value;
     document.getElementById('novel-link-field').style.display = type === 'novel' ? 'block' : 'none';
     document.getElementById('collab-note').style.display = type === 'novel' ? 'block' : 'none';
+    document.getElementById('collab-novelist-field').style.display = type === 'collab' ? 'block' : 'none';
+    document.getElementById('banner-only-info').style.display = type === 'banner' ? 'block' : 'none';
+    // Banner scrolls skip the items step entirely
+    var itemsStep = document.getElementById('step-1');
+    if (itemsStep) itemsStep.style.opacity = type === 'banner' ? '0.35' : '';
     updateItemRequirements();
+  }
+
+  // ── NOVELIST SEARCH (for collab scroll) ──────────────────────
+  var _novelistSearchTimer = null;
+  var _selectedNovelistId = null;
+
+  function searchNovelist(val){
+    clearTimeout(_novelistSearchTimer);
+    var res = document.getElementById('novelist-search-results');
+    if (!val || val.length < 2) { res.style.display = 'none'; return; }
+    _novelistSearchTimer = setTimeout(async function(){
+      var { data: users } = await db.from('profiles')
+        .select('id, username, avatar_url')
+        .ilike('username', val + '%')
+        .neq('id', currentUser.id)
+        .limit(6);
+      if (!users || !users.length) { res.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--text3);">No users found</div>'; res.style.display = 'block'; return; }
+      res.innerHTML = users.map(function(u){
+        var av = u.avatar_url ? '<img src="'+esc(u.avatar_url)+'" style="width:24px;height:24px;border-radius:50%;object-fit:cover;"/>' : '<div style="width:24px;height:24px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);"><i class="ti ti-user"></i></div>';
+        return '<div onclick="selectNovelist(\''+esc(u.id)+'\',\''+esc(u.username)+'\')" style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;color:var(--text);" onmouseover="this.style.background=\'var(--bg4)\'" onmouseout="this.style.background=\'\'">'+av+' '+esc(u.username)+'</div>';
+      }).join('');
+      res.style.display = 'block';
+    }, 300);
+  }
+
+  function selectNovelist(id, name){
+    _selectedNovelistId = id;
+    document.getElementById('sc-novelist-id').value = id;
+    document.getElementById('sc-novelist-search').value = '';
+    document.getElementById('novelist-found-name').textContent = name;
+    document.getElementById('novelist-found-badge').style.display = 'flex';
+    document.getElementById('novelist-search-results').style.display = 'none';
+  }
+
+  function clearNovelist(){
+    _selectedNovelistId = null;
+    document.getElementById('sc-novelist-id').value = '';
+    document.getElementById('novelist-found-name').textContent = '';
+    document.getElementById('novelist-found-badge').style.display = 'none';
+    document.getElementById('sc-novelist-search').value = '';
   }
 
   function toggleStoryStep(){
@@ -732,7 +816,13 @@
   }
 
   function updateItemRequirements(){
+    var type = document.getElementById('sc-type').value;
     isComplete = document.getElementById('sc-complete').checked;
+    // Banner scrolls have no items — hide the add-item button and rules box
+    var addBtn = document.getElementById('add-item-btn');
+    var rulesBox = document.getElementById('item-rules-box');
+    if (addBtn) addBtn.style.display = type === 'banner' ? 'none' : '';
+    if (rulesBox) rulesBox.style.display = type === 'banner' ? 'none' : '';
     var minRegular = isComplete ? 16 : 15;
     document.getElementById('rule-regular').innerHTML =
       'At least <strong>' + minRegular + ' regular items</strong> (not gacha, not completion).';
@@ -773,6 +863,7 @@
     var emoji = document.getElementById('sc-emoji').value.trim() || '📜';
     var type = document.getElementById('sc-type').value;
     var novelId = document.getElementById('sc-novel').value || null;
+    var novelistId = document.getElementById('sc-novelist-id').value || null;
     storyEnabled = document.getElementById('sc-story').checked;
     isComplete = document.getElementById('sc-complete').checked;
 
@@ -780,14 +871,16 @@
     if (!desc) { showToast('Please add a description', true); return; }
     if (!banner) { showToast('Please add a banner image URL', true); return; }
     if (type === 'novel' && !novelId) { showToast('Please select a linked novel', true); return; }
+    if (type === 'collab' && !novelistId) { showToast('Please select a novelist partner', true); return; }
 
     var payload = {
       name: name, description: desc, quill_price: price,
       banner_url: banner, banner_emoji: emoji, type: type,
       novel_id: novelId || null, novel_is_complete: isComplete,
-      has_side_story: storyEnabled, creator_id: currentUser.id,
+      has_side_story: type === 'banner' ? false : storyEnabled,
+      creator_id: currentUser.id,
       artist_id: currentUser.id,
-      status: currentScrollId ? undefined : 'draft',
+      collab_novelist_id: type === 'collab' ? (novelistId || null) : null,
       is_active: false
     };
     if (!currentScrollId) payload.status = 'draft';
@@ -803,7 +896,12 @@
       currentScrollId = created.id;
     }
     updateItemRequirements();
-    goToStep(1);
+    if (type === 'banner') {
+      buildSubmitChecklist();
+      goToStep(3);
+    } else {
+      goToStep(1);
+    }
   }
 
   function goToStepFromItems(){
@@ -1022,6 +1120,7 @@
 
   // ── SUBMIT CHECKLIST ─────────────────────────────────────────
   function buildSubmitChecklist(){
+    var type = document.getElementById('sc-type').value;
     var minRegular = isComplete ? 16 : 15;
     var regular = localItems.filter(function(it){ return !it.is_gacha_teaser && !it.is_completion_item; });
     var gachaCount = localItems.filter(function(it){ return it.is_gacha_teaser; }).length;
@@ -1029,13 +1128,23 @@
     var banner = document.getElementById('sc-banner').value.trim();
     var name = document.getElementById('sc-name').value.trim();
 
-    var checks = [
-      {ok: !!name, label: 'Scroll has a name'},
-      {ok: !!banner, label: 'Banner image provided'},
-      {ok: regular.length >= minRegular, label: regular.length + ' / ' + minRegular + ' regular items added'},
-      {ok: gachaCount === 1, label: 'Exactly 1 gacha teaser item'},
-    ];
-    if (isComplete) checks.push({ok: completionCount === 1, label: '1 completion reward item'});
+    var checks;
+    if (type === 'banner') {
+      checks = [
+        {ok: !!name, label: 'Banner has a name'},
+        {ok: !!banner, label: 'Banner image provided'},
+        {ok: parseInt(document.getElementById('sc-price').value) > 0, label: 'Quill price set'},
+      ];
+    } else {
+      checks = [
+        {ok: !!name, label: 'Scroll has a name'},
+        {ok: !!banner, label: 'Banner image provided'},
+        {ok: regular.length >= minRegular, label: regular.length + ' / ' + minRegular + ' regular items added'},
+        {ok: gachaCount === 1, label: 'Exactly 1 gacha teaser item'},
+      ];
+      if (type === 'collab') checks.push({ok: !!document.getElementById('sc-novelist-id').value, label: 'Novelist partner selected'});
+      if (isComplete) checks.push({ok: completionCount === 1, label: '1 completion reward item'});
+    }
 
     var html = checks.map(function(c){
       return '<div class="check-row ' + (c.ok ? 'ok' : 'bad') + '">' +
@@ -1045,11 +1154,24 @@
     document.getElementById('submit-checklist').innerHTML = html;
 
     // Update preview
-    document.getElementById('preview-name').textContent = name || 'Your Scroll';
+    document.getElementById('preview-name').textContent = name || (type === 'banner' ? 'Your Banner' : 'Your Scroll');
     document.getElementById('preview-desc').textContent = document.getElementById('sc-desc').value.trim() || 'Description…';
-    document.getElementById('preview-emoji').textContent = document.getElementById('sc-emoji').value || '📜';
+    document.getElementById('preview-emoji').textContent = document.getElementById('sc-emoji').value || (type === 'banner' ? '🖼️' : '📜');
     document.getElementById('preview-price').textContent = document.getElementById('sc-price').value || '500';
-    document.getElementById('preview-item-count').textContent = localItems.length;
+    document.getElementById('preview-item-count').textContent = type === 'banner' ? '—' : localItems.length;
+    // Update submit copy
+    var copyTitle = document.getElementById('submit-copy-title');
+    var copyBody = document.getElementById('submit-copy-body');
+    if (type === 'banner') {
+      if (copyTitle) copyTitle.textContent = 'Before you submit your banner';
+      if (copyBody) copyBody.textContent = 'Your profile banner will be reviewed for quality and originality. Once approved it will appear in the Marketplace. Buyers apply it directly to their profile background. You keep 90% of every sale.';
+    } else if (type === 'collab') {
+      if (copyTitle) copyTitle.textContent = 'Before you submit';
+      if (copyBody) copyBody.textContent = 'Your Collab Scroll will first be sent to your novelist partner for approval. Once they accept, it enters the standard review queue. You\'ll each receive a notification when it goes live.';
+    } else {
+      if (copyTitle) copyTitle.textContent = 'Before you submit';
+      if (copyBody) copyBody.textContent = 'Your Scroll will be reviewed for quality, originality, and compliance with community guidelines. You\'ll receive a notification with the result. If changes are needed, you can revise and resubmit.';
+    }
     var bannerEl = document.getElementById('preview-banner');
     var existImg = bannerEl.querySelector('img');
     if (banner) {

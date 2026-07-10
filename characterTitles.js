@@ -610,6 +610,19 @@ window.CharacterTitles = (function() {
     // Load aura votes
     var charIds = chars.map(function(c){ return c.id; });
 
+    // Load approved character cosmetic collabs
+    var cosmeticsByChar = {};
+    try {
+      var { data: cosmetics } = await db().from('character_cosmetic_collabs')
+        .select('id, character_id, artist_id, image_url, name, description, quill_price')
+        .in('character_id', charIds)
+        .eq('status', 'approved');
+      (cosmetics || []).forEach(function(c){
+        if (!cosmeticsByChar[c.character_id]) cosmeticsByChar[c.character_id] = [];
+        cosmeticsByChar[c.character_id].push(c);
+      });
+    } catch(e) {}
+
     // Load fan vote counts (total + this month + whether I voted today)
     var fanCounts = {};
     try {
@@ -843,6 +856,29 @@ window.CharacterTitles = (function() {
         ? '<button class="ct-suggest-song-btn" data-char-id="' + esc(char.id) + '" data-char-name="' + esc(char.name) + '"><i class="ti ti-music-plus"></i> Suggest a Song</button>'
         : '';
 
+      // ── CHARACTER COSMETIC COLLABS ──────────────────────────────
+      var charCosmetics = cosmeticsByChar[char.id] || [];
+      var cosmeticGalleryHtml = charCosmetics.length
+        ? '<div class="ct-cosmetic-gallery">' +
+            charCosmetics.map(function(cm){
+              return '<div class="ct-cosmetic-item">' +
+                '<img src="' + esc(cm.image_url) + '" alt="' + esc(cm.name) + '" class="ct-cosmetic-img"/>' +
+                '<div class="ct-cosmetic-name">' + esc(cm.name) + '</div>' +
+                (cm.quill_price ? '<div class="ct-cosmetic-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + cm.quill_price + ' Quills</div>' : '') +
+              '</div>';
+            }).join('') +
+          '</div>'
+        : '<div style="text-align:center;padding:14px;color:var(--text3);font-size:12px;">No cosmetic art submitted yet.</div>';
+
+      var submitCosmeticBtnHtml = (currentUserSession && !isOwner)
+        ? '<button class="ct-submit-cosmetic-btn" data-char-id="' + esc(char.id) + '" data-char-name="' + esc(char.name) + '" data-work-id="' + esc(workId) + '"><i class="ti ti-palette"></i> Submit Cosmetic Art</button>'
+        : '';
+
+      var hasCosmetics = charCosmetics.length > 0;
+      var cosmeticTabBtn = (hasCosmetics || (currentUserSession && !isOwner))
+        ? '<button class="ct-flip-trigger ct-flip-cosmetics" title="Character cosmetics" style="color:#f59e0b;border-color:rgba(245,158,11,0.35);"><i class="ti ti-palette"></i>' + (hasCosmetics ? ' ' + charCosmetics.length : '') + '</button>'
+        : '';
+
       // Flip card structure
       card.className += ' ct-flip-card';
 
@@ -919,6 +955,7 @@ window.CharacterTitles = (function() {
             (approvedOpinions.length ? '<button class="ct-flip-trigger ct-flip-opinions" title="View reader opinions" style="color:#ec4899;border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-heart"></i> ' + approvedOpinions.length + ' opinion' + (approvedOpinions.length > 1 ? 's' : '') + '</button>' : '') +
             ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
             (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
+            cosmeticTabBtn +
           '</div>' +
           // BACK — Opinions
           '<div class="ct-flip-back" data-back="opinions" style="display:none;">' +
@@ -959,6 +996,18 @@ window.CharacterTitles = (function() {
               auraPickerHtml +
             '</div>' +
           '</div>' +
+          // BACK — Cosmetics
+          '<div class="ct-flip-back" data-back="cosmetics" style="display:none;">' +
+            '<div class="ct-flip-back-header">' +
+              '<div class="ct-flip-back-name"><i class="ti ti-palette" style="color:#f59e0b;"></i> ' + esc(char.name) + '\u2019s Cosmetics</div>' +
+              '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
+            '</div>' +
+            '<div class="ct-cosmetic-back-scroll">' +
+              (charCosmetics.length ? '' : '<div style="font-size:11.5px;color:var(--text3);padding:10px 14px 4px;line-height:1.5;">Artists can submit avatar cosmetics for this character. Once approved by the author, readers can purchase them here.</div>') +
+              cosmeticGalleryHtml +
+              submitCosmeticBtnHtml +
+            '</div>' +
+          '</div>' +
         '</div>';
 
       // Wire flip triggers — songs, opinions, and aura each open their own back
@@ -967,11 +1016,13 @@ window.CharacterTitles = (function() {
       var songBack = card.querySelector('.ct-flip-back[data-back="songs"]');
       var auraBack = card.querySelector('.ct-flip-back[data-back="aura"]');
       var opinionsBack = card.querySelector('.ct-flip-back[data-back="opinions"]');
+      var cosmeticsBack = card.querySelector('.ct-flip-back[data-back="cosmetics"]');
 
       function showBack(which) {
         if (songBack) songBack.style.display = (which === 'songs') ? 'flex' : 'none';
         if (auraBack) auraBack.style.display = (which === 'aura') ? 'flex' : 'none';
         if (opinionsBack) opinionsBack.style.display = (which === 'opinions') ? 'flex' : 'none';
+        if (cosmeticsBack) cosmeticsBack.style.display = (which === 'cosmetics') ? 'flex' : 'none';
         card.classList.add('flipped');
       }
       function hideBack() {
@@ -985,6 +1036,8 @@ window.CharacterTitles = (function() {
             showBack('aura');
           } else if (t.classList.contains('ct-flip-opinions')) {
             showBack('opinions');
+          } else if (t.classList.contains('ct-flip-cosmetics')) {
+            showBack('cosmetics');
           } else {
             showBack('songs');
           }
@@ -1214,6 +1267,15 @@ window.CharacterTitles = (function() {
         });
       }
 
+      // Wire submit cosmetic art button
+      var scBtn = card.querySelector('.ct-submit-cosmetic-btn');
+      if (scBtn) {
+        scBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          openCosmeticModal(scBtn.dataset.charId, scBtn.dataset.charName, scBtn.dataset.workId, currentUserSession.user.id);
+        });
+      }
+
       grid.appendChild(card);
     });
 
@@ -1221,6 +1283,7 @@ window.CharacterTitles = (function() {
     if (isOwner) {
       await renderPendingSongsPanel(container, workId);
       await renderPendingOpinionsPanel(container, workId);
+      await renderPendingCosmeticsPanel(container, workId);
     }
   }
 
@@ -1282,6 +1345,95 @@ window.CharacterTitles = (function() {
     });
 
     container.appendChild(panel);
+  }
+
+  // ── COSMETIC ART SUBMISSION MODAL ─────────────────────────────
+  var _cosmeticModal = null;
+  function openCosmeticModal(charId, charName, workId, userId) {
+    if (_cosmeticModal) _cosmeticModal.remove();
+    var modal = document.createElement('div');
+    modal.className = 'ct-song-modal-overlay';
+    modal.innerHTML =
+      '<div class="ct-song-modal">' +
+        '<div class="ct-song-modal-header">' +
+          '<div class="ct-song-modal-title"><i class="ti ti-palette" style="color:#f59e0b;"></i> Submit Cosmetic Art for ' + esc(charName) + '</div>' +
+          '<button class="ct-song-modal-close"><i class="ti ti-x"></i></button>' +
+        '</div>' +
+        '<div class="ct-song-modal-body">' +
+          '<p style="font-size:12.5px;color:var(--text3);margin-bottom:14px;line-height:1.5;">Submit original avatar cosmetic art for this character. The author will review it. If approved, readers can purchase it and apply it to their avatar.</p>' +
+          '<div class="ct-song-modal-field">' +
+            '<label>Cosmetic Name <span style="color:var(--accent);">*</span></label>' +
+            '<input type="text" id="cc-name" placeholder="e.g. Aelthas Summer Robes" maxlength="60"/>' +
+          '</div>' +
+          '<div class="ct-song-modal-field">' +
+            '<label>Description</label>' +
+            '<input type="text" id="cc-desc" placeholder="Short description (optional)" maxlength="120"/>' +
+          '</div>' +
+          '<div class="ct-song-modal-field">' +
+            '<label>Image URL <span style="color:var(--accent);">*</span></label>' +
+            '<input type="url" id="cc-image" placeholder="https://... (upload to Imgur or Supabase first)"/>' +
+            '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Must be a direct image link. Recommended: transparent PNG, 400×400px or square.</div>' +
+          '</div>' +
+          '<div class="ct-song-modal-field">' +
+            '<label>Quill Price <span style="color:var(--accent);">*</span></label>' +
+            '<input type="number" id="cc-price" placeholder="e.g. 50" min="10" max="500" value="50" style="max-width:120px;"/>' +
+            '<div style="font-size:11px;color:var(--text3);margin-top:4px;">You receive 60%, the author 30%, platform 10%.</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ct-song-modal-footer">' +
+          '<button class="ct-song-cancel-btn">Cancel</button>' +
+          '<button class="ct-modal-submit" id="cc-submit-btn"><i class="ti ti-send"></i> Submit for Review</button>' +
+        '</div>' +
+      '</div>';
+
+    modal.querySelector('.ct-song-modal-close').addEventListener('click', function() { modal.remove(); });
+    modal.querySelector('.ct-song-cancel-btn').addEventListener('click', function() { modal.remove(); });
+    modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+
+    modal.querySelector('#cc-submit-btn').addEventListener('click', async function() {
+      var name = modal.querySelector('#cc-name').value.trim();
+      var desc = modal.querySelector('#cc-desc').value.trim();
+      var image = modal.querySelector('#cc-image').value.trim();
+      var price = parseInt(modal.querySelector('#cc-price').value) || 50;
+
+      if (!name) { alert('Please enter a cosmetic name.'); return; }
+      if (!image) { alert('Please provide an image URL.'); return; }
+      if (price < 10 || price > 500) { alert('Price must be between 10 and 500 Quills.'); return; }
+
+      var btn = modal.querySelector('#cc-submit-btn');
+      btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Submitting…';
+
+      // Fetch novelist (work author_id)
+      var { data: work } = await db().from('works').select('author_id').eq('id', workId).maybeSingle();
+      if (!work) { alert('Could not find novel author. Please try again.'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Submit for Review'; return; }
+
+      var { error } = await db().from('character_cosmetic_collabs').insert({
+        character_id: charId,
+        work_id: workId,
+        artist_id: userId,
+        novelist_id: work.author_id,
+        image_url: image,
+        name: name,
+        description: desc || null,
+        quill_price: price,
+        status: 'pending'
+      });
+
+      if (error) {
+        alert('Could not submit: ' + error.message);
+        btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Submit for Review';
+        return;
+      }
+      modal.innerHTML = '<div class="ct-song-modal" style="text-align:center;padding:32px 24px;">' +
+        '<i class="ti ti-circle-check" style="font-size:40px;color:var(--green);display:block;margin-bottom:12px;"></i>' +
+        '<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">Submitted!</div>' +
+        '<div style="font-size:13px;color:var(--text3);">The author will review your cosmetic art. You\'ll be notified when it\'s approved.</div>' +
+        '<button onclick="this.closest(\'.ct-song-modal-overlay\').remove()" style="margin-top:18px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 20px;color:var(--text);font-family:inherit;font-size:13px;cursor:pointer;">Close</button>' +
+        '</div>';
+    });
+
+    document.body.appendChild(modal);
+    _cosmeticModal = modal;
   }
 
   // ── SONG SUGGESTION MODAL ──────────────────────────────────────
@@ -1688,6 +1840,68 @@ window.CharacterTitles = (function() {
 
       row.appendChild(bodyDiv);
       row.appendChild(actions);
+      panel.appendChild(row);
+    });
+
+    container.appendChild(panel);
+  }
+
+  // ── PENDING COSMETICS PANEL (author only) ─────────────────────
+  async function renderPendingCosmeticsPanel(container, workId) {
+    var existing = container.querySelector('.ct-pending-cosmetics-panel');
+    if (existing) existing.remove();
+
+    var { data: charIds } = await db().from('novel_characters').select('id').eq('work_id', workId);
+    if (!charIds || !charIds.length) return;
+    var ids = charIds.map(function(c){ return c.id; });
+
+    var { data: pending } = await db().from('character_cosmetic_collabs')
+      .select('id, character_id, artist_id, image_url, name, description, quill_price, created_at')
+      .in('character_id', ids)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    if (!pending || !pending.length) return;
+
+    // Load artist usernames
+    var artistIds = [...new Set(pending.map(function(p){ return p.artist_id; }))];
+    var artistNames = await loadUsernames(artistIds);
+
+    // Load char names
+    var { data: charRows } = await db().from('novel_characters').select('id, name').in('id', ids);
+    var charNameMap = {};
+    (charRows||[]).forEach(function(c){ charNameMap[c.id] = c.name; });
+
+    var panel = document.createElement('div');
+    panel.className = 'ct-pending-cosmetics-panel ct-pending-songs-panel';
+    panel.innerHTML = '<div class="ct-pending-songs-title"><i class="ti ti-palette" style="color:#f59e0b;"></i> Cosmetic Art Awaiting Approval <span class="ct-pending-badge">' + pending.length + '</span></div>';
+
+    pending.forEach(function(cm) {
+      var row = document.createElement('div');
+      row.className = 'ct-pending-song-row';
+      row.style.alignItems = 'flex-start';
+      row.innerHTML =
+        '<img src="' + esc(cm.image_url) + '" style="width:52px;height:52px;border-radius:8px;object-fit:cover;flex-shrink:0;" alt=""/>' +
+        '<div class="ct-song-info">' +
+          '<div class="ct-song-title">' + esc(cm.name) + '</div>' +
+          '<div class="ct-song-meta">For <strong>' + esc(charNameMap[cm.character_id] || 'Unknown') + '</strong> · by ' + esc(artistNames[cm.artist_id] || 'Unknown') + ' · ' + cm.quill_price + ' Quills</div>' +
+          (cm.description ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + esc(cm.description) + '</div>' : '') +
+        '</div>' +
+        '<div class="ct-pending-song-actions">' +
+          '<button class="ct-song-approve-btn" data-id="' + esc(cm.id) + '"><i class="ti ti-check"></i> Approve</button>' +
+          '<button class="ct-song-reject-btn" data-id="' + esc(cm.id) + '"><i class="ti ti-x"></i> Reject</button>' +
+        '</div>';
+
+      row.querySelector('.ct-song-approve-btn').addEventListener('click', async function() {
+        await db().from('character_cosmetic_collabs').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', cm.id);
+        renderStoryCharacterCards(container, workId, true);
+      });
+      row.querySelector('.ct-song-reject-btn').addEventListener('click', async function() {
+        var reason = prompt('Rejection reason (optional):') || '';
+        await db().from('character_cosmetic_collabs').update({ status: 'rejected', rejection_reason: reason || null, reviewed_at: new Date().toISOString() }).eq('id', cm.id);
+        renderPendingCosmeticsPanel(container, workId);
+      });
+
       panel.appendChild(row);
     });
 
