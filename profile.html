@@ -421,6 +421,13 @@
     .showcase-own-cta{margin-top:18px;display:flex;justify-content:center;}
     .showcase-own-cta a{display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,0.08);border:1.5px solid rgba(245,158,11,0.35);border-radius:10px;padding:10px 20px;color:#f59e0b;font-size:13px;font-weight:700;text-decoration:none;transition:all 0.2s;}
     .showcase-own-cta a:hover{background:rgba(245,158,11,0.15);border-color:#f59e0b;}
+    .showcase-create-btn{display:inline-flex;align-items:center;gap:7px;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:700;text-decoration:none;transition:all 0.2s;border-width:1.5px;border-style:solid;}
+    .showcase-create-scroll{background:rgba(45,212,191,0.08);border-color:rgba(45,212,191,0.3);color:var(--accent);}
+    .showcase-create-scroll:hover{background:rgba(45,212,191,0.18);}
+    .showcase-create-banner{background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.3);color:#f59e0b;}
+    .showcase-create-banner:hover{background:rgba(245,158,11,0.18);}
+    .showcase-create-cosmetic{background:rgba(167,139,250,0.08);border-color:rgba(167,139,250,0.3);color:#a78bfa;}
+    .showcase-create-cosmetic:hover{background:rgba(167,139,250,0.18);}
     .showcase-status-badge{position:absolute;top:8px;right:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:3px 9px;border-radius:20px;}
     .showcase-status-badge.pending{background:rgba(245,158,11,0.2);color:#f59e0b;border:1px solid rgba(245,158,11,0.4);}
     .showcase-status-badge.draft{background:rgba(255,255,255,0.07);color:var(--text3);border:1px solid var(--border);}
@@ -886,6 +893,7 @@
         }
         var isOwnerNow = !!(session && profileData && session.user.id === profileData.id);
         window._viewedProfileData = profileData; // expose for toggleFollow and other handlers
+        window._currentViewerSession = session; // expose session for loadActivity and other deferred functions
         if (profileData) { applyProfileData(profileData, resolvedUsername, isOwnerNow); }
         if (profileData && profileData.id) { loadStats(profileData.id); }
         if (profileData && profileData.id) { loadPrestigePills(profileData.id, isOwnerNow); }
@@ -2586,7 +2594,7 @@ async function handleFriendBtn() {
       var container = document.getElementById('activity-container');
       var isOwner = document.body.classList.contains('is-owner');
       var profileData = window._viewedProfileData;
-      var _nlIsOwner=!!(currentSession&&currentSession.user.id===profileData.id);window._currentViewerSession=currentSession;if(_nlIsOwner||profileData.privacy_readinglist!==false){loadNamedLists(profileData.id,_nlIsOwner);}
+      var _viewerSess=window._currentViewerSession;var _nlIsOwner=!!(_viewerSess&&_viewerSess.user.id===profileData.id);if(_nlIsOwner||profileData.privacy_readinglist!==false){loadNamedLists(profileData.id,_nlIsOwner);}
         if (!isOwner && !(profileData && profileData.privacy_activity)) {
         container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">This user\'s activity is private.</div>';
         return;
@@ -2685,81 +2693,177 @@ async function handleFriendBtn() {
       if (!container || !profileId) return;
 
       try {
-        // Fetch approved scrolls where this user is the creator (artist_id)
-        var { data: scrolls, error } = await db
-          .from('scrolls')
+        // Fetch scrolls (excluding banner type) where user is creator
+        var scrollsPromise = db.from('scrolls')
           .select('id,name,description,type,quill_price,banner_url,banner_emoji,item_count,status,submitted_at')
           .eq('artist_id', profileId)
+          .neq('type', 'banner')
           .in('status', isOwner ? ['approved','pending_review','draft'] : ['approved'])
           .order('submitted_at', { ascending: false });
 
-        if (error) throw error;
+        // Fetch banner-type scrolls separately
+        var bannersPromise = db.from('scrolls')
+          .select('id,name,description,quill_price,banner_url,banner_emoji,status,submitted_at')
+          .eq('artist_id', profileId)
+          .eq('type', 'banner')
+          .in('status', isOwner ? ['approved','pending_review','draft'] : ['approved'])
+          .order('submitted_at', { ascending: false });
 
-        // Only show tab if there's something worth showing
-        var hasContent = scrolls && scrolls.length > 0;
-        if (!hasContent) {
-          if (isOwner) {
-            // Owner sees tab with CTA to create their first scroll
-            tabBtn.style.display = '';
-            container.innerHTML =
-              '<div style="text-align:center;padding:32px 0;">' +
-              '<i class="ti ti-scroll" style="font-size:40px;color:var(--text3);display:block;margin-bottom:12px;"></i>' +
-              '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px;">No Scrolls Yet</div>' +
-              '<div style="font-size:13px;color:var(--text3);margin-bottom:20px;">Create a cosmetic Scroll bundle and submit it to the Marketplace for readers to unlock.</div>' +
-              '<a href="scroll-create.html" style="display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,0.1);border:1.5px solid rgba(245,158,11,0.4);border-radius:10px;padding:10px 22px;color:#f59e0b;font-size:13px;font-weight:700;text-decoration:none;">' +
-              '<i class="ti ti-plus"></i> Create Your First Scroll</a>' +
-              '</div>';
-          }
-          // Non-owner: keep tab hidden, nothing to show
-          return;
-        }
+        // Fetch standalone cosmetics
+        var cosmeticsPromise = db.from('cosmetic_items')
+          .select('id,name,description,slot,image_url,quill_price,status,submitted_at')
+          .eq('artist_id', profileId)
+          .eq('is_marketplace_item', true)
+          .in('status', isOwner ? ['approved','pending_review','draft'] : ['approved'])
+          .order('submitted_at', { ascending: false });
 
-        // Show the tab
+        var [scrollsRes, bannersRes, cosmeticsRes] = await Promise.all([
+          Promise.resolve(scrollsPromise),
+          Promise.resolve(bannersPromise),
+          Promise.resolve(cosmeticsPromise),
+        ]);
+
+        var scrolls   = scrollsRes.data   || [];
+        var banners   = bannersRes.data   || [];
+        var cosmetics = cosmeticsRes.data || [];
+
+        var hasContent = scrolls.length || banners.length || cosmetics.length;
+
+        // Always show tab for owner; hide for visitors with nothing to see
+        if (!hasContent && !isOwner) return;
         tabBtn.style.display = '';
 
-        var typeLabel = { artist: 'Artist Scroll', novel: 'Novel Scroll', collab: 'Collab Scroll', banner: 'Profile Banner', artist_scroll: 'Artist Scroll', story_scroll: 'Story Scroll' };
-        var cards = scrolls.map(function(s) {
-          var banner = s.banner_url
-            ? '<img src="' + s.banner_url + '" alt="" loading="lazy">'
-            : '<div class="showcase-card-banner-emoji">' + (s.banner_emoji || '📜') + '</div>';
+        var html = '';
 
-          var statusBadge = '';
-          if (isOwner && s.status === 'pending_review') {
-            statusBadge = '<span class="showcase-status-badge pending">Pending Review</span>';
-          } else if (isOwner && s.status === 'draft') {
-            statusBadge = '<span class="showcase-status-badge draft">Draft</span>';
-          }
-
-          var price = s.quill_price ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + s.quill_price + ' Quills</span>' : '<span class="showcase-card-price" style="color:var(--accent);">Free</span>';
-          var items = s.item_count ? '<span class="showcase-card-items"><i class="ti ti-shirt" style="font-size:10px;"></i> ' + s.item_count + ' item' + (s.item_count === 1 ? '' : 's') + '</span>' : '';
-
-          var href = s.status === 'approved' ? 'marketplace.html?scroll=' + s.id : 'scroll-create.html?id=' + s.id;
-
-          return '<a class="showcase-card" href="' + href + '">' +
-            '<div class="showcase-card-banner">' + banner + statusBadge + '</div>' +
-            '<div class="showcase-card-body">' +
-            '<div class="showcase-card-type"><i class="ti ti-scroll"></i> ' + (typeLabel[s.type] || 'Scroll') + '</div>' +
-            '<div class="showcase-card-name">' + (s.name || 'Untitled Scroll') + '</div>' +
-            (s.description ? '<div class="showcase-card-desc">' + s.description + '</div>' : '') +
-            '<div class="showcase-card-meta">' + price + items + '</div>' +
-            '</div></a>';
-        });
-
-        var html = '<div class="showcase-grid">' + cards.join('') + '</div>';
-
-        // Owner CTA to create more
+        // ── Create buttons (owner only) ──────────────────────────
         if (isOwner) {
-          html += '<div class="showcase-own-cta"><a href="scroll-create.html"><i class="ti ti-plus"></i> Create Another Scroll</a></div>';
+          html +=
+            '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">' +
+              '<a href="scroll-create.html" class="showcase-create-btn showcase-create-scroll"><i class="ti ti-scroll"></i> New Scroll</a>' +
+              '<a href="banner-create.html" class="showcase-create-btn showcase-create-banner"><i class="ti ti-photo"></i> New Banner</a>' +
+              '<a href="cosmetic-create.html" class="showcase-create-btn showcase-create-cosmetic"><i class="ti ti-shirt"></i> New Cosmetic</a>' +
+            '</div>';
         }
 
-        container.innerHTML = html;
+        var typeLabel = { artist:'Artist Scroll', novel:'Novel Scroll', collab:'Collab Scroll', artist_scroll:'Artist Scroll', story_scroll:'Story Scroll' };
+
+        function statusBadgeHtml(status) {
+          if (status === 'pending_review') return '<span class="showcase-status-badge pending">Pending Review</span>';
+          if (status === 'draft') return '<span class="showcase-status-badge draft">Draft</span>';
+          return '';
+        }
+
+        // ── Scrolls section ──────────────────────────────────────
+        if (scrolls.length || isOwner) {
+          html += '<div style="margin-bottom:32px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
+              '<i class="ti ti-scroll" style="color:var(--accent);font-size:16px;"></i>' +
+              '<span style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;">Scrolls</span>' +
+            '</div>';
+
+          if (!scrolls.length) {
+            html += '<div style="font-size:13px;color:var(--text3);padding:14px 0;">No scrolls yet.</div>';
+          } else {
+            html += '<div class="showcase-grid">';
+            scrolls.forEach(function(s) {
+              var banner = s.banner_url
+                ? '<img src="' + s.banner_url + '" alt="" loading="lazy">'
+                : '<div class="showcase-card-banner-emoji">' + (s.banner_emoji || '📜') + '</div>';
+              var price = s.quill_price ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + s.quill_price + ' Quills</span>' : '<span class="showcase-card-price" style="color:var(--accent);">Free</span>';
+              var items = s.item_count ? '<span class="showcase-card-items"><i class="ti ti-shirt" style="font-size:10px;"></i> ' + s.item_count + ' item' + (s.item_count === 1 ? '' : 's') + '</span>' : '';
+              var href = s.status === 'approved' ? 'marketplace.html?scroll=' + s.id : 'scroll-create.html?id=' + s.id;
+              html += '<a class="showcase-card" href="' + href + '">' +
+                '<div class="showcase-card-banner">' + banner + (isOwner ? statusBadgeHtml(s.status) : '') + '</div>' +
+                '<div class="showcase-card-body">' +
+                  '<div class="showcase-card-type"><i class="ti ti-scroll"></i> ' + (typeLabel[s.type] || 'Scroll') + '</div>' +
+                  '<div class="showcase-card-name">' + (s.name || 'Untitled Scroll') + '</div>' +
+                  (s.description ? '<div class="showcase-card-desc">' + s.description + '</div>' : '') +
+                  '<div class="showcase-card-meta">' + price + items + '</div>' +
+                '</div></a>';
+            });
+            html += '</div>';
+          }
+          html += '</div>';
+        }
+
+        // ── Banners section ──────────────────────────────────────
+        if (banners.length || isOwner) {
+          html += '<div style="margin-bottom:32px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
+              '<i class="ti ti-photo" style="color:#f59e0b;font-size:16px;"></i>' +
+              '<span style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;">Profile Banners</span>' +
+            '</div>';
+
+          if (!banners.length) {
+            html += '<div style="font-size:13px;color:var(--text3);padding:14px 0;">No banners listed yet.</div>';
+          } else {
+            html += '<div class="showcase-grid">';
+            banners.forEach(function(b) {
+              var banner = b.banner_url
+                ? '<img src="' + b.banner_url + '" alt="" loading="lazy">'
+                : '<div class="showcase-card-banner-emoji">' + (b.banner_emoji || '🖼️') + '</div>';
+              var price = b.quill_price ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + b.quill_price + ' Quills</span>' : '';
+              var href = b.status === 'approved' ? 'marketplace.html?scroll=' + b.id : 'banner-create.html?id=' + b.id;
+              html += '<a class="showcase-card" href="' + href + '">' +
+                '<div class="showcase-card-banner">' + banner + (isOwner ? statusBadgeHtml(b.status) : '') + '</div>' +
+                '<div class="showcase-card-body">' +
+                  '<div class="showcase-card-type" style="color:#f59e0b;background:rgba(245,158,11,0.1);border-color:rgba(245,158,11,0.25);"><i class="ti ti-photo"></i> Profile Banner</div>' +
+                  '<div class="showcase-card-name">' + (b.name || 'Untitled Banner') + '</div>' +
+                  (b.description ? '<div class="showcase-card-desc">' + b.description + '</div>' : '') +
+                  '<div class="showcase-card-meta">' + price + '</div>' +
+                '</div></a>';
+            });
+            html += '</div>';
+          }
+          html += '</div>';
+        }
+
+        // ── Cosmetics section ────────────────────────────────────
+        var SLOT_LABEL = { outfit:'Outfit', hat:'Hat / Head', accessory:'Accessory', hair:'Hair', background:'Background', other:'Other' };
+        var SLOT_ICON  = { outfit:'ti-shirt', hat:'ti-hat', accessory:'ti-diamond', hair:'ti-scissors', background:'ti-layout-board', other:'ti-sparkles' };
+
+        if (cosmetics.length || isOwner) {
+          html += '<div style="margin-bottom:32px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
+              '<i class="ti ti-shirt" style="color:#a78bfa;font-size:16px;"></i>' +
+              '<span style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;">Avatar Cosmetics</span>' +
+            '</div>';
+
+          if (!cosmetics.length) {
+            html += '<div style="font-size:13px;color:var(--text3);padding:14px 0;">No cosmetics listed yet.</div>';
+          } else {
+            html += '<div class="showcase-grid">';
+            cosmetics.forEach(function(ci) {
+              var slotLabel = SLOT_LABEL[ci.slot] || 'Cosmetic';
+              var slotIcon  = SLOT_ICON[ci.slot]  || 'ti-sparkles';
+              var thumb = ci.image_url
+                ? '<img src="' + ci.image_url + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:contain;">'
+                : '<div class="showcase-card-banner-emoji"><i class="ti ' + slotIcon + '" style="font-size:36px;color:var(--text3);"></i></div>';
+              var price = ci.quill_price ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + ci.quill_price + ' Quills</span>' : '';
+              var href = ci.status === 'approved' ? 'marketplace.html?cosmetic=' + ci.id : 'cosmetic-create.html?id=' + ci.id;
+              html += '<a class="showcase-card" href="' + href + '">' +
+                '<div class="showcase-card-banner" style="background:var(--bg3);">' + thumb + (isOwner ? statusBadgeHtml(ci.status) : '') + '</div>' +
+                '<div class="showcase-card-body">' +
+                  '<div class="showcase-card-type" style="color:#a78bfa;background:rgba(167,139,250,0.1);border-color:rgba(167,139,250,0.25);"><i class="ti ' + slotIcon + '"></i> ' + slotLabel + '</div>' +
+                  '<div class="showcase-card-name">' + (ci.name || 'Untitled') + '</div>' +
+                  (ci.description ? '<div class="showcase-card-desc">' + ci.description + '</div>' : '') +
+                  '<div class="showcase-card-meta">' + price + '</div>' +
+                '</div></a>';
+            });
+            html += '</div>';
+          }
+          html += '</div>';
+        }
+
+        container.innerHTML = html || '<div style="font-size:13px;color:var(--text3);padding:24px 0;text-align:center;">Nothing in the Showcase yet.</div>';
+
       } catch(err) {
         console.error('loadShowcase error:', err);
         container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">Could not load showcase.</div>';
       }
     }
 
-    /* ── BADGE DRAG — handled per-pendant in loadPrestigePills/_wirePendantDrag ── */
+        /* ── BADGE DRAG — handled per-pendant in loadPrestigePills/_wirePendantDrag ── */
     // Legacy row-level drag listeners removed to avoid conflicts with the pendant system.
 
     /* ── LIVE TIMERS ────────────────────────────────────────────── */
