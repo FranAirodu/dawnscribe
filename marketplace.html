@@ -168,6 +168,9 @@
     .modal-unlock-btn:hover{transform:translateY(-1px);box-shadow:0 4px 18px rgba(245,158,11,0.35);}
     .modal-unlock-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none;box-shadow:none;}
     .modal-unlock-btn.already-owned{background:linear-gradient(135deg,var(--accent),var(--accent2));}
+    .modal-use-banner-btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:10px;background:rgba(45,212,191,0.08);border:1.5px solid rgba(45,212,191,0.35);color:var(--accent);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
+    .modal-use-banner-btn:hover{background:rgba(45,212,191,0.18);}
+    .modal-use-banner-btn:disabled{opacity:0.6;cursor:default;}
 
     /* Items grid in modal */
     .modal-items-title{font-family:'Cinzel',serif;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--text);}
@@ -674,6 +677,21 @@
       unlockBtn.onclick = purchaseScroll;
     }
 
+    // "Use as My Banner" button — only for banner-type scrolls the user owns
+    let bannerActionRow = document.getElementById('modal-banner-action-row');
+    if (scroll.type === 'banner' && owned && currentUser && scroll.banner_url) {
+      if (!bannerActionRow) {
+        bannerActionRow = document.createElement('div');
+        bannerActionRow.id = 'modal-banner-action-row';
+        bannerActionRow.style.cssText = 'margin-top:12px;';
+        document.getElementById('modal-unlock-row').after(bannerActionRow);
+      }
+      bannerActionRow.style.display = 'block';
+      bannerActionRow.innerHTML = `<button class="modal-use-banner-btn" id="modal-use-banner-btn" onclick="applyBannerToProfile('${scroll.id}','${esc(scroll.banner_url)}',this)"><i class="ti ti-photo-check"></i> Use as My Banner</button>`;
+    } else if (bannerActionRow) {
+      bannerActionRow.style.display = 'none';
+    }
+
     // Load items
     document.getElementById('modal-items-grid').innerHTML = '<div class="loading-spinner" style="grid-column:1/-1;"><i class="ti ti-loader"></i></div>';
     document.getElementById('scroll-modal').classList.add('open');
@@ -819,6 +837,27 @@
       if (msg === 'Insufficient embers') loadCurrencies(); // balance was stale — resync
       btn.disabled = false;
       btn.innerHTML = '<i class="ti ti-flame"></i> Claim';
+    }
+  }
+
+  // ── APPLY BANNER TO PROFILE ───────────────────────────────────
+  async function applyBannerToProfile(scrollId, bannerUrl, btn) {
+    if (!currentUser) return;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Applying…';
+    try {
+      const { error } = await db.from('profiles').upsert(
+        { id: currentUser.id, banner_url: bannerUrl, active_banner_scroll_id: scrollId },
+        { onConflict: 'id' }
+      );
+      if (error) throw error;
+      btn.innerHTML = '<i class="ti ti-check"></i> Applied to your profile!';
+      showToast('Banner applied! Visit your profile to see it.', 'ti-photo');
+    } catch(e) {
+      console.error(e);
+      showToast('Could not apply banner. Please try again.', 'ti-alert-triangle', true);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-photo-check"></i> Use as My Banner';
     }
   }
 

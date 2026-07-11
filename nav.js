@@ -138,6 +138,13 @@ function dsApplyAccent(hex) {
     .user-dropdown-item i { font-size: 16px; color: var(--text3); flex-shrink: 0; }
     .user-dropdown-item:hover i { color: var(--accent); }
     .user-dropdown-divider { height: 1px; background: var(--border); margin: 4px 8px; }
+    .dd-accordion-trigger { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px 4px; cursor: pointer; user-select: none; border: none; background: none; width: 100%; text-align: left; }
+    .dd-accordion-trigger:hover .dd-acc-label { color: var(--text2); }
+    .dd-acc-label { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .8px; transition: color 0.15s; }
+    .dd-acc-chevron { font-size: 12px; color: var(--text3); transition: transform 0.2s; }
+    .dd-accordion-trigger.open .dd-acc-chevron { transform: rotate(180deg); }
+    .dd-accordion-body { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
+    .dd-accordion-body.open { max-height: 500px; }
     .signout-btn { color: var(--red,#f87171) !important; }
     .signout-btn i { color: var(--red,#f87171) !important; }
     .search-dropdown-wrap { position: relative; }
@@ -294,21 +301,49 @@ function dsApplyAccent(hex) {
           <div class="user-dropdown-handle" id="dd-handle">@username</div>
         </div>
         <div class="user-dropdown-menu">
-          <a class="user-dropdown-item" id="dd-profile-link" href="profile.html"><i class="ti ti-user"></i> My Profile</a>
-          <a class="user-dropdown-item" id="dd-friends-link" href="friends.html"><i class="ti ti-users"></i> Friends</a>
-          <a class="user-dropdown-item" href="following.html#titles"><i class="ti ti-bookmark"></i> Following Titles</a>
-          <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>
-          <a class="user-dropdown-item" href="following.html#artists"><i class="ti ti-palette"></i> Following Artists</a>
-          <a class="user-dropdown-item" href="following.html#history"><i class="ti ti-history"></i> Reading History</a>
-          <a class="user-dropdown-item" href="avatar.html"><i class="ti ti-shirt"></i> My Avatar</a>
-          <div style="padding:4px 12px 2px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;">Create &amp; Sell</div>
-          <a class="user-dropdown-item" href="scroll-create.html"><i class="ti ti-writing" style="color:var(--accent);"></i> <span style="color:var(--accent);">Submit a Scroll</span></a>
-          <a class="user-dropdown-item" href="banner-create.html"><i class="ti ti-photo" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Submit a Banner</span></a>
-          <a class="user-dropdown-item" href="cosmetic-create.html"><i class="ti ti-shirt" style="color:#a78bfa;"></i> <span style="color:#a78bfa;">Submit a Cosmetic</span></a>
-          <a class="user-dropdown-item" href="licensing.html"><i class="ti ti-license"></i> Character Licensing</a>
-          <a class="user-dropdown-item" href="payouts.html"><i class="ti ti-wallet"></i> Creator Payouts</a>
-          <a class="user-dropdown-item" href="rewards.html"><i class="ti ti-award"></i> My Rewards</a>
-          <a class="user-dropdown-item" href="settings.html"><i class="ti ti-settings"></i> Settings</a>
+
+          <!-- ── NAVIGATE ─────────────────────────────── -->
+          <button class="dd-accordion-trigger open" onclick="dsToggleAccordion(this)" aria-expanded="true">
+            <span class="dd-acc-label">Navigate</span>
+            <i class="ti ti-chevron-down dd-acc-chevron"></i>
+          </button>
+          <div class="dd-accordion-body open">
+            <a class="user-dropdown-item" id="dd-profile-link" href="profile.html"><i class="ti ti-user"></i> My Profile</a>
+            <a class="user-dropdown-item" id="dd-friends-link" href="friends.html"><i class="ti ti-users"></i> Friends</a>
+            <a class="user-dropdown-item" href="following.html#titles"><i class="ti ti-bookmark"></i> Following Titles</a>
+            <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>
+            <a class="user-dropdown-item" href="following.html#artists"><i class="ti ti-palette"></i> Following Artists</a>
+            <a class="user-dropdown-item" href="following.html#history"><i class="ti ti-history"></i> Reading History</a>
+            <a class="user-dropdown-item" href="avatar.html"><i class="ti ti-shirt"></i> My Avatar</a>
+          </div>
+
+          <div class="user-dropdown-divider" style="margin:4px 8px;"></div>
+
+          <!-- ── CREATE & SELL ───────────────────────── -->
+          <button class="dd-accordion-trigger" onclick="dsToggleAccordion(this)" aria-expanded="false">
+            <span class="dd-acc-label" style="color:var(--accent);">Create &amp; Sell</span>
+            <i class="ti ti-chevron-down dd-acc-chevron"></i>
+          </button>
+          <div class="dd-accordion-body">
+            <a class="user-dropdown-item" href="scroll-create.html"><i class="ti ti-writing" style="color:var(--accent);"></i> <span style="color:var(--accent);">Submit a Scroll</span></a>
+            <a class="user-dropdown-item" href="banner-create.html"><i class="ti ti-photo" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Submit a Banner</span></a>
+            <a class="user-dropdown-item" href="cosmetic-create.html"><i class="ti ti-shirt" style="color:#a78bfa;"></i> <span style="color:#a78bfa;">Submit a Cosmetic</span></a>
+            <a class="user-dropdown-item" href="licensing.html"><i class="ti ti-license"></i> Character Licensing</a>
+            <a class="user-dropdown-item" href="payouts.html"><i class="ti ti-wallet"></i> Creator Payouts</a>
+          </div>
+
+          <div class="user-dropdown-divider" style="margin:4px 8px;"></div>
+
+          <!-- ── ACCOUNT ─────────────────────────────── -->
+          <button class="dd-accordion-trigger" onclick="dsToggleAccordion(this)" aria-expanded="false">
+            <span class="dd-acc-label">Account</span>
+            <i class="ti ti-chevron-down dd-acc-chevron"></i>
+          </button>
+          <div class="dd-accordion-body">
+            <a class="user-dropdown-item" href="rewards.html"><i class="ti ti-award"></i> My Rewards</a>
+            <a class="user-dropdown-item" href="settings.html"><i class="ti ti-settings"></i> Settings</a>
+          </div>
+
           <div class="user-dropdown-divider"></div>
           <button class="user-dropdown-item signout-btn" onclick="dsSignOut()"><i class="ti ti-logout"></i> Sign Out</button>
         </div>
@@ -382,6 +417,14 @@ function dsApplyAccent(hex) {
     document.querySelectorAll('.notif-panel').forEach(function(p){ p.classList.remove('active'); });
     document.getElementById('notif-'+tab).classList.add('active');
   };
+  window.dsToggleAccordion = function(trigger) {
+    var body = trigger.nextElementSibling;
+    var isOpen = trigger.classList.contains('open');
+    trigger.classList.toggle('open', !isOpen);
+    trigger.setAttribute('aria-expanded', String(!isOpen));
+    if(body) body.classList.toggle('open', !isOpen);
+  };
+
   window.dsToggleUserDropdown = function() {
     var dd = document.getElementById('user-dropdown');
     dd.classList.toggle('open');
