@@ -1464,8 +1464,9 @@ function dsApplyAccent(hex) {
         window.dispatchEvent(new CustomEvent('ds-checkin-complete', { detail: res.data }));
         if (typeof window.showToast === 'function') {
           var bits = ['Day ' + res.data.streak + ' claimed! +' + (rw.embers || 0) + ' Embers \ud83d\udd25'];
-          if (rw.flame) bits.push('Weekly bonus: +1 Celestial Flame \u2728');
-          if (rw.free_spark) bits.push('+1 free Spark of Dawn \u26a1');
+          if (rw.spark_grant > 0) bits.push('+' + rw.spark_grant + ' Spark' + (rw.spark_grant !== 1 ? 's' : '') + ' of Dawn \u26a1 (Monday bonus!)');
+          if (rw.scribes_flame > 0) bits.push('+1 Scribe\u2019s Flame \uD83D\uDD16 (monthly vote unlocked!)');
+          if (rw.infernal_dawn > 0) bits.push('+1 Infernal Dawn \u2600\uFE0F (yearly vote unlocked!)');
           if (rw.perfect_month) bits.push('Perfect month! Dawnkeeper honor earned \ud83c\udfc6');
           bits.forEach(function(bb, bi){ setTimeout(function(){ window.showToast(bb, 'ti-flame'); }, bi * 900); });
         }

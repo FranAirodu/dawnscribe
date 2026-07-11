@@ -97,6 +97,32 @@
     .state-body{font-size:13.5px;color:var(--text3);line-height:1.6;}
     .state-body a{color:var(--accent);}
 
+    /* Author Goals */
+    .goal-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:0;}
+    .goal-pledge{font-size:14px;color:var(--text);margin-bottom:12px;line-height:1.55;}
+    .goal-meta{font-size:12px;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .goal-meta b{color:var(--text2);}
+    .goal-bar-wrap{background:var(--bg4);border-radius:6px;height:10px;overflow:hidden;margin-bottom:8px;}
+    .goal-bar-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width 0.5s ease;}
+    .goal-pct{font-size:11.5px;color:var(--text3);margin-bottom:14px;}
+    .goal-pct b{color:var(--accent);}
+    .goal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;}
+    .goal-btn{background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:12.5px;font-family:'Lato',sans-serif;color:var(--text2);cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:6px;}
+    .goal-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .goal-btn.primary{background:var(--accent);border-color:var(--accent);color:#000;font-weight:700;}
+    .goal-btn.primary:hover{background:var(--accent2);border-color:var(--accent2);}
+    .goal-btn.danger{border-color:var(--red);color:var(--red);}
+    .goal-btn.danger:hover{background:rgba(248,113,113,0.1);}
+    .goal-visibility{font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;margin-top:10px;}
+    .goal-visibility input{cursor:pointer;accent-color:var(--accent);}
+    .goal-form{display:flex;flex-direction:column;gap:12px;}
+    .goal-form label{font-size:12px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.7px;margin-bottom:2px;display:block;}
+    .goal-form select,.goal-form input,.goal-form textarea{width:100%;background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13.5px;font-family:'Lato',sans-serif;outline:none;transition:border-color 0.2s;}
+    .goal-form select:focus,.goal-form input:focus,.goal-form textarea:focus{border-color:var(--accent);}
+    .goal-form textarea{resize:vertical;min-height:72px;}
+    .goal-empty{font-size:13px;color:var(--text3);text-align:center;padding:18px 0 4px;}
+    .flame-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:32px;}
+
     @media(max-width:640px){
       nav{padding:0 16px;}
       .page{padding:24px 14px 50px;}
@@ -242,6 +268,7 @@
       return;
     }
 
+    window._dashPayload = payload;
     var ov = payload.overview;
     var chapters = payload.chapters || [];
     var page = document.getElementById('page');
@@ -272,6 +299,13 @@
         + statCard(fmt(ov.comments), 'ti-message-circle', 'Comments')
       + '</div>'
 
+      + '<div class="section-title" style="font-family:Cinzel,serif;font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><i class="ti ti-fire" style="color:var(--gold);font-size:16px;"></i> Vote Tallies</div>'
+      + '<div class="flame-grid">'
+        + statCard(fmt(ov.celestial_flames||0), 'ti-star', 'Celestial Flames', 'all-time')
+        + statCard(fmt(ov.scribe_flames||0), 'ti-bookmark', 'Scribe\u2019s Flames', 'all-time \u00b7 available Jan 2027')
+        + statCard(fmt(ov.infernal_dawns||0), 'ti-sun', 'Infernal Dawns', 'all-time · available Jan 2027')
+      + '</div>'
+
       + '<div class="section">'
         + '<div class="section-title"><i class="ti ti-stairs-down"></i> Chapter Retention</div>'
         + '<div class="section-sub">Readers = accounts that finished each chapter. <b>% of previous</b> shows how many carried on from the chapter before — dips mark where readers drop off; over 100% means more readers finished than the chapter before it.</div>'
@@ -300,7 +334,15 @@
         + '<div class="section-title"><i class="ti ti-books"></i> Reading Lists</div>'
         + '<div class="section-sub">How readers have shelved this story.</div>'
         + readingListChips(payload.reading_list || [])
+      + '</div>'
+
+      + '<div class="section" id="goals-section">'
+        + '<div class="section-title"><i class="ti ti-target"></i> Author Goals</div>'
+        + '<div class="section-sub">Set a public milestone for your readers — they see the progress bar on your story page. Only one active goal at a time; you can move the goalpost once it’s reached.</div>'
+        + '<div id="goals-body"><div style="color:var(--text3);font-size:13px;">Loading…</div></div>'
       + '</div>';
+
+    loadGoals(payload.active_goal || null);
 
     // Show a right-edge fade on the retention table only while more columns
     // are hidden off-screen; hide it once the user scrolls to the end.
@@ -455,6 +497,173 @@
       var meta = labels[r.status] || ['ti-book', r.status];
       return '<span class="rl-chip"><i class="ti ' + meta[0] + '"></i> ' + meta[1] + ' <b>' + fmt(r.n) + '</b></span>';
     }).join('') + '</div>';
+  }
+
+  // ── AUTHOR GOALS ─────────────────────────────────────────────
+  var GOAL_TYPES = {
+    sparks:        { label: 'Dawn Sparks',       icon: 'ti-flame' },
+    embers:        { label: 'Embers received',   icon: 'ti-campfire' },
+    scribe_flames: { label: "Scribe's Flames",   icon: 'ti-bookmark' },
+    infernal_dawns:{ label: 'Infernal Dawns',    icon: 'ti-sun' },
+    celestial_flames:{ label: 'Celestial Flames',icon: 'ti-star' },
+    reviews:       { label: 'Reviews',           icon: 'ti-message-star' },
+    followers:     { label: 'Followers',         icon: 'ti-users' },
+    readers:       { label: 'Readers',           icon: 'ti-book-open' },
+    comments:      { label: 'Comments',          icon: 'ti-message-circle' }
+  };
+
+  async function loadGoals(activeGoal){
+    var body = document.getElementById('goals-body');
+    if(!body) return;
+    body.innerHTML = renderGoal(activeGoal);
+  }
+
+  function renderGoal(g){
+    if(!g){
+      return '<div class="goal-empty">No active goal set.</div>'
+        + '<div class="goal-actions" style="margin-top:14px;">'
+          + '<button class="goal-btn primary" onclick="openGoalForm(null)"><i class="ti ti-plus"></i> Set a Goal</button>'
+        + '</div>';
+    }
+
+    var typeMeta = GOAL_TYPES[g.goal_type] || { label: g.goal_type, icon: 'ti-target' };
+    var current  = getCurrentMetric(g.goal_type);
+    var progress = Math.max(0, current - (g.baseline || 0));
+    var needed   = Math.max(1, g.target - (g.baseline || 0));
+    var pct      = Math.min(100, Math.round((progress / needed) * 100));
+    var reached  = g.reached_at != null || pct >= 100;
+
+    var html = '<div class="goal-card">';
+
+    if(g.pledge){
+      html += '<div class="goal-pledge">“' + esc(g.pledge) + '”</div>';
+    }
+    html += '<div class="goal-meta">'
+      + '<i class="ti ' + typeMeta.icon + '" style="color:var(--accent);"></i>'
+      + '<b>' + typeMeta.label + '</b>'
+      + '<span>→ ' + fmt(g.target) + ' total</span>'
+      + (reached ? '<span style="color:var(--green);font-weight:700;">✓ Goal reached!</span>' : '')
+    + '</div>';
+
+    html += '<div class="goal-bar-wrap"><div class="goal-bar-fill" style="width:' + pct + '%;' + (reached ? 'background:var(--green);' : '') + '"></div></div>';
+    html += '<div class="goal-pct">Progress: <b>' + fmt(current) + ' / ' + fmt(g.target) + '</b> (' + pct + '%)</div>';
+
+    html += '<div class="goal-actions">';
+    if(reached){
+      html += '<button class="goal-btn primary" onclick="openGoalForm(' + JSON.stringify(g.id) + ')"><i class="ti ti-flag"></i> Move the Goalpost</button>';
+    }
+    html += '<button class="goal-btn" onclick="toggleVisibility(' + JSON.stringify(g.id) + ',' + (g.is_visible ? 'false' : 'true') + ')">'
+      + '<i class="ti ' + (g.is_visible ? 'ti-eye-off' : 'ti-eye') + '"></i> '
+      + (g.is_visible ? 'Hide from readers' : 'Show to readers')
+    + '</button>';
+    if(!reached){
+      html += '<button class="goal-btn danger" onclick="abandonGoal(' + JSON.stringify(g.id) + ')"><i class="ti ti-trash"></i> Abandon</button>';
+    }
+    html += '</div>';
+
+    html += '<div class="goal-visibility"><input type="checkbox" id="goal-vis-cb" ' + (g.is_visible ? 'checked' : '') + ' onchange="toggleVisibility(' + JSON.stringify(g.id) + ',this.checked)"> <label for="goal-vis-cb">Visible to readers on story page</label></div>';
+    html += '</div>';
+    return html;
+  }
+
+  // Returns the current value for the given metric from already-loaded payload
+  function getCurrentMetric(type){
+    if(!window._dashPayload) return 0;
+    var ov = window._dashPayload.overview || {};
+    if(type === 'sparks')          return Number(ov.sparks_total || 0);
+    if(type === 'embers')          return 0; // not tracked per-story
+    if(type === 'scribe_flames')   return Number(ov.scribe_flames || 0);
+    if(type === 'infernal_dawns')  return Number(ov.infernal_dawns || 0);
+    if(type === 'celestial_flames')return Number(ov.celestial_flames || 0);
+    if(type === 'reviews')         return Number(ov.rating_count || 0);
+    if(type === 'followers')       return Number(ov.followers || 0);
+    if(type === 'readers')         return Number(ov.readers || 0);
+    if(type === 'comments')        return Number(ov.comments || 0);
+    return 0;
+  }
+
+  function openGoalForm(existingGoalId){
+    var body = document.getElementById('goals-body');
+    if(!body) return;
+    var typeOptions = Object.keys(GOAL_TYPES).map(function(k){
+      return '<option value="' + k + '">' + GOAL_TYPES[k].label + '</option>';
+    }).join('');
+
+    body.innerHTML = '<div class="goal-form">'
+      + '<div><label>Goal Type</label>'
+        + '<select id="gf-type">' + typeOptions + '</select></div>'
+      + '<div><label>Target Number</label>'
+        + '<input type="number" id="gf-target" min="1" placeholder="e.g. 500"/></div>'
+      + '<div><label>Your Promise (pledge)</label>'
+        + '<textarea id="gf-pledge" placeholder="e.g. When we hit 500 Sparks I will post a bonus chapter!"></textarea></div>'
+      + '<div class="goal-actions">'
+        + '<button class="goal-btn primary" onclick="saveGoal(' + (existingGoalId ? JSON.stringify(existingGoalId) : 'null') + ')"><i class="ti ti-check"></i> ' + (existingGoalId ? 'Update Goal' : 'Set Goal') + '</button>'
+        + '<button class="goal-btn" onclick="reloadGoalSection()"><i class="ti ti-x"></i> Cancel</button>'
+      + '</div>'
+    + '</div>';
+  }
+
+  async function saveGoal(existingGoalId){
+    var type   = document.getElementById('gf-type').value;
+    var target = parseInt(document.getElementById('gf-target').value, 10);
+    var pledge = (document.getElementById('gf-pledge').value || '').trim();
+
+    if(!type || !target || target < 1){
+      alert('Please choose a goal type and a target number greater than 0.');
+      return;
+    }
+
+    var baseline = getCurrentMetric(type);
+
+    try {
+      if(existingGoalId){
+        // Mark old goal fulfilled, insert new one
+        await db.from('chapter_goals').update({ status: 'fulfilled', fulfilled_at: new Date().toISOString() })
+          .eq('id', existingGoalId).eq('author_id', session.user.id);
+      }
+      var { error } = await db.from('chapter_goals').insert({
+        work_id: workId,
+        author_id: session.user.id,
+        goal_type: type,
+        target: target,
+        baseline: baseline,
+        pledge: pledge || null,
+        status: 'active',
+        is_visible: true
+      });
+      if(error) throw error;
+      await reloadGoalSection();
+    } catch(e){
+      alert('Could not save goal. Please try again.');
+    }
+  }
+
+  async function toggleVisibility(goalId, visible){
+    try {
+      await db.from('chapter_goals').update({ is_visible: visible })
+        .eq('id', goalId).eq('author_id', session.user.id);
+      await reloadGoalSection();
+    } catch(e) { alert('Could not update visibility.'); }
+  }
+
+  async function abandonGoal(goalId){
+    if(!confirm('Abandon this goal? It will be removed from your story page.')) return;
+    try {
+      await db.from('chapter_goals').update({ status: 'abandoned' })
+        .eq('id', goalId).eq('author_id', session.user.id);
+      await reloadGoalSection();
+    } catch(e) { alert('Could not abandon goal.'); }
+  }
+
+  async function reloadGoalSection(){
+    try {
+      var { data } = await db.from('chapter_goals')
+        .select('id,goal_type,target,baseline,pledge,status,is_visible,created_at,reached_at')
+        .eq('work_id', workId).eq('status','active')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      var body = document.getElementById('goals-body');
+      if(body) body.innerHTML = renderGoal(data);
+    } catch(e) {}
   }
 
   init();

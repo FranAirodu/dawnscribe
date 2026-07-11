@@ -151,6 +151,17 @@
     .goal-cancel-btn{background:transparent;border:none;color:var(--text3);font-size:11px;cursor:pointer;text-decoration:underline;margin-top:8px;}
     .goal-cancel-btn:hover{color:#f87171;}
     .goal-setup-btn{background:transparent;border:1px dashed var(--border);border-radius:9px;padding:9px 16px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .btn-vote{border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;margin-top:8px;margin-left:4px;transition:all 0.2s;display:inline-flex;align-items:center;gap:5px;}
+    .btn-vote.scribe{background:linear-gradient(135deg,rgba(45,212,191,0.15),rgba(45,212,191,0.05));border:1px solid var(--accent);color:var(--accent);}
+    .btn-vote.scribe:hover{background:rgba(45,212,191,0.22);}
+    .btn-vote.infernal{background:linear-gradient(135deg,rgba(239,68,68,0.15),rgba(239,68,68,0.05));border:1px solid #ef4444;color:#ef4444;}
+    .btn-vote.infernal:hover{background:rgba(239,68,68,0.22);}
+    .btn-vote:disabled{opacity:0.45;cursor:default;}
+    .vote-tally-wrap{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;}
+    .vote-tally{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:16px;font-size:11.5px;font-weight:700;}
+    .vote-tally.scribe{background:rgba(45,212,191,0.08);border:1px solid rgba(45,212,191,0.3);color:var(--accent);}
+    .vote-tally.infernal{background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);color:#ef4444;}
+    .goal-hidden-notice{font-size:11.5px;color:var(--text3);background:var(--bg3);border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
     .goal-setup-btn:hover{border-color:#f0c040;color:#f0c040;}
     .goal-form{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
     .goal-form select,.goal-form input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;}
@@ -535,8 +546,11 @@
             </div>
             <div id="offering-tier-wrap"></div>
           </div>
-          <!-- Right: Celestial Flame -->
-          <div id="flame-counter-wrap"></div>
+          <!-- Right: Celestial Flame + vote tallies -->
+          <div>
+            <div id="flame-counter-wrap"></div>
+            <div class="vote-tally-wrap" id="vote-tally-wrap" style="display:none;"></div>
+          </div>
         </div>
         <div id="spark-rally-wrap" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;"></div>
       </div>
@@ -623,7 +637,7 @@
 
       <!-- CHAPTER GOAL -->
       <div class="section" id="chapter-goal-section" style="display:none;">
-        <div class="section-title"><i class="ti ti-target-arrow"></i> Reader Goal</div>
+        <div class="section-title"><i class="ti ti-target-arrow"></i> Author Goals</div>
         <div id="chapter-goal-content"></div>
       </div>
 
@@ -1531,12 +1545,14 @@
     }
 
     // ─ ─ SPARK OF DAWN / RALLIES / CELESTIAL FLAMES ───────
-    var engageState = { sparkWeek: 0, sparkTotal: 0, sparkedToday: false, flameCount: 0, myFlames: 0, freeSparks: 0, activeRallies: 0, iAmRallying: false };
+    var engageState = { sparkWeek: 0, sparkTotal: 0, sparkedToday: false, flameCount: 0, myFlames: 0, freeSparks: 0, activeRallies: 0, iAmRallying: false, scribeFlameCount: 0, infernalDawnCount: 0, myScribeFlames: 0, myInfernalDawns: 0, votedScribeThisMonth: false, votedInfernalThisYear: false };
 
     async function loadEngagementState() {
-      engageState.sparkWeek  = workData.spark_count_week || 0;
-      engageState.sparkTotal = workData.spark_count_total || 0;
-      engageState.flameCount = workData.celestial_flame_count || 0;
+      engageState.sparkWeek       = workData.spark_count_week || 0;
+      engageState.sparkTotal      = workData.spark_count_total || 0;
+      engageState.flameCount      = workData.celestial_flame_count || 0;
+      engageState.scribeFlameCount  = workData.scribe_flame_count || 0;
+      engageState.infernalDawnCount = workData.infernal_dawn_count || 0;
       try {
         var rc = await db.from('chapter_rallies').select('id,user_id').eq('work_id', workData.id).is('fulfilled_at', null);
         var rows = rc.data || [];
@@ -1558,6 +1574,26 @@
       try {
         var st = await db.from('user_streaks').select('free_sparks').eq('user_id', uid).maybeSingle();
         engageState.freeSparks = (st.data && st.data.free_sparks) || 0;
+      } catch(e) {}
+      // Scribe's Flame balance + vote status
+      try {
+        var sf = await db.from('user_scribes_flames').select('balance').eq('user_id', uid).maybeSingle();
+        engageState.myScribeFlames = (sf.data && sf.data.balance) || 0;
+      } catch(e) {}
+      try {
+        var monthYear = new Date().toISOString().slice(0,7);
+        var sv = await db.from('scribe_flame_votes').select('id').eq('user_id', uid).eq('month_year', monthYear).maybeSingle();
+        engageState.votedScribeThisMonth = !!(sv.data);
+      } catch(e) {}
+      // Infernal Dawn balance + vote status
+      try {
+        var id2 = await db.from('user_infernal_dawns').select('balance').eq('user_id', uid).maybeSingle();
+        engageState.myInfernalDawns = (id2.data && id2.data.balance) || 0;
+      } catch(e) {}
+      try {
+        var yr = new Date().getFullYear();
+        var iv = await db.from('infernal_dawn_votes').select('id').eq('user_id', uid).eq('year', yr).maybeSingle();
+        engageState.votedInfernalThisYear = !!(iv.data);
       } catch(e) {}
     }
 
@@ -1592,10 +1628,56 @@
       var wrap = document.getElementById('flame-counter-wrap');
       if (!wrap) return;
       var isOwner = currentSession && currentSession.user.id === workData.author_id;
-      var html = '<div class="flame-counter" title="Celestial Flames — a rare honor bestowed by devoted readers"><i class="ti ti-flare"></i> ' + engageState.flameCount + ' Celestial Flame' + (engageState.flameCount !== 1 ? 's' : '') + '</div>';
+      var html = '<div class="flame-counter" title="Celestial Flames \u2014 a rare honor bestowed by devoted readers"><i class="ti ti-flare"></i> ' + engageState.flameCount + ' Celestial Flame' + (engageState.flameCount !== 1 ? 's' : '') + '</div>';
       if (currentSession && !isOwner && engageState.myFlames > 0) {
         html += '<button class="btn-flame-give" onclick="submitFlame()" title="Bestow one of your ' + engageState.myFlames + ' Celestial Flame(s) on this novel"><i class="ti ti-flare"></i> Give a Flame (' + engageState.myFlames + ')</button>';
       }
+      wrap.innerHTML = html;
+      renderVoteTallies();
+    }
+
+    function renderVoteTallies() {
+      var wrap = document.getElementById('vote-tally-wrap');
+      if (!wrap) return;
+      var isOwner = currentSession && currentSession.user.id === workData.author_id;
+      var NOW_MS  = Date.now();
+      var LAUNCH  = new Date('2027-01-01T00:00:00Z').getTime();
+      var launched = NOW_MS >= LAUNCH;
+      var html = '';
+
+      // Scribe's Flame tally
+      if (engageState.scribeFlameCount > 0 || launched) {
+        html += '<div class="vote-tally scribe"><i class="ti ti-bookmark"></i> ' + (engageState.scribeFlameCount || 0) + ' Scribe\u2019s Flame' + (engageState.scribeFlameCount !== 1 ? 's' : '') + '</div>';
+      }
+      // Infernal Dawn tally
+      if (engageState.infernalDawnCount > 0 || launched) {
+        html += '<div class="vote-tally infernal"><i class="ti ti-sun"></i> ' + (engageState.infernalDawnCount || 0) + ' Infernal Dawn' + (engageState.infernalDawnCount !== 1 ? 's' : '') + '</div>';
+      }
+
+      if (!launched) {
+        // Show coming-soon note if user has balance (shouldn't happen before 2027 but just in case)
+        wrap.style.display = html ? '' : 'none';
+        wrap.innerHTML = html;
+        return;
+      }
+
+      // Vote buttons — only for logged-in non-owners
+      if (currentSession && !isOwner) {
+        // Scribe's Flame vote
+        if (engageState.votedScribeThisMonth) {
+          html += '<button class="btn-vote scribe" disabled><i class="ti ti-bookmark"></i> Scribe\u2019s Flame given this month</button>';
+        } else if (engageState.myScribeFlames > 0) {
+          html += '<button class="btn-vote scribe" onclick="submitScribeFlame()" title="Cast your monthly Scribe\u2019s Flame vote for this novel"><i class="ti ti-bookmark"></i> Give Scribe\u2019s Flame (' + engageState.myScribeFlames + ')</button>';
+        }
+        // Infernal Dawn vote
+        if (engageState.votedInfernalThisYear) {
+          html += '<button class="btn-vote infernal" disabled><i class="ti ti-sun"></i> Infernal Dawn given this year</button>';
+        } else if (engageState.myInfernalDawns > 0) {
+          html += '<button class="btn-vote infernal" onclick="submitInfernalDawn()" title="Cast your yearly Infernal Dawn vote for this novel"><i class="ti ti-sun"></i> Give Infernal Dawn (' + engageState.myInfernalDawns + ')</button>';
+        }
+      }
+
+      wrap.style.display = html ? '' : 'none';
       wrap.innerHTML = html;
     }
 
@@ -1626,6 +1708,58 @@
         loadTopFans();
         refreshGoalProgress();
       } catch(e) { showToast('Error sparking.', 'ti-x'); }
+    }
+
+    async function submitScribeFlame() {
+      if (!currentSession) { window.location.href = 'auth.html'; return; }
+      try {
+        var { data, error } = await db.rpc('cast_scribe_flame_vote', { p_work_id: workData.id });
+        if (error || !data || !data.success) {
+          var msg = (data && data.error) || (error && error.message) || 'Could not vote';
+          var friendly = {
+            no_scribes_flame:         'You have no Scribe\u2019s Flame to give this month.',
+            already_voted_this_month: 'You\u2019ve already given your Scribe\u2019s Flame this month.',
+            own_work:                 'You can\u2019t vote for your own novel.',
+            not_authenticated:        'Please sign in first.',
+            work_not_found:           'This work could not be found.'
+          }[msg] || msg;
+          showToast(friendly, 'ti-x');
+          return;
+        }
+        engageState.votedScribeThisMonth = true;
+        engageState.myScribeFlames       = data.balance || 0;
+        engageState.scribeFlameCount     = data.scribe_flame_count || engageState.scribeFlameCount + 1;
+        workData.scribe_flame_count      = engageState.scribeFlameCount;
+        showToast('Scribe\u2019s Flame bestowed! \uD83D\uDD16', 'ti-bookmark');
+        renderFlameCounter();
+        refreshGoalProgress();
+      } catch(e) { showToast('Error casting vote.', 'ti-x'); }
+    }
+
+    async function submitInfernalDawn() {
+      if (!currentSession) { window.location.href = 'auth.html'; return; }
+      try {
+        var { data, error } = await db.rpc('cast_infernal_dawn_vote', { p_work_id: workData.id });
+        if (error || !data || !data.success) {
+          var msg = (data && data.error) || (error && error.message) || 'Could not vote';
+          var friendly = {
+            no_infernal_dawn:        'You have no Infernal Dawn to give this year.',
+            already_voted_this_year: 'You\u2019ve already given your Infernal Dawn this year.',
+            own_work:                'You can\u2019t vote for your own novel.',
+            not_authenticated:       'Please sign in first.',
+            work_not_found:          'This work could not be found.'
+          }[msg] || msg;
+          showToast(friendly, 'ti-x');
+          return;
+        }
+        engageState.votedInfernalThisYear = true;
+        engageState.myInfernalDawns       = data.balance || 0;
+        engageState.infernalDawnCount     = data.infernal_dawn_count || engageState.infernalDawnCount + 1;
+        workData.infernal_dawn_count      = engageState.infernalDawnCount;
+        showToast('Infernal Dawn bestowed! \u2600\uFE0F', 'ti-sun');
+        renderFlameCounter();
+        refreshGoalProgress();
+      } catch(e) { showToast('Error casting vote.', 'ti-x'); }
     }
 
     async function submitRally() {
@@ -1730,18 +1864,52 @@
     async function computeGoalProgress() {
       var g = goalState.goal;
       if (!g) { goalState.progress = 0; return; }
+      var baseline = g.baseline || 0;
       if (g.goal_type === 'sparks') {
-        goalState.progress = Math.max(0, (workData.spark_count_total || 0) - g.baseline);
+        goalState.progress = Math.max(0, (workData.spark_count_total || 0) - baseline);
+      } else if (g.goal_type === 'celestial_flames') {
+        goalState.progress = Math.max(0, (workData.celestial_flame_count || 0) - baseline);
+      } else if (g.goal_type === 'scribe_flames') {
+        goalState.progress = Math.max(0, (workData.scribe_flame_count || 0) - baseline);
+      } else if (g.goal_type === 'infernal_dawns') {
+        goalState.progress = Math.max(0, (workData.infernal_dawn_count || 0) - baseline);
       } else if (g.goal_type === 'offerings') {
-        goalState.progress = Math.max(0, (workData.offering_count || 0) - g.baseline);
+        goalState.progress = Math.max(0, (workData.offering_count || 0) - baseline);
+      } else if (g.goal_type === 'followers') {
+        try {
+          var fc = await db.from('work_follows').select('id', { count: 'exact', head: true }).eq('work_id', workData.id);
+          goalState.progress = Math.max(0, (fc.count || 0) - baseline);
+        } catch(e) { goalState.progress = 0; }
+      } else if (g.goal_type === 'reviews') {
+        goalState.progress = Math.max(0, (workData.rating_count || 0) - baseline);
+      } else if (g.goal_type === 'readers') {
+        try {
+          var rc2 = await db.from('reading_progress').select('user_id', { count: 'exact', head: true }).eq('work_id', workData.id);
+          goalState.progress = Math.max(0, (rc2.count || 0) - baseline);
+        } catch(e) { goalState.progress = 0; }
+      } else if (g.goal_type === 'comments') {
+        goalState.progress = Math.max(0, (workData.comments_count || 0) - baseline);
       } else if (g.goal_type === 'rallies') {
         try {
-          var rc = await db.from('chapter_rallies').select('id', { count: 'exact', head: true })
+          var rv = await db.from('chapter_rallies').select('id', { count: 'exact', head: true })
             .eq('work_id', workData.id).gte('created_at', g.created_at);
-          goalState.progress = rc.count || 0;
+          goalState.progress = rv.count || 0;
         } catch(e) { goalState.progress = 0; }
       }
     }
+
+    var GOAL_TYPE_LABELS = {
+      sparks:           'Sparks of Dawn',
+      celestial_flames: 'Celestial Flames',
+      scribe_flames:    'Scribe\u2019s Flames',
+      infernal_dawns:   'Infernal Dawns',
+      offerings:        'Offerings',
+      followers:        'Followers',
+      reviews:          'Reviews',
+      readers:          'Readers',
+      comments:         'Comments',
+      rallies:          'Chapter Rallies'
+    };
 
     function renderGoal() {
       var sec = document.getElementById('chapter-goal-section');
@@ -1754,36 +1922,58 @@
         if (!isOwner) { sec.style.display = 'none'; return; }
         sec.style.display = 'block';
         if (!goalState.showForm) {
-          el.innerHTML = '<button class="goal-setup-btn" onclick="toggleGoalForm(true)"><i class="ti ti-target-arrow"></i> Set a Reader Goal</button>' +
-            '<div style="font-size:11.5px;color:var(--text3);margin-top:8px;">Give your readers something to rally behind \u2014 pledge a bonus chapter when they hit a target.</div>';
+          el.innerHTML = '<button class="goal-setup-btn" onclick="toggleGoalForm(true)"><i class="ti ti-target-arrow"></i> Set an Author Goal</button>' +
+            '<div style="font-size:11.5px;color:var(--text3);margin-top:8px;">Give your readers a milestone to rally behind \u2014 pledge a reward when they hit it.</div>';
         } else {
           el.innerHTML =
             '<div class="goal-form">' +
-              '<select id="goal-type-select"><option value="sparks">Sparks of Dawn</option><option value="rallies">Chapter Rallies</option><option value="offerings">Offerings</option></select>' +
-              '<input type="number" id="goal-target-input" min="5" max="1000" placeholder="Target (5\u20131000)" value="50"/>' +
-              '<input type="text" id="goal-pledge-input" maxlength="200" placeholder="What will you do when readers hit this? (e.g. \u201cBonus chapter!\u201d)"/>' +
+              '<select id="goal-type-select">' +
+                '<option value="sparks">Sparks of Dawn</option>' +
+                '<option value="celestial_flames">Celestial Flames</option>' +
+                '<option value="scribe_flames">Scribe\u2019s Flames</option>' +
+                '<option value="infernal_dawns">Infernal Dawns</option>' +
+                '<option value="followers">Followers</option>' +
+                '<option value="reviews">Reviews</option>' +
+                '<option value="readers">Readers</option>' +
+                '<option value="comments">Comments</option>' +
+                '<option value="offerings">Offerings</option>' +
+                '<option value="rallies">Chapter Rallies</option>' +
+              '</select>' +
+              '<input type="number" id="goal-target-input" min="1" placeholder="Target number" value="100"/>' +
+              '<input type="text" id="goal-pledge-input" maxlength="200" placeholder="Your promise (e.g. Bonus chapter at 500 Sparks!)"/>' +
               '<div class="goal-form-actions">' +
                 '<button class="goal-form-save" id="goal-form-save-btn" onclick="submitCreateGoal()">Set Goal</button>' +
                 '<button class="goal-form-cancel" onclick="toggleGoalForm(false)">Cancel</button>' +
               '</div>' +
-              '<div style="font-size:11px;color:var(--text3);">Goal runs for 7 days. One active goal per story.</div>' +
+              '<div style="font-size:11px;color:var(--text3);">One active goal per story. Progress is all-time from when the goal is set.</div>' +
             '</div>';
         }
         return;
       }
 
+      // Respect is_visible — hide from non-owners if hidden
+      if (!g.is_visible && !isOwner) { sec.style.display = 'none'; return; }
+
       sec.style.display = 'block';
-      var pct = Math.min(100, Math.round((goalState.progress / g.target) * 100));
-      var typeLabel = { sparks: 'Sparks of Dawn', rallies: 'Chapter Rallies', offerings: 'Offerings' }[g.goal_type] || g.goal_type;
+      var needed  = Math.max(1, g.target - (g.baseline || 0));
+      var pct     = Math.min(100, Math.round((goalState.progress / needed) * 100));
+      var reached = g.status === 'reached' || pct >= 100;
+      var typeLabel = GOAL_TYPE_LABELS[g.goal_type] || g.goal_type;
       var html = '';
+
+      if (!g.is_visible && isOwner) {
+        html += '<div class="goal-hidden-notice"><i class="ti ti-eye-off"></i> This goal is hidden from readers. Change visibility in your Dashboard.</div>';
+      }
+
       if (g.pledge) html += '<div class="goal-pledge">\u201c' + escHtml(g.pledge) + '\u201d</div>';
       html += '<div class="goal-progress-line"><span>' + typeLabel + '</span><span>' + goalState.progress + ' / ' + g.target + '</span></div>';
-      html += '<div class="goal-bar-track"><div class="goal-bar-fill' + (g.status === 'reached' ? ' reached' : '') + '" style="width:' + pct + '%;"></div></div>';
-      if (g.status === 'reached') {
-        html += '<div class="goal-reached-banner"><i class="ti ti-confetti"></i> Goal reached! ' + (isOwner ? 'Publish your next chapter to fulfill it.' : 'The author\u2019s bonus chapter is coming!') + '</div>';
+      html += '<div class="goal-bar-track"><div class="goal-bar-fill' + (reached ? ' reached' : '') + '" style="width:' + pct + '%;"></div></div>';
+
+      if (reached) {
+        html += '<div class="goal-reached-banner"><i class="ti ti-confetti"></i> Goal reached! ' + (isOwner ? 'Move the goalpost from your Dashboard.' : 'The author\u2019s reward is coming!') + '</div>';
       }
       if (isOwner) {
-        html += '<button class="goal-cancel-btn" onclick="submitCancelGoal(\'' + g.id + '\')">Cancel this goal</button>';
+        html += '<button class="goal-cancel-btn" onclick="submitCancelGoal(' + JSON.stringify(g.id) + ')">Cancel this goal</button>';
       }
       el.innerHTML = html;
     }

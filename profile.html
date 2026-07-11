@@ -301,6 +301,13 @@
 
     /* INFO */
     .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:640px;}
+    .currency-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px;}
+    .currency-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;}
+    .currency-card-val{font-family:'Cinzel',serif;font-size:20px;font-weight:700;color:var(--text);}
+    .currency-card-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);display:flex;align-items:center;gap:5px;}
+    .currency-card-label i{font-size:13px;}
+    .currency-card-sub{font-size:11px;color:var(--text3);margin-top:1px;}
+    .currency-section-title{font-family:'Cinzel',serif;font-size:13px;font-weight:700;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:0.5px;}
     @media(max-width:540px){.info-grid{grid-template-columns:1fr;}}
     .info-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;}
     .info-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:4px;display:flex;align-items:center;gap:6px;}
@@ -603,6 +610,44 @@
 
     <!-- INFO -->
     <div class="tab-panel" id="panel-info">
+
+      <!-- CURRENCY WALLET — owner only -->
+      <div class="owner-only" id="currency-wallet-section" style="margin-bottom:24px;">
+        <div class="currency-section-title"><i class="ti ti-wallet" style="color:var(--accent);"></i> Your Currencies</div>
+        <div class="currency-grid" id="currency-grid">
+          <div class="currency-card">
+            <div class="currency-card-val" id="cw-embers">—</div>
+            <div class="currency-card-label" style="color:#f97316;"><i class="ti ti-flame"></i> Embers</div>
+            <div class="currency-card-sub">Daily check-in</div>
+          </div>
+          <div class="currency-card">
+            <div class="currency-card-val" id="cw-quills">—</div>
+            <div class="currency-card-label" style="color:var(--gold);"><i class="ti ti-feather"></i> Quills</div>
+            <div class="currency-card-sub">Purchased</div>
+          </div>
+          <div class="currency-card">
+            <div class="currency-card-val" id="cw-sparks">—</div>
+            <div class="currency-card-label" style="color:#f0c040;"><i class="ti ti-bolt"></i> Sparks of Dawn</div>
+            <div class="currency-card-sub">Weekly · Mondays</div>
+          </div>
+          <div class="currency-card">
+            <div class="currency-card-val" id="cw-celestial">—</div>
+            <div class="currency-card-label" style="color:#f0c040;"><i class="ti ti-flare"></i> Celestial Flames</div>
+            <div class="currency-card-sub">Via Quill purchases</div>
+          </div>
+          <div class="currency-card">
+            <div class="currency-card-val" id="cw-scribe">—</div>
+            <div class="currency-card-label" style="color:var(--accent);"><i class="ti ti-bookmark"></i> Scribe's Flames</div>
+            <div class="currency-card-sub">Monthly · Jan 2027</div>
+          </div>
+          <div class="currency-card">
+            <div class="currency-card-val" id="cw-infernal">—</div>
+            <div class="currency-card-label" style="color:#ef4444;"><i class="ti ti-sun"></i> Infernal Dawns</div>
+            <div class="currency-card-sub">Yearly · Jan 2027</div>
+          </div>
+        </div>
+      </div>
+
       <div class="info-grid">
         <div class="info-card"><div class="info-label"><i class="ti ti-calendar"></i> Member since</div><div class="info-value" id="info-joined">March 12, 2025</div></div>
         <div class="info-card"><div class="info-label"><i class="ti ti-clock"></i> Last active</div><div class="info-value" id="info-last-active">—</div></div>
@@ -916,6 +961,7 @@
             loadArtistList(profileData.id);
             loadActivity(profileData.id);
             loadShowcase(profileData.id, true);
+            loadCurrencyWallet(session.user.id);
           }
           var uTarget = resolvedUsername || viewingUser || 'user';
           var msgBtn = document.getElementById('msg-btn');
@@ -3388,6 +3434,30 @@ async function handleFriendBtn() {
       });
       pendant.addEventListener('dragend',function(){this.classList.remove('dragging');row.querySelectorAll('.prestige-pendant').forEach(function(p){p.classList.remove('drag-over');});});
     }
+    // ── CURRENCY WALLET (owner-only, Info tab) ───────────────────
+    async function loadCurrencyWallet(uid) {
+      try {
+        var [emberRes, quillRes, streakRes, celestialRes, scribeRes, infernalRes] = await Promise.all([
+          Promise.resolve(db.from('user_embers').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('user_quills').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('user_streaks').select('free_sparks').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('user_celestial_flames').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('user_scribes_flames').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('user_infernal_dawns').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; })
+        ]);
+
+        function val(res) { return (res && res.data && res.data.balance != null) ? res.data.balance : 0; }
+        function setEl(id, n) { var el = document.getElementById(id); if (el) el.textContent = Number(n).toLocaleString(); }
+
+        setEl('cw-embers',   val(emberRes));
+        setEl('cw-quills',   val(quillRes));
+        setEl('cw-sparks',   (streakRes && streakRes.data && streakRes.data.free_sparks) || 0);
+        setEl('cw-celestial',val(celestialRes));
+        setEl('cw-scribe',   val(scribeRes));
+        setEl('cw-infernal', val(infernalRes));
+      } catch(e) {}
+    }
+
     async function loadPrestigePills(profileId,isOwner){
       _presProfileId=profileId;_presIsOwner=isOwner;
       var row=document.getElementById('badge-row'),seeAll=document.getElementById('prestige-see-all'),editBtn=document.getElementById('prestige-edit-btn');
