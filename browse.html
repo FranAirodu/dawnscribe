@@ -136,7 +136,7 @@
     var totalCount = null;
     var section = new URLSearchParams(window.location.search).get('section') || 'new-novels';
     var myUid = null;
-    var NOVEL_SECTIONS = ['new-novels', 'featured-novels', 'followed-chapters'];
+    var NOVEL_SECTIONS = ['new-novels', 'featured-novels', 'one-shots', 'followed-chapters'];
     var viewMode = localStorage.getItem('ds_browse_view_mode') || 'bubble';
 
     var myContentFilters = { safe: true, gore: false, erotica: false };
@@ -177,6 +177,7 @@
     var SECTION_META = {
       'new-novels':        { title: 'New Novels', sub: 'The latest novels published on DawnScribe.', icon: 'ti-sparkles' },
       'featured-novels':   { title: 'Featured Novels', sub: 'Top-rated novels on DawnScribe.', icon: 'ti-star' },
+      'one-shots':         { title: 'One-Shots', sub: 'Complete short stories told in a single chapter. Read the whole thing in one sitting.', icon: 'ti-bolt' },
       'new-art':           { title: 'New Artwork', sub: 'The latest artwork uploaded to DawnScribe.', icon: 'ti-sparkles' },
       'featured-art':      { title: 'Featured Artwork', sub: 'Top-rated artwork on DawnScribe.', icon: 'ti-star' },
       'followed-chapters': { title: 'New Chapters', sub: 'New chapters from novels you follow.', icon: 'ti-bell' },
@@ -354,6 +355,21 @@
           items: data || [], count: count,
           html: (data||[]).map(function(w){ return useList ? renderNovelListRow(w, profileMap) : renderNovelCard(w, profileMap); }),
           grid: useList ? 'list-view' : 'results-grid'
+        };
+      }
+      if (section === 'one-shots') {
+        var qos = db.from('works').select('id,title,cover_url,rating,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,chapters_count,status', { count: 'exact' })
+          .eq('type','novel').eq('is_published',true).eq('is_one_shot',true);
+        qos = applyContentFilters(qos); qos = applyLanguageFilters(qos);
+        qos = qos.order('created_at', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
+        var osRes = await qos;
+        if (osRes.error) throw osRes.error;
+        var osProfileMap = await fetchProfiles((osRes.data||[]).map(function(w){ return w.author_id; }));
+        var useListOs = viewMode === 'list';
+        return {
+          items: osRes.data || [], count: osRes.count,
+          html: (osRes.data||[]).map(function(w){ return useListOs ? renderNovelListRow(w, osProfileMap) : renderNovelCard(w, osProfileMap); }),
+          grid: useListOs ? 'list-view' : 'results-grid'
         };
       }
       if (section === 'new-art' || section === 'featured-art') {

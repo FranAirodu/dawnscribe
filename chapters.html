@@ -312,6 +312,42 @@
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
     .toast i{color:var(--accent);}
     @keyframes spin{to{transform:rotate(360deg);}}
+
+    /* FOCUS MODE */
+    body.focus-mode nav{opacity:0;pointer-events:none;transition:opacity 0.3s;}
+    body.focus-mode nav:hover{opacity:1;pointer-events:auto;}
+    body.focus-mode .work-header{display:none;}
+    body.focus-mode #link-novel-card{display:none !important;}
+    body.focus-mode .cols{grid-template-columns:0px 1fr !important;}
+    body.focus-mode .cols .card:first-child{width:0;overflow:hidden;padding:0;border:none;min-width:0;}
+    body.focus-mode #reopen-panel-btn{display:none !important;}
+    body.focus-mode .page-wrap{padding:0 0 80px;}
+    body.focus-mode #editor-panel{max-width:780px;margin:0 auto;padding:32px 32px 80px;}
+    body.focus-mode #focus-exit-bar{display:flex !important;}
+    #focus-exit-bar{display:none;position:fixed;top:0;left:0;right:0;z-index:200;background:rgba(10,10,15,0.92);backdrop-filter:blur(6px);padding:8px 24px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
+    html[data-theme="light"] #focus-exit-bar{background:rgba(244,244,248,0.92);}
+    .focus-mode-meta{font-size:12px;color:var(--text3);display:flex;gap:16px;align-items:center;}
+    .focus-mode-meta strong{color:var(--text2);}
+    .focus-exit-btn{background:none;border:1px solid var(--border);border-radius:7px;padding:5px 14px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;}
+    .focus-exit-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* STORY-WIDE FIND & REPLACE */
+    .swr-match-item{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:6px;font-size:12px;}
+    .swr-match-item .swr-ch-title{font-weight:700;color:var(--text2);margin-bottom:4px;}
+    .swr-match-item .swr-count{font-size:11px;color:var(--accent);}
+    .swr-preview{font-size:11px;color:var(--text3);margin-top:3px;line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+    .swr-preview mark{background:rgba(45,212,191,0.25);color:var(--text);border-radius:2px;padding:0 2px;}
+    .swr-total-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(45,212,191,0.08);border:1px solid rgba(45,212,191,0.2);border-radius:20px;padding:3px 12px;font-size:12px;color:var(--accent);font-weight:700;margin-bottom:14px;}
+
+    /* INLINE TOOLTIP FORMAT */
+    .ds-tooltip-btn{background:none;border:1px solid rgba(45,212,191,0.35);border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;font-family:'Lato',sans-serif;color:var(--accent);cursor:pointer;display:flex;align-items:center;gap:4px;transition:all 0.2s;}
+    .ds-tooltip-btn:hover{background:rgba(45,212,191,0.08);}
+    .ql-tooltip-term{background:rgba(45,212,191,0.10);border-bottom:2px dotted var(--accent);cursor:help;border-radius:2px;padding:0 1px;}
+
+    /* CORRECTION REPORTING TOGGLE */
+    .correction-toggle-row{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);border-radius:9px;margin-top:8px;}
+    .correction-toggle-row label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2);font-weight:700;}
+    .correction-toggle-row span{display:block;font-size:11px;color:var(--text3);font-weight:400;margin-top:2px;}
   </style>
 </head>
 <body>
@@ -450,7 +486,11 @@
         <button class="tb-extra-btn" id="schedule-toggle" onclick="toggleSchedule()"><i class="ti ti-calendar-clock"></i> Schedule</button>
         <button class="tb-extra-btn" id="history-btn" onclick="openRevisionHistory()" disabled title="Save the chapter first to view history"><i class="ti ti-history"></i> History</button>
         <button class="tb-extra-btn" id="comments-open-toggle" onclick="toggleChapterComments()"><i class="ti ti-message-circle"></i> Comments: Open</button>
+        <button class="tb-extra-btn" id="clean-paste-btn" onclick="toggleCleanPasteMode()" title="When on, pasting strips all formatting (plain text only)"><i class="ti ti-clipboard-text"></i> Clean Paste: On</button>
         <button class="tb-extra-btn" id="tts-toggle-btn" onclick="toggleTTS()"><i class="ti ti-headphones"></i> Listen</button>
+        <button class="tb-extra-btn" id="focus-mode-btn" onclick="toggleFocusMode()"><i class="ti ti-focus-centered"></i> Focus Mode</button>
+        <button class="tb-extra-btn" id="swr-btn" onclick="openStoryWideReplace()" title="Find &amp; replace across all chapters"><i class="ti ti-replace"></i> Story Replace</button>
+        <button class="tb-extra-btn" id="tooltip-insert-btn" onclick="openTooltipModal()" title="Add a hover tooltip to selected text"><i class="ti ti-info-circle"></i> Tooltip</button>
         <div class="export-menu-wrap">
           <button class="tb-extra-btn" onclick="toggleExportMenu()"><i class="ti ti-download"></i> Export</button>
           <div class="export-menu" id="export-menu">
@@ -473,6 +513,16 @@
 
       <!-- ACTIVE POLLS -->
       <div id="active-polls-wrap"></div>
+
+      <!-- CORRECTION REPORTING (only shown when editing a saved chapter) -->
+      <div class="correction-toggle-row" id="corrections-toggle-row" style="display:none;">
+        <i class="ti ti-pencil-check" style="color:var(--gold);font-size:16px;flex-shrink:0;"></i>
+        <label>
+          <input type="checkbox" id="corrections-toggle-cb" onchange="toggleCorrectionReporting()" style="accent-color:var(--gold);width:14px;height:14px;cursor:pointer;"/>
+          <span id="corrections-toggle-label">Typo reporting off for this chapter</span>
+          <span>Lets readers highlight text and flag corrections — sent to you as a notification, not a comment.</span>
+        </label>
+      </div>
 
       <!-- TTS PLAYER — sits directly above the editor -->
       <div class="tts-bar" id="tts-bar">
@@ -734,6 +784,7 @@
   var originalHTML = '';
   var originalNoteTop = '';
   var originalNoteBottom = '';
+  var originalCorrectionReporting = false;
   var currentChapterStatus = 'published';
   var autosaveTimer = null;
   var allChapters = []; // cached list for prev/next nav + bulk actions
@@ -747,6 +798,7 @@
 
   function isAnyModalOpen() {
     var modalIds = ['poll-modal-overlay','revision-modal-overlay','fr-modal-overlay',
+                    'swr-modal-overlay','tooltip-modal-overlay',
                     'bulk-import-overlay','complete-modal-1','complete-modal-2',
                     'delete-dialog','switch-dialog','end-char-modal'];
     return modalIds.some(function(id){
@@ -815,8 +867,14 @@
     document.getElementById('schedule-toggle').classList.remove('active');
     document.getElementById('schedule-input').value = '';
     document.getElementById('chapter-nav-arrows').style.display = 'none';
+    correctionReportingOn = false;
+    originalCorrectionReporting = false;
+    setCorrectionToggleUI();
+    var corrRow = document.getElementById('corrections-toggle-row');
+    if (corrRow) corrRow.style.display = 'none';
     activePolls = [];
     renderActivePolls();
+    updateTooltipBtnBadge();
     updateAutosaveIndicator('idle');
     updateReadingStats();
     if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
@@ -905,7 +963,8 @@
     var currentNoteBottom = document.getElementById('author-note-bottom').value.trim();
     if (!editingChapterId) return !!(currentTitle || currentText || currentNoteTop || currentNoteBottom); // new unsaved chapter
     return currentTitle !== originalTitle || currentText !== originalText || currentHTML !== originalHTML
-      || currentNoteTop !== originalNoteTop || currentNoteBottom !== originalNoteBottom;
+      || currentNoteTop !== originalNoteTop || currentNoteBottom !== originalNoteBottom
+      || correctionReportingOn !== originalCorrectionReporting;
   }
 
   // Warn before leaving the page with unsaved work (new or edited)
@@ -1016,6 +1075,14 @@
     } catch(e) { goalInput.value = ''; }
     updateReadingStats();
 
+    // ── Correction reporting ──
+    correctionReportingOn = !!(ch.allow_corrections);
+    originalCorrectionReporting = correctionReportingOn;
+    setCorrectionToggleUI();
+    // Show correction toggle only for saved chapters (and only for novels, not artwork)
+    var corrRow = document.getElementById('corrections-toggle-row');
+    if (corrRow) corrRow.style.display = (workData && workData.type === 'artwork') ? 'none' : 'flex';
+
     // ── Autosave ──
     updateAutosaveIndicator('saved');
     if (autosaveTimer) clearInterval(autosaveTimer);
@@ -1038,6 +1105,8 @@
 
     // Stop TTS if playing, re-prepare for new chapter content
     if (ttsOpen) { ttsStop(); ttsPrepare(); }
+    // Sync tooltip badge count for this chapter
+    updateTooltipBtnBadge();
 
     // Load character manager for this chapter
     await ctInit(workId, chapterId);
@@ -1080,9 +1149,16 @@
       '<span><i class="ti ti-refresh" style="font-size:11px;"></i> Updated ' + formatDate(workData.updated_at) + '</span>' +
       '<span id="work-total-stats"></span>';
 
-    // Render completed state in header
+    // Render completed / one-shot state in header
     var area = document.getElementById('complete-story-area');
-    if (workData.status === 'completed') {
+    if (workData.is_one_shot) {
+      area.innerHTML = '<div class="completed-badge" style="background:rgba(139,92,246,0.12);color:#a78bfa;border-color:rgba(139,92,246,0.3);"><i class="ti ti-sparkles"></i> One-Shot</div>';
+      // One-shots are locked to one chapter — disable add/import buttons
+      document.querySelectorAll('.add-chapter-btn').forEach(function(btn) {
+        btn.classList.add('disabled');
+        btn.title = 'One-Shot stories can only have one chapter.';
+      });
+    } else if (workData.status === 'completed') {
       area.innerHTML = '<div class="completed-badge"><i class="ti ti-flag-check"></i> Completed</div>';
       // Lock out adding new chapters
       document.querySelectorAll('.add-chapter-btn').forEach(function(btn) {
@@ -1422,8 +1498,15 @@
     
     quill.on('text-change', function() {
       updateReadingStats();
+      updateTooltipBtnBadge();
       if (editingChapterId) updateAutosaveIndicator('pending');
     });
+    quill.on('selection-change', function(range) {
+      // Cache last non-null selection so toolbar button clicks don't lose it
+      if (range && range.length > 0) _lastQuillSelection = range;
+    });
+    initCleanPaste();
+    initCleanPasteBtn();
   }
 
   function initToolbarTooltips() {
@@ -1486,6 +1569,7 @@
     var wordCount = text.split(/\s+/).filter(Boolean).length;
     var noteTop = document.getElementById('author-note-top').value.trim();
     var noteBottom = document.getElementById('author-note-bottom').value.trim();
+    var allowCorrections = correctionReportingOn;
 
     // Handle scheduling
     var scheduleEnabled = document.getElementById('schedule-toggle').classList.contains('active');
@@ -1515,7 +1599,8 @@
       title: title, content: content, word_count: wordCount, status: finalStatus,
       author_note_top: noteTop || null, author_note_bottom: noteBottom || null,
       scheduled_for: scheduledFor, updated_at: new Date().toISOString(),
-      comments_open: currentChapterCommentsOpen
+      comments_open: currentChapterCommentsOpen,
+      allow_corrections: allowCorrections
     };
 
     var res;
@@ -1549,6 +1634,9 @@
         if(!silent){ showToast('Error: ' + res.error.message, 'ti-x'); btn.disabled = false; btn.innerHTML = '<i class="ti ti-rocket"></i> <span id="publish-label">Publish Chapter</span>'; }
         return;
       }
+      // Set editingChapterId immediately so clearBackup, button label, and character
+      // save all reference the real ID rather than null/'new'.
+      editingChapterId = res.data.id;
       if (!silent) showToast(finalStatus === 'scheduled' ? 'Chapter scheduled!' : (finalStatus === 'published' ? 'Chapter published!' : 'Draft saved!'),
         finalStatus === 'scheduled' ? 'ti-calendar-clock' : (finalStatus === 'published' ? 'ti-rocket' : 'ti-device-floppy'));
     }
@@ -1570,6 +1658,7 @@
     originalHTML = quill ? quill.root.innerHTML : '';
     originalNoteTop = noteTop;
     originalNoteBottom = noteBottom;
+    originalCorrectionReporting = allowCorrections;
     currentChapterStatus = finalStatus;
 
     // Saved successfully — discard the crash-recovery backup
@@ -1618,6 +1707,31 @@
           });
         }
       } catch(e) {} // never block the save flow
+
+      // ── ONE-SHOT AUTHOR BADGE ────────────────────────────────
+      // Only fires for one-shot works; RPC is a no-op for novels.
+      if (workData && workData.is_one_shot) {
+        try {
+          var { data: osBadges } = await db.rpc('award_one_shot_author_badge', {
+            p_author_id: currentSession.user.id,
+            p_work_id: workId
+          });
+          if (osBadges && osBadges.length > 0) {
+            osBadges.forEach(function(r, i) {
+              if (r.newly_unlocked && r.newly_unlocked.length > 0) {
+                r.newly_unlocked.forEach(function(tier, j) {
+                  setTimeout(function() {
+                    showToast(
+                      '🏅 Vignettist — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP',
+                      'ti-award'
+                    );
+                  }, (i + j + 1) * 800);
+                });
+              }
+            });
+          }
+        } catch(e) {} // never block the save flow
+      }
     }
 
     if (!silent) { setModeAdd(); await loadChapters(); }
@@ -1648,8 +1762,9 @@
   function updateReadingStats() {
     var w = quill ? quill.getText().trim().split(/\s+/).filter(Boolean).length : 0;
     document.getElementById('word-count').textContent = w;
-    var minutes = Math.max(1, Math.round(w / 200)); // ~200 wpm
-    document.getElementById('reading-time').textContent = '~' + minutes + ' min read';
+    var readSecs = Math.round((w / 200) * 60);
+    var readStr = readSecs < 60 ? '~' + readSecs + 's read' : '~' + Math.round(readSecs / 60) + ' min read';
+    document.getElementById('reading-time').textContent = readStr;
 
     var goalInput = document.getElementById('word-goal-input');
     var goal = parseInt(goalInput.value) || 0;
@@ -1668,8 +1783,8 @@
   }
   document.getElementById('word-goal-input').addEventListener('input', function() {
     updateReadingStats();
-    // Persist word goal per chapter
-    if (editingChapterId) {
+    // Persist word goal per chapter — only when a real chapter ID exists
+    if (editingChapterId && editingChapterId !== 'null') {
       try {
         var v = this.value;
         if (v) localStorage.setItem('ds_wg_' + editingChapterId, v);
@@ -1711,7 +1826,8 @@
     var isOpen = wrap.style.display !== 'none';
     wrap.style.display = isOpen ? 'none' : 'flex';
     toggle.classList.toggle('active', !isOpen);
-    if (isOpen) document.getElementById('author-note-' + pos).value = '';
+    // Do NOT clear the textarea on collapse — authors collapse/re-open panels accidentally.
+    // The note is only cleared when the chapter resets via setModeAdd().
     if (editingChapterId) updateAutosaveIndicator('pending');
   }
 
@@ -1742,7 +1858,13 @@
     var filename = title.replace(/[^a-z0-9]+/gi, '_').toLowerCase().slice(0,60);
 
     if (format === 'txt') {
-      var blob = new Blob([title + '\n\n' + text], { type: 'text/plain' });
+      var noteTopVal = (document.getElementById('author-note-top').value || '').trim();
+      var noteBotVal = (document.getElementById('author-note-bottom').value || '').trim();
+      var txtParts = [title];
+      if (noteTopVal) txtParts.push('[Author\'s Note]\n' + noteTopVal + '\n[/Author\'s Note]');
+      txtParts.push(text);
+      if (noteBotVal) txtParts.push('[Author\'s Note (End)]\n' + noteBotVal + '\n[/Author\'s Note]');
+      var blob = new Blob([txtParts.join('\n\n')], { type: 'text/plain' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url; a.download = filename + '.txt';
@@ -1770,13 +1892,30 @@
   }
   function escXml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-  // ── CTRL+S / CMD+S TO SAVE ────────────────────────────────────
+  // ── KEYBOARD SHORTCUTS ───────────────────────────────────────
   document.addEventListener('keydown', function(e) {
-    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+    var mod = e.ctrlKey || e.metaKey;
+    // Ctrl/Cmd+S — save
+    if (mod && (e.key === 's' || e.key === 'S')) {
       e.preventDefault();
+      if (isAnyModalOpen()) return;
       if (!hasUnsavedChanges() && editingChapterId) { showToast('No changes to save.', 'ti-check'); return; }
-      // Existing chapters keep their status; new chapters save as draft
       submitChapter(editingChapterId ? currentChapterStatus : 'draft');
+      return;
+    }
+    // Ctrl/Cmd+H — chapter-level find & replace
+    if (mod && (e.key === 'h' || e.key === 'H')) {
+      e.preventDefault();
+      if (isAnyModalOpen()) return;
+      openFindReplace();
+      return;
+    }
+    // Ctrl/Cmd+F — also open find & replace (overrides browser find within editor)
+    if (mod && (e.key === 'f' || e.key === 'F') && document.activeElement && document.activeElement.closest && document.activeElement.closest('#chapter-editor')) {
+      e.preventDefault();
+      if (isAnyModalOpen()) return;
+      openFindReplace();
+      return;
     }
   });
 
@@ -1793,7 +1932,7 @@
       title: (src.title || 'Untitled') + ' (copy)', content: src.content, word_count: src.word_count,
       status: 'draft', author_note_top: src.author_note_top, author_note_bottom: src.author_note_bottom,
       font: src.font,
-      comments_open: src.comments_open
+      comments_open: src.comments_open, allow_corrections: src.allow_corrections || false
     }).select('id').single();
     if (error) { showToast('Error: ' + error.message, 'ti-x'); return; }
     showToast('Chapter duplicated as a draft.', 'ti-copy');
@@ -1843,7 +1982,17 @@
     document.getElementById('sprint-start-btn').style.color = 'var(--green)';
     document.getElementById('sprint-display').textContent =
       (finished ? 'Sprint complete! ' : 'Sprint stopped. ') + written.toLocaleString() + ' words written.';
-    showToast(finished ? ('Sprint done — ' + written.toLocaleString() + ' words! 🎉') : ('Sprint stopped — ' + written.toLocaleString() + ' words.'), 'ti-stopwatch');
+    // Check for new personal best
+    var bestKey = 'ds_sprint_best';
+    var prevBest = 0;
+    try { prevBest = parseInt(localStorage.getItem(bestKey)) || 0; } catch(e) {}
+    var isNewBest = finished && written > 0 && written > prevBest;
+    if (isNewBest) {
+      try { localStorage.setItem(bestKey, written); } catch(e) {}
+      showToast('🏆 New sprint best — ' + written.toLocaleString() + ' words! Amazing!', 'ti-trophy');
+    } else {
+      showToast(finished ? ('Sprint done — ' + written.toLocaleString() + ' words! 🎉') : ('Sprint stopped — ' + written.toLocaleString() + ' words.'), 'ti-stopwatch');
+    }
   }
 
   // ── SPRINT TIMER VISIBILITY PAUSE ────────────────────────────
@@ -1891,7 +2040,8 @@
     reader.onload = function() {
       var text = String(reader.result || '');
       var paras = text.split(/\r?\n/).map(function(l){ return l.trim(); });
-      var htmlOut = paras.map(function(l){ return l ? '<p>' + escXml(l) + '</p>' : ''; }).join('');
+      // Empty lines → Quill-native empty paragraph; non-empty lines → paragraph with content
+      var htmlOut = paras.map(function(l){ return l ? '<p>' + escXml(l) + '</p>' : '<p><br></p>'; }).join('');
       quill.root.innerHTML = htmlOut || '<p></p>';
       afterImport(file.name);
     };
@@ -2918,6 +3068,357 @@
       return { chapter_id: chapterId, character_id: c.id, work_id: wId, status: c.chapter_status || 'active' };
     });
     await db.from('chapter_characters').upsert(rows, { onConflict: 'chapter_id,character_id' });
+  }
+</script>
+
+<!-- FOCUS MODE EXIT BAR -->
+<div id="focus-exit-bar">
+  <div class="focus-mode-meta">
+    <span><strong id="fm-word-count">0</strong> words</span>
+    <span id="fm-reading-time">~0 min read</span>
+    <span id="fm-autosave-label" style="color:var(--text3);">Not saved</span>
+  </div>
+  <button class="focus-exit-btn" onclick="toggleFocusMode()"><i class="ti ti-layout-sidebar"></i> Exit Focus Mode <span style="opacity:0.5;margin-left:4px;font-size:10px;">Esc</span></button>
+</div>
+
+<!-- STORY-WIDE FIND & REPLACE MODAL -->
+<div class="ds-modal-overlay" id="swr-modal-overlay">
+  <div class="ds-modal" style="position:relative;max-width:560px;">
+    <button class="ds-modal-close" onclick="closeStoryWideReplace()"><i class="ti ti-x"></i></button>
+    <div class="ds-modal-title"><i class="ti ti-replace"></i> Story-Wide Find &amp; Replace</div>
+    <div class="ds-modal-sub">Search and replace text across every chapter in this story. Drafts and published chapters are both included.</div>
+    <div class="field-group">
+      <label class="field-label">Find</label>
+      <input class="field-input" type="text" id="swr-find" placeholder="Text to find across all chapters…"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Replace With</label>
+      <input class="field-input" type="text" id="swr-replace" placeholder="Replacement text (leave blank to delete)…"/>
+    </div>
+    <label class="check-row"><input type="checkbox" id="swr-case-sensitive"/> Case sensitive</label>
+    <div style="margin:12px 0 6px;">
+      <button class="btn-draft" onclick="runStoryWidePreview()" style="margin-right:8px;"><i class="ti ti-search"></i> Preview Matches</button>
+    </div>
+    <div id="swr-preview-area" style="max-height:260px;overflow-y:auto;"></div>
+    <div id="swr-status" style="font-size:12px;color:var(--text3);margin:8px 0;"></div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn-cancel" onclick="closeStoryWideReplace()"><i class="ti ti-x"></i> Cancel</button>
+      <button class="btn-publish" id="swr-confirm-btn" onclick="confirmStoryWideReplace()" disabled><i class="ti ti-replace"></i> Replace All Across Story</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOOLTIP FORMAT MODAL -->
+<div class="ds-modal-overlay" id="tooltip-modal-overlay">
+  <div class="ds-modal" style="position:relative;max-width:420px;">
+    <button class="ds-modal-close" onclick="closeTooltipModal()"><i class="ti ti-x"></i></button>
+    <div class="ds-modal-title"><i class="ti ti-info-circle"></i> Add Inline Tooltip</div>
+    <div class="ds-modal-sub">Highlight a word or phrase, then add a tooltip — readers hover (or tap) the term to see your note. Great for glossary terms, pronunciation guides, or world-building asides.</div>
+    <div class="field-group">
+      <label class="field-label">Selected Text</label>
+      <div id="tooltip-selected-preview" style="font-size:13px;color:var(--accent);padding:8px 12px;background:var(--bg3);border-radius:8px;border:1px solid var(--border);min-height:32px;"></div>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Tooltip Text <span class="required">*</span></label>
+      <textarea class="field-input" id="tooltip-text-input" rows="3" placeholder="e.g. Pronunciation: ell-FAH-ree — the ancient name for the forest realm…" maxlength="400" style="resize:vertical;"></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn-cancel" onclick="closeTooltipModal()"><i class="ti ti-x"></i> Cancel</button>
+      <button class="btn-publish" onclick="applyTooltipFormat()"><i class="ti ti-check"></i> Apply Tooltip</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── FOCUS MODE ────────────────────────────────────────────────────
+  var focusModeOn = false;
+  function toggleFocusMode() {
+    focusModeOn = !focusModeOn;
+    document.body.classList.toggle('focus-mode', focusModeOn);
+    var btn = document.getElementById('focus-mode-btn');
+    if (btn) {
+      btn.innerHTML = focusModeOn
+        ? '<i class="ti ti-layout-sidebar"></i> Exit Focus'
+        : '<i class="ti ti-focus-centered"></i> Focus Mode';
+      btn.classList.toggle('active', focusModeOn);
+    }
+    if (focusModeOn) {
+      syncFocusModeBar();
+      if (quill) quill.focus();
+    }
+    try { localStorage.setItem('ds_focus_mode', focusModeOn ? '1' : ''); } catch(e) {}
+  }
+  function syncFocusModeBar() {
+    if (!focusModeOn) return;
+    document.getElementById('fm-word-count').textContent = (document.getElementById('word-count') || {}).textContent || '0';
+    document.getElementById('fm-reading-time').textContent = (document.getElementById('reading-time') || {}).textContent || '';
+    var autosaveEl = document.getElementById('autosave-indicator');
+    document.getElementById('fm-autosave-label').textContent = autosaveEl ? autosaveEl.querySelector('span').textContent : '';
+  }
+  // Keep focus bar in sync whenever reading stats update.
+  // This script block runs after DOM is fully parsed, so no DOMContentLoaded needed.
+  (function() {
+    var wcEl = document.getElementById('word-count');
+    if (wcEl) new MutationObserver(syncFocusModeBar).observe(wcEl, { childList:true, characterData:true, subtree:true });
+    var asEl = document.getElementById('autosave-indicator');
+    if (asEl) new MutationObserver(syncFocusModeBar).observe(asEl, { childList:true, characterData:true, subtree:true });
+    // Esc exits focus mode (but not when Quill picker is open or another modal is open)
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && focusModeOn && !isAnyModalOpen() && !document.querySelector('.ql-picker.ql-expanded')) {
+        toggleFocusMode();
+      }
+    });
+  })();
+
+  // ── STORY-WIDE FIND & REPLACE ────────────────────────────────────
+  var _swrMatches = []; // [{chapterId, chapterTitle, chapterNumber, count, preview}]
+  function openStoryWideReplace() {
+    document.getElementById('swr-modal-overlay').classList.add('open');
+    document.getElementById('swr-find').value = '';
+    document.getElementById('swr-replace').value = '';
+    document.getElementById('swr-preview-area').innerHTML = '';
+    document.getElementById('swr-status').textContent = '';
+    document.getElementById('swr-confirm-btn').disabled = true;
+    _swrMatches = [];
+  }
+  function closeStoryWideReplace() {
+    document.getElementById('swr-modal-overlay').classList.remove('open');
+  }
+  async function runStoryWidePreview() {
+    var find = document.getElementById('swr-find').value;
+    if (!find) { document.getElementById('swr-status').textContent = 'Enter text to search for.'; return; }
+    var caseSensitive = document.getElementById('swr-case-sensitive').checked;
+    var previewArea = document.getElementById('swr-preview-area');
+    var statusEl = document.getElementById('swr-status');
+    previewArea.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 0;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Searching all chapters…</div>';
+    statusEl.textContent = '';
+    document.getElementById('swr-confirm-btn').disabled = true;
+    _swrMatches = [];
+
+    var { data: chapters, error } = await db.from('chapters').select('id,chapter_number,title,content').eq('work_id', workId).order('chapter_number', { ascending: true });
+    if (error || !chapters) { statusEl.textContent = 'Error loading chapters.'; previewArea.innerHTML = ''; return; }
+
+    var escaped = find.replace(/[\\^$.*+?()\[\]{}|]/g, '\\$&');
+    var flags = caseSensitive ? 'g' : 'gi';
+    var totalMatches = 0;
+
+    chapters.forEach(function(ch) {
+      // Strip HTML tags to search plain text
+      var plain = (ch.content || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+      var re = new RegExp(escaped, flags);
+      var matches = plain.match(re);
+      if (!matches) return;
+      var count = matches.length;
+      totalMatches += count;
+      // Build a short preview snippet around first match
+      var firstIdx = plain.search(new RegExp(escaped, caseSensitive ? '' : 'i'));
+      var start = Math.max(0, firstIdx - 60);
+      var end = Math.min(plain.length, firstIdx + find.length + 60);
+      var snippet = (start > 0 ? '…' : '') + plain.slice(start, end) + (end < plain.length ? '…' : '');
+      var highlightedSnippet = snippet.replace(new RegExp(escaped, flags), function(m){ return '<mark>' + m + '</mark>'; });
+      _swrMatches.push({ chapterId: ch.id, chapterTitle: ch.title, chapterNumber: ch.chapter_number, count: count, preview: highlightedSnippet, content: ch.content });
+    });
+
+    if (!_swrMatches.length) {
+      previewArea.innerHTML = '<div class="empty-state" style="padding:16px 0;"><i class="ti ti-search-off"></i> No matches found across any chapter.</div>';
+      statusEl.textContent = '';
+      return;
+    }
+
+    var html = '<div class="swr-total-badge"><i class="ti ti-replace"></i> ' + totalMatches + ' match' + (totalMatches === 1 ? '' : 'es') + ' across ' + _swrMatches.length + ' chapter' + (_swrMatches.length === 1 ? '' : 's') + '</div>';
+    _swrMatches.forEach(function(m) {
+      html += '<div class="swr-match-item">' +
+        '<div class="swr-ch-title">Ch.' + m.chapterNumber + ' — ' + escXml(m.chapterTitle || 'Untitled') + '<span class="swr-count" style="margin-left:8px;">' + m.count + ' match' + (m.count === 1 ? '' : 'es') + '</span></div>' +
+        '<div class="swr-preview">' + m.preview + '</div>' +
+        '</div>';
+    });
+    previewArea.innerHTML = html;
+    statusEl.textContent = '';
+    document.getElementById('swr-confirm-btn').disabled = false;
+  }
+  async function confirmStoryWideReplace() {
+    if (!_swrMatches.length) return;
+    var find = document.getElementById('swr-find').value;
+    var replace = document.getElementById('swr-replace').value;
+    var caseSensitive = document.getElementById('swr-case-sensitive').checked;
+    var totalCount = _swrMatches.reduce(function(s,m){return s+m.count;},0);
+    if (!confirm('Replace all ' + totalCount + ' occurrence(s) of "' + find + '" across ' + _swrMatches.length + ' chapter(s)?\n\nRevision snapshots will be saved for each chapter so you can restore the original from History if needed.')) return;
+
+    var statusEl = document.getElementById('swr-status');
+    statusEl.textContent = 'Saving revision snapshots…';
+    document.getElementById('swr-confirm-btn').disabled = true;
+
+    // Save a revision snapshot for every affected chapter before modifying
+    for (var s = 0; s < _swrMatches.length; s++) {
+      var sm = _swrMatches[s];
+      try {
+        await db.from('chapter_revisions').insert({
+          chapter_id: sm.chapterId,
+          title: sm.chapterTitle || 'Untitled',
+          content: sm.content,
+          word_count: (sm.content || '').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().split(' ').filter(Boolean).length
+        });
+        // Prune to last 5 revisions per chapter
+        var { data: revs } = await db.from('chapter_revisions').select('id,created_at').eq('chapter_id', sm.chapterId).order('created_at', { ascending: false });
+        if (revs && revs.length > 5) {
+          var toDelete = revs.slice(5).map(function(r){ return r.id; });
+          await db.from('chapter_revisions').delete().in('id', toDelete);
+        }
+      } catch(e) {} // non-blocking
+    }
+
+    statusEl.textContent = 'Replacing…';
+
+    var escaped = find.replace(/[\\^$.*+?()\[\]{}|]/g, '\\$&');
+    var flags = caseSensitive ? 'g' : 'gi';
+    var totalReplaced = 0;
+    var errors = 0;
+
+    for (var i = 0; i < _swrMatches.length; i++) {
+      var m = _swrMatches[i];
+      // Use DOMParser to replace only in text nodes — this prevents matching inside HTML
+      // attribute values (e.g. data-tooltip) and avoids tag corruption.
+      var doc = new DOMParser().parseFromString(m.content || '<p></p>', 'text/html');
+      var re2 = new RegExp(escaped, flags);
+      (function replaceInTextNodes(node) {
+        if (node.nodeType === 3) { // TEXT_NODE
+          var orig = node.nodeValue;
+          var updated = orig.replace(re2, function(match) { totalReplaced++; return replace; });
+          if (updated !== orig) node.nodeValue = updated;
+        } else {
+          Array.prototype.forEach.call(node.childNodes, replaceInTextNodes);
+        }
+      })(doc.body);
+      var newContent = doc.body.innerHTML;
+      var { error } = await db.from('chapters').update({ content: newContent }).eq('id', m.chapterId);
+      if (error) errors++;
+
+      // If this is the currently-open chapter in the editor, reload it
+      if (m.chapterId === editingChapterId && quill) {
+        quill.root.innerHTML = newContent;
+        originalHTML = newContent;
+        originalText = quill.getText().trim();
+        updateReadingStats();
+        updateAutosaveIndicator('saved');
+      }
+    }
+
+    _swrMatches = [];
+    document.getElementById('swr-preview-area').innerHTML = '';
+    if (errors) {
+      statusEl.textContent = 'Done with ' + errors + ' error(s). Some chapters may not have updated.';
+    } else {
+      statusEl.textContent = '';
+      closeStoryWideReplace();
+      showToast('Replaced ' + totalReplaced + ' occurrence(s) across story!', 'ti-replace');
+    }
+    await loadChapters(); // refresh word counts
+  }
+
+  // ── CLEAN PASTE ───────────────────────────────────────────────────
+  function toggleCleanPasteMode() {
+    var btn = document.getElementById('clean-paste-btn');
+    var isOn;
+    try { isOn = localStorage.getItem('ds_clean_paste') !== 'off'; } catch(e){ isOn = true; }
+    var newOn = !isOn;
+    try { localStorage.setItem('ds_clean_paste', newOn ? 'on' : 'off'); } catch(e){}
+    if (btn) btn.innerHTML = newOn ? '<i class="ti ti-clipboard-text"></i> Clean Paste: On' : '<i class="ti ti-clipboard"></i> Clean Paste: Off';
+    showToast('Clean Paste ' + (newOn ? 'enabled — pasting strips formatting' : 'disabled — pasting preserves formatting'), 'ti-clipboard-text');
+  }
+  function initCleanPasteBtn() {
+    var btn = document.getElementById('clean-paste-btn');
+    if (!btn) return;
+    var isOn;
+    try { isOn = localStorage.getItem('ds_clean_paste') !== 'off'; } catch(e){ isOn = true; }
+    btn.innerHTML = isOn ? '<i class="ti ti-clipboard-text"></i> Clean Paste: On' : '<i class="ti ti-clipboard"></i> Clean Paste: Off';
+  }
+  // Wired in after quill init via initCleanPaste()
+  function initCleanPaste() {
+    if (!quill) return;
+    // Intercept paste events on the editor container
+    quill.root.addEventListener('paste', function(e) {
+      var cleanPasteOn;
+      try { cleanPasteOn = localStorage.getItem('ds_clean_paste') !== 'off'; } catch(x){ cleanPasteOn = true; }
+      if (!cleanPasteOn) return; // let Quill handle it normally
+      // Check if clipboard has plain text available
+      var clipData = e.clipboardData || window.clipboardData;
+      if (!clipData) return;
+      var plain = clipData.getData('text/plain');
+      if (!plain) return;
+      e.preventDefault();
+      // Insert as plain text at cursor position via Quill API
+      var range = quill.getSelection(true);
+      if (range) {
+        if (range.length > 0) quill.deleteText(range.index, range.length, Quill.sources.USER);
+        quill.insertText(range.index, plain, Quill.sources.USER);
+        quill.setSelection(range.index + plain.length, 0, Quill.sources.SILENT);
+      }
+    }, true); // capture phase so we intercept before Quill
+  }
+
+  // ── INLINE TOOLTIPS ───────────────────────────────────────────────
+  var _tooltipSelection = null;
+  var _lastQuillSelection = null; // cached to survive focus loss when toolbar btn is clicked
+  function openTooltipModal() {
+    if (!quill) return;
+    var range = quill.getSelection() || _lastQuillSelection;
+    if (!range || range.length === 0) { showToast('Select some text first to add a tooltip.', 'ti-alert-triangle'); return; }
+    _tooltipSelection = range;
+    var selectedText = quill.getText(range.index, range.length);
+    document.getElementById('tooltip-selected-preview').textContent = selectedText;
+    document.getElementById('tooltip-text-input').value = '';
+    document.getElementById('tooltip-modal-overlay').classList.add('open');
+    setTimeout(function(){ document.getElementById('tooltip-text-input').focus(); }, 100);
+  }
+  function closeTooltipModal() {
+    document.getElementById('tooltip-modal-overlay').classList.remove('open');
+    _tooltipSelection = null;
+  }
+  function updateTooltipBtnBadge() {
+    var btn = document.getElementById('tooltip-insert-btn');
+    if (!btn || !quill) return;
+    var count = quill.root.querySelectorAll('.ql-tooltip-term').length;
+    btn.innerHTML = count > 0
+      ? '<i class="ti ti-info-circle"></i> Tooltip <span style="background:rgba(45,212,191,0.15);border:1px solid rgba(45,212,191,0.35);border-radius:10px;padding:1px 7px;font-size:10px;margin-left:3px;color:var(--accent);">' + count + '</span>'
+      : '<i class="ti ti-info-circle"></i> Tooltip';
+  }
+  function applyTooltipFormat() {
+    if (!quill || !_tooltipSelection) return;
+    var tipText = document.getElementById('tooltip-text-input').value.trim();
+    if (!tipText) { showToast('Enter tooltip text.', 'ti-alert-triangle'); return; }
+    // We wrap the selected text in a span with data-tooltip using Quill's HTML blot trick.
+    // Since Quill doesn't have a built-in tooltip blot, we use the link format as a carrier
+    // and style it differently. Actually: simplest approach is to manually insert HTML via
+    // clipboard module's dangerouslyPasteHTML at the range.
+    var selectedText = quill.getText(_tooltipSelection.index, _tooltipSelection.length);
+    var safeText = selectedText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    var safeTip = tipText.replace(/"/g,'&quot;').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    var tooltipHTML = '<span class="ql-tooltip-term" data-tooltip="' + safeTip + '" title="' + safeTip + '">' + safeText + '</span>';
+    quill.deleteText(_tooltipSelection.index, _tooltipSelection.length, Quill.sources.USER);
+    quill.clipboard.dangerouslyPasteHTML(_tooltipSelection.index, tooltipHTML, Quill.sources.USER);
+    closeTooltipModal();
+    updateReadingStats();
+    updateTooltipBtnBadge();
+    if (editingChapterId) updateAutosaveIndicator('pending');
+    showToast('Tooltip added!', 'ti-info-circle');
+  }
+
+  // ── CORRECTION REPORTING TOGGLE ───────────────────────────────────
+  // Persisted per-chapter in the DB via chapters table allow_corrections column
+  // Loaded when a chapter is opened; saved alongside other chapter data
+  // (The column may not exist yet on all rows — defaults to false/null = off)
+  var correctionReportingOn = false;
+  function setCorrectionToggleUI() {
+    var cb = document.getElementById('corrections-toggle-cb');
+    var label = document.getElementById('corrections-toggle-label');
+    if (!cb) return;
+    cb.checked = correctionReportingOn;
+    if (label) label.textContent = correctionReportingOn ? 'Readers can flag typos in this chapter' : 'Typo reporting off for this chapter';
+  }
+  function toggleCorrectionReporting() {
+    correctionReportingOn = !correctionReportingOn;
+    setCorrectionToggleUI();
+    if (editingChapterId) updateAutosaveIndicator('pending');
   }
 </script>
 </body>

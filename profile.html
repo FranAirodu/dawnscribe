@@ -1545,8 +1545,9 @@
       } catch(e){}
 
       var allNonArt = (result.data||[]).filter(function(w){ return w.type !== 'artwork' && !collabWorkIds.has(w.id); });
-      var novels   = allNonArt.filter(function(w){ return !w.is_fanfiction; });
-      var fanfics  = allNonArt.filter(function(w){ return !!w.is_fanfiction; });
+      var oneShots = allNonArt.filter(function(w){ return !!w.is_one_shot; });
+      var novels   = allNonArt.filter(function(w){ return !w.is_fanfiction && !w.is_one_shot; });
+      var fanfics  = allNonArt.filter(function(w){ return !!w.is_fanfiction && !w.is_one_shot; });
       var artworks = (result.data||[]).filter(function(w){ return w.type === 'artwork'; });
 
       // Fetch real comment counts for artworks from artwork_comments table
@@ -1561,9 +1562,9 @@
         });
         artworks.forEach(function(w){ w.comments_count = acCountMap[w.id]||0; });
       }
-      var hasBoth  = (novels.length > 0 || fanfics.length > 0) && artworks.length > 0;
+      var hasBoth  = (novels.length > 0 || fanfics.length > 0 || oneShots.length > 0) && artworks.length > 0;
       if (hasBoth) { layout.className = 'works-layout'; } else { layout.className = ''; }
-      if (novels.length === 0 && fanfics.length === 0 && artworks.length === 0 && !isOwner) {
+      if (novels.length === 0 && fanfics.length === 0 && oneShots.length === 0 && artworks.length === 0 && !isOwner) {
         layout.innerHTML = '<div style="padding:48px 24px;text-align:center;color:var(--text3);"><i class="ti ti-books" style="font-size:36px;display:block;margin-bottom:12px;opacity:0.4;"></i><p style="font-size:14px;">No published works yet.</p></div>';
         document.getElementById('works-layout').appendChild(layout);
         return;
@@ -1580,6 +1581,18 @@
         });
         col.appendChild(cards);
         layout.appendChild(col);
+      }
+      if (oneShots.length > 0) {
+        var colOS = document.createElement('div');
+        colOS.innerHTML = '<div class="works-col-header"><div class="works-col-title" style="color:#a78bfa;"><i class="ti ti-bolt" style="color:#a78bfa;"></i> One-Shots</div></div>';
+        var cardsOS = document.createElement('div');
+        cardsOS.className = 'work-cards';
+        oneShots.forEach(function(work) {
+          cardsOS.appendChild(buildWorkCard(work, isOwner));
+          if (!isOwner) checkWorkFollowState(work.id);
+        });
+        colOS.appendChild(cardsOS);
+        layout.appendChild(colOS);
       }
       if (fanfics.length > 0) {
         var colFF = document.createElement('div');
@@ -1663,8 +1676,8 @@
 
       // ── NOVEL CARD
       var _ac = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#2dd4bf';
-      var statusColors = { ongoing:'color-mix(in srgb, '+_ac+' 10%, transparent)', completed:'rgba(52,211,153,0.1)', hiatus:'rgba(245,158,11,0.1)', dropped:'rgba(248,113,113,0.1)' };
-      var statusTextColors = { ongoing:_ac, completed:'#34d399', hiatus:'#f59e0b', dropped:'#f87171' };
+      var statusColors = { ongoing:'color-mix(in srgb, '+_ac+' 10%, transparent)', completed:'rgba(52,211,153,0.1)', hiatus:'rgba(245,158,11,0.1)', dropped:'rgba(248,113,113,0.1)', 'one-shot':'rgba(139,92,246,0.1)' };
+      var statusTextColors = { ongoing:_ac, completed:'#34d399', hiatus:'#f59e0b', dropped:'#f87171', 'one-shot':'#a78bfa' };
       var mainTags = [];
       try { mainTags = JSON.parse(work.tags_main || '[]'); } catch(e){}
 
@@ -1727,7 +1740,7 @@
           '<div>' +
             '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
               '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:'+(statusColors[work.status]||statusColors.ongoing)+';color:'+(statusTextColors[work.status]||statusTextColors.ongoing)+'">' +
-              (work.status||'ongoing').charAt(0).toUpperCase()+(work.status||'ongoing').slice(1)+'</span>' +
+              (work.status==='one-shot' ? '✦ One-Shot' : (work.status||'ongoing').charAt(0).toUpperCase()+(work.status||'ongoing').slice(1))+'</span>' +
               '<div style="display:flex;align-items:center;gap:2px;">'+stars+ratingLabel+'</div>' +
             '</div>' +
             '<div class="work-title" style="font-size:15px;font-weight:700;margin-bottom:4px;">'+escHtml(work.title)+contentWarningBadge(work)+'</div>' +

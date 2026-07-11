@@ -437,7 +437,7 @@
           <textarea class="field-textarea" id="field-synopsis" placeholder="Hook your readers — tell them what your story is about without spoiling it." maxlength="30000" oninput="document.getElementById('synopsis-count').textContent=this.value.length+'/30000';updateChecklist();" style="min-height:200px;"></textarea>
           <div class="char-count" id="synopsis-count">0/30000</div>
         </div>
-        <div class="field-row" id="field-row-status-language">
+        <div class="field-row" id="field-row-status-language" style="">
           <div class="field-group">
             <label class="field-label">Status <span class="required">*</span></label>
             <select class="field-select" id="field-status">
@@ -445,6 +445,7 @@
               <option value="completed">Completed</option>
               <option value="hiatus">On Hiatus</option>
               <option value="dropped">Dropped</option>
+              <option value="one-shot" style="display:none;">One-Shot</option>
             </select>
           </div>
           <div class="field-group">
@@ -529,6 +530,15 @@
           <div class="type-card" id="type-fanfic" onclick="selectType('fanfic')"><i class="ti ti-heart"></i><div class="type-label">Fanfiction</div><div class="type-sub">Based on existing IP</div></div>
         </div>
         <div class="fanfic-notice" id="fanfic-notice"><i class="ti ti-alert-triangle"></i> Fanfiction works are excluded from avatar cosmetics due to copyright restrictions.</div>
+        <div style="margin-top:14px;padding:12px 14px;background:rgba(139,92,246,0.07);border:1px solid rgba(139,92,246,0.2);border-radius:10px;">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="field-is-one-shot" onchange="toggleOneShotMode()" style="width:16px;height:16px;cursor:pointer;accent-color:#8b5cf6;flex-shrink:0;"/>
+            <span>
+              <span style="font-size:13px;font-weight:700;color:var(--text1);">✦ This is a One-Shot</span>
+              <span style="display:block;font-size:12px;color:var(--text3);margin-top:2px;">A self-contained short story told in a single chapter. Readers can vote after reading. One-shots are listed separately and do not count toward Completed Novels prestige.</span>
+            </span>
+          </label>
+        </div>
         </div>
       </div>
 
@@ -1290,6 +1300,23 @@
     function toggleTranslationNote() {
       var checked = document.getElementById('field-is-translation').checked;
       document.getElementById('field-translation-note').style.display = checked ? 'block' : 'none';
+    }
+
+    function toggleOneShotMode() {
+      var isOneShot = document.getElementById('field-is-one-shot').checked;
+      // Hide status selector — one-shots have their own status
+      document.getElementById('field-row-status-language').style.opacity = isOneShot ? '0.5' : '';
+      var statusSel = document.getElementById('field-status');
+      if (isOneShot) {
+        statusSel.value = 'one-shot';
+        statusSel.disabled = true;
+      } else {
+        statusSel.disabled = false;
+        if (statusSel.value === 'one-shot') statusSel.value = 'ongoing';
+      }
+      // Update chapter title hint
+      var chapHint = document.getElementById('one-shot-chapter-hint');
+      if (chapHint) chapHint.style.display = isOneShot ? 'block' : 'none';
     }
 
     // ── LINKED NOVELS (staged — actually created after the work is published) ──
@@ -2252,6 +2279,7 @@
         translationNote: document.getElementById('field-translation-note').value,
         disclaimer: document.getElementById('field-disclaimer').value,
         isFanfic: isFanfic,
+        isOneShot: document.getElementById('field-is-one-shot').checked,
         ratings: ratings,
         contentWarnings: selectedContentWarnings,
         goldTags: selectedGoldTags,
@@ -2285,6 +2313,7 @@
         if (d.translationNote) document.getElementById('field-translation-note').value = d.translationNote;
         if (d.disclaimer) document.getElementById('field-disclaimer').value = d.disclaimer;
         if (d.isFanfic) selectType('fanfic');
+        if (d.isOneShot) { document.getElementById('field-is-one-shot').checked = true; toggleOneShotMode(); }
 
         // Restore ratings
         if (d.ratings) {
@@ -2411,9 +2440,11 @@
           insertPayload.language = 'en';
           insertPayload.is_fanfiction = false;
         } else {
+          var isOneShot = document.getElementById('field-is-one-shot').checked;
           insertPayload.type = 'novel';
           insertPayload.is_fanfiction = isFanfic;
-          insertPayload.status = document.getElementById('field-status').value;
+          insertPayload.is_one_shot = isOneShot;
+          insertPayload.status = isOneShot ? 'one-shot' : document.getElementById('field-status').value;
           insertPayload.language = document.getElementById('field-language').value;
           insertPayload.is_fan_translation = document.getElementById('field-is-translation').checked;
           insertPayload.translation_note = document.getElementById('field-is-translation').checked
