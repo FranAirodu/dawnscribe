@@ -157,7 +157,7 @@
     <div class="adv-actions">
       <button class="adv-apply" onclick="applyAdvanced()"><i class="ti ti-search"></i> Apply</button>
       <button class="adv-clear" onclick="clearAdvanced()">Clear</button>
-      <span class="adv-hint">Tag, status, chapter, and rating filters apply to Titles &amp; Artwork. Leave the search box empty to browse everything with just filters.</span>
+      <span class="adv-hint">Tag and rating filters apply to Titles, One-Shots &amp; Artwork. Status and chapter filters apply to Titles and One-Shots. Leave the search box empty to browse with just filters.</span>
     </div>
   </div>
 
@@ -221,8 +221,10 @@
       state.type = newType;
       state.offset = 0;
       state.results = [];
+      counts = { titles: null, authors: null, artwork: null, artists: null, oneshots: null };
       updateUrl();
       runSearch(true);
+      if (state.query) fetchAllCounts(state.query);
     }
 
     function updateUrl() {
@@ -367,7 +369,7 @@
     // Excludes fan translations if turned off, and hard-filters by language if
     // strict mode is on. (Novels only — language doesn't apply to artwork search.)
     function applyLanguageFilters(q) {
-      if (!myLangPrefs.lang_original) q = q.eq('is_fan_translation', false);
+      if (!myLangPrefs.lang_original) q = q.neq('is_fan_translation', true);
       if (myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any') q = q.eq('language', myLangPrefs.pref_language);
       return q;
     }
@@ -392,6 +394,7 @@
       return await db.from('profiles')
         .select('id, username, display_name, avatar_url, role, bio', { count: 'exact' })
         .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
+        .or('role.ilike.%Author%,role.ilike.%Novelist%')
         .order('username')
         .range(offset, offset + PAGE_SIZE - 1);
     }
@@ -460,7 +463,7 @@
           + '<div class="artwork-thumb" style="background:' + color + ';">' + thumbHtml + '</div>'
           + '<div class="artwork-info">'
           + '<div class="artwork-title">' + esc(w.title) + '</div>'
-          + '<span class="artwork-artist" onclick="event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'"" >by ' + esc(author) + '</span>'
+          + '<span class="artwork-artist" onclick="event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'">by ' + esc(author) + '</span>'
           + flavorHtml
           + (collabHtml ? '<div class="artwork-meta">' + collabHtml + '</div>' : '')
           + '</div></a>';
@@ -567,7 +570,7 @@
         // For work results, batch-fetch author profiles separately (no FK join available)
         var profileMap = {};
         var collabSet = {};
-        var isWorkType = (type === 'titles' || type === 'artwork');
+        var isWorkType = (type === 'titles' || type === 'artwork' || type === 'oneshots');
         if (isWorkType && items.length) {
           var authorIds = items.map(function(w){ return w.author_id; }).filter(Boolean);
           if (authorIds.length) {

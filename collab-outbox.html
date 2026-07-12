@@ -128,7 +128,7 @@
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
   const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
 
-  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   function timeAgo(isoStr){
     if(!isoStr) return '';
@@ -142,7 +142,7 @@
 
   function showToast(msg, icon){
     var t = document.getElementById('toast');
-    t.innerHTML = '<i class="ti ' + (icon||'ti-check') + '"></i> ' + msg;
+    t.innerHTML = '<i class="ti ' + (icon||'ti-check') + '"></i> ' + esc(msg||'');
     t.classList.add('show');
     setTimeout(function(){ t.classList.remove('show'); }, 3000);
   }
@@ -219,6 +219,7 @@
       return;
     }
     var uid = session.user.id;
+    try {
 
     // ── STORY SUBMISSIONS (novel written for an artwork) → artwork_collabs
     var { data: storySubmissions } = await db.from('artwork_collabs')
@@ -266,13 +267,19 @@
 
     content.innerHTML = '';
 
+    } catch(err) {
+      content.innerHTML = '<div class="empty-full"><i class="ti ti-alert-circle"></i><h2>Something went wrong</h2><p>Could not load your submissions. Please try again.</p></div>';
+      console.error('Outbox load error:', err);
+      return;
+    }
+
     // Suggestion F: single empty state if user has submitted nothing at all
     if(!storySubmissions.length && !artSubmissions.length){
       content.innerHTML =
         '<div class="empty-full"><i class="ti ti-send"></i>'
         + '<h2>No submissions yet</h2>'
         + '<p>You haven\'t sent any collab requests yet.<br>'
-        + 'Browse <a href="browse.html">artworks</a> or <a href="browse.html">novels</a> to get started.</p>'
+        + 'Browse <a href="browse.html?type=artwork">artworks</a> or <a href="browse.html">novels</a> to get started.</p>'
         + '</div>';
       return;
     }
@@ -457,6 +464,7 @@
 
 <div class="toast" id="toast"></div>
 
+<footer id="ds-footer"></footer>
 <script src="spoilerUtils.js"></script>
 <script src="footer.js"></script>
 <script src="nav.js"></script>

@@ -128,8 +128,9 @@
     </div>
   </div>
 
-  <footer>&copy; 2026 DawnScribe. All rights reserved.</footer>
+  <footer id="ds-footer"></footer>
 
+  <script src="blockUtils.js"></script>
   <script>
     const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
     const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
@@ -148,7 +149,7 @@
       setTimeout(function(){ t.classList.remove('show'); }, 2800);
     }
 
-    function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
     function coverBlock(cls, coverUrl, title) {
       var initial = (title || '?').charAt(0).toUpperCase();
@@ -185,13 +186,14 @@
       try {
         var q = db.from('works')
           .select('id,title,cover_url,author_id,celestial_flame_count,spark_count_total,avg_chapter_days,chapters_count,created_at')
+          .eq('type', 'novel')
           .eq('is_published', true);
 
         if (kind === 'flames') {
           q = q.gt('celestial_flame_count', 0).order('celestial_flame_count', { ascending: false });
         } else if (kind === 'fresh') {
           var cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-          q = q.gte('created_at', cutoff).order('spark_count_total', { ascending: false, nullsFirst: false });
+          q = q.gte('created_at', cutoff).gt('spark_count_total', 0).order('spark_count_total', { ascending: false, nullsFirst: false });
         } else if (kind === 'steady') {
           q = q.gte('chapters_count', 5).not('avg_chapter_days', 'is', null)
                .order('avg_chapter_days', { ascending: true });
@@ -199,8 +201,7 @@
 
         var { data: works, error } = await q.limit(25);
         if (error) throw error;
-        works = works || [];
-        if (kind === 'fresh') works = works.filter(function(w){ return (w.spark_count_total || 0) > 0; });
+        works = (works || []).filter(function(w){ return !dsBlock.either(w.author_id); });
 
         if (!works.length) {
           var emptyMsg = {
@@ -242,12 +243,14 @@
     async function loadLeaderboard() {
       var el = document.getElementById('leaderboard-list');
       try {
-        var { data: works } = await db.from('works')
+        var { data: works, error: wErr } = await db.from('works')
           .select('id,title,cover_url,author_id,spark_count_week')
+          .eq('type', 'novel')
           .eq('is_published', true)
           .order('spark_count_week', { ascending: false })
           .limit(25);
-        works = (works || []).filter(function(w){ return (w.spark_count_week || 0) > 0; });
+        if (wErr) throw wErr;
+        works = (works || []).filter(function(w){ return (w.spark_count_week || 0) > 0 && !dsBlock.either(w.author_id); });
 
         if (!works.length) {
           el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-bolt"></i></div><div class="state-body">No Sparks given yet this week \u2014 be the first to spark a story you love!</div></div>';
@@ -432,6 +435,7 @@
       await loadKindling();
     })();
   </script>
+  <script src="footer.js"></script>
   <script src="nav.js"></script>
 </body>
 </html>

@@ -109,7 +109,14 @@
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
   const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
 
-  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function showToast(msg,icon){
+    var t=document.getElementById('ds-toast');
+    if(!t){t=document.createElement('div');t.id='ds-toast';t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:Lato,sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;';document.body.appendChild(t);}
+    t.innerHTML='<i class="ti '+(icon||'ti-check')+'"></i> '+esc(msg||'Done!');
+    t.style.opacity='1';t.style.transform='translateX(-50%) translateY(0)';
+    setTimeout(function(){t.style.opacity='0';t.style.transform='translateX(-50%) translateY(20px)';},3000);
+  }
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   // Returns a human-friendly relative time string
   function timeAgo(isoStr){
@@ -136,7 +143,7 @@
     // tableKey 'story' = artwork_collabs row; tableKey 'fanart' = story_collabs row
     var tbl = tableKey === 'story' ? 'artwork_collabs' : 'story_collabs';
     var { error } = await db.from(tbl).delete().eq('id', collabId);
-    if(error){ alert('Failed to delete: ' + error.message); return; }
+    if(error){ showToast('Failed to delete: ' + error.message, 'ti-x'); return; }
     if(rowEl){ rowEl.style.transition='opacity 0.3s,transform 0.3s'; rowEl.style.opacity='0'; rowEl.style.transform='translateX(-12px)'; setTimeout(function(){ rowEl.remove(); },300); }
   }
 
@@ -160,12 +167,14 @@
       return;
     }
     var uid = session.user.id;
+    try {
 
     // ── FIND USER'S ARTWORKS (receive story submissions)
     var { data: myArtworks } = await db.from('works')
       .select('id, title, cover_url')
       .eq('author_id', uid)
-      .eq('type', 'artwork');
+      .eq('type', 'artwork')
+      .eq('is_published', true);
     var myArtworkIds = (myArtworks||[]).map(function(a){ return a.id; });
     var artworkMap = {};
     (myArtworks||[]).forEach(function(a){ artworkMap[a.id] = a; });
@@ -174,7 +183,8 @@
     var { data: myNovels } = await db.from('works')
       .select('id, title, cover_url')
       .eq('author_id', uid)
-      .eq('type', 'novel');
+      .eq('type', 'novel')
+      .eq('is_published', true);
     var myNovelIds = (myNovels||[]).map(function(n){ return n.id; });
     var novelMap = {};
     (myNovels||[]).forEach(function(n){ novelMap[n.id] = n; });
@@ -428,10 +438,16 @@
       s3b.appendChild(s3bbody);
       content.appendChild(s3b);
     }
+
+    } catch(err) {
+      content.innerHTML = '<div class="empty-full"><i class="ti ti-alert-circle"></i><h2>Something went wrong</h2><p>Could not load your collab requests. Please try again.</p></div>';
+      console.error('Inbox load error:', err);
+    }
   }
 
   init();
 </script>
+<footer id="ds-footer"></footer>
 <script src="spoilerUtils.js"></script>
 <script src="footer.js"></script>
 <script src="nav.js"></script>

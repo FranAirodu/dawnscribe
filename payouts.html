@@ -177,7 +177,7 @@
     }
 
     function escHtml(s) {
-      return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
     function fmtDate(d) {
@@ -185,6 +185,7 @@
     }
 
     async function loadBalance() {
+      try {
       var res = await db.from('creator_payout_balances')
         .select('quill_balance, lifetime_quill_earned')
         .eq('user_id', currentSession.user.id)
@@ -194,6 +195,7 @@
       var lifetime = (res.data && res.data.lifetime_quill_earned) || 0;
       document.getElementById('balance-amount').textContent = bal.toLocaleString();
       document.getElementById('balance-lifetime').textContent = 'Lifetime earned: ' + lifetime.toLocaleString();
+      } catch(e) { /* balance row may not exist yet */ }
     }
 
     async function loadPendingApprovals() {
@@ -204,7 +206,7 @@
         .select('id, name, banner_emoji, artist_approved, novelist_approved, novel_id')
         .eq('type', 'artist')
         .eq('artist_id', uid)
-        .eq('artist_approved', false);
+        .neq('artist_approved', true);
 
       var myWorksRes = await db.from('works').select('id, title').eq('author_id', uid);
       var myWorkIds = (myWorksRes.data || []).map(function(w){ return w.id; });
@@ -217,7 +219,7 @@
           .select('id, name, banner_emoji, artist_approved, novelist_approved, novel_id')
           .eq('type', 'artist')
           .in('novel_id', myWorkIds)
-          .eq('novelist_approved', false);
+          .neq('novelist_approved', true);
       }
 
       var combined = {};

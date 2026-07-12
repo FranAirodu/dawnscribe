@@ -287,6 +287,7 @@
     <p style="margin-top:8px;">© 2026 DawnScribe. All rights reserved.</p>
   </footer>
 
+  <script src="blockUtils.js"></script>
   <script>
     var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
     var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
@@ -328,7 +329,7 @@
       if (months < 12) return months + 'mo ago';
       return Math.floor(months/12) + 'y ago';
     }
-    function _escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function _escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
     function renderFeedItem(ev) {
       var actor = _escH(ev.actor_username||'Someone');
@@ -362,7 +363,7 @@
       if (!listEl){_feedLoading=false;return;}
       if (reset) listEl.innerHTML='<div class="feed-empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite;opacity:1;font-size:40px;display:block;margin-bottom:12px;"></i><p>Loading\u2026</p></div>';
       try {
-        var { data, error } = await Promise.resolve(db.rpc('get_social_feed',{p_user_id:currentUser.id,p_limit:_feedLimit,p_offset:_feedOffset}));
+        var { data, error } = await Promise.resolve(db.rpc('get_social_feed',{p_user_id:currentSession.user.id,p_limit:_feedLimit,p_offset:_feedOffset}));
         if (error) throw error;
         var events=data||[];
         if (reset) listEl.innerHTML='';
@@ -384,7 +385,7 @@
 
     function switchTab(btn) {
       var name = btn.getAttribute('data-tab');
-      if (name==='feed'&&typeof currentUser!=='undefined'&&currentUser){loadFeed(true);}
+      if (name==='feed'&&typeof currentSession!=='undefined'&&currentSession){loadFeed(true);}
       var tabs = document.querySelectorAll('.tab-btn');
       var panels = document.querySelectorAll('.tab-panel');
       for (var i = 0; i < tabs.length; i++) { tabs[i].classList.remove('active'); }
@@ -397,7 +398,7 @@
 
     function activateTabByHash() {
       var hash = window.location.hash.replace('#', '');
-      var valid = ['authors', 'artists', 'titles', 'history'];
+      var valid = ['authors', 'artists', 'titles', 'feed', 'history'];
       if (valid.indexOf(hash) !== -1) {
         var btn = document.querySelector('[data-tab="' + hash + '"]');
         if (btn) { switchTab(btn); }
@@ -784,8 +785,10 @@
           return;
         }
         currentSession = session;
+        var cfRow = null;
         try {
-          var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,settings_filter_safe,display_name,username').eq('id', session.user.id).maybeSingle();
+          var cfRowRes = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,settings_filter_safe,display_name,username').eq('id', session.user.id).maybeSingle();
+          cfRow = cfRowRes.data;
           if (cfRow) {
             // null/true = filtering ON (platform convention); safe mode is opt-in
             myContentFilters.gore = cfRow.settings_filter_gore !== false;
@@ -798,7 +801,7 @@
           document.getElementById('page-subtitle').textContent = 'People and titles ' + displayName + ' is following.';
         }
         document.getElementById('main-content').style.display = 'block';
-      loadFeed(true);
+        loadFeed(true);
 
         /* Check URL hash to open correct tab */
         activateTabByHash();

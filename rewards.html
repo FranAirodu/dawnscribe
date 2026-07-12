@@ -135,7 +135,7 @@
   // ── UNLOCKED ITEMS ──────────────────────────────────────────────
   async function loadUnlockedItems(uid) {
     var container = document.getElementById('items-container');
-
+    try {
     var result = await db.from('user_unlocked_items')
       .select('id, unlocked_at, source, cosmetic_items(id,name,description,image_url,slot)')
       .eq('user_id', uid)
@@ -176,13 +176,16 @@
         '</div>' +
       '</div>';
     }).join('') + '</div>';
+    } catch(e) {
+      container.innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Could not load your rewards. Please try again.</p></div>';
+    }
   }
 
   // ── NEXT MILESTONE TEASERS ────────────────────────────────────────
   async function loadTeasers(uid) {
     var section = document.getElementById('teasers-section');
     var container = document.getElementById('teasers-container');
-
+    try {
     var [progressResult, rewardsResult, unlockedResult] = await Promise.all([
       db.from('user_tag_progress').select('tag, points').eq('user_id', uid),
       db.from('tag_rewards').select('tag, points_required, cosmetic_item_id'),
@@ -240,18 +243,14 @@
     }).join('');
 
     section.style.display = 'block';
+    } catch(e) { section.style.display = 'none'; }
   }
 
   // ── INIT ─────────────────────────────────────────────────────────
   (async function init(){
-    var session = null;
-    for (var i = 0; i < 5; i++) {
-      session = (await db.auth.getSession()).data.session;
-      if (session) break;
-      await new Promise(function(r){ setTimeout(r, 350); });
-    }
+    var session = (await db.auth.getSession()).data.session;
     if (!session) {
-      document.getElementById('items-container').innerHTML = '<div class="empty-state"><i class="ti ti-lock"></i><p>Please <a href="login.html">log in</a> to view your rewards.</p></div>';
+      document.getElementById('items-container').innerHTML = '<div class="empty-state"><i class="ti ti-lock"></i><p>Please <a href="auth.html">sign in</a> to view your rewards.</p></div>';
       return;
     }
     var uid = session.user.id;

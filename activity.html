@@ -237,6 +237,7 @@
   <p style="margin-top:8px;">© 2026 DawnScribe. All rights reserved.</p>
 </footer>
 
+<script src="blockUtils.js"></script>
 <script>
   var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
   var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
@@ -250,7 +251,7 @@
   var PAGE = 8;
 
   // ── UTILS ──────────────────────────────────────────────────────────
-  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   function timeAgo(s){
     if(!s) return '';
     var d=Math.floor((Date.now()-new Date(s))/1000);
@@ -275,7 +276,7 @@
   // ── LOAD COLLABS ──────────────────────────────────────────────────
   async function loadCollabs(){
     var grid = document.getElementById('collab-grid');
-
+    try {
     var [scRes, acRes] = await Promise.all([
       db.from('artwork_collabs').select('id,artwork_id,work_id,author_id,created_at').eq('status','approved').order('created_at',{ascending:false}).limit(20),
       db.from('story_collabs').select('id,work_id,artist_id,image_url,description,created_at').eq('status','approved').order('created_at',{ascending:false}).limit(20)
@@ -316,6 +317,7 @@
     shownCollabs=0;
     renderMoreCollabs();
     document.getElementById('section-collab-count').textContent=combined.length+' active';
+    } catch(e) { grid.innerHTML='<div style="grid-column:1/-1;" class="empty-state"><i class="ti ti-alert-circle"></i><p>Could not load collabs.</p></div>'; }
   }
 
   function renderMoreCollabs(){
@@ -377,6 +379,7 @@
 
   // ── LOAD COMMENTS ─────────────────────────────────────────────────
   async function loadComments(){
+    try {
     var [chapRes,artRes]=await Promise.all([
       db.from('chapter_comments').select('id,content,created_at,chapter_id,user_id,parent_id').order('created_at',{ascending:false}).limit(80),
       db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id').order('created_at',{ascending:false}).limit(80)
@@ -424,6 +427,7 @@
     document.getElementById('comment-list').innerHTML='';
     renderMoreComments();
     document.getElementById('section-comment-count').textContent=allComments.length+' recent';
+    } catch(e) { document.getElementById('comment-list').innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Could not load comments.</p></div>'; }
   }
 
   function renderMoreComments(){
@@ -435,7 +439,7 @@
       var userHandle=user.username||'';
       var workTitle=work.title||'Unknown';
       var workType=work.type==='artwork'?'art':'novel';
-      var destUrl=work.type==='artwork'?'artwork.html?id='+work.id:'story.html?id='+work.id;
+      var destUrl=work.id?(work.type==='artwork'?'artwork.html?id='+work.id:'story.html?id='+work.id):'#';
       var card=document.createElement('div'); card.className='comment-card';
       card.onclick=function(){if(work.id) window.location.href=destUrl;};
       var avH=user.avatar_url?'<img src="'+esc(user.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>':esc((userName.charAt(0)||'?').toUpperCase());
@@ -458,6 +462,7 @@
 
   // ── LOAD UPDATES ──────────────────────────────────────────────────
   async function loadUpdates(){
+    try {
     var [chapRes,artRes]=await Promise.all([
       db.from('chapters').select('id,chapter_number,title,created_at,work_id,author_id').eq('status','published').order('created_at',{ascending:false}).limit(60),
       db.from('works').select('id,title,cover_url,author_id,created_at,type').eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(40)
@@ -516,6 +521,7 @@
     }
     renderMoreUpdates();
     document.getElementById('updates-count').textContent=allUpdates.length+' new';
+    } catch(e) { document.getElementById('update-list').innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Could not load updates.</p></div>'; }
   }
 
   function renderMoreUpdates(){
@@ -573,12 +579,12 @@
   window.addEventListener('DOMContentLoaded',function(){
     var hash=window.location.hash.replace('#','');
     if(['collabs','comments','updates'].indexOf(hash)!==-1) switchTab(hash);
-    Promise.all([loadCollabs(),loadComments(),loadUpdates()]);
+    Promise.all([loadCollabs(),loadComments(),loadUpdates()]).catch(function(){});
   });
 </script>
 
-<script src="footer.js"></script>
 <script src="spoilerUtils.js"></script>
+<script src="footer.js"></script>
 <script src="nav.js"></script>
 </body>
 </html>

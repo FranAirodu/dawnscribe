@@ -104,6 +104,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="blockUtils.js"></script>
 <script>
   const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
@@ -115,7 +116,7 @@
   var myNovels = [];
   var eventsById = {};
 
-  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   function fmt(n){ n = Number(n||0); if(n >= 1000000) return (n/1000000).toFixed(1) + 'M'; if(n >= 1000) return (n/1000).toFixed(1) + 'k'; return String(n); }
   function fmtDate(d){ return new Date(d).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }); }
   function daysLeft(d){ var ms = new Date(d) - Date.now(); return Math.max(0, Math.ceil(ms / 86400000)); }
@@ -133,7 +134,7 @@
       try {
         var [adminRes, novelRes] = await Promise.all([
           Promise.resolve(db.from('admins').select('id').eq('id', session.user.id).maybeSingle()).catch(function(){ return {}; }),
-          Promise.resolve(db.from('works').select('id,title,created_at').eq('author_id', session.user.id).eq('type','novel').order('created_at', { ascending: false })).catch(function(){ return {}; })
+          Promise.resolve(db.from('works').select('id,title,created_at').eq('author_id', session.user.id).eq('type','novel').eq('is_published', true).order('created_at', { ascending: false })).catch(function(){ return {}; })
         ]);
         isAdmin = !!(adminRes && adminRes.data);
         myNovels = (novelRes && novelRes.data) || [];
@@ -147,7 +148,8 @@
     var evRes;
     try {
       evRes = await db.from('writing_events').select('*').order('starts_at', { ascending: false });
-    } catch(e) { evRes = {}; }
+    } catch(e) { root.innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i>Could not load events. Please try again.</div>'; return; }
+    if(evRes.error) throw evRes.error;
     var events = evRes.data || [];
     if(!events.length){
       root.innerHTML = '<div class="empty-state"><i class="ti ti-calendar-off"></i>No events yet — the first challenge is coming soon!</div>';
@@ -173,7 +175,7 @@
 
   function eventCard(ev, phase){
     var pill = phase === 'live'
-      ? '<span class="event-badge-pill live">' + daysLeft(ev.ends_at) + ' days left</span>'
+      ? '<span class="event-badge-pill live">' + (daysLeft(ev.ends_at) === 0 ? 'Ends today' : daysLeft(ev.ends_at) + ' days left') + '</span>'
       : phase === 'upcoming'
         ? '<span class="event-badge-pill upcoming">Starts ' + fmtDate(ev.starts_at) + '</span>'
         : '<span class="event-badge-pill past">' + (ev.is_finalized ? 'Finished' : 'Ended — results pending') + '</span>';
@@ -261,7 +263,7 @@
           + (mine && r.user_id === mine ? '<span class="entry-mine">YOURS</span>' : '') + '</div>'
         + '<div class="progress-wrap">'
           + '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%;"></div></div>'
-          + '<span class="progress-label">' + fmt(r.final_word_count != null ? r.final_word_count : words) + ' / ' + fmt(ev.word_target) + '</span>'
+          + '<span class="progress-label">' + fmt(r.final_word_count !== null && r.final_word_count !== undefined ? r.final_word_count : words) + ' / ' + fmt(ev.word_target) + '</span>'
         + '</div>'
         + statusChip
         + '</div>';
@@ -335,6 +337,7 @@
   init();
 </script>
 
+<footer id="ds-footer"></footer>
 <script src="footer.js"></script>
 <script src="nav.js"></script>
 </body>

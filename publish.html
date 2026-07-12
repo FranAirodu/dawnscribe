@@ -1280,7 +1280,7 @@
     }
 
     function escHtml(str) {
-      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return String(str==null?'':str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
     // ── THEME ──────────────────────────────────────────────────────
@@ -1364,7 +1364,7 @@
       var { data: fs } = await db.from('friendships').select('requester_id,recipient_id').or('requester_id.eq.' + currentSession.user.id + ',recipient_id.eq.' + currentSession.user.id).eq('status','accepted');
       if (!fs || !fs.length) return;
       var fids = fs.map(function(f){ return f.requester_id === currentSession.user.id ? f.recipient_id : f.requester_id; });
-      var { data: works } = await db.from('works').select('id,title,cover_url,author_id').in('author_id', fids).eq('type','novel').eq('status','published');
+      var { data: works } = await db.from('works').select('id,title,cover_url,author_id').in('author_id', fids).eq('type','novel').eq('is_published',true);
       if (!works) return;
       var aIds = Array.from(new Set(works.map(function(w){ return w.author_id; })));
       var { data: profs } = await db.from('profiles').select('id,display_name,username').in('id', aIds);
@@ -2176,7 +2176,7 @@
       // Guard: a work that is itself a collab novel cannot be collabed on
       try {
         var { data: chainCheck } = await db.from('artwork_collabs')
-          .select('id').eq('work_id', art.id).in('status', ['pending','approved']).limit(1);
+          .select('id').eq('artwork_id', art.id).in('status', ['pending','approved']).limit(1);
         if (chainCheck && chainCheck.length) {
           selectedCollabArtwork = null;
           showToast('That work is itself a collab, so it can\u2019t be collabed on. Collab with the original work instead.', 'ti-alert-triangle');
@@ -2671,6 +2671,8 @@
       });
       
       quill.on('text-change', function() {
+        var text = quill.getText().trim();
+        var words = text ? text.split(/\s+/).filter(Boolean).length : 0;
         document.getElementById('word-count').textContent = words;
         updateChecklist();
       });
