@@ -262,12 +262,71 @@
   async function init(){
     var params = new URLSearchParams(window.location.search);
     var collabId = params.get('collab');
+    var isFanArt = params.get('type') === 'fanart';
     if(!collabId){ showError('No collab ID provided.'); return; }
 
     var { data: { session } } = await db.auth.getSession();
     if(!session){ showError('Please <a href="auth.html">log in</a> to view this page.'); return; }
 
-    // Load the collab row
+    // ── FAN-ART FLOW: story_collabs (artist submitted artwork for a novel)
+    if(isFanArt){
+      var { data: fanart } = await db.from('story_collabs')
+        .select('id, work_id, artist_id, image_url, description, status')
+        .eq('id', collabId)
+        .maybeSingle();
+
+      if(!fanart){ showError('Fan art collab not found.'); return; }
+      if(fanart.status !== 'approved'){ showError('This fan art hasn\'t been approved yet.'); return; }
+      if(fanart.artist_id !== session.user.id){ showError('This isn\'t your collab.'); return; }
+
+      // Load novel (the work this fan art was submitted to)
+      var { data: fanNovel } = await db.from('works')
+        .select('id, title, cover_url, author_id')
+        .eq('id', fanart.work_id)
+        .maybeSingle();
+
+      // Load novel author profile (the approver)
+      var fanApproverName = 'the author';
+      if(fanNovel && fanNovel.author_id){
+        var { data: fanAuthorProf } = await db.from('profiles')
+          .select('display_name, username')
+          .eq('id', fanNovel.author_id)
+          .maybeSingle();
+        if(fanAuthorProf) fanApproverName = fanAuthorProf.display_name || fanAuthorProf.username || 'the author';
+      }
+
+      // Milestone: how many approved fan-art collabs does this artist have?
+      var fanMilestoneMsg = null;
+      try {
+        var { count: fanCount } = await db.from('story_collabs')
+          .select('id', { count: 'exact', head: true })
+          .eq('artist_id', session.user.id)
+          .eq('status', 'approved');
+        if(fanCount === 1) fanMilestoneMsg = 'Your first approved fan art! The journey begins. 🎉';
+        else if(fanCount === 5) fanMilestoneMsg = '5 approved fan arts! You\'re on a roll. 🔥';
+        else if(fanCount === 10) fanMilestoneMsg = '10 approved fan arts! A true collab legend. 🏆';
+        else if(fanCount === 25) fanMilestoneMsg = '25 approved fan arts! Unstoppable. ✨';
+      } catch(e) {}
+
+      var fanNovelUrl = fanNovel ? ('story.html?id=' + fanNovel.id) : null;
+      var fanGalleryUrl = fanNovel ? ('collab-gallery.html?work=' + fanNovel.id) : null;
+
+      renderFanArt({
+        fanart, fanNovel,
+        novelTitle: fanNovel ? (fanNovel.title || 'Untitled Novel') : 'Untitled Novel',
+        novelCover: fanNovel ? (fanNovel.cover_url || '') : '',
+        artworkTitle: fanart.description || 'Your Fan Art',
+        artworkCover: fanart.image_url || '',
+        artistName: fanApproverName,
+        fanNovelUrl, fanGalleryUrl
+      });
+
+      setTimeout(launchParticles, 400);
+      if(fanMilestoneMsg) setTimeout(function(){ showToast(fanMilestoneMsg, 'ti-award'); }, 1800);
+      return;
+    }
+
+    // ── STORY COLLAB FLOW: artwork_collabs (author submitted story for an artwork)
     var { data: collab } = await db.from('artwork_collabs')
       .select('id, artwork_id, work_id, author_id, status, novel_title, novel_cover_url')
       .eq('id', collabId)
@@ -328,10 +387,7 @@
       artistName, storyUrl, artworkUrl
     });
 
-    // Launch celebration after a short delay
     setTimeout(launchParticles, 400);
-
-    // Show milestone toast after animations settle
     if(milestoneMsg) setTimeout(function(){ showToast(milestoneMsg, 'ti-award'); }, 1800);
   }
 
@@ -418,7 +474,83 @@
       + '</p>';
   }
 
+  // ── RENDER: fan-art approval page
+  function renderFanArt(d){
+    var page = document.getElementById('page');
+
+    var galleryBtnHtml = d.fanGalleryUrl
+      ? '<a class="btn-primary" href="' + esc(d.fanGalleryUrl) + '"><i class="ti ti-photo"></i> View in Gallery</a>'
+      : '';
+    var novelBtnHtml = d.fanNovelUrl
+      ? '<a class="btn-secondary" href="' + esc(d.fanNovelUrl) + '"><i class="ti ti-book-open"></i> View Novel</a>'
+      : '';
+
+    page.innerHTML =
+      '<div class="achievement-wrap">'
+        + '<div class="achievement-badge"><i class="ti ti-palette"></i></div>'
+        + '<div class="achievement-label">✦ Fan Art Achievement Unlocked ✦</div>'
+        + '<h1 class="achievement-title">Your Fan Art Was Approved!</h1>'
+        + '<p class="achievement-sub"><strong>' + esc(d.artistName) + '</strong> loved your art and gave it the green light.<br>It\'s now live on their novel\'s gallery for the whole community to see.</p>'
+      + '</div>'
+
+      + '<div class="bond-wrap">'
+        + '<div class="bond-card">'
+          + '<div class="bond-card-label">✦ The Fan Art Bond ✦</div>'
+          + '<div class="bond-covers">'
+
+            + '<div class="bond-cover-wrap">'
+              + '<div class="bond-cover">'
+                + (d.artworkCover ? '<img src="' + esc(d.artworkCover) + '" alt=""/>' : '<i class="ti ti-photo"></i>')
+              + '</div>'
+              + '<div class="bond-cover-label">Your Art</div>'
+              + '<div class="bond-cover-title">' + esc(d.artworkTitle) + '</div>'
+            + '</div>'
+
+            + '<div class="bond-connector">'
+              + '<div class="bond-line"></div>'
+              + '<div class="bond-icon"><i class="ti ti-heart-handshake"></i></div>'
+              + '<div class="bond-line"></div>'
+            + '</div>'
+
+            + '<div class="bond-cover-wrap">'
+              + '<div class="bond-cover artwork-cover">'
+                + (d.novelCover ? '<img src="' + esc(d.novelCover) + '" alt=""/>' : '<i class="ti ti-book"></i>')
+              + '</div>'
+              + '<div class="bond-cover-label">Inspired by</div>'
+              + '<div class="bond-cover-title">' + esc(d.novelTitle) + '</div>'
+            + '</div>'
+
+          + '</div>'
+          + '<div class="bond-artist">Approved by <strong>' + esc(d.artistName) + '</strong> — your art is now part of their novel\'s world.</div>'
+        + '</div>'
+      + '</div>'
+
+      + '<div class="revenue-callout">'
+        + '<div class="revenue-card">'
+          + '<div class="revenue-icon"><i class="ti ti-coin"></i></div>'
+          + '<div class="revenue-text">'
+            + '<strong>Your art is live in the gallery</strong>'
+            + '<span>Readers browsing the novel can now see your fan art. Keep creating to build your portfolio on DawnScribe.</span>'
+          + '</div>'
+        + '</div>'
+      + '</div>'
+
+      + '<div class="actions">'
+        + galleryBtnHtml
+        + novelBtnHtml
+        + '<a class="btn-secondary" href="collab-outbox.html"><i class="ti ti-send"></i> My Submissions</a>'
+      + '</div>'
+
+      + '<p class="footer-note">'
+        + 'Your fan art appears in the <strong>Fan Art Gallery</strong> on the novel page.<br>'
+        + '<a href="collab-outbox.html">View all your collab submissions →</a>'
+      + '</p>';
+  }
+
   init();
 </script>
+<script src="footer.js"></script>
+<script src="spoilerUtils.js"></script>
+<script src="nav.js"></script>
 </body>
 </html>

@@ -7,7 +7,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="spoilerUtils.js"></script>
   <style>
     :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--gold:#f59e0b;--green:#34d399;}
     html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;}
@@ -334,6 +333,10 @@
 
       // Load work metadata
       var wRes = await db.from('works').select('id,title,author_id').eq('id', workId).maybeSingle();
+      if (wRes.error) {
+        document.getElementById('gallery-grid').innerHTML = '<div class="empty-state" style="column-span:all;"><i class="ti ti-plug-x"></i><p>Could not load story. Please try again.</p></div>';
+        return;
+      }
       workData = wRes.data || null;
       if (workData) {
         document.getElementById('page-title').innerHTML = 'Fan Art — <span>' + esc(workData.title) + '</span>';
@@ -347,6 +350,10 @@
         .eq('work_id', workId)
         .eq('status', 'approved')
         .order('created_at', {ascending: false});
+      if (cRes.error) {
+        document.getElementById('gallery-grid').innerHTML = '<div class="empty-state" style="column-span:all;"><i class="ti ti-plug-x"></i><p>Could not load gallery. Please try again.</p></div>';
+        return;
+      }
       allCollabs = cRes.data || [];
 
       if (!allCollabs.length) {
@@ -392,11 +399,17 @@
 
       // Image
       var imgEl = document.getElementById('detail-img');
+      var imgCol = document.getElementById('detail-img-col');
+      var zoomHint = imgCol.querySelector('.detail-zoom-hint');
       imgEl.src = c.image_url || '';
       imgEl.alt = 'Fan art by ' + esc(c._artistName);
+      // Only allow zoom interaction when there's an actual image
+      var hasImage = !!c.image_url;
+      imgCol.style.cursor = hasImage ? 'zoom-in' : 'default';
+      if (zoomHint) zoomHint.style.display = hasImage ? '' : 'none';
 
       // Reset zoom
-      document.getElementById('detail-img-col').classList.remove('zoomed');
+      imgCol.classList.remove('zoomed');
 
       // Artist row — no "Author" tag since every submitter here is a fan artist
       var avH = avatarHtml(c._artist, 30);
@@ -553,6 +566,8 @@
 
     async function postDetailComment() {
       if (!currentSession || !activeId) return;
+      // Ensure the collab is still known/approved before posting
+      if (!allCollabs.find(function(x){ return x.id === activeId; })) return;
       var input = document.getElementById('detail-input');
       var text = input.value.trim();
       if (!text) return;
@@ -598,16 +613,17 @@
       var zoomImg = document.getElementById('zoom-img');
 
       col.addEventListener('click', function(e) {
+        if (!img.src || img.src === window.location.href) return; // no image — skip
         // Open fullscreen zoom overlay on click
         zoomImg.src = img.src;
         overlay.classList.add('show');
-        document.body.style.overflow = 'hidden';
+        // body.overflow already 'hidden' from modal open — no change needed
       });
 
       overlay.addEventListener('click', function(e) {
         if (e.target === overlay || e.target === document.getElementById('zoom-close')) {
           overlay.classList.remove('show');
-          document.body.style.overflow = 'hidden'; // modal still open
+          // body.overflow stays 'hidden' — detail modal is still open
         }
       });
       document.getElementById('zoom-close').addEventListener('click', function() {
@@ -655,5 +671,8 @@
 
     setupZoom();
   </script>
+<script src="footer.js"></script>
+<script src="spoilerUtils.js"></script>
+<script src="nav.js"></script>
 </body>
 </html>
