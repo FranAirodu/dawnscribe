@@ -220,7 +220,14 @@
   // exist for them. Hidden slots are simply skipped.)
   const VISIBLE_SLOTS = ['skin','shirt','pants','shoes','jacket','gloves','outfit','accessory','neck','back','hair','eyes','lips','hat'];
 
-  function esc(s){ var d=document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+  function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  // Suggestion B: sanitize hex colors before injecting into style attributes
+  function sanitizeHex(hex) {
+    if (!hex) return '#888888';
+    var clean = String(hex).trim();
+    return /^#[0-9a-fA-F]{3,8}$/.test(clean) ? clean : '#888888';
+  }
 
   // Returns a color name from the palette map, or falls back to the hex value
   function colorName(hex) {
@@ -253,6 +260,7 @@
 
   // Flame SVG swatch (free/ember colors)
   function flameSwatch(hex, tooltip, extraClass, onclick) {
+    hex = sanitizeHex(hex);
     var tipAttr = tooltip ? ' title="' + esc(tooltip) + '"' : '';
     var clickAttr = onclick ? ' onclick="' + onclick + '"' : '';
     return '<div class="' + extraClass + '"' + tipAttr + clickAttr + '>' +
@@ -266,6 +274,7 @@
 
   // Quill SVG swatch (marketplace/paid colors — placeholder for future use)
   function quillSwatch(hex, tooltip, extraClass, onclick) {
+    hex = sanitizeHex(hex);
     var tipAttr = tooltip ? ' title="' + esc(tooltip) + '"' : '';
     var clickAttr = onclick ? ' onclick="' + onclick + '"' : '';
     return '<div class="' + extraClass + '"' + tipAttr + clickAttr + '>' +
@@ -318,14 +327,14 @@
       await new Promise(function(r){ setTimeout(r, 350); });
     }
     if (!session) {
-      document.getElementById('editor-root').innerHTML = '<div class="empty-note" style="padding:48px 0;">Please <a href="login.html" style="color:var(--accent);">log in</a> to customize your avatar.</div>';
+      document.getElementById('editor-root').innerHTML = '<div class="empty-note" style="padding:48px 0;">Please <a href="auth.html" style="color:var(--accent);">log in</a> to customize your avatar.</div>';
       return;
     }
     currentUid = session.user.id;
 
     var [avatarResult, itemsResult, unlockedResult, embersResult, quillsResult, paletteResult, accentPaletteResult] = await Promise.all([
       db.from('user_avatars').select('*').eq('user_id', currentUid).maybeSingle(),
-      db.from('cosmetic_items').select('*'),
+      db.from('cosmetic_items').select('*').or('status.eq.approved,is_base_item.eq.true'),
       db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', currentUid),
       db.from('user_embers').select('balance').eq('user_id', currentUid).maybeSingle(),
       db.from('user_quills').select('balance').eq('user_id', currentUid).maybeSingle(),
@@ -404,7 +413,7 @@
 
     // Base body, tinted with skin tone. Same body shapes as earlier
     // concept art, simplified — fill is the user's chosen skin tone.
-    var skin = avatarData.skin_tone;
+    var skin = sanitizeHex(avatarData.skin_tone);
     parts.push(
       '<g fill="' + skin + '">' +
         '<path d="M130 30 q30 -34 60 0 q16 6 14 30 q-2 18 -12 24 l-8 4 q-22 10 -48 0 l-8 -4 q-10 -6 -12 -24 q-2 -24 14 -30 Z"/>' +
@@ -450,11 +459,11 @@
       var shape = SLOT_PLACEHOLDER_SHAPES[slot];
       if (!shape) return;
 
-      var fillColor = '#888';
+      var fillColor = '#888888';
       if (shape.region && eq.colors && eq.colors[shape.region]) {
-        fillColor = eq.colors[shape.region];
+        fillColor = sanitizeHex(eq.colors[shape.region]);
       } else if (item.fill_regions && item.fill_regions[0]) {
-        fillColor = item.fill_regions[0].default_color;
+        fillColor = sanitizeHex(item.fill_regions[0].default_color);
       }
 
       if (shape.stroke) {
@@ -558,21 +567,21 @@
     } else {
       items.forEach(function(it) {
         var selected = it.id === equippedId ? ' selected' : '';
-        var thumbColor = (it.fill_regions && it.fill_regions[0]) ? it.fill_regions[0].default_color : null;
+        var thumbColor = (it.fill_regions && it.fill_regions[0]) ? sanitizeHex(it.fill_regions[0].default_color) : null;
         var thumb = thumbColor
           ? '<div class="item-option-thumb" style="background:' + thumbColor + ';"></div>'
           : '<div class="item-option-thumb"><i class="ti ' + icon + '"></i></div>';
-        html += '<div class="item-option' + selected + '" onclick="equipItem(\'' + it.id + '\')">' +
+        html += '<div class="item-option' + selected + '" onclick="equipItem(&#39;' + esc(it.id) + '&#39;)">' +
           thumb +
           '<div class="item-option-name">' + esc(it.name) + '</div>' +
         '</div>';
       });
       purchasable.forEach(function(it) {
-        var thumbColor = (it.fill_regions && it.fill_regions[0]) ? it.fill_regions[0].default_color : null;
+        var thumbColor = (it.fill_regions && it.fill_regions[0]) ? sanitizeHex(it.fill_regions[0].default_color) : null;
         var thumb = thumbColor
           ? '<div class="item-option-thumb" style="background:' + thumbColor + ';"></div>'
           : '<div class="item-option-thumb"><i class="ti ' + icon + '"></i></div>';
-        html += '<div class="item-option locked" onclick="openBuyModal(\'' + it.id + '\')">' +
+        html += '<div class="item-option locked" onclick="openBuyModal(&#39;' + esc(it.id) + '&#39;)">' +
           thumb +
           '<div class="item-option-name">' + esc(it.name) + '</div>' +
           '<div class="item-option-price"><i class="ti ti-feather"></i> ' + (it.quill_price || 0).toLocaleString() + '</div>' +
@@ -737,7 +746,7 @@
 
     if (data.status === 'insufficient_embers') {
       result.className = 'randomizer-result show';
-      result.innerHTML = '<div class="randomizer-result-text">You need <b>10 Embers</b> to pull. You have ' + data.balance + '.</div>';
+      result.innerHTML = '<div class="randomizer-result-text">You need <b>10 Embers</b> to pull. You have ' + (data.balance != null ? data.balance : '?') + '.</div>';
       btn.disabled = true;
       return;
     }
@@ -754,7 +763,7 @@
     notifyEmbersSpent(10);
     unlockedItemIds.add(data.cosmetic_item_id);
 
-    var swatchColor = (data.fill_regions && data.fill_regions[0]) ? data.fill_regions[0].default_color : '#888';
+    var swatchColor = sanitizeHex((data.fill_regions && data.fill_regions[0]) ? data.fill_regions[0].default_color : '#888');
     var icon = SLOT_ICONS[data.slot] || 'ti-diamond';
     result.className = 'randomizer-result show';
     result.innerHTML =
@@ -811,7 +820,7 @@
 
     if (data.status === 'insufficient_embers') {
       result.className = 'randomizer-result show';
-      result.innerHTML = '<div class="randomizer-result-text">You need <b>1 Ember</b> to unlock a color. You have ' + data.balance + '.</div>';
+      result.innerHTML = '<div class="randomizer-result-text">You need <b>1 Ember</b> to unlock a color. You have ' + (data.balance != null ? data.balance : '?') + '.</div>';
       btn.disabled = true;
       return;
     }
@@ -846,7 +855,7 @@
       ? 'You already had this color for ' + esc(label) + ' — no duplicate added.'
       : 'Added to your unlocked colors for ' + esc(label) + ' — select it from the swatches above and Save Avatar to apply.';
     result.innerHTML =
-      '<div class="randomizer-result-swatch" style="background:' + data.hex + ';"></div>' +
+      '<div class="randomizer-result-swatch" style="background:' + sanitizeHex(data.hex) + ';"></div>' +
       '<div>' +
         '<div class="randomizer-result-text">Rolled <b>' + esc(data.label || data.hex) + '</b>!</div>' +
         '<div class="randomizer-result-sub">' + subText + '</div>' +
@@ -879,7 +888,7 @@
 
     if (data.status === 'insufficient_embers') {
       result.className = 'randomizer-result show';
-      result.innerHTML = '<div class="randomizer-result-text">You need <b>1 Ember</b> to unlock a skin tone. You have ' + data.balance + '.</div>';
+      result.innerHTML = '<div class="randomizer-result-text">You need <b>1 Ember</b> to unlock a skin tone. You have ' + (data.balance != null ? data.balance : '?') + '.</div>';
       btn.disabled = true;
       return;
     }
@@ -911,7 +920,7 @@
       ? 'You already had this skin tone — no duplicate added.'
       : 'Added to your unlocked skin tones — select it above and Save Avatar to apply.';
     result.innerHTML =
-      '<div class="randomizer-result-swatch" style="background:' + data.hex + ';"></div>' +
+      '<div class="randomizer-result-swatch" style="background:' + sanitizeHex(data.hex) + ';"></div>' +
       '<div>' +
         '<div class="randomizer-result-text">Rolled <b>' + esc(data.label || data.hex) + '</b>!</div>' +
         '<div class="randomizer-result-sub">' + subText + '</div>' +
@@ -927,15 +936,6 @@
   }
 
   // ── ACCENT COLOR SYSTEM ─────────────────────────────────────────
-
-  // Derives a darker shade of a hex color for --accent2 (hover states)
-  function darkenHex(hex, amount) {
-    hex = hex.replace('#','');
-    var r = Math.max(0, parseInt(hex.slice(0,2),16) - amount);
-    var g = Math.max(0, parseInt(hex.slice(2,4),16) - amount);
-    var b = Math.max(0, parseInt(hex.slice(4,6),16) - amount);
-    return '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
-  }
 
   function applyAccentCSS(hex) {
     if (hex) {
@@ -993,7 +993,7 @@
     btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Rolling...';
     var { data, error } = await db.rpc('roll_accent_color', { p_user_id: currentUid });
     btn.disabled = false;
-    btn.innerHTML = '<i class="ti ti-wand"></i> Roll Accent (10 Embers)';
+    btn.innerHTML = '<i class="ti ti-wand"></i> Roll Aura (10 Embers)';
     if (error || !data) { showToast('Something went wrong.', 'ti-alert-triangle'); return; }
     if (data.status === 'insufficient_embers') { showToast('Not enough Embers! You need 10.', 'ti-flame'); return; }
     if (data.status === 'all_unlocked') {
@@ -1005,8 +1005,8 @@
     if (!avatarData.unlocked_accents) avatarData.unlocked_accents = [];
     if (avatarData.unlocked_accents.indexOf(data.hex) === -1) avatarData.unlocked_accents.push(data.hex);
     result.innerHTML =
-      flameSwatch(data.hex, data.label, 'randomizer-result-swatch', '') +
-      '<div class="randomizer-result-text">Unlocked <b style="color:' + data.hex + ';">' + esc(data.label) + '</b>!<div class="randomizer-result-sub">Scroll down to pick it as your Dawn Color.</div></div>';
+      flameSwatch(sanitizeHex(data.hex), data.label, 'randomizer-result-swatch', '') +
+      '<div class="randomizer-result-text">Unlocked <b style="color:' + sanitizeHex(data.hex) + ';">' + esc(data.label) + '</b>!<div class="randomizer-result-sub">Scroll down to pick it as your Dawn Color.</div></div>';
     result.classList.add('show');
     renderAccentSection();
     // Dispatch ember event for nav pill
