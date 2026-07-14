@@ -205,6 +205,16 @@
     const coverColors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa','#fb923c'];
     function coverColor(id) { return coverColors[Math.abs(id || 0) % coverColors.length]; }
     function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+    function ratingStarsHtml(rating) {
+      var r = parseFloat(rating) || 0;
+      if (r <= 0) return '';
+      var pct = Math.max(0, Math.min(100, (r / 5) * 100));
+      var stars = '<span title="' + r.toFixed(1) + ' / 5" style="position:relative;display:inline-block;font-size:12px;line-height:1;letter-spacing:1px;color:var(--text3);vertical-align:middle;">'
+        + '\u2605\u2605\u2605\u2605\u2605'
+        + '<span style="position:absolute;top:0;left:0;width:' + pct + '%;overflow:hidden;white-space:nowrap;color:#f59e0b;pointer-events:none;">\u2605\u2605\u2605\u2605\u2605</span>'
+        + '</span>';
+      return '<div style="display:flex;align-items:center;gap:4px;margin:1px 0;">' + stars + '<span style="color:var(--text3);font-size:10px;">' + r.toFixed(1) + '</span></div>';
+    }
 
     // Parse URL params
     function getParams() {
@@ -361,7 +371,7 @@
       if (!allowGore) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
       if (!allowErotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
       myBlockedTags.forEach(function(tag){ q = q.not('tags_all', 'ilike', '%"' + tag.replace(/"/g,'') + '"%'); });
-      if (myMutedIds.length) q = q.not('author_id', 'in', '("' + myMutedIds.join('","') + '")');
+      if (myMutedIds.length) q = q.not('author_id', 'in', '(' + myMutedIds.join(',') + ')');
       myFilteredWarnings.forEach(function(w){ q = q.not('content_warnings', 'cs', JSON.stringify([w])); });
       return q;
     }
@@ -378,7 +388,7 @@
     async function queryTitles(q, offset) {
       var col = tagMode ? 'tags_all' : 'title';
       var query = db.from('works')
-        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id, language', { count: 'exact' })
+        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id, language, rating, is_one_shot', { count: 'exact' })
         .eq('type', 'novel')
         .eq('is_published', true);
       if (q) query = query.ilike(col, '%' + (tagMode ? ilikeEsc(q) : q) + '%');
@@ -394,7 +404,7 @@
       return await db.from('profiles')
         .select('id, username, display_name, avatar_url, role, bio', { count: 'exact' })
         .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
-        .or('role.ilike.%Author%,role.ilike.%Novelist%')
+        .or('role.ilike.%Writer%,role.ilike.%Reader%,role.ilike.%Artist%')
         .order('username')
         .range(offset, offset + PAGE_SIZE - 1);
     }
@@ -425,8 +435,9 @@
     async function queryOneShots(q, offset) {
       var col = tagMode ? 'tags_all' : 'title';
       var query = db.from('works')
-        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id, language', { count: 'exact' })
-        .eq('type', 'one-shot')
+        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id, language, rating, is_one_shot', { count: 'exact' })
+        .eq('type', 'novel')
+        .eq('is_one_shot', true)
         .eq('is_published', true);
       if (q) query = query.ilike(col, '%' + (tagMode ? ilikeEsc(q) : q) + '%');
       query = applyContentFilters(query);
@@ -485,8 +496,9 @@
       return '<a class="result-card" href="story.html?id=' + w.id + '">'
         + '<div class="result-cover" style="background:' + color + ';">' + coverHtml + '</div>'
         + '<div class="result-body">'
-        + '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:2px;display:block;">' + (w.type === 'one-shot' ? 'One-Shot' : 'Novel') + '</span>'
+        + '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:2px;display:block;">' + (w.is_one_shot ? 'One-Shot' : 'Novel') + '</span>'
         + '<div class="result-title">' + esc(w.title) + '</div>'
+        + ratingStarsHtml(w.rating)
         + '<div class="result-sub">by <span onclick="event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'" style="color:var(--accent);cursor:pointer;">' + esc(author) + '</span></div>'
         + flavorHtml2
         + (tagHtml ? '<div class="result-tags">' + tagHtml + '</div>' : '')
@@ -761,9 +773,10 @@
         t.classList.toggle('active', t.dataset.type === state.type);
       });
 
-      // Set nav input
+      // Set nav input and autofocus if no query pre-filled
       navInput.value = state.query;
       document.getElementById('query-display').textContent = state.query ? '"' + state.query + '"' : '';
+      if (!state.query) { setTimeout(function(){ navInput.focus(); }, 60); }
 
       // Empty query is fine when advanced filters are set (browse mode) —
       // but Authors/Artists tabs still need a text query.

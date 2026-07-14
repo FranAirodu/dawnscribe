@@ -165,7 +165,7 @@
     .danger-action-btn{background:none;border:1px solid rgba(248,113,113,0.3);border-radius:8px;padding:7px 16px;color:var(--red);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;white-space:nowrap;flex-shrink:0;}
     .danger-action-btn:hover{background:rgba(248,113,113,0.1);border-color:var(--red);}
     .account-action-btn{background:none;border:1px solid var(--accent);border-radius:8px;padding:7px 16px;color:var(--accent);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;white-space:nowrap;flex-shrink:0;}
-    .account-action-btn:hover{background:color-mix(in srgb, var(--accent) 10%, transparent);}
+    .account-action-btn:hover{background:rgba(45,212,191,0.1);}
     .account-action-btn:disabled{opacity:0.6;cursor:default;}
 
     /* MISC */
@@ -699,7 +699,7 @@
 
       <!-- SAVE BAR -->
       <div class="save-bar">
-        <div class="save-status" id="save-status"><i class="ti ti-circle-dashed"></i> Unsaved changes</div>
+        <div class="save-status saved" id="save-status"><i class="ti ti-circle-check"></i> All changes saved</div>
         <button class="save-btn" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button>
       </div>
 
@@ -1839,7 +1839,32 @@
         var loc = document.getElementById('field-location').value.trim();
         var gen = document.getElementById('field-gender').value;
         var pronouns = document.getElementById('field-pronouns').value.trim();
-        if (dn) profileUpdate.display_name = dn;
+        // Bug 6 / Suggestion E: block save if display name is empty
+        if (!dn) {
+          var dnEl = document.getElementById('field-display-name');
+          dnEl.focus();
+          dnEl.style.borderColor = 'var(--red)';
+          setTimeout(function() { dnEl.style.borderColor = ''; }, 1500);
+          // Expand the Profile Info section so the user can see the error
+          var profileSection = dnEl.closest('.settings-section');
+          if (profileSection && profileSection.classList.contains('collapsed')) {
+            profileSection.classList.remove('collapsed');
+          }
+          showToast('Display name cannot be blank.', 'ti-x');
+          return;
+        }
+        profileUpdate.display_name = dn;
+        // Bug 7 / Suggestion F: validate username format before sending to DB
+        if (un && !/^[a-zA-Z0-9_]+$/.test(un)) {
+          var unEl = document.getElementById('field-username');
+          unEl.focus();
+          unEl.style.borderColor = 'var(--red)';
+          setTimeout(function() { unEl.style.borderColor = ''; }, 1500);
+          document.getElementById('username-hint').textContent = 'Only letters, numbers, and underscores allowed';
+          document.getElementById('username-hint').style.color = 'var(--red)';
+          showToast('Invalid username — letters, numbers, underscores only.', 'ti-x');
+          return;
+        }
         if (un) profileUpdate.username = un;
         profileUpdate.bio = bio;
         profileUpdate.location = loc;

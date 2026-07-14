@@ -1199,7 +1199,7 @@
           var { data: shelfRows } = await db.from('reading_list_entries')
             .select('status')
             .eq('work_id', workData.id)
-            .eq('is_private', false);
+            .neq('is_private', true);
           if (!shelfRows || !shelfRows.length) return;
           var counts = {};
           shelfRows.forEach(function(r){ counts[r.status] = (counts[r.status] || 0) + 1; });
@@ -2761,6 +2761,7 @@
     }
 
     (async function init() {
+      try {
       var workId = getWorkId();
       if (!workId) { document.getElementById('story-title').textContent = 'Story not found.'; return; }
 
@@ -2805,7 +2806,7 @@
       await maybeShowContentGate(authorIds);
 
       // Load chapters
-      var chapResult = await db.from('chapters').select('id,chapter_number,title,word_count,created_at').eq('work_id', workId).eq('status','published').order('chapter_number', { ascending: true });
+      var chapResult = await db.from('chapters').select('id,chapter_number,title,word_count,created_at').eq('work_id', workId).in('status',['published','one-shot']).order('chapter_number', { ascending: true });
       allChapters = chapResult.data || [];
 
       // Is this novel itself a collab work? (pending or approved link to an artwork)
@@ -2889,6 +2890,13 @@
             });
           }
         } catch(e) {} // never block page load
+      }
+      } catch(e) {
+        console.error('story init failed:', e);
+        var titleEl = document.getElementById('story-title');
+        if (titleEl) titleEl.textContent = 'Failed to load story.';
+        var subEl = document.querySelector('.story-subtitle, .work-subtitle, #story-subtitle');
+        if (subEl) subEl.textContent = 'Something went wrong. Please refresh the page.';
       }
     })();
 

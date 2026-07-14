@@ -201,11 +201,12 @@
     function ratingStarsHtml(w) {
       var r = parseFloat(w.rating) || 0;
       if (r <= 0) return '';
-      var full = Math.floor(r), half = (r - full) >= 0.5, html = '';
-      for (var i = 0; i < 5; i++) {
-        html += '<i class="ti ' + (i < full ? 'ti-star-filled' : (i === full && half ? 'ti-star-half-filled' : 'ti-star')) + '"></i>';
-      }
-      return '<div class="card-rating" style="display:flex;align-items:center;gap:2px;color:var(--gold);font-size:11px;margin:2px 0 1px;">' + html + '<span style="color:var(--text3);margin-left:4px;font-size:10px;">' + r.toFixed(1) + '</span></div>';
+      var pct = Math.max(0, Math.min(100, (r / 5) * 100));
+      var stars = '<span title="' + r.toFixed(1) + ' / 5" style="position:relative;display:inline-block;font-size:13px;line-height:1;letter-spacing:1px;color:var(--text3);vertical-align:middle;">'
+        + '★★★★★'
+        + '<span style="position:absolute;top:0;left:0;width:' + pct + '%;overflow:hidden;white-space:nowrap;color:#f59e0b;pointer-events:none;">★★★★★</span>'
+        + '</span>';
+      return '<div class="card-rating" style="display:flex;align-items:center;gap:4px;margin:2px 0 1px;">' + stars + '<span style="color:var(--text3);font-size:10px;">' + r.toFixed(1) + '</span></div>';
     }
     function contentWarningBadge(w) {
       var warnGore = w.content_rating_gore && (myContentFilters.safe || !myContentFilters.gore);
@@ -286,7 +287,7 @@
       return '<a class="list-row" href="story.html?id=' + w.id + '">'
         + '<div class="list-row-thumb" style="background:' + color + ';">' + coverHtml + '</div>'
         + '<div class="list-row-body">'
-        + '<div class="list-row-title">' + esc(w.title) + contentWarningBadge(w) + (trendingIds.has(w.id) ? ' <span class="trending-badge"><i class="ti ti-trending-up"></i> Trending</span>' : '') + (!trendingIds.has(w.id) && risingIds.has(w.id) ? ' <span class="rising-badge"><i class="ti ti-rocket"></i> Rising</span>' : '') + '</div>'
+        + '<div class="list-row-title">' + esc(w.title) + contentWarningBadge(w) + '</div>'
         + ratingStarsHtml(w)
         + (tagHtml ? '<div class="list-row-tags">' + tagHtml + '</div>' : '')
         + (w.synopsis ? '<div class="list-row-synopsis">' + esc(w.synopsis) + '</div>' : '')
@@ -386,7 +387,7 @@
         var workIds = await getFollowedWorkIds();
         if (!workIds.length) return { items: [], count: 0, html: [], grid: 'results-grid' };
         var chQ = db.from('chapters').select('id,work_id,chapter_number,title,created_at', { count: 'exact' })
-          .in('work_id', workIds).eq('status','published').order('created_at',{ascending:false}).range(offset, offset + PAGE_SIZE - 1);
+          .in('work_id', workIds).in('status',['published','one-shot']).order('created_at',{ascending:false}).range(offset, offset + PAGE_SIZE - 1);
         var chRes = await chQ;
         if (chRes.error) throw chRes.error;
         var chData = chRes.data || [];

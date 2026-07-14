@@ -4727,6 +4727,7 @@
             <span class="welcome-char" id="w-bio-counter">0/200</span>
           </div>
         </div>
+        <div id="welcome-next-error" style="display:none;font-size:12px;color:var(--red);margin-top:-8px;margin-bottom:4px;text-align:center;"></div>
         <button class="welcome-btn" id="welcome-next-btn" onclick="welcomeNext()"><i class="ti ti-arrow-right"></i> Next</button>
       </div>
 
@@ -4866,11 +4867,17 @@
     function welcomeCheckNew(uid) {
       if (!uid) return;
       if (localStorage.getItem('ds_welcome_done_' + uid)) return;
-      db.from('profiles').select('display_name').eq('id', uid).maybeSingle().then(function(res) {
+      // Bug 3: wrap in try/catch so a failed profile lookup never throws
+      Promise.resolve(
+        db.from('profiles').select('display_name').eq('id', uid).maybeSingle()
+      ).then(function(res) {
         // Show if display_name is null/empty — truly new user
         if (res && res.data && !res.data.display_name) {
           document.getElementById('welcome-overlay').classList.add('open');
         }
+      }).catch(function(e) {
+        // Non-critical — if the check fails, we just don't show the modal
+        console.warn('welcomeCheckNew failed:', e);
       });
     }
 
@@ -4897,12 +4904,30 @@
         setTimeout(function() { document.getElementById('w-display-name').style.borderColor = ''; }, 1500);
         return;
       }
+      // Suggestion B: loading state while DB write is in flight
+      var btn = document.getElementById('welcome-next-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Saving…';
       // Save display name + bio
       db.auth.getSession().then(function(sr) {
         var uid = sr && sr.data && sr.data.session ? sr.data.session.user.id : null;
-        if (!uid) return;
+        if (!uid) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="ti ti-arrow-right"></i> Next';
+          return;
+        }
         var bio = (document.getElementById('w-bio').value || '').trim();
-        db.from('profiles').update({ display_name: name, bio: bio || null }).eq('id', uid).then(function() {
+        db.from('profiles').update({ display_name: name, bio: bio || null }).eq('id', uid).then(function(res) {
+          // Bug 2: check for error before advancing
+          if (res && res.error) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="ti ti-arrow-right"></i> Next';
+            btn.closest('#welcome-step-0').querySelector('.welcome-hint') && (document.querySelector('#welcome-step-0 .welcome-hint').style.color = 'var(--red)');
+            // Show inline error near the button
+            var errEl = document.getElementById('welcome-next-error');
+            if (errEl) { errEl.textContent = 'Could not save — please try again.'; errEl.style.display = 'block'; }
+            return;
+          }
           // Advance to step 1
           document.getElementById('welcome-step-0').style.display = 'none';
           document.getElementById('welcome-step-1').style.display = 'block';
@@ -4920,7 +4945,27 @@
     function welcomeFinish() {
       db.auth.getSession().then(function(sr) {
         var uid = sr && sr.data && sr.data.session ? sr.data.session.user.id : null;
-        if (uid) localStorage.setItem('ds_welcome_done_' + uid, '1');
+        if (!uid) { document.getElementById('welcome-overlay').classList.remove('open'); return; }
+        // Bug 1 / Suggestion A: read selected interest buttons and derive a role string
+        var selected = [];
+        document.querySelectorAll('#w-interests .w-tag-btn.active').forEach(function(btn) {
+          selected.push(btn.dataset.val);
+        });
+        var hasWriter  = selected.indexOf('writing') !== -1;
+        var hasArtist  = selected.indexOf('art')     !== -1;
+        var hasReader  = selected.indexOf('reading') !== -1 || selected.indexOf('community') !== -1;
+        var role = 'Reader';
+        if (hasWriter && hasArtist && hasReader) role = 'Writer, Artist & Reader';
+        else if (hasWriter && hasArtist)         role = 'Writer & Artist';
+        else if (hasWriter && hasReader)         role = 'Writer & Reader';
+        else if (hasArtist && hasReader)         role = 'Artist & Reader';
+        else if (hasWriter)                      role = 'Writer';
+        else if (hasArtist)                      role = 'Artist';
+        // Save role to profile (fire-and-forget — don't block closing on this)
+        if (selected.length > 0) {
+          db.from('profiles').update({ role: role }).eq('id', uid).then(function() {}).catch(function() {});
+        }
+        localStorage.setItem('ds_welcome_done_' + uid, '1');
         document.getElementById('welcome-overlay').classList.remove('open');
       });
     }

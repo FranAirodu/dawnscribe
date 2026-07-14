@@ -773,14 +773,14 @@
       var fwRes=await db.from('work_follows').select('work_id').eq('user_id',uid);
       var workIds=(fwRes.data||[]).map(function(r){return r.work_id;});
       if(!workIds.length){ allData.novels=[]; renderBatch('novels',false); return; }
-      var chapRes=await db.from('chapters').select('id,chapter_number,title,created_at,work_id').in('work_id',workIds).eq('status','published').order('created_at',{ascending:false}).limit(60);
+      var chapRes=await db.from('chapters').select('id,chapter_number,title,created_at,work_id').in('work_id',workIds).in('status',['published','one-shot']).order('created_at',{ascending:false}).limit(60);
       var rows=chapRes.data||[];
       if(!rows.length){ allData.novels=[]; renderBatch('novels',false); return; }
       var wIds=[...new Set(rows.map(function(c){return c.work_id;}))];
       var {data:wData}=await db.from('works').select('id,title,cover_url').in('id',wIds);
       var wMap={};(wData||[]).forEach(function(w){wMap[w.id]=w;});
       rows.forEach(function(c){c.works=wMap[c.work_id]||null;});
-      var {data:allChaps}=await db.from('chapters').select('id,work_id,chapter_number').in('work_id',wIds).eq('status','published');
+      var {data:allChaps}=await db.from('chapters').select('id,work_id,chapter_number').in('work_id',wIds).in('status',['published','one-shot']);
       var totalMap={};(allChaps||[]).forEach(function(c){ if(!totalMap[c.work_id]) totalMap[c.work_id]=0; totalMap[c.work_id]++; });
       rows.forEach(function(c){c.totalChapters=totalMap[c.work_id]||0;});
       var {data:progData}=await db.from('reading_progress').select('work_id,chapter_id,chapter_number').eq('user_id',uid).in('work_id',wIds).order('chapter_number',{ascending:false});
