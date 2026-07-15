@@ -57,6 +57,20 @@
     .follow-btn.following{background:transparent;border:1px solid var(--border);color:var(--text2);}
     .follow-btn.following:hover{border-color:var(--red);color:var(--red);}
 
+    /* TIP WIDGET */
+    .tip-widget{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
+    .tip-widget-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px;}
+    .tip-btn-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+    .tip-ember-btn{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:#f97316;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:4px;}
+    .tip-ember-btn:hover{border-color:#f97316;background:rgba(249,115,22,0.08);}
+    .tip-ember-btn:disabled{opacity:0.4;cursor:not-allowed;}
+    .tip-celestial-btn{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 14px;color:#a78bfa;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:5px;}
+    .tip-celestial-btn:hover{border-color:#a78bfa;background:rgba(167,139,250,0.08);}
+    .tip-celestial-btn:disabled{opacity:0.4;cursor:not-allowed;}
+    .tip-result{font-size:12px;color:var(--text2);margin-top:8px;min-height:18px;}
+    .tip-counts{display:flex;gap:12px;margin-top:10px;font-size:12px;color:var(--text3);}
+    .tip-counts span{display:flex;align-items:center;gap:4px;}
+
     /* COLLAB TAG */
     .collab-tag{background:rgba(45,212,191,0.07);border:1px solid rgba(45,212,191,0.2);border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:12px;margin-bottom:20px;text-decoration:none;transition:border-color 0.2s;}
     .collab-tag:hover{border-color:rgba(45,212,191,0.4);}
@@ -550,6 +564,9 @@
     var myReaction = null;   // current user's reaction key or null
     var reactionCounts = {}; // { love: 3, fire: 1, … }
     var isFollowing = false;
+    var viewerEmberBalance = 0;
+    var viewerCelestialBalance = 0;
+    var alreadyTippedToday = false;
 
     function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function applyDocumentLang(code){
@@ -630,6 +647,27 @@
           .eq('following_id', data.profiles.id)
           .maybeSingle();
         isFollowing = !!fw;
+      }
+
+      // Load viewer's ember + celestial balances (for tip widget)
+      if(session && session.user.id !== data.author_id){
+        var todayUTC = new Date(); todayUTC.setUTCHours(0,0,0,0);
+        var [embRes, celRes, tipRes] = await Promise.all([
+          Promise.resolve(db.from('user_embers').select('balance').eq('user_id', session.user.id).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('user_celestial_flames').select('balance').eq('user_id', session.user.id).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('ember_spends').select('id').eq('user_id', session.user.id).eq('spend_type', 'artwork_tip').gte('created_at', todayUTC.toISOString()).limit(100)).catch(function(){ return {}; })
+        ]);
+        viewerEmberBalance = (embRes.data && embRes.data.balance) || 0;
+        viewerCelestialBalance = (celRes.data && celRes.data.balance) || 0;
+        // Check if any of today's tips are for this artwork (client-side filter avoids JSONB query issues)
+        if (tipRes.data && tipRes.data.length > 0) {
+          var ids = tipRes.data.map(function(r){ return r.id; });
+          var { data: exactTip } = await db.from('ember_spends').select('id,result')
+            .in('id', ids).limit(100);
+          alreadyTippedToday = !!(exactTip && exactTip.some(function(r){
+            return r.result && r.result.work_id === workId;
+          }));
+        }
       }
 
       // Owner bar
@@ -759,6 +797,26 @@
               ? '<button class="' + followBtnClass + '" id="follow-btn" onclick="toggleFollow()">' + followBtnContent + '</button>'
               : '')
         + '</div>'
+        + (session && session.user.id !== workData.author_id
+            ? '<div class="tip-widget">'
+                + '<div class="tip-widget-label">Support this artist</div>'
+                + '<div class="tip-btn-row">'
+                  + '<button class="tip-ember-btn" onclick="giveArtworkEmbers(1)" id="tip-ember-1"'
+                    + (viewerEmberBalance < 1 || alreadyTippedToday ? ' disabled' : '') + '>'
+                    + '<i class="ti ti-flame"></i> Give 1 Ember'
+                    + '</button>'
+                  + '<button class="tip-celestial-btn" id="tip-celestial-btn" onclick="giveArtworkCelestialFlame()"'
+                    + (viewerCelestialBalance < 1 ? ' disabled' : '') + '>'
+                    + '✦ Celestial Flame'
+                    + '</button>'
+                + '</div>'
+                + '<div class="tip-result" id="tip-result">' + (alreadyTippedToday ? 'You\'ve already sent an Ember to this artwork today. Come back tomorrow!' : '') + '</div>'
+                + '<div class="tip-counts">'
+                  + '<span><i class="ti ti-flame" style="color:#f97316;"></i> <span id="artwork-ember-count">' + (workData.artwork_ember_count || 0) + '</span> Embers</span>'
+                  + '<span>✦ <span id="artwork-celestial-count">' + (workData.celestial_flame_count || 0) + '</span> Celestial Flames</span>'
+                + '</div>'
+              + '</div>'
+            : '')
 
         // Collab tag (fan art for novel - existing)
         + collabHtml
@@ -992,6 +1050,72 @@
     });
 
     // ── FOLLOW
+    // ── ARTWORK TIPPING ─────────────────────────────────────────────
+    async function giveArtworkEmbers(amount) {
+      if (!session) return;
+      var resultEl = document.getElementById('tip-result');
+      var btn = document.getElementById('tip-ember-1');
+      if (btn) btn.disabled = true;
+      resultEl.textContent = 'Sending…';
+
+      var { data, error } = await db.rpc('give_artwork_embers', { p_work_id: workId, p_amount: amount });
+
+      if (error || !data) {
+        resultEl.textContent = 'Something went wrong: ' + (error && error.message ? error.message : 'unknown error');
+        if (btn) btn.disabled = alreadyTippedToday || viewerEmberBalance < 1;
+      } else if (!data.success) {
+        var msgs = {
+          not_authenticated: 'You must be logged in.',
+          own_work: 'You can\'t tip your own artwork.',
+          invalid_amount: 'Invalid tip amount.',
+          artwork_not_found: 'Artwork not found.',
+          insufficient_embers: 'Not enough Embers. You have ' + (data.balance || 0) + '.',
+          already_tipped_today: 'You\'ve already sent an Ember to this artwork today. Come back tomorrow!'
+        };
+        resultEl.textContent = msgs[data.error] || 'Could not send Embers.';
+        if (data.error === 'already_tipped_today') alreadyTippedToday = true;
+        if (btn) btn.disabled = alreadyTippedToday || viewerEmberBalance < 1;
+      } else {
+        viewerEmberBalance = data.balance;
+        alreadyTippedToday = true;
+        var countEl = document.getElementById('artwork-ember-count');
+        if (countEl) countEl.textContent = data.artwork_ember_count;
+        resultEl.textContent = '🔥 Ember sent! Thank you for supporting this artist.';
+        window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: -1 } }));
+        if (btn) btn.disabled = true;
+      }
+    }
+
+    async function giveArtworkCelestialFlame() {
+      if (!session) return;
+      var resultEl = document.getElementById('tip-result');
+      var btn = document.getElementById('tip-celestial-btn');
+      if (btn) btn.disabled = true;
+      resultEl.textContent = 'Sending…';
+
+      var { data, error } = await db.rpc('give_celestial_flame', { p_work_id: workId });
+
+      if (error || !data) {
+        resultEl.textContent = 'Something went wrong. Please try again.';
+        if (btn) btn.disabled = viewerCelestialBalance < 1;
+      } else if (!data.success) {
+        var msgs = {
+          not_authenticated: 'You must be logged in.',
+          own_work: 'You can\'t gift your own artwork.',
+          work_not_found: 'Artwork not found.',
+          no_flames: 'You have no Celestial Flames. They are earned through prestige milestones.'
+        };
+        resultEl.textContent = msgs[data.error] || 'Could not send Celestial Flame.';
+        if (btn) btn.disabled = viewerCelestialBalance < 1;
+      } else {
+        viewerCelestialBalance = data.balance;
+        var countEl = document.getElementById('artwork-celestial-count');
+        if (countEl) countEl.textContent = data.celestial_flame_count;
+        resultEl.textContent = '✦ Celestial Flame gifted! The artist will cherish it.';
+        if (btn) btn.disabled = viewerCelestialBalance < 1;
+      }
+    }
+
     async function toggleFollow(){
       if(!session || !workData.profiles.id) return;
       var btn = document.getElementById('follow-btn');
