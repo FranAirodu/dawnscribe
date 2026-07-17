@@ -833,7 +833,7 @@ function dsApplyAccent(hex) {
       var { data: actRows } = await db.from('notifications')
         .select('id,type,message,work_id,chapter_id,created_at')
         .eq('user_id', uid)
-        .in('type', ['song_approved','song_rejected','fan_translation_linked','opinion_submitted','opinion_approved','opinion_featured','collab_request','echo','poll_closing'])
+        .in('type', ['song_approved','song_rejected','fan_translation_linked','opinion_submitted','opinion_approved','opinion_featured','quote_submitted','quote_approved','quote_rejected','question_submitted','question_answered','question_declined','collab_request','echo','poll_closing'])
         .order('created_at', { ascending: false })
         .limit(12);
       var clearedAct = dsGetClearedIds('activity');
@@ -885,6 +885,12 @@ function dsApplyAccent(hex) {
           else if(n.type==='opinion_submitted')  { iconColor='#ec4899'; icon='ti-message-heart';     title='💬 New Character Opinion'; }
           else if(n.type==='opinion_approved') { iconColor='#ec4899'; icon='ti-message-heart';     title='💬 Opinion Approved'; }
           else if(n.type==='opinion_featured') { iconColor='#f59e0b'; icon='ti-star';              title='⭐ Opinion Featured'; }
+          else if(n.type==='quote_submitted')  { iconColor='var(--gold,#f5c542)'; icon='ti-quote'; title='❝ New Quote Nomination'; }
+          else if(n.type==='quote_approved')   { iconColor='#22c55e'; icon='ti-quote';            title='❝ Quote Approved'; }
+          else if(n.type==='quote_rejected')   { iconColor='#ef4444'; icon='ti-quote';            title='❝ Quote Not Approved'; }
+          else if(n.type==='question_submitted'){ iconColor='#2dd4bf'; icon='ti-help-circle';     title='❓ New Character Question'; }
+          else if(n.type==='question_answered'){ iconColor='#2dd4bf'; icon='ti-message-check';    title='💬 Question Answered'; }
+          else if(n.type==='question_declined'){ iconColor='var(--text3)'; icon='ti-x';           title='❓ Question Declined'; }
           else if(n.type==='collab_request')   { iconColor='#f59e0b'; icon='ti-git-merge';         title='🤝 Collab Request'; }
           else if(n.type==='echo')             { iconColor='#f97316'; icon='ti-flame';             title='🔥 Echo on Chapter'; }
           else if(n.type==='poll_closing')     { iconColor='#f59e0b'; icon='ti-clock-exclamation'; title='📊 Poll Closing Soon'; }

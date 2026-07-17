@@ -253,6 +253,22 @@
     </div>
 
     <div class="section-divider" style="margin-top:20px;">
+      <div class="section-divider-label"><i class="ti ti-quote" style="color:var(--gold);"></i> Quote Nominations</div>
+      <div class="section-divider-line"></div>
+    </div>
+    <div class="notif-list" id="feed-comments-quotes">
+      <div class="loading-row"><i class="ti ti-loader"></i></div>
+    </div>
+
+    <div class="section-divider" style="margin-top:20px;">
+      <div class="section-divider-label"><i class="ti ti-help-circle" style="color:var(--accent);"></i> Character Questions</div>
+      <div class="section-divider-line"></div>
+    </div>
+    <div class="notif-list" id="feed-comments-questions">
+      <div class="loading-row"><i class="ti ti-loader"></i></div>
+    </div>
+
+    <div class="section-divider" style="margin-top:20px;">
       <div class="section-divider-label"><i class="ti ti-flame" style="color:#f97316;"></i> Echoes on Chapters</div>
       <div class="section-divider-line"></div>
     </div>
@@ -434,6 +450,12 @@
     } else if(cm._type==='opinion'){
       var charLabel2=cm._charName?' about “'+cm._charName+'”':' about a character';
       typeLabel='shared an opinion'+charLabel2+' in'; typeIcon='<i class="ti ti-message-heart" style="color:#ec4899;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#ec4899;';
+    } else if(cm._type==='quote'){
+      var charLabelQ=cm._charName?' for \u201c'+cm._charName+'\u201d':' for a character';
+      typeLabel='nominated a quote'+charLabelQ+' in'; typeIcon='<i class="ti ti-quote" style="color:var(--gold);font-size:11px;margin-right:3px;"></i>'; typeColor='color:var(--gold);';
+    } else if(cm._type==='question'){
+      var charLabelQu=cm._charName?' asked \u201c'+cm._charName+'\u201d':' asked a character';
+      typeLabel=charLabelQu+' a question in'; typeIcon='<i class="ti ti-help-circle" style="color:var(--accent);font-size:11px;margin-right:3px;"></i>'; typeColor='color:var(--accent);';
     } else if(cm._type==='echo'){
       typeLabel=''; typeIcon='<i class="ti ti-flame" style="color:#f97316;font-size:11px;margin-right:3px;"></i>'; typeColor='color:#f97316;';
     } else if(cm._type==='poll_closing'){
@@ -452,6 +474,10 @@
       }
       if(cm._type==='opinion'){
         if(cm.character_id){ sessionStorage.setItem('ds_open_char_id',cm.character_id); sessionStorage.setItem('ds_open_char_name',cm._charName||''); sessionStorage.setItem('ds_open_char_action','opinion'); }
+        window.location.href='story.html?id='+cm.work_id; return;
+      }
+      if(cm._type==='quote'||cm._type==='question'){
+        if(cm.character_id){ sessionStorage.setItem('ds_open_char_id',cm.character_id); sessionStorage.setItem('ds_open_char_name',cm._charName||''); sessionStorage.setItem('ds_open_char_action',cm._type); }
         window.location.href='story.html?id='+cm.work_id; return;
       }
       if(cm._type==='echo'){
@@ -533,6 +559,10 @@
     else if(n.type==='new_follower'){ iconColor='#2dd4bf'; icon='ti-user-check'; title='\uD83D\uDC64 New Follower'; subtitle=esc(n.message||'New follower'); }
     else if(n.type==='opinion_approved'){ iconColor='#ec4899'; icon='ti-message-heart'; title='\uD83D\uDCAC Opinion Approved'; subtitle=esc(n.message||''); }
     else if(n.type==='opinion_featured'){ iconColor='#f59e0b'; icon='ti-star'; title='\u2B50 Opinion Featured'; subtitle=esc(n.message||''); }
+    else if(n.type==='quote_approved'){ iconColor='#22c55e'; icon='ti-quote'; title='\u275D Quote Approved'; subtitle=esc(n.message||''); }
+    else if(n.type==='quote_rejected'){ iconColor='#ef4444'; icon='ti-quote'; title='\u275D Quote Not Approved'; subtitle=esc(n.message||''); }
+    else if(n.type==='question_answered'){ iconColor='#2dd4bf'; icon='ti-message-check'; title='\uD83D\uDCAC Question Answered'; subtitle=esc(n.message||''); }
+    else if(n.type==='question_declined'){ iconColor='var(--text3)'; icon='ti-x'; title='\u2753 Question Declined'; subtitle=esc(n.message||''); }
     else if(n.type==='poll_closing'){ iconColor='#f59e0b'; icon='ti-clock-exclamation'; title='\uD83D\uDCCA Poll Closing Soon'; subtitle=esc(n.message||''); }
     else if(n.type==='collab_request'){ iconColor='#f59e0b'; icon='ti-git-merge'; title='\uD83E\uDD1D Collab Request'; subtitle=esc(n.message||''); }
     else if(n.type==='commission_request'){ iconColor='#2dd4bf'; icon='ti-brush'; title='\uD83C\uDFA8 Commission Request'; subtitle=esc(n.message||''); }
@@ -573,6 +603,8 @@
         chap:     document.getElementById('feed-comments-chap'),
         songs:    document.getElementById('feed-comments-songs'),
         opinions: document.getElementById('feed-comments-opinions'),
+        quotes:   document.getElementById('feed-comments-quotes'),
+        questions: document.getElementById('feed-comments-questions'),
         echoes:   document.getElementById('feed-comments-echoes'),
         polls:    document.getElementById('feed-comments-polls')
       };
@@ -583,6 +615,8 @@
         var target;
         if(cm._type==='song')         target=feeds.songs;
         else if(cm._type==='opinion') target=feeds.opinions;
+        else if(cm._type==='quote')   target=feeds.quotes;
+        else if(cm._type==='question') target=feeds.questions;
         else if(cm._type==='echo')    target=feeds.echoes;
         else if(cm._type==='poll_closing') target=feeds.polls;
         else                          target=feeds.chap;
@@ -590,7 +624,7 @@
       }
       shown[tab]=end;
       // Show empty state per section
-      var labels={chap:'No new comments yet.',songs:'No song suggestions yet.',opinions:'No character opinions yet.',echoes:'No echoes yet.',polls:'No poll reminders.'};
+      var labels={chap:'No new comments yet.',songs:'No song suggestions yet.',opinions:'No character opinions yet.',quotes:'No quote nominations yet.',questions:'No character questions yet.',echoes:'No echoes yet.',polls:'No poll reminders.'};
       Object.entries(feeds).forEach(function(kv){
         var k=kv[0],f=kv[1];
         if(f&&f.children.length===0) f.innerHTML='<div style="padding:10px 0 4px;color:var(--text3);font-size:12px;text-align:center;">'+labels[k]+'</div>';
@@ -817,7 +851,7 @@
     try {
       if(!myPrefs.notif_comment){
         allData.comments=[];
-        ['feed-comments-chap','feed-comments-songs','feed-comments-opinions','feed-comments-echoes','feed-comments-polls'].forEach(function(fid){
+        ['feed-comments-chap','feed-comments-songs','feed-comments-opinions','feed-comments-quotes','feed-comments-questions','feed-comments-echoes','feed-comments-polls'].forEach(function(fid){
           var f=document.getElementById(fid); if(f) f.innerHTML='<div style="padding:10px 0;color:var(--text3);font-size:12px;text-align:center;">Comment notifications are turned off.</div>';
         });
         setTabBadge('comments',0); return;
@@ -849,9 +883,19 @@
           var opRes=await db.from('character_opinions').select('id,body,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
           (opRes.data||[]).forEach(function(o){ o.content=o.body; o._type='opinion'; commentNotifs.push(o); });
         } catch(e3){}
+        // Quote nominations pending
+        try {
+          var qtRes=await db.from('character_quotes').select('id,quote_text,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
+          (qtRes.data||[]).forEach(function(q){ q.content=q.quote_text; q._type='quote'; commentNotifs.push(q); });
+        } catch(eq){}
+        // Character questions pending
+        try {
+          var cqRes=await db.from('character_questions').select('id,question,created_at,work_id,user_id,status,character_id').in('work_id',myNovelIds).neq('user_id',uid).eq('status','pending').order('created_at',{ascending:false}).limit(20);
+          (cqRes.data||[]).forEach(function(q){ q.content=q.question; q._type='question'; commentNotifs.push(q); });
+        } catch(ecq){}
         // Enrich song+opinion items with character names
         try {
-          var soItems=commentNotifs.filter(function(c){ return (c._type==='song'||c._type==='opinion')&&c.character_id; });
+          var soItems=commentNotifs.filter(function(c){ return (c._type==='song'||c._type==='opinion'||c._type==='quote'||c._type==='question')&&c.character_id; });
           if(soItems.length){
             var cIds=[...new Set(soItems.map(function(c){return c.character_id;}))];
             var {data:cRows}=await db.from('novel_characters').select('id,name').in('id',cIds);
@@ -914,7 +958,7 @@
       commentNotifs.sort(function(a,b){ var aU=!cleared[a.id],bU=!cleared[b.id]; if(aU!==bU) return aU?-1:1; return new Date(b.created_at)-new Date(a.created_at); });
       allData.comments=commentNotifs; renderBatch('comments',false);
       setTabBadge('comments', commentNotifs.filter(function(c){return !cleared[c.id];}).length);
-    } catch(e){ console.error('loadComments error:', e); ['feed-comments-chap','feed-comments-songs','feed-comments-opinions','feed-comments-echoes','feed-comments-polls'].forEach(function(fid){ var f=document.getElementById(fid); if(f) f.innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>'; }); }
+    } catch(e){ console.error('loadComments error:', e); ['feed-comments-chap','feed-comments-songs','feed-comments-opinions','feed-comments-quotes','feed-comments-questions','feed-comments-echoes','feed-comments-polls'].forEach(function(fid){ var f=document.getElementById(fid); if(f) f.innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Failed to load.</p></div>'; }); }
   }
 
   async function loadSocial(uid){
@@ -1005,7 +1049,7 @@
           });
         }
       }
-      var actRes=await db.from('notifications').select('id,type,message,work_id,chapter_id,created_at,is_read').eq('user_id',uid).in('type',['song_approved','song_rejected','fan_translation_linked','collab_request','commission_request','opinion_approved','opinion_featured','rally_answered']).order('created_at',{ascending:false}).limit(50);
+      var actRes=await db.from('notifications').select('id,type,message,work_id,chapter_id,created_at,is_read').eq('user_id',uid).in('type',['song_approved','song_rejected','fan_translation_linked','collab_request','commission_request','opinion_approved','opinion_featured','quote_approved','quote_rejected','question_answered','question_declined','rally_answered']).order('created_at',{ascending:false}).limit(50);
       var actRows = actRes.data||[];
       // Fetch artwork thumbnails for commission_request items
       var commissionWorkIds=[...new Set(actRows.filter(function(r){return r.type==='commission_request'&&r.work_id;}).map(function(r){return r.work_id;}))];
@@ -1077,7 +1121,7 @@
     for(var i=0;i<5;i++){ session=(await db.auth.getSession()).data.session; if(session) break; await new Promise(function(r){setTimeout(r,350);}); }
     if(!session){
       ['feed-novels','feed-artists','feed-comments','feed-social','feed-friend-requests','feed-collabs',
-       'feed-comments-chap','feed-comments-songs','feed-comments-opinions','feed-comments-echoes','feed-comments-polls'].forEach(function(id){
+       'feed-comments-chap','feed-comments-songs','feed-comments-opinions','feed-comments-quotes','feed-comments-questions','feed-comments-echoes','feed-comments-polls'].forEach(function(id){
         var el=document.getElementById(id); if(el) el.innerHTML='';
       });
       var loginMsg='<div class="empty-state"><i class="ti ti-lock"></i><p>Please <a href="auth.html" style="color:var(--accent);">log in</a> to view notifications.</p></div>';

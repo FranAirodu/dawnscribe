@@ -1682,6 +1682,9 @@ window.CharacterTitles = (function() {
         ta.value = '';
         nominateBtn.disabled = false;
         ctToast('Quote sent to the author for approval!', 'ti-quote');
+        ctNotifyWorkAuthor(workId, uid, char.id, 'quote_submitted', function(n, t) {
+          return n + ' nominated a quote for ' + char.name + ' in \u201c' + t + '\u201d';
+        });
       });
     }
     // Owner: pending quotes panel
@@ -1693,19 +1696,21 @@ window.CharacterTitles = (function() {
           pendingQuotes.map(function(q) {
             return '<div class="ct-quote-row pending" data-pend-quote="' + esc(q.id) + '"><div class="ct-quote-row-text">' + esc('\u201c' + q.quote_text + '\u201d') + '</div>' +
               '<div class="ct-quote-row-actions">' +
-                '<button class="ct-exp-approve" data-qa="' + esc(q.id) + '"><i class="ti ti-check"></i></button>' +
-                '<button class="ct-exp-reject" data-qr="' + esc(q.id) + '"><i class="ti ti-x"></i></button>' +
+                '<button class="ct-exp-approve" data-qa="' + esc(q.id) + '" data-qu="' + esc(q.user_id || '') + '"><i class="ti ti-check"></i></button>' +
+                '<button class="ct-exp-reject" data-qr="' + esc(q.id) + '" data-qu="' + esc(q.user_id || '') + '"><i class="ti ti-x"></i></button>' +
               '</div></div>';
           }).join('');
         pendQuoteSlot.querySelectorAll('[data-qa]').forEach(function(b) {
           b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
             await Promise.resolve(db().from('character_quotes').update({ status: 'approved' }).eq('id', b.getAttribute('data-qa'))).catch(function(){});
+            ctNotifyUser(b.getAttribute('data-qu'), uid, workId, char.id, 'quote_approved', 'Your quote for ' + char.name + ' was approved by the author! \u275d');
             rerender();
           });
         });
         pendQuoteSlot.querySelectorAll('[data-qr]').forEach(function(b) {
           b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
             await Promise.resolve(db().from('character_quotes').update({ status: 'rejected' }).eq('id', b.getAttribute('data-qr'))).catch(function(){});
+            ctNotifyUser(b.getAttribute('data-qu'), uid, workId, char.id, 'quote_rejected', 'Your quote for ' + char.name + ' wasn\u2019t approved this time.');
             rerender();
           });
         });
@@ -1781,6 +1786,9 @@ window.CharacterTitles = (function() {
         ta.value = '';
         askBtn.disabled = false;
         ctToast('Question sent \u2014 the author will answer in-character!', 'ti-help-circle');
+        ctNotifyWorkAuthor(workId, uid, char.id, 'question_submitted', function(n, t) {
+          return n + ' asked ' + char.name + ' a question in \u201c' + t + '\u201d';
+        });
       });
     }
     card.querySelectorAll('.ct-q-pin-btn').forEach(function(btn) {
@@ -1799,6 +1807,8 @@ window.CharacterTitles = (function() {
         .then(function(res) {
           var pend = res.data || [];
           if (!pend.length) return;
+          var pendQById = {};
+          pend.forEach(function(q) { pendQById[q.id] = q; });
           pendQSlot.innerHTML = '<div class="ct-exp-form-title" style="padding:8px 12px 4px;">Waiting for an answer (' + pend.length + ')</div>' +
             pend.map(function(q) {
               var ctx = 'ctq-' + q.id;
@@ -1827,13 +1837,16 @@ window.CharacterTitles = (function() {
               if (res2 && res2.error) { b.disabled = false; ctToast('Could not save answer.', 'ti-x'); return; }
               if (window.CommentToolbar && CommentToolbar.clearAttachments) CommentToolbar.clearAttachments('ctq-' + qid);
               ctToast('Answered in-character!', 'ti-message-check');
+              ctNotifyUser((pendQById[qid] || {}).user_id, uid, workId, char.id, 'question_answered', char.name + ' answered your question! \ud83d\udcac');
               rerender();
             });
           });
           pendQSlot.querySelectorAll('[data-decline-q]').forEach(function(b) {
             b.addEventListener('click', async function(e) {
               e.stopPropagation(); b.disabled = true;
-              await Promise.resolve(db().from('character_questions').update({ status: 'declined' }).eq('id', b.getAttribute('data-decline-q'))).catch(function(){});
+              var _dqid = b.getAttribute('data-decline-q');
+              await Promise.resolve(db().from('character_questions').update({ status: 'declined' }).eq('id', _dqid)).catch(function(){});
+              ctNotifyUser((pendQById[_dqid] || {}).user_id, uid, workId, char.id, 'question_declined', 'Your question for ' + char.name + ' was declined by the author.');
               rerender();
             });
           });
@@ -2060,6 +2073,41 @@ window.CharacterTitles = (function() {
 
     document.body.appendChild(modal);
     _songModal = modal;
+  }
+
+  // ── NOTIFICATION HELPERS (quotes & questions) ─────────────────
+  async function ctNotifyWorkAuthor(workId, fromUid, charId, type, buildMsg) {
+    try {
+      if (!workId || !fromUid) return;
+      var _db = db();
+      var wRes = await _db.from('works').select('author_id,title').eq('id', workId).maybeSingle();
+      var w = wRes.data;
+      if (!w || !w.author_id || w.author_id === fromUid) return;
+      var meRes = await _db.from('profiles').select('display_name,username').eq('id', fromUid).maybeSingle();
+      var me = meRes.data || {};
+      var myName = me.display_name || me.username || 'Someone';
+      await _db.from('notifications').insert({
+        user_id: w.author_id,
+        type: type,
+        from_user_id: fromUid,
+        work_id: workId,
+        character_id: charId || null,
+        message: buildMsg(myName, w.title || 'your story')
+      });
+    } catch (e) {}
+  }
+  async function ctNotifyUser(targetUid, myUid, workId, charId, type, message) {
+    try {
+      if (!targetUid || targetUid === myUid) return;
+      await db().from('notifications').insert({
+        user_id: targetUid,
+        type: type,
+        from_user_id: myUid || null,
+        work_id: workId || null,
+        character_id: charId || null,
+        message: message
+      });
+    } catch (e) {}
   }
 
   // ── AURA PALETTE ──────────────────────────────────────────────
