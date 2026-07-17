@@ -309,6 +309,7 @@ function dsApplyAccent(hex) {
           </button>
           <div class="dd-accordion-body open">
             <a class="user-dropdown-item" id="dd-profile-link" href="profile.html"><i class="ti ti-user"></i> My Profile</a>
+            <a class="user-dropdown-item" href="library.html"><i class="ti ti-books"></i> My Library</a>
             <a class="user-dropdown-item" id="dd-friends-link" href="friends.html"><i class="ti ti-users"></i> Friends</a>
             <a class="user-dropdown-item" href="following.html#titles"><i class="ti ti-bookmark"></i> Following Titles</a>
             <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>

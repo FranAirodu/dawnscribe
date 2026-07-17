@@ -671,6 +671,7 @@
             </button>
             <div class="dd-accordion-body open">
               <a class="user-dropdown-item" id="dd-profile-link" href="profile.html"><i class="ti ti-user"></i> My Profile</a>
+              <a class="user-dropdown-item" href="library.html"><i class="ti ti-books"></i> My Library</a>
               <a class="user-dropdown-item" id="dd-friends-link" href="friends.html"><i class="ti ti-users"></i> Friends</a>
               <a class="user-dropdown-item" href="following.html#titles"><i class="ti ti-bookmark"></i> Following Titles</a>
               <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>
@@ -2699,20 +2700,28 @@
           .select('work_id').eq('user_id', uid)
           .order('updated_at',{ascending:false}).limit(10);
         var readIds = [...new Set((rp||[]).map(function(r){ return r.work_id; }).filter(Boolean))];
-        if (!readIds.length) return; // section stays hidden
 
         // Seed from up to 3 recently-read works so uncommon tag sets still
         // produce matches. Union all their tags, deduplicated.
-        var seedWorkIds = readIds.slice(0, 3);
-        var { data: seedWorks } = await db.from('works').select('id,title,tags_main').in('id', seedWorkIds);
-        if (!seedWorks || !seedWorks.length) return;
         var allSeedTags = [];
-        (seedWorks||[]).forEach(function(sw){
-          try { JSON.parse(sw.tags_main || '[]').forEach(function(t){ if(allSeedTags.indexOf(t)===-1) allSeedTags.push(t); }); } catch(e) {}
-        });
-        if (!allSeedTags.length) return;
-        // Label: name the most-recently-read seed that actually contributed tags
-        var labelSeed = seedWorks[0];
+        var labelSeed = null;   // set when seeding from reading history
+        var prefSeed = null;    // set when seeding from onboarding genre prefs
+        if (readIds.length) {
+          var seedWorkIds = readIds.slice(0, 3);
+          var { data: seedWorks } = await db.from('works').select('id,title,tags_main').in('id', seedWorkIds);
+          (seedWorks||[]).forEach(function(sw){
+            try { JSON.parse(sw.tags_main || '[]').forEach(function(t){ if(allSeedTags.indexOf(t)===-1) allSeedTags.push(t); }); } catch(e) {}
+          });
+          if (allSeedTags.length && seedWorks && seedWorks.length) labelSeed = seedWorks[0];
+        }
+        // Cold-start fallback: no reading history (or history had no tags) —
+        // seed from the genres picked in the welcome modal (user_tag_prefs).
+        if (!allSeedTags.length) {
+          var { data: prefs } = await db.from('user_tag_prefs').select('tag').eq('user_id', uid);
+          allSeedTags = [...new Set((prefs||[]).map(function(p){ return p.tag; }).filter(Boolean))];
+          if (!allSeedTags.length) return; // nothing to seed from — section stays hidden
+          prefSeed = allSeedTags[0];
+        }
 
         // Overlaps-on-text-column isn't expressible in PostgREST (tags_main is
         // JSON-in-text), so fetch recent published novels and match client-side.
@@ -2730,7 +2739,14 @@
         matches = matches.slice(0, 20);
         if (!matches.length) return;
         var labelEl = document.getElementById('foryou-title-label');
-        if (labelEl) labelEl.textContent = '\u201C' + labelSeed.title + '\u201D';
+        var accentEl = document.querySelector('#home-section-foryou .label-accent');
+        if (labelSeed) {
+          if (accentEl) accentEl.textContent = 'Because You Read';
+          if (labelEl) labelEl.textContent = '\u201C' + labelSeed.title + '\u201D';
+        } else {
+          if (accentEl) accentEl.textContent = 'Because You Like';
+          if (labelEl) labelEl.textContent = prefSeed + (allSeedTags.length > 1 ? ' & more' : '');
+        }
         var aIds = [...new Set(matches.map(function(w){ return w.author_id; }).filter(Boolean))];
         var profMap = {};
         if (aIds.length) { var { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', aIds); (profs||[]).forEach(function(p){ profMap[p.id]=p; }); }
@@ -4709,6 +4725,7 @@
       <div class="welcome-steps">
         <div class="welcome-step-dot active" id="wdot-0"></div>
         <div class="welcome-step-dot" id="wdot-1"></div>
+        <div class="welcome-step-dot" id="wdot-2"></div>
       </div>
 
       <!-- Step 0: Display name -->
@@ -4759,6 +4776,18 @@
             .welcome-quick-link:hover { border-color:var(--accent);color:var(--accent); }
             .welcome-quick-link i { font-size:17px; }
           </style>
+        </div>
+        <button class="welcome-btn" onclick="welcomeStep1Next()"><i class="ti ti-arrow-right"></i> Next</button>
+      </div>
+
+      <!-- Step 2: Genre taste -->
+      <div id="welcome-step-2" style="display:none;">
+        <div class="welcome-field">
+          <div class="welcome-label">Pick a few genres you love</div>
+          <span class="welcome-hint" style="display:block;margin-bottom:6px;">We'll use these to recommend stories on your homepage. (Optional — pick as many as you like.)</span>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;" id="w-genres">
+            <span style="font-size:12px;color:var(--text3);">Loading genres…</span>
+          </div>
         </div>
         <button class="welcome-btn" onclick="welcomeFinish()"><i class="ti ti-sparkles"></i> Let's go!</button>
       </div>
@@ -4868,6 +4897,9 @@
     function welcomeCheckNew(uid) {
       if (!uid) return;
       if (localStorage.getItem('ds_welcome_done_' + uid)) return;
+      // "Skip for now" = 24h snooze, not permanent dismissal
+      var snoozed = parseInt(localStorage.getItem('ds_welcome_snooze_' + uid) || '0', 10);
+      if (snoozed && (Date.now() - snoozed) < 24 * 60 * 60 * 1000) return;
       // Bug 3: wrap in try/catch so a failed profile lookup never throws
       Promise.resolve(
         db.from('profiles').select('display_name').eq('id', uid).maybeSingle()
@@ -4943,6 +4975,40 @@
       el.classList.toggle('active');
     }
 
+    var _wGenresLoaded = false;
+    function welcomeLoadGenres() {
+      if (_wGenresLoaded) return;
+      _wGenresLoaded = true;
+      var wrap = document.getElementById('w-genres');
+      Promise.resolve(
+        db.from('tags').select('name').eq('category', 'Core Genres').order('name')
+      ).then(function(res) {
+        if (!wrap) return;
+        var rows = (res && res.data) || [];
+        if (!rows.length) { wrap.innerHTML = '<span style="font-size:12px;color:var(--text3);">No genres available right now — you can skip this step.</span>'; return; }
+        wrap.innerHTML = '';
+        rows.forEach(function(t) {
+          var b = document.createElement('button');
+          b.className = 'w-tag-btn';
+          b.dataset.val = t.name;
+          b.textContent = t.name;
+          b.addEventListener('click', function(){ toggleWTag(b); });
+          wrap.appendChild(b);
+        });
+      }).catch(function() {
+        if (wrap) wrap.innerHTML = '<span style="font-size:12px;color:var(--text3);">Could not load genres — you can skip this step.</span>';
+      });
+    }
+
+    function welcomeStep1Next() {
+      document.getElementById('welcome-step-1').style.display = 'none';
+      document.getElementById('welcome-step-2').style.display = 'block';
+      document.getElementById('wdot-1').classList.remove('active');
+      document.getElementById('wdot-2').classList.add('active');
+      _welcomeStep = 2;
+      welcomeLoadGenres();
+    }
+
     function welcomeFinish() {
       db.auth.getSession().then(function(sr) {
         var uid = sr && sr.data && sr.data.session ? sr.data.session.user.id : null;
@@ -4966,6 +5032,17 @@
         if (selected.length > 0) {
           db.from('profiles').update({ role: role }).eq('id', uid).then(function() {}).catch(function() {});
         }
+        // Save genre taste prefs (fire-and-forget). Upsert so re-running the
+        // modal never errors on the (user_id, tag) primary key.
+        var genreRows = [];
+        document.querySelectorAll('#w-genres .w-tag-btn.active').forEach(function(btn) {
+          if (btn.dataset.val) genreRows.push({ user_id: uid, tag: btn.dataset.val });
+        });
+        if (genreRows.length > 0) {
+          Promise.resolve(
+            db.from('user_tag_prefs').upsert(genreRows, { onConflict: 'user_id,tag' })
+          ).then(function() {}).catch(function() {});
+        }
         localStorage.setItem('ds_welcome_done_' + uid, '1');
         document.getElementById('welcome-overlay').classList.remove('open');
       });
@@ -4974,7 +5051,10 @@
     function welcomeDismiss() {
       db.auth.getSession().then(function(sr) {
         var uid = sr && sr.data && sr.data.session ? sr.data.session.user.id : null;
-        if (uid) localStorage.setItem('ds_welcome_done_' + uid, '1');
+        // "Skip for now" snoozes for 24h; only finishing the modal sets the
+        // permanent ds_welcome_done flag. (Once they set a display name,
+        // welcomeCheckNew stops showing the modal anyway.)
+        if (uid) localStorage.setItem('ds_welcome_snooze_' + uid, String(Date.now()));
         document.getElementById('welcome-overlay').classList.remove('open');
       });
     }

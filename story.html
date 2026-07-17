@@ -1370,6 +1370,35 @@
         removeItem.addEventListener('mouseout',  function() { this.style.background = ''; });
         rlDropdown.appendChild(removeItem);
       }
+      // ── Named lists section ──
+      if (myNamedLists.length) {
+        var nlHead = document.createElement('div');
+        nlHead.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text3);padding:8px 14px 3px;border-top:1px solid var(--border);';
+        nlHead.textContent = 'Add to list';
+        rlDropdown.appendChild(nlHead);
+        myNamedLists.forEach(function(lst) {
+          var inList = readingListListId === lst.id;
+          var li = document.createElement('button');
+          li.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text);text-align:left;' + (inList ? 'background:rgba(45,212,191,0.15);color:var(--accent);' : '');
+          li.innerHTML = '<i class="ti ti-playlist" style="font-size:14px;"></i>' + escHtml(lst.name) + (inList ? ' \u2713' : '');
+          li.addEventListener('click', function() {
+            rlDropdown.style.display = 'none';
+            setReadingListList(inList ? null : lst.id, lst.name);
+          });
+          li.addEventListener('mouseover', function() { if (!inList) this.style.background = 'var(--bg3)'; });
+          li.addEventListener('mouseout',  function() { if (!inList) this.style.background = ''; });
+          rlDropdown.appendChild(li);
+        });
+      }
+      // ── Library link footer ──
+      var libLink = document.createElement('a');
+      libLink.href = 'library.html';
+      libLink.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;font-size:12px;color:var(--accent);text-decoration:none;border-top:1px solid var(--border);font-weight:700;';
+      libLink.innerHTML = '<i class="ti ti-books" style="font-size:14px;"></i>Open your Library \u2192';
+      libLink.addEventListener('mouseover', function() { this.style.background = 'var(--bg3)'; });
+      libLink.addEventListener('mouseout',  function() { this.style.background = ''; });
+      rlDropdown.appendChild(libLink);
+
       rlBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         rlDropdown.style.display = rlDropdown.style.display === 'none' ? 'block' : 'none';
@@ -1431,6 +1460,8 @@
     // ── FOLLOW STORY ─────────────────────────────────────────────
     var isFollowingWork = false;
     var readingListStatus = null; // 'reading'|'plan_to_read'|'completed'|'on_hold'|'dropped'|null
+    var readingListListId = null; // uuid of the named list this entry belongs to, or null
+    var myNamedLists = [];        // viewer's user_reading_lists rows (loaded once)
 
     // ── OFFERING STATE ───────────────────────────────────────────
     var offeringState = { count: 0, tier: null, hasOffered: false, chaptersRead: 0 };
@@ -1444,11 +1475,20 @@
         .maybeSingle();
       isFollowingWork = !!(result.data);
       var rle = await db.from('reading_list_entries')
-        .select('status')
+        .select('status,list_id')
         .eq('user_id', currentSession.user.id)
         .eq('work_id', workData.id)
         .maybeSingle();
       readingListStatus = rle.data ? rle.data.status : null;
+      readingListListId = rle.data ? rle.data.list_id : null;
+      // Named lists for the "Add to list" section of the dropdown (best-effort)
+      try {
+        var nlRes = await db.from('user_reading_lists')
+          .select('id,name')
+          .eq('user_id', currentSession.user.id)
+          .order('created_at', { ascending: false });
+        myNamedLists = nlRes.data || [];
+      } catch(e) { myNamedLists = []; }
     }
 
     // ── LOAD OFFERING STATE ──────────────────────────────────────
@@ -2131,6 +2171,7 @@
       if (!newStatus) {
         await db.from('reading_list_entries').delete().eq('user_id', uid).eq('work_id', wid);
         readingListStatus = null;
+        readingListListId = null;
         showToast('Removed from reading list', 'ti-books');
       } else {
         var rlLabels2 = { reading: 'Reading', plan_to_read: 'Plan to Read', completed: 'Completed', on_hold: 'On Hold', dropped: 'Dropped' };
@@ -2138,6 +2179,30 @@
         readingListStatus = newStatus;
         showToast('List: ' + (rlLabels2[newStatus]||newStatus), 'ti-circle-check');
       }
+      renderActions();
+    }
+
+    // ── NAMED LIST MEMBERSHIP ────────────────────────────────────
+    // Files this story into (or out of) one of the viewer's custom lists.
+    // If the story isn't in the library yet, the upsert creates the entry
+    // with a default 'plan_to_read' status so list membership always has
+    // a backing row. Passing null clears list membership only.
+    async function setReadingListList(listId, listName) {
+      if (!currentSession) { window.location.href = 'auth.html'; return; }
+      var uid = currentSession.user.id;
+      var wid = workData.id;
+      var res = await db.from('reading_list_entries').upsert({
+        user_id: uid,
+        work_id: wid,
+        status: readingListStatus || 'plan_to_read',
+        list_id: listId,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,work_id' });
+      if (res.error) { showToast('Could not update list.', 'ti-x'); return; }
+      if (!readingListStatus && listId) readingListStatus = 'plan_to_read';
+      readingListListId = listId;
+      if (listId) showToast('Added to "' + (listName || 'list') + '"', 'ti-playlist');
+      else showToast('Removed from list.', 'ti-playlist');
       renderActions();
     }
 

@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  (function() {
+    var t = localStorage.getItem('ds_theme');
+    if (t) { document.documentElement.setAttribute('data-theme', t); }
+  })();
+</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Library</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:#2dd4bf;text-decoration:none;letter-spacing:1px;}
+    .logo span { color: #f1f0ff; transition: color 0.3s; }
+    html[data-theme="light"] .logo span { color: #0a0a0f; }
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .page{max-width:1100px;margin:0 auto;padding:48px 24px 80px;}
+    .page-header{margin-bottom:28px;}
+    .page-title{font-family:'Cinzel',serif;font-size:28px;font-weight:700;color:var(--text);margin-bottom:6px;}
+    .page-title span{color:var(--accent);}
+    .page-subtitle{font-size:14px;color:var(--text3);}
+    .auth-wall{text-align:center;padding:80px 24px;color:var(--text3);}
+    .auth-wall i{font-size:44px;display:block;margin-bottom:14px;opacity:0.4;}
+    .auth-wall h2{font-family:'Cinzel',serif;font-size:20px;color:var(--text);margin-bottom:8px;}
+    .auth-wall a{display:inline-flex;align-items:center;gap:7px;margin-top:16px;background:var(--accent);color:#04211d;font-weight:700;font-size:14px;padding:10px 22px;border-radius:9px;text-decoration:none;}
+    .tab-nav{display:flex;gap:4px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:4px;margin-bottom:28px;width:fit-content;max-width:100%;overflow-x:auto;}
+    .tab-btn{padding:9px 16px;border:none;border-radius:8px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;background:transparent;color:var(--text3);display:flex;align-items:center;gap:7px;transition:all 0.2s;white-space:nowrap;}
+    .tab-btn:hover{color:var(--text2);}
+    .tab-btn.active{background:var(--bg3);color:var(--accent);}
+    .tab-count{font-size:11px;background:rgba(45,212,191,0.12);color:var(--accent);padding:1px 7px;border-radius:12px;font-weight:700;}
+    .tab-btn:not(.active) .tab-count{background:var(--bg3);color:var(--text3);}
+    .lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+    .lib-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;gap:14px;transition:border-color 0.2s;position:relative;}
+    .lib-card:hover{border-color:rgba(45,212,191,0.3);}
+    .lib-cover{width:62px;height:88px;border-radius:7px;background:var(--bg3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:22px;}
+    .lib-cover img{width:100%;height:100%;object-fit:cover;}
+    .lib-body{flex:1;min-width:0;display:flex;flex-direction:column;}
+    .lib-title{font-size:14px;font-weight:700;color:var(--text);text-decoration:none;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .lib-title:hover{color:var(--accent);}
+    .lib-author{font-size:12px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .lib-author a{color:var(--accent);text-decoration:none;}
+    .lib-progress-wrap{margin-top:8px;}
+    .lib-progress-bar{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+    .lib-progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width 0.3s;}
+    .lib-progress-label{font-size:11px;color:var(--text3);margin-top:3px;}
+    .lib-actions{display:flex;gap:6px;margin-top:auto;padding-top:10px;flex-wrap:wrap;}
+    .lib-btn{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;padding:6px 12px;border-radius:7px;cursor:pointer;text-decoration:none;border:1px solid var(--border);background:var(--bg3);color:var(--text2);transition:all 0.2s;}
+    .lib-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .lib-btn.primary{background:rgba(45,212,191,0.12);border-color:var(--accent);color:var(--accent);}
+    .lib-menu-btn{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:4px;border-radius:6px;}
+    .lib-menu-btn:hover{color:var(--text);background:var(--bg3);}
+    .lib-menu{display:none;position:absolute;top:34px;right:10px;z-index:60;background:var(--bg2);border:1px solid var(--border);border-radius:9px;box-shadow:0 6px 20px rgba(0,0,0,.35);min-width:170px;overflow:hidden;}
+    .lib-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;font-family:'Lato',sans-serif;color:var(--text);text-align:left;}
+    .lib-menu button:hover{background:var(--bg3);}
+    .lib-menu button.danger{color:var(--red);}
+    .lib-menu button.current{color:var(--accent);}
+    .lib-menu .menu-sep{height:1px;background:var(--border);margin:4px 0;}
+    .lib-menu .menu-head{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text3);padding:7px 14px 3px;}
+    .empty-state{text-align:center;padding:56px 24px;color:var(--text3);}
+    .empty-state i{font-size:40px;display:block;margin-bottom:12px;opacity:0.35;}
+    .empty-state a{color:var(--accent);font-weight:700;text-decoration:none;}
+    .list-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
+    .list-head-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;}
+    .list-head-title i{color:var(--accent);}
+    .list-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;background:rgba(45,212,191,0.12);color:var(--accent);}
+    .list-badge.private{background:var(--bg3);color:var(--text3);}
+    .list-desc{font-size:12px;color:var(--text3);margin:-10px 0 14px;}
+    .named-list-block{margin-bottom:36px;}
+    .new-list-btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;padding:8px 16px;border-radius:8px;cursor:pointer;border:1px solid var(--accent);background:rgba(45,212,191,0.1);color:var(--accent);transition:all 0.2s;}
+    .new-list-btn:hover{background:rgba(45,212,191,0.2);}
+    .icon-btn{background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:4px;border-radius:6px;}
+    .icon-btn:hover{color:var(--red);background:var(--bg3);}
+    /* modal */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(3px);}
+    .modal-overlay.open{display:flex;}
+    .modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;width:100%;max-width:420px;}
+    .modal-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+    .modal-title i{color:var(--accent);}
+    .form-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 13px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;margin-bottom:12px;}
+    .form-input:focus{outline:none;border-color:var(--accent);}
+    .modal-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:16px;cursor:pointer;}
+    .modal-btns{display:flex;gap:8px;justify-content:flex-end;}
+    .modal-btn{padding:9px 18px;border-radius:8px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--text2);}
+    .modal-btn.primary{background:var(--accent);border-color:var(--accent);color:#04211d;}
+    /* toast */
+    #toast-wrap{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:900;display:flex;flex-direction:column;gap:8px;align-items:center;}
+    .toast{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:11px 18px;font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px;box-shadow:0 6px 22px rgba(0,0,0,.4);animation:toastIn 0.25s ease;}
+    .toast i{color:var(--accent);}
+    @keyframes toastIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+    @media (max-width:640px){
+      nav{padding:0 16px;}
+      .page{padding:32px 14px 64px;}
+      .lib-grid{grid-template-columns:1fr;}
+    }
+  </style>
+</head>
+<body>
+  <nav style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </nav>
+
+  <div class="page">
+    <div class="page-header">
+      <h1 class="page-title">Your <span>Library</span></h1>
+      <p class="page-subtitle">Everything you're reading, planning, and shelving — all in one place.</p>
+    </div>
+
+    <div id="auth-wall" style="display:none;">
+      <div class="auth-wall">
+        <i class="ti ti-lock"></i>
+        <h2>Sign in to see your library</h2>
+        <p>You need to be logged in to view this page.</p>
+        <a href="auth.html"><i class="ti ti-login"></i> Sign In</a>
+      </div>
+    </div>
+
+    <div id="library-content" style="display:none;">
+      <div class="tab-nav" id="tab-nav">
+        <button class="tab-btn active" data-tab="reading" onclick="setTab('reading')"><i class="ti ti-book-2"></i> Reading <span class="tab-count" id="count-reading">0</span></button>
+        <button class="tab-btn" data-tab="plan_to_read" onclick="setTab('plan_to_read')"><i class="ti ti-bookmark"></i> Plan to Read <span class="tab-count" id="count-plan_to_read">0</span></button>
+        <button class="tab-btn" data-tab="completed" onclick="setTab('completed')"><i class="ti ti-circle-check"></i> Completed <span class="tab-count" id="count-completed">0</span></button>
+        <button class="tab-btn" data-tab="on_hold" onclick="setTab('on_hold')"><i class="ti ti-player-pause"></i> On Hold <span class="tab-count" id="count-on_hold">0</span></button>
+        <button class="tab-btn" data-tab="dropped" onclick="setTab('dropped')"><i class="ti ti-x"></i> Dropped <span class="tab-count" id="count-dropped">0</span></button>
+        <button class="tab-btn" data-tab="lists" onclick="setTab('lists')"><i class="ti ti-playlist"></i> My Lists <span class="tab-count" id="count-lists">0</span></button>
+      </div>
+
+      <div id="tab-panel-status">
+        <div class="lib-grid" id="status-grid"></div>
+        <div class="empty-state" id="status-empty" style="display:none;"></div>
+      </div>
+
+      <div id="tab-panel-lists" style="display:none;">
+        <div style="margin-bottom:22px;">
+          <button class="new-list-btn" onclick="openNewListModal()"><i class="ti ti-plus"></i> New List</button>
+        </div>
+        <div id="lists-container"></div>
+        <div class="empty-state" id="lists-empty" style="display:none;">
+          <i class="ti ti-playlist"></i>
+          <div>No custom lists yet. Create one to organize your favorites into shareable shelves.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- New list modal -->
+  <div class="modal-overlay" id="new-list-modal">
+    <div class="modal-box">
+      <div class="modal-title"><i class="ti ti-playlist"></i> Create a New List</div>
+      <input class="form-input" type="text" id="nl-name" placeholder="List name (e.g. Comfort Reads)" maxlength="60"/>
+      <input class="form-input" type="text" id="nl-desc" placeholder="Description (optional)" maxlength="200"/>
+      <label class="modal-check"><input type="checkbox" id="nl-public"/> Make this list public on my profile</label>
+      <div class="modal-btns">
+        <button class="modal-btn" onclick="closeNewListModal()">Cancel</button>
+        <button class="modal-btn primary" onclick="createList()"><i class="ti ti-plus"></i> Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-wrap"></div>
+
+  <script src="blockUtils.js"></script>
+  <script>
+    var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+    var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.db = db;
+
+    var currentSession = null;
+    var currentTab = 'reading';
+    var allEntries = [];        // reading_list_entries rows
+    var myLists = [];           // user_reading_lists rows
+    var worksMap = {};          // work_id -> work row (with _author, _progress)
+    // Platform convention: null/true = filtering ON, only explicit false = off.
+    var contentFilters = { gore: true, erotica: true, safe: false };
+
+    var STATUS_LABELS = { reading:'Reading', plan_to_read:'Plan to Read', completed:'Completed', on_hold:'On Hold', dropped:'Dropped' };
+    var STATUS_ICONS  = { reading:'ti-book-2', plan_to_read:'ti-bookmark', completed:'ti-circle-check', on_hold:'ti-player-pause', dropped:'ti-x' };
+
+    function escHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+      });
+    }
+
+    function showToast(msg, icon) {
+      var wrap = document.getElementById('toast-wrap');
+      var t = document.createElement('div');
+      t.className = 'toast';
+      t.innerHTML = '<i class="ti ' + (icon || 'ti-check') + '"></i>' + escHtml(msg);
+      wrap.appendChild(t);
+      setTimeout(function() { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; }, 2600);
+      setTimeout(function() { t.remove(); }, 3000);
+    }
+
+    function passesContentFilter(w) {
+      if (!w) return false;
+      if ((contentFilters.safe || contentFilters.gore) && w.content_rating_gore === true) return false;
+      if ((contentFilters.safe || contentFilters.erotica) && w.content_rating_erotica === true) return false;
+      return true;
+    }
+
+    // ── LOAD EVERYTHING ─────────────────────────────────────────
+    async function loadLibrary() {
+      var uid = currentSession.user.id;
+
+      // Viewer content filters (null/true = filter ON; only explicit false disables)
+      try {
+        var { data: prof } = await db.from('profiles')
+          .select('settings_filter_safe,settings_filter_gore,settings_filter_erotica')
+          .eq('id', uid).maybeSingle();
+        if (prof) {
+          contentFilters.safe    = prof.settings_filter_safe === true;
+          contentFilters.gore    = prof.settings_filter_gore !== false;
+          contentFilters.erotica = prof.settings_filter_erotica !== false;
+        }
+      } catch(e) {}
+
+      // Entries + named lists in parallel. Promise.resolve wrappers: builders lack .catch()
+      var [entRes, listRes] = await Promise.all([
+        Promise.resolve(db.from('reading_list_entries')
+          .select('id,work_id,status,list_id,updated_at,created_at')
+          .eq('user_id', uid).order('updated_at', { ascending: false })).catch(function(){ return {}; }),
+        Promise.resolve(db.from('user_reading_lists')
+          .select('id,name,description,is_public,created_at')
+          .eq('user_id', uid).order('created_at', { ascending: false })).catch(function(){ return {}; })
+      ]);
+      allEntries = entRes.data || [];
+      myLists = listRes.data || [];
+
+      // Fetch works + authors + progress for every referenced work
+      worksMap = {};
+      var workIds = [...new Set(allEntries.map(function(e){ return e.work_id; }).filter(Boolean))];
+      if (workIds.length) {
+        var { data: works } = await db.from('works')
+          .select('id,title,cover_url,author_id,chapters_count,is_published,content_rating_gore,content_rating_erotica')
+          .in('id', workIds);
+        (works || []).forEach(function(w){ worksMap[w.id] = w; });
+
+        var aIds = [...new Set((works || []).map(function(w){ return w.author_id; }).filter(Boolean))];
+        if (aIds.length) {
+          var { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', aIds);
+          var pMap = {}; (profs || []).forEach(function(p){ pMap[p.id] = p; });
+          Object.values(worksMap).forEach(function(w){ w._author = pMap[w.author_id] || null; });
+        }
+
+        try {
+          var { data: rp } = await db.from('reading_progress')
+            .select('work_id,chapter_id,chapter_number')
+            .eq('user_id', uid).in('work_id', workIds);
+          (rp || []).forEach(function(r){ if (worksMap[r.work_id]) worksMap[r.work_id]._progress = r; });
+        } catch(e) {}
+      }
+
+      updateCounts();
+      renderTab();
+    }
+
+    function visibleEntries() {
+      return allEntries.filter(function(e) {
+        var w = worksMap[e.work_id];
+        return w && passesContentFilter(w);
+      });
+    }
+
+    function updateCounts() {
+      var vis = visibleEntries();
+      Object.keys(STATUS_LABELS).forEach(function(st) {
+        var n = vis.filter(function(e){ return e.status === st; }).length;
+        var el = document.getElementById('count-' + st);
+        if (el) el.textContent = n;
+      });
+      var lc = document.getElementById('count-lists');
+      if (lc) lc.textContent = myLists.length;
+    }
+
+    // ── TABS ────────────────────────────────────────────────────
+    function setTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.tab === tab);
+      });
+      document.getElementById('tab-panel-status').style.display = (tab === 'lists') ? 'none' : 'block';
+      document.getElementById('tab-panel-lists').style.display = (tab === 'lists') ? 'block' : 'none';
+      renderTab();
+    }
+
+    function renderTab() {
+      if (currentTab === 'lists') { renderLists(); return; }
+      renderStatusGrid();
+    }
+
+    // ── STATUS GRID ─────────────────────────────────────────────
+    function buildCard(entry) {
+      var w = worksMap[entry.work_id];
+      var author = w._author;
+      var authorHtml = author
+        ? 'by <a href="profile.html?user=' + encodeURIComponent(author.username || '') + '">' + escHtml(author.display_name || author.username || 'Unknown') + '</a>'
+        : '';
+      var cover = w.cover_url
+        ? '<img src="' + escHtml(w.cover_url) + '" alt="" loading="lazy"/>'
+        : '<i class="ti ti-book"></i>';
+
+      var total = w.chapters_count || 0;
+      var prog = w._progress || null;
+      var current = prog && prog.chapter_number ? prog.chapter_number : 0;
+      var pct = (total > 0 && current > 0) ? Math.min(100, Math.round((current / total) * 100)) : 0;
+      var progressHtml = '';
+      if (entry.status === 'completed') {
+        progressHtml = '<div class="lib-progress-wrap"><div class="lib-progress-bar"><div class="lib-progress-fill" style="width:100%;background:var(--green);"></div></div>'
+          + '<div class="lib-progress-label">Finished' + (total ? ' \u00b7 ' + total + ' chapters' : '') + '</div></div>';
+      } else if (current > 0) {
+        progressHtml = '<div class="lib-progress-wrap"><div class="lib-progress-bar"><div class="lib-progress-fill" style="width:' + pct + '%;"></div></div>'
+          + '<div class="lib-progress-label">Ch. ' + current + (total ? ' of ' + total : '') + (pct ? ' \u00b7 ' + pct + '%' : '') + '</div></div>';
+      } else if (total > 0) {
+        progressHtml = '<div class="lib-progress-wrap"><div class="lib-progress-label">' + total + ' chapter' + (total === 1 ? '' : 's') + ' \u00b7 not started</div></div>';
+      }
+
+      var continueHtml;
+      if (prog && prog.chapter_id && entry.status !== 'completed') {
+        continueHtml = '<a class="lib-btn primary" href="chapter.html?id=' + escHtml(prog.chapter_id) + '"><i class="ti ti-player-play"></i> Continue</a>';
+      } else if (entry.status === 'completed') {
+        continueHtml = '<a class="lib-btn" href="story.html?id=' + escHtml(w.id) + '"><i class="ti ti-refresh"></i> Re-read</a>';
+      } else {
+        continueHtml = '<a class="lib-btn primary" href="story.html?id=' + escHtml(w.id) + '"><i class="ti ti-book"></i> Start</a>';
+      }
+
+      // Menu: status options + move-to-list + remove.
+      // onclick attributes with JSON-embedded ids: innerHTML-built nodes lose
+      // addEventListener bindings, so handlers must live in attributes.
+      var eid = JSON.stringify(entry.id);
+      var menuItems = '<div class="menu-head">Set status</div>';
+      Object.keys(STATUS_LABELS).forEach(function(st) {
+        var cur = entry.status === st;
+        menuItems += '<button class="' + (cur ? 'current' : '') + '" onclick=\'changeStatus(' + eid + ',"' + st + '")\'>'
+          + '<i class="ti ' + STATUS_ICONS[st] + '"></i>' + STATUS_LABELS[st] + (cur ? ' \u2713' : '') + '</button>';
+      });
+      if (myLists.length) {
+        menuItems += '<div class="menu-sep"></div><div class="menu-head">Move to list</div>';
+        myLists.forEach(function(lst) {
+          var inList = entry.list_id === lst.id;
+          menuItems += '<button class="' + (inList ? 'current' : '') + '" onclick=\'moveToList(' + eid + ',' + JSON.stringify(lst.id) + ')\'>'
+            + '<i class="ti ti-playlist"></i>' + escHtml(lst.name) + (inList ? ' \u2713' : '') + '</button>';
+        });
+        if (entry.list_id) {
+          menuItems += '<button onclick=\'moveToList(' + eid + ',null)\'><i class="ti ti-playlist-x"></i>Remove from list</button>';
+        }
+      }
+      menuItems += '<div class="menu-sep"></div>'
+        + '<button class="danger" onclick=\'removeEntry(' + eid + ')\'><i class="ti ti-trash"></i>Remove from library</button>';
+
+      var card = document.createElement('div');
+      card.className = 'lib-card';
+      card.setAttribute('data-entry-id', entry.id);
+      card.innerHTML =
+        '<a class="lib-cover" href="story.html?id=' + escHtml(w.id) + '">' + cover + '</a>'
+        + '<div class="lib-body">'
+          + '<a class="lib-title" href="story.html?id=' + escHtml(w.id) + '" title="' + escHtml(w.title) + '">' + escHtml(w.title) + '</a>'
+          + '<div class="lib-author">' + authorHtml + '</div>'
+          + progressHtml
+          + '<div class="lib-actions">' + continueHtml + '</div>'
+        + '</div>'
+        + '<button class="lib-menu-btn" onclick=\'toggleMenu(' + eid + ', event)\'><i class="ti ti-dots"></i></button>'
+        + '<div class="lib-menu" id="menu-' + escHtml(entry.id) + '">' + menuItems + '</div>';
+      return card;
+    }
+
+    function renderStatusGrid() {
+      var grid = document.getElementById('status-grid');
+      var empty = document.getElementById('status-empty');
+      grid.innerHTML = '';
+      var entries = visibleEntries().filter(function(e){ return e.status === currentTab; });
+      if (!entries.length) {
+        empty.style.display = 'block';
+        var emptyMsgs = {
+          reading: '<i class="ti ti-book-2"></i><div>Nothing in progress. <a href="browse.html">Browse novels</a> and hit "Add to List" on a story page.</div>',
+          plan_to_read: '<i class="ti ti-bookmark"></i><div>Your to-read pile is empty — a rare and beautiful thing. <a href="browse.html">Fix that</a>.</div>',
+          completed: '<i class="ti ti-circle-check"></i><div>No finished stories yet. They\u2019ll land here when you mark them Completed.</div>',
+          on_hold: '<i class="ti ti-player-pause"></i><div>Nothing on hold. Stories you pause will wait for you here.</div>',
+          dropped: '<i class="ti ti-x"></i><div>Nothing dropped. Life\u2019s too short for books you\u2019re not enjoying — no judgment here.</div>'
+        };
+        empty.innerHTML = emptyMsgs[currentTab] || '<i class="ti ti-books"></i><div>Nothing here yet.</div>';
+        return;
+      }
+      empty.style.display = 'none';
+      entries.forEach(function(e){ grid.appendChild(buildCard(e)); });
+    }
+
+    // ── MY LISTS TAB ────────────────────────────────────────────
+    function renderLists() {
+      var container = document.getElementById('lists-container');
+      var empty = document.getElementById('lists-empty');
+      container.innerHTML = '';
+      if (!myLists.length) { empty.style.display = 'block'; return; }
+      empty.style.display = 'none';
+
+      myLists.forEach(function(lst) {
+        var block = document.createElement('div');
+        block.className = 'named-list-block';
+        var lid = JSON.stringify(lst.id);
+        var badge = lst.is_public
+          ? '<span class="list-badge"><i class="ti ti-world" style="font-size:10px;"></i> Public</span>'
+          : '<span class="list-badge private"><i class="ti ti-lock" style="font-size:10px;"></i> Private</span>';
+        var entries = visibleEntries().filter(function(e){ return e.list_id === lst.id; });
+        block.innerHTML =
+          '<div class="list-head">'
+            + '<div class="list-head-title"><i class="ti ti-playlist"></i>' + escHtml(lst.name) + badge
+              + '<span style="font-size:12px;color:var(--text3);font-family:Lato,sans-serif;font-weight:400;">(' + entries.length + ')</span></div>'
+            + '<button class="icon-btn" title="Delete list" onclick=\'deleteList(' + lid + ')\'><i class="ti ti-trash"></i></button>'
+          + '</div>'
+          + (lst.description ? '<div class="list-desc">' + escHtml(lst.description) + '</div>' : '');
+        var grid = document.createElement('div');
+        grid.className = 'lib-grid';
+        if (!entries.length) {
+          grid.innerHTML = '<div style="font-size:13px;color:var(--text3);grid-column:1/-1;">Empty — use a card\u2019s \u22ef menu on any status tab to move stories here.</div>';
+        } else {
+          entries.forEach(function(e){ grid.appendChild(buildCard(e)); });
+        }
+        block.appendChild(grid);
+        container.appendChild(block);
+      });
+    }
+
+    // ── ACTIONS ─────────────────────────────────────────────────
+    function toggleMenu(entryId, ev) {
+      if (ev) ev.stopPropagation();
+      var menu = document.getElementById('menu-' + entryId);
+      if (!menu) return;
+      var isOpen = menu.style.display === 'block';
+      document.querySelectorAll('.lib-menu').forEach(function(m){ m.style.display = 'none'; });
+      menu.style.display = isOpen ? 'none' : 'block';
+    }
+    document.addEventListener('click', function() {
+      document.querySelectorAll('.lib-menu').forEach(function(m){ m.style.display = 'none'; });
+    });
+
+    async function changeStatus(entryId, newStatus) {
+      var entry = allEntries.find(function(e){ return e.id === entryId; });
+      if (!entry || entry.status === newStatus) return;
+      var old = entry.status;
+      entry.status = newStatus;
+      entry.updated_at = new Date().toISOString();
+      updateCounts(); renderTab();
+      var { error } = await db.from('reading_list_entries')
+        .update({ status: newStatus, updated_at: entry.updated_at }).eq('id', entryId);
+      if (error) {
+        entry.status = old;
+        updateCounts(); renderTab();
+        showToast('Could not update status.', 'ti-x');
+        return;
+      }
+      showToast('Moved to ' + STATUS_LABELS[newStatus], STATUS_ICONS[newStatus]);
+    }
+
+    async function moveToList(entryId, listId) {
+      var entry = allEntries.find(function(e){ return e.id === entryId; });
+      if (!entry) return;
+      var old = entry.list_id;
+      entry.list_id = listId;
+      renderTab();
+      var { error } = await db.from('reading_list_entries')
+        .update({ list_id: listId, updated_at: new Date().toISOString() }).eq('id', entryId);
+      if (error) {
+        entry.list_id = old;
+        renderTab();
+        showToast('Could not move to list.', 'ti-x');
+        return;
+      }
+      if (listId) {
+        var lst = myLists.find(function(l){ return l.id === listId; });
+        showToast('Moved to "' + (lst ? lst.name : 'list') + '"', 'ti-playlist');
+      } else {
+        showToast('Removed from list.', 'ti-playlist-x');
+      }
+    }
+
+    async function removeEntry(entryId) {
+      var idx = allEntries.findIndex(function(e){ return e.id === entryId; });
+      if (idx === -1) return;
+      if (!confirm('Remove this story from your library?')) return;
+      var removed = allEntries.splice(idx, 1)[0];
+      updateCounts(); renderTab();
+      var { error } = await db.from('reading_list_entries').delete().eq('id', entryId);
+      if (error) {
+        allEntries.splice(idx, 0, removed);
+        updateCounts(); renderTab();
+        showToast('Could not remove.', 'ti-x');
+        return;
+      }
+      showToast('Removed from library.', 'ti-trash');
+    }
+
+    // ── NEW LIST MODAL ──────────────────────────────────────────
+    function openNewListModal() {
+      document.getElementById('nl-name').value = '';
+      document.getElementById('nl-desc').value = '';
+      document.getElementById('nl-public').checked = false;
+      document.getElementById('new-list-modal').classList.add('open');
+      setTimeout(function(){ document.getElementById('nl-name').focus(); }, 50);
+    }
+    function closeNewListModal() {
+      document.getElementById('new-list-modal').classList.remove('open');
+    }
+    document.getElementById('new-list-modal').addEventListener('click', function(e) {
+      if (e.target === this) closeNewListModal();
+    });
+
+    async function createList() {
+      var name = (document.getElementById('nl-name').value || '').trim();
+      if (!name) { document.getElementById('nl-name').focus(); return; }
+      var desc = (document.getElementById('nl-desc').value || '').trim();
+      var isPublic = document.getElementById('nl-public').checked;
+      var { data, error } = await db.from('user_reading_lists')
+        .insert({ user_id: currentSession.user.id, name: name, description: desc || null, is_public: isPublic })
+        .select().single();
+      if (error) { showToast('Could not create list.', 'ti-x'); return; }
+      myLists.unshift(data);
+      closeNewListModal();
+      updateCounts();
+      showToast('List created!', 'ti-check');
+      renderTab();
+    }
+
+    async function deleteList(listId) {
+      if (!confirm('Delete this list? Stories in it stay in your library — they just leave the list.')) return;
+      var { error } = await db.from('user_reading_lists').delete().eq('id', listId);
+      if (error) { showToast('Could not delete list.', 'ti-x'); return; }
+      myLists = myLists.filter(function(l){ return l.id !== listId; });
+      // Detach local entries; DB side is handled by FK (set null or cascade)
+      allEntries.forEach(function(e){ if (e.list_id === listId) e.list_id = null; });
+      updateCounts();
+      showToast('List deleted.', 'ti-trash');
+      renderTab();
+    }
+
+    // ── INIT ────────────────────────────────────────────────────
+    (async function init() {
+      var { data: { session } } = await db.auth.getSession();
+      if (!session) {
+        await new Promise(function(res){ setTimeout(res, 300); });
+        var retry = await db.auth.getSession();
+        session = retry && retry.data ? retry.data.session : null;
+      }
+      if (!session) {
+        document.getElementById('auth-wall').style.display = 'block';
+        return;
+      }
+      currentSession = session;
+      document.getElementById('library-content').style.display = 'block';
+      loadLibrary();
+    })();
+  </script>
+
+<script src="footer.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>
