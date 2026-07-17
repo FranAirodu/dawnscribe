@@ -581,7 +581,7 @@ window.CharacterTitles = (function() {
     container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;font-size:20px;"></i></div>';
 
     var { data: chars } = await db().from('novel_characters')
-      .select('id, name, portrait_url, status, ended_reason')
+      .select('id, name, portrait_url, status, ended_reason, impressions_enabled')
       .eq('work_id', workId)
       .order('sort_order', { ascending: true });
 
@@ -633,6 +633,72 @@ window.CharacterTitles = (function() {
 
     // Load featured opinions per character
     var featuredOpinionsByChar = await loadFeaturedOpinions(charIds);
+
+    // ── CARD EXPANSION DATA (dynamics / impressions / moods / quotes / traits / fan art / questions) ──
+    var _uid = currentUserSession ? currentUserSession.user.id : null;
+    var _monthStart = new Date().toISOString().slice(0,7) + '-01';
+    var EXP = { dyn:[], dynVotes:{}, myDynVotes:{}, impr:{}, mood:{}, quotes:{}, quoteVotes:{}, myQuoteVotes:{}, traits:{}, fanArt:{}, qs:{}, pendQ:{}, pendQuotes:{}, charNames:{} };
+    chars.forEach(function(c){ EXP.charNames[c.id] = c.name; });
+    try {
+      var expRes = await Promise.all([
+        Promise.resolve(db().from('character_dynamics').select('id,character_a,character_b,label,status,created_by').eq('work_id', workId)).catch(function(){return {data:[]};}),
+        Promise.resolve(db().from('character_impression_votes').select('character_id,user_id,phase,sentiment').in('character_id', charIds)).catch(function(){return {data:[]};}),
+        Promise.resolve(db().from('character_mood_votes').select('character_id,user_id,mood').in('character_id', charIds).eq('vote_month', _monthStart)).catch(function(){return {data:[]};}),
+        Promise.resolve(db().from('character_quotes').select('id,character_id,user_id,quote_text,status,is_featured').in('character_id', charIds)).catch(function(){return {data:[]};}),
+        Promise.resolve(db().from('character_trait_votes').select('character_id,user_id,axis,value').in('character_id', charIds)).catch(function(){return {data:[]};}),
+        Promise.resolve(db().from('story_collabs').select('id,character_id,image_url,description').eq('work_id', workId).eq('status','approved').not('character_id','is',null)).catch(function(){return {data:[]};}),
+        Promise.resolve(db().from('character_questions').select('id,character_id,user_id,question,answer,status,is_pinned,created_at').in('character_id', charIds)).catch(function(){return {data:[]};})
+      ]);
+      EXP.dyn = (expRes[0].data || []).filter(function(d){ return d.status === 'active' || isOwner; });
+      (expRes[1].data || []).forEach(function(r){
+        var e = EXP.impr[r.character_id] || (EXP.impr[r.character_id] = { first:{}, now:{}, myFirst:null, myNow:null });
+        e[r.phase][r.sentiment] = (e[r.phase][r.sentiment] || 0) + 1;
+        if (_uid && r.user_id === _uid) { if (r.phase==='first') e.myFirst = r.sentiment; else e.myNow = r.sentiment; }
+      });
+      (expRes[2].data || []).forEach(function(r){
+        var m = EXP.mood[r.character_id] || (EXP.mood[r.character_id] = { counts:{}, total:0, my:null });
+        m.counts[r.mood] = (m.counts[r.mood] || 0) + 1; m.total++;
+        if (_uid && r.user_id === _uid) m.my = r.mood;
+      });
+      (expRes[3].data || []).forEach(function(q){
+        var arr = EXP.quotes[q.character_id] || (EXP.quotes[q.character_id] = []);
+        arr.push(q);
+        if (q.status === 'pending') EXP.pendQuotes[q.character_id] = (EXP.pendQuotes[q.character_id] || 0) + 1;
+      });
+      (expRes[4].data || []).forEach(function(r){
+        var t = EXP.traits[r.character_id] || (EXP.traits[r.character_id] = {});
+        var a = t[r.axis] || (t[r.axis] = { sum:0, count:0, my:null });
+        a.sum += r.value; a.count++;
+        if (_uid && r.user_id === _uid) a.my = r.value;
+      });
+      (expRes[5].data || []).forEach(function(f){
+        var arr = EXP.fanArt[f.character_id] || (EXP.fanArt[f.character_id] = []);
+        arr.push(f);
+      });
+      (expRes[6].data || []).forEach(function(q){
+        if (q.status === 'answered') { (EXP.qs[q.character_id] || (EXP.qs[q.character_id] = [])).push(q); }
+        else if (q.status === 'pending') { EXP.pendQ[q.character_id] = (EXP.pendQ[q.character_id] || 0) + 1; }
+      });
+      // dynamic + quote votes (need ids first)
+      var dynIds = EXP.dyn.map(function(d){ return d.id; });
+      var quoteIds = [];
+      Object.values(EXP.quotes).forEach(function(arr){ arr.forEach(function(q){ if (q.status==='approved') quoteIds.push(q.id); }); });
+      var voteRes = await Promise.all([
+        dynIds.length ? Promise.resolve(db().from('character_dynamic_votes').select('dynamic_id,user_id').in('dynamic_id', dynIds)).catch(function(){return {data:[]};}) : {data:[]},
+        quoteIds.length ? Promise.resolve(db().from('character_quote_votes').select('quote_id,user_id').in('quote_id', quoteIds)).catch(function(){return {data:[]};}) : {data:[]}
+      ]);
+      (voteRes[0].data || []).forEach(function(v){
+        EXP.dynVotes[v.dynamic_id] = (EXP.dynVotes[v.dynamic_id] || 0) + 1;
+        if (_uid && v.user_id === _uid) EXP.myDynVotes[v.dynamic_id] = true;
+      });
+      (voteRes[1].data || []).forEach(function(v){
+        EXP.quoteVotes[v.quote_id] = (EXP.quoteVotes[v.quote_id] || 0) + 1;
+        if (_uid && v.user_id === _uid) EXP.myQuoteVotes[v.quote_id] = true;
+      });
+    } catch(e) { console.warn('Card expansion data failed', e); }
+    // Most Beloved: current-month fan vote leader across this novel's cards
+    var _maxMonthVotes = 0;
+    chars.forEach(function(c){ var f = fanCounts[c.id]; if (f && (f.month_votes||0) > _maxMonthVotes) _maxMonthVotes = f.month_votes||0; });
 
     // Load current user's own aura votes (to show which they picked)
     var myAuraMap = {};
@@ -744,8 +810,55 @@ window.CharacterTitles = (function() {
           '</span>' +
         '</div>';
 
+      // ── EXPANSION: per-character computed bits ──────────────────
+      var moodData = EXP.mood[char.id] || { counts:{}, total:0, my:null };
+      var moodWinner = null, moodMax = 0;
+      Object.keys(moodData.counts).forEach(function(m){ if (moodData.counts[m] > moodMax) { moodMax = moodData.counts[m]; moodWinner = m; } });
+      var moodHex = moodWinner ? (CT_MOODS.find(function(m){ return m.name === moodWinner; }) || {}).hex : null;
+
+      var belovedHtml = (_maxMonthVotes > 0 && (fc.month_votes||0) === _maxMonthVotes)
+        ? '<div class="ct-beloved-ribbon" title="Most fan votes this month"><i class="ti ti-heart-filled"></i> Most Beloved</div>' : '';
+
+      var imprData = EXP.impr[char.id] || { first:{}, now:{}, myFirst:null, myNow:null };
+      function _topSent(obj){ var w=null,mx=0; Object.keys(obj).forEach(function(s){ if(obj[s]>mx){mx=obj[s];w=s;} }); return w; }
+      var imprTopFirst = _topSent(imprData.first), imprTopNow = _topSent(imprData.now);
+      var impressionHtml = (char.impressions_enabled !== false && (imprTopFirst || imprTopNow))
+        ? '<div class="ct-impression-strip"><i class="ti ti-timeline"></i> First: <strong style="color:' + (CT_SENT_COLOR[imprTopFirst]||'var(--text3)') + ';">' + esc(imprTopFirst||'\u2014') + '</strong> <i class="ti ti-arrow-right" style="font-size:9px;"></i> Now: <strong style="color:' + (CT_SENT_COLOR[imprTopNow]||'var(--text3)') + ';">' + esc(imprTopNow||'\u2014') + '</strong></div>'
+        : '';
+
+      var charDyns = EXP.dyn.filter(function(d){ return (d.character_a === char.id || d.character_b === char.id) && d.status === 'active'; })
+        .sort(function(a,b){ return (EXP.dynVotes[b.id]||0) - (EXP.dynVotes[a.id]||0); });
+      var topDyn = charDyns[0];
+      var dynChipHtml = topDyn
+        ? '<div class="ct-dyn-chip"><i class="ti ti-arrows-left-right"></i> ' + esc(topDyn.label) + ' \u00b7 ' + esc(EXP.charNames[topDyn.character_a === char.id ? topDyn.character_b : topDyn.character_a] || '?') + '</div>'
+        : '';
+
+      var charQuotes = (EXP.quotes[char.id] || []).filter(function(q){ return q.status === 'approved'; })
+        .sort(function(a,b){ return (b.is_featured?1e6:0) + (EXP.quoteVotes[b.id]||0) - ((a.is_featured?1e6:0) + (EXP.quoteVotes[a.id]||0)); });
+      var topQuote = charQuotes[0];
+      var quoteStripHtml = topQuote
+        ? '<div class="ct-quote-strip"><div class="ct-opinion-label" style="color:#a78bfa;"><i class="ti ti-quote"></i> Quote Wall</div><div class="ct-opinion-body">' + esc('\u201c' + topQuote.quote_text + '\u201d') + '</div></div>'
+        : '';
+
+      var charFanArt = EXP.fanArt[char.id] || [];
+      var fanArtHtml = charFanArt.length
+        ? '<div class="ct-story-art-strip">' +
+            charFanArt.slice(0,6).map(function(f){
+              return '<a href="' + esc(f.image_url) + '" target="_blank" rel="noopener" class="ct-story-art-thumb" title="' + esc(f.description||'Fan art') + '"><img src="' + esc(f.image_url) + '" alt="fan art"/></a>';
+            }).join('') +
+            (charFanArt.length > 6 ? '<div class="ct-story-art-more">+' + (charFanArt.length - 6) + '</div>' : '') +
+          '</div>'
+        : '';
+
+      var charTraits = EXP.traits[char.id] || {};
+      var traitsVoteCount = Object.keys(charTraits).reduce(function(n,k){ return n + charTraits[k].count; }, 0);
+      var charAnsweredQs = (EXP.qs[char.id] || []).sort(function(a,b){ return (b.is_pinned?1:0) - (a.is_pinned?1:0) || (a.created_at < b.created_at ? 1 : -1); });
+      var charPendQ = EXP.pendQ[char.id] || 0;
+      var charPendQuotes = EXP.pendQuotes[char.id] || 0;
+
       var card = document.createElement('div');
       card.className = 'ct-story-char-card' + (char.status === 'ended' ? ' ct-char-ended' : '');
+      if (moodHex) { card.classList.add('ct-mood-tinted'); card.style.setProperty('--ct-mood', moodHex); card.title = 'This month\u2019s mood: ' + moodWinner; }
 
       var imgHtml = char.portrait_url
         ? '<img src="'+esc(char.portrait_url)+'" class="ct-story-portrait" data-char="'+esc(char.id)+'" alt="'+esc(char.name)+'"/>'
@@ -938,6 +1051,7 @@ window.CharacterTitles = (function() {
 
       card.innerHTML =
         auraWashHtml +
+        belovedHtml +
         '<div class="ct-flip-inner">' +
           // FRONT
           '<div class="ct-flip-front">' +
@@ -948,14 +1062,23 @@ window.CharacterTitles = (function() {
             '</div>' +
             '<div class="ct-story-titles-wrap">' + titlesHtml + '</div>' +
             fanRowHtml +
+            impressionHtml +
+            dynChipHtml +
             featuredOpinionHtml +
+            quoteStripHtml +
             featuredHtml +
             collabsHtml +
+            fanArtHtml +
             (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
             (approvedOpinions.length ? '<button class="ct-flip-trigger ct-flip-opinions" title="View reader opinions" style="color:#ec4899;border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-heart"></i> ' + approvedOpinions.length + ' opinion' + (approvedOpinions.length > 1 ? 's' : '') + '</button>' : '') +
             ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
             (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
             cosmeticTabBtn +
+            '<button class="ct-flip-trigger" data-open="dynamics" style="color:#38bdf8;border-color:rgba(56,189,248,0.35);"><i class="ti ti-arrows-left-right"></i>' + (charDyns.length ? ' ' + charDyns.length : ' Dynamics') + '</button>' +
+            '<button class="ct-flip-trigger" data-open="quotes" style="color:#a78bfa;border-color:rgba(167,139,250,0.35);"><i class="ti ti-quote"></i>' + (charQuotes.length ? ' ' + charQuotes.length : ' Quotes') + ((isOwner && charPendQuotes) ? ' <span class="ct-pend-dot">' + charPendQuotes + '</span>' : '') + '</button>' +
+            '<button class="ct-flip-trigger" data-open="traits" style="color:#34d399;border-color:rgba(52,211,153,0.35);"><i class="ti ti-adjustments-horizontal"></i> Traits</button>' +
+            '<button class="ct-flip-trigger" data-open="vibe" style="' + (moodHex ? 'color:'+moodHex+';border-color:'+moodHex+'55;' : '') + '"><i class="ti ti-mood-neutral"></i> Vibe</button>' +
+            '<button class="ct-flip-trigger" data-open="ask" style="color:#fbbf24;border-color:rgba(251,191,36,0.35);"><i class="ti ti-help-circle"></i>' + (charAnsweredQs.length ? ' ' + charAnsweredQs.length : ' Ask') + ((isOwner && charPendQ) ? ' <span class="ct-pend-dot">' + charPendQ + '</span>' : '') + '</button>' +
           '</div>' +
           // BACK — Opinions
           '<div class="ct-flip-back" data-back="opinions" style="display:none;">' +
@@ -1008,6 +1131,136 @@ window.CharacterTitles = (function() {
               submitCosmeticBtnHtml +
             '</div>' +
           '</div>' +
+          // BACK — Dynamics
+          '<div class="ct-flip-back" data-back="dynamics" style="display:none;">' +
+            '<div class="ct-flip-back-header">' +
+              '<div class="ct-flip-back-name"><i class="ti ti-arrows-left-right" style="color:#38bdf8;"></i> ' + esc(char.name) + '\u2019s Dynamics</div>' +
+              '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
+            '</div>' +
+            '<div class="ct-exp-scroll">' +
+              (charDyns.length ? charDyns.map(function(d){
+                var other = EXP.charNames[d.character_a === char.id ? d.character_b : d.character_a] || '?';
+                var n = EXP.dynVotes[d.id] || 0;
+                var mine = !!EXP.myDynVotes[d.id];
+                var voteBtn = (currentUserSession && !isOwner)
+                  ? '<button class="ct-dyn-vote-btn' + (mine ? ' active' : '') + '" data-dyn-id="' + esc(d.id) + '" title="' + (mine ? 'Remove vote' : 'Vote for this dynamic') + '"><i class="ti ti-heart' + (mine ? '-filled' : '') + '"></i> ' + n + '</button>'
+                  : '<span class="ct-dyn-vote-btn" style="cursor:default;"><i class="ti ti-heart"></i> ' + n + '</span>';
+                var hideBtn = isOwner ? '<button class="ct-dyn-hide-btn" data-dyn-id="' + esc(d.id) + '" title="Hide this dynamic"><i class="ti ti-eye-off"></i></button>' : '';
+                return '<div class="ct-dyn-row"><div class="ct-dyn-row-label"><strong>' + esc(d.label) + '</strong> with ' + esc(other) + '</div>' + voteBtn + hideBtn + '</div>';
+              }).join('') : '<div class="ct-exp-empty">No dynamics yet \u2014 propose one below!</div>') +
+              ((currentUserSession && !isOwner && chars.length > 1) ?
+                '<div class="ct-exp-form"><div class="ct-exp-form-title">Propose a dynamic</div>' +
+                '<select class="ct-exp-select" data-dyn-other><option value="">With whom?</option>' +
+                  chars.filter(function(c2){ return c2.id !== char.id; }).map(function(c2){ return '<option value="' + esc(c2.id) + '">' + esc(c2.name) + '</option>'; }).join('') +
+                '</select>' +
+                '<select class="ct-exp-select" data-dyn-label><option value="">Which dynamic?</option>' +
+                  CT_DYN_LABELS.map(function(l){ return '<option value="' + esc(l) + '">' + esc(l) + '</option>'; }).join('') +
+                '</select>' +
+                '<button class="ct-exp-submit" data-dyn-propose><i class="ti ti-plus"></i> Propose</button></div>'
+              : '') +
+            '</div>' +
+          '</div>' +
+          // BACK — Quotes
+          '<div class="ct-flip-back" data-back="quotes" style="display:none;">' +
+            '<div class="ct-flip-back-header">' +
+              '<div class="ct-flip-back-name"><i class="ti ti-quote" style="color:#a78bfa;"></i> ' + esc(char.name) + '\u2019s Quote Wall</div>' +
+              '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
+            '</div>' +
+            '<div class="ct-exp-scroll">' +
+              (charQuotes.length ? charQuotes.map(function(q){
+                var n = EXP.quoteVotes[q.id] || 0;
+                var mine = !!EXP.myQuoteVotes[q.id];
+                var voteBtn = (currentUserSession && !isOwner)
+                  ? '<button class="ct-quote-vote-btn' + (mine ? ' active' : '') + '" data-quote-id="' + esc(q.id) + '"><i class="ti ti-heart' + (mine ? '-filled' : '') + '"></i> ' + n + '</button>'
+                  : '<span class="ct-quote-vote-btn" style="cursor:default;"><i class="ti ti-heart"></i> ' + n + '</span>';
+                var featBtn = isOwner ? '<button class="ct-quote-feat-btn' + (q.is_featured ? ' active' : '') + '" data-quote-id="' + esc(q.id) + '" title="' + (q.is_featured ? 'Unfeature' : 'Feature on card') + '">' + (q.is_featured ? '<span style="font-size:13px;line-height:1;">\u2605</span>' : '<i class="ti ti-star"></i>') + '</button>' : '';
+                return '<div class="ct-quote-row' + (q.is_featured ? ' featured' : '') + '"><div class="ct-quote-row-text">' + esc('\u201c' + q.quote_text + '\u201d') + '</div><div class="ct-quote-row-actions">' + voteBtn + featBtn + '</div></div>';
+              }).join('') : '<div class="ct-exp-empty">No approved quotes yet.</div>') +
+              (isOwner ? '<div data-pending-quotes-slot="' + esc(char.id) + '"></div>' : '') +
+              ((currentUserSession && !isOwner) ?
+                '<div class="ct-exp-form"><div class="ct-exp-form-title">Nominate a quote</div>' +
+                '<textarea class="ct-exp-textarea" data-quote-text maxlength="400" rows="2" placeholder="Their most memorable line\u2026"></textarea>' +
+                '<button class="ct-exp-submit" data-quote-nominate><i class="ti ti-send"></i> Send to author</button></div>'
+              : '') +
+            '</div>' +
+          '</div>' +
+          // BACK — Traits
+          '<div class="ct-flip-back" data-back="traits" style="display:none;">' +
+            '<div class="ct-flip-back-header">' +
+              '<div class="ct-flip-back-name"><i class="ti ti-adjustments-horizontal" style="color:#34d399;"></i> ' + esc(char.name) + '\u2019s Traits</div>' +
+              '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
+            '</div>' +
+            '<div class="ct-exp-scroll">' +
+              '<div style="font-size:10px;color:var(--text3);padding:0 12px 8px;line-height:1.5;">Where do readers place ' + esc(char.name) + '? ' + (currentUserSession && !isOwner ? 'Tap a segment to cast or change your vote.' : 'Community averages shown.') + (traitsVoteCount ? ' \u00b7 ' + traitsVoteCount + ' votes' : '') + '</div>' +
+              CT_TRAIT_AXES.map(function(ax){
+                var a = charTraits[ax.key] || { sum:0, count:0, my:null };
+                var avg = a.count ? a.sum / a.count : 0;
+                var pct = ((avg + 2) / 4) * 100;
+                var segs = [-2,-1,0,1,2].map(function(v){
+                  var sel = (a.my === v) ? ' selected' : '';
+                  return '<button class="ct-trait-seg' + sel + '" data-trait-axis="' + esc(ax.key) + '" data-trait-val="' + v + '"' + ((currentUserSession && !isOwner) ? '' : ' disabled') + '></button>';
+                }).join('');
+                return '<div class="ct-trait-row"><div class="ct-trait-labels"><span>' + esc(ax.left) + '</span><span>' + esc(ax.right) + '</span></div>' +
+                  '<div class="ct-trait-track">' + segs + (a.count ? '<div class="ct-trait-avg" style="left:' + pct.toFixed(1) + '%;" title="Community average"></div>' : '') + '</div></div>';
+              }).join('') +
+            '</div>' +
+          '</div>' +
+          // BACK — Vibe (mood of the month + first impression vs now)
+          '<div class="ct-flip-back" data-back="vibe" style="display:none;">' +
+            '<div class="ct-flip-back-header">' +
+              '<div class="ct-flip-back-name"><i class="ti ti-mood-neutral"' + (moodHex ? ' style="color:'+moodHex+';"' : '') + '></i> ' + esc(char.name) + '\u2019s Vibe</div>' +
+              '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
+            '</div>' +
+            '<div class="ct-exp-scroll">' +
+              '<div class="ct-exp-form-title" style="padding:0 12px;">Mood of the Month</div>' +
+              '<div style="font-size:10px;color:var(--text3);padding:0 12px 6px;line-height:1.5;">One vote per month \u2014 the winning mood tints the card\u2019s outline. Resets on the 1st.</div>' +
+              '<div class="ct-mood-grid">' +
+                CT_MOODS.map(function(m){
+                  var cnt = moodData.counts[m.name] || 0;
+                  var mine = moodData.my === m.name;
+                  var canVote = currentUserSession && !isOwner;
+                  return '<button class="ct-mood-chip' + (mine ? ' mine' : '') + '" data-mood="' + esc(m.name) + '" style="--mood:' + m.hex + ';"' + (canVote ? '' : ' disabled') + '>' + esc(m.name) + (cnt ? ' <span class="ct-mood-count">' + cnt + '</span>' : '') + '</button>';
+                }).join('') +
+              '</div>' +
+              (moodData.my ? '<div class="ct-exp-hint">Your vote this month: <strong>' + esc(moodData.my) + '</strong></div>' : '') +
+              ((char.impressions_enabled !== false || isOwner) ?
+                '<div class="ct-exp-form-title" style="padding:10px 12px 0;">First Impression \u2192 Now</div>' +
+                (isOwner
+                  ? '<label class="ct-exp-hint" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" data-impr-toggle' + (char.impressions_enabled !== false ? ' checked' : '') + '/> Show this strip on the card</label>' +
+                    '<div class="ct-exp-hint">Readers: first impression locks once cast; \u201cnow\u201d can change anytime.</div>'
+                  : '<div style="font-size:10px;color:var(--text3);padding:0 12px 6px;line-height:1.5;">How did they strike you at first \u2014 and now? First locks once cast; now can change.</div>') +
+                ((currentUserSession && !isOwner && char.impressions_enabled !== false) ?
+                  ['first','now'].map(function(ph){
+                    var my = ph === 'first' ? imprData.myFirst : imprData.myNow;
+                    var locked = ph === 'first' && !!imprData.myFirst;
+                    return '<div class="ct-impr-row"><div class="ct-impr-row-label">' + (ph === 'first' ? 'First' : 'Now') + '</div>' +
+                      CT_SENTIMENTS.map(function(s){
+                        var sel = my === s ? ' selected' : '';
+                        return '<button class="ct-impr-btn' + sel + '" data-impr-phase="' + ph + '" data-impr-sent="' + esc(s) + '" style="--sent:' + CT_SENT_COLOR[s] + ';"' + (locked && my !== s ? ' disabled' : '') + '>' + esc(s) + '</button>';
+                      }).join('') + '</div>';
+                  }).join('') : '')
+              : '') +
+            '</div>' +
+          '</div>' +
+          // BACK — Ask the Character
+          '<div class="ct-flip-back" data-back="ask" style="display:none;">' +
+            '<div class="ct-flip-back-header">' +
+              '<div class="ct-flip-back-name"><i class="ti ti-help-circle" style="color:#fbbf24;"></i> Ask ' + esc(char.name) + '</div>' +
+              '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
+            '</div>' +
+            '<div class="ct-exp-scroll">' +
+              (charAnsweredQs.length ? charAnsweredQs.map(function(q){
+                var pinBtn = isOwner ? '<button class="ct-q-pin-btn' + (q.is_pinned ? ' active' : '') + '" data-q-id="' + esc(q.id) + '" title="' + (q.is_pinned ? 'Unpin' : 'Pin to top') + '"><i class="ti ti-pin' + (q.is_pinned ? '-filled' : '') + '"></i></button>' : (q.is_pinned ? '<i class="ti ti-pin-filled" style="color:#fbbf24;font-size:11px;"></i>' : '');
+                return '<div class="ct-q-row' + (q.is_pinned ? ' pinned' : '') + '"><div class="ct-q-question"><i class="ti ti-help-circle" style="font-size:11px;"></i> ' + esc(q.question) + ' ' + pinBtn + '</div><div class="ct-q-answer" data-q-answer-html="' + esc(q.id) + '"></div></div>';
+              }).join('') : '<div class="ct-exp-empty">No answered questions yet' + (currentUserSession && !isOwner ? ' \u2014 ask the first!' : '.') + '</div>') +
+              (isOwner ? '<div data-pending-qs-slot="' + esc(char.id) + '"></div>' : '') +
+              ((currentUserSession && !isOwner) ?
+                '<div class="ct-exp-form"><div class="ct-exp-form-title">Ask ' + esc(char.name) + ' a question</div>' +
+                '<textarea class="ct-exp-textarea" data-ask-text maxlength="500" rows="2" placeholder="The author answers in-character\u2026"></textarea>' +
+                '<button class="ct-exp-submit" data-ask-submit><i class="ti ti-send"></i> Ask</button></div>'
+              : '') +
+            '</div>' +
+          '</div>' +
         '</div>';
 
       // Wire flip triggers — songs, opinions, and aura each open their own back
@@ -1019,10 +1272,9 @@ window.CharacterTitles = (function() {
       var cosmeticsBack = card.querySelector('.ct-flip-back[data-back="cosmetics"]');
 
       function showBack(which) {
-        if (songBack) songBack.style.display = (which === 'songs') ? 'flex' : 'none';
-        if (auraBack) auraBack.style.display = (which === 'aura') ? 'flex' : 'none';
-        if (opinionsBack) opinionsBack.style.display = (which === 'opinions') ? 'flex' : 'none';
-        if (cosmeticsBack) cosmeticsBack.style.display = (which === 'cosmetics') ? 'flex' : 'none';
+        card.querySelectorAll('.ct-flip-back').forEach(function(b) {
+          b.style.display = (b.getAttribute('data-back') === which) ? 'flex' : 'none';
+        });
         card.classList.add('flipped');
       }
       function hideBack() {
@@ -1038,11 +1290,16 @@ window.CharacterTitles = (function() {
             showBack('opinions');
           } else if (t.classList.contains('ct-flip-cosmetics')) {
             showBack('cosmetics');
+          } else if (t.getAttribute('data-open')) {
+            showBack(t.getAttribute('data-open'));
           } else {
             showBack('songs');
           }
         });
       });
+
+      // ── EXPANSION WIRING ───────────────────────────────────────
+      wireCardExpansion(card, char, workId, isOwner, currentUserSession, container, EXP, { answeredQs: charAnsweredQs });
       flipCloses.forEach(function(fcBtn) {
         fcBtn.addEventListener('click', function(e) { e.stopPropagation(); hideBack(); });
       });
@@ -1288,6 +1545,302 @@ window.CharacterTitles = (function() {
   }
 
   // ── PENDING SONGS PANEL (author only) ─────────────────────────
+  // ── CARD EXPANSION: safe answer rendering + interaction wiring ──────────
+
+  // Render stored answer HTML keeping only text and http(s) images (GIFs)
+  function ctSafeAnswerHTML(raw) {
+    if (!raw) return '';
+    try {
+      var doc = new DOMParser().parseFromString(raw, 'text/html');
+      var out = document.createElement('div');
+      function walk(node, dest) {
+        node.childNodes.forEach(function(n) {
+          if (n.nodeType === 3) { dest.appendChild(document.createTextNode(n.textContent)); }
+          else if (n.nodeType === 1) {
+            var tag = n.tagName.toLowerCase();
+            if (tag === 'img') {
+              var src = n.getAttribute('src') || '';
+              if (/^https?:\/\//i.test(src)) {
+                var img = document.createElement('img');
+                img.src = src; img.alt = ''; img.className = 'ct-q-gif'; img.loading = 'lazy';
+                dest.appendChild(img);
+              }
+            } else if (tag === 'br') { dest.appendChild(document.createElement('br')); }
+            else { walk(n, dest); }
+          }
+        });
+      }
+      walk(doc.body, out);
+      return out.innerHTML;
+    } catch(e) { return esc(raw); }
+  }
+
+  function ctToast(msg, icon) {
+    var t = document.getElementById('toast');
+    if (t && t.querySelector('span')) {
+      t.querySelector('span').textContent = msg;
+      var ic = t.querySelector('i'); if (ic) ic.className = 'ti ' + (icon || 'ti-check');
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 3000);
+    }
+  }
+
+  function wireCardExpansion(card, char, workId, isOwner, session, container, EXP, extras) {
+    var uid = session ? session.user.id : null;
+    function rerender() { renderStoryCharacterCards(container, workId, isOwner); }
+
+    // Answered question bodies (safe HTML with GIF support)
+    (extras.answeredQs || []).forEach(function(q) {
+      var slot = card.querySelector('[data-q-answer-html="' + q.id + '"]');
+      if (slot) slot.innerHTML = ctSafeAnswerHTML(q.answer);
+    });
+
+    // ── Dynamics ──
+    card.querySelectorAll('.ct-dyn-vote-btn[data-dyn-id]').forEach(function(btn) {
+      btn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        if (!uid) { window.location.href = 'auth.html'; return; }
+        var id = btn.getAttribute('data-dyn-id');
+        btn.disabled = true;
+        if (EXP.myDynVotes[id]) {
+          await Promise.resolve(db().from('character_dynamic_votes').delete().eq('dynamic_id', id).eq('user_id', uid)).catch(function(){});
+        } else {
+          await Promise.resolve(db().from('character_dynamic_votes').insert({ dynamic_id: id, user_id: uid })).catch(function(){});
+        }
+        rerender();
+      });
+    });
+    card.querySelectorAll('.ct-dyn-hide-btn').forEach(function(btn) {
+      btn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        btn.disabled = true;
+        await Promise.resolve(db().from('character_dynamics').update({ status: 'hidden' }).eq('id', btn.getAttribute('data-dyn-id'))).catch(function(){});
+        ctToast('Dynamic hidden.', 'ti-eye-off');
+        rerender();
+      });
+    });
+    var proposeBtn = card.querySelector('[data-dyn-propose]');
+    if (proposeBtn) {
+      proposeBtn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        var other = card.querySelector('[data-dyn-other]').value;
+        var label = card.querySelector('[data-dyn-label]').value;
+        if (!other || !label) { ctToast('Pick a character and a dynamic.', 'ti-alert-circle'); return; }
+        proposeBtn.disabled = true;
+        var res = await Promise.resolve(db().from('character_dynamics').insert({ work_id: workId, character_a: char.id, character_b: other, label: label, created_by: uid }).select().single()).catch(function(err){ return { error: err }; });
+        if (res && res.error) {
+          proposeBtn.disabled = false;
+          ctToast('That dynamic already exists \u2014 vote for it instead!', 'ti-info-circle');
+          return;
+        }
+        if (res && res.data) {
+          await Promise.resolve(db().from('character_dynamic_votes').insert({ dynamic_id: res.data.id, user_id: uid })).catch(function(){});
+        }
+        ctToast('Dynamic proposed!', 'ti-arrows-left-right');
+        rerender();
+      });
+    }
+
+    // ── Quotes ──
+    card.querySelectorAll('.ct-quote-vote-btn[data-quote-id]').forEach(function(btn) {
+      btn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        if (!uid) { window.location.href = 'auth.html'; return; }
+        var id = btn.getAttribute('data-quote-id');
+        btn.disabled = true;
+        if (EXP.myQuoteVotes[id]) {
+          await Promise.resolve(db().from('character_quote_votes').delete().eq('quote_id', id).eq('user_id', uid)).catch(function(){});
+        } else {
+          await Promise.resolve(db().from('character_quote_votes').insert({ quote_id: id, user_id: uid })).catch(function(){});
+        }
+        rerender();
+      });
+    });
+    card.querySelectorAll('.ct-quote-feat-btn').forEach(function(btn) {
+      btn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        var id = btn.getAttribute('data-quote-id');
+        var makeFeatured = !btn.classList.contains('active');
+        btn.disabled = true;
+        if (makeFeatured) {
+          await Promise.resolve(db().from('character_quotes').update({ is_featured: false }).eq('character_id', char.id).eq('is_featured', true)).catch(function(){});
+        }
+        await Promise.resolve(db().from('character_quotes').update({ is_featured: makeFeatured }).eq('id', id)).catch(function(){});
+        rerender();
+      });
+    });
+    var nominateBtn = card.querySelector('[data-quote-nominate]');
+    if (nominateBtn) {
+      nominateBtn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        var ta = card.querySelector('[data-quote-text]');
+        var text = ta.value.trim();
+        if (!text) { ta.focus(); return; }
+        nominateBtn.disabled = true;
+        var res = await Promise.resolve(db().from('character_quotes').insert({ character_id: char.id, work_id: workId, user_id: uid, quote_text: text })).catch(function(err){ return { error: err }; });
+        if (res && res.error) { nominateBtn.disabled = false; ctToast('Could not send \u2014 try again.', 'ti-x'); return; }
+        ta.value = '';
+        nominateBtn.disabled = false;
+        ctToast('Quote sent to the author for approval!', 'ti-quote');
+      });
+    }
+    // Owner: pending quotes panel
+    var pendQuoteSlot = card.querySelector('[data-pending-quotes-slot]');
+    if (pendQuoteSlot && isOwner) {
+      var pendingQuotes = (EXP.quotes[char.id] || []).filter(function(q){ return q.status === 'pending'; });
+      if (pendingQuotes.length) {
+        pendQuoteSlot.innerHTML = '<div class="ct-exp-form-title" style="padding:8px 12px 4px;">Pending approval (' + pendingQuotes.length + ')</div>' +
+          pendingQuotes.map(function(q) {
+            return '<div class="ct-quote-row pending" data-pend-quote="' + esc(q.id) + '"><div class="ct-quote-row-text">' + esc('\u201c' + q.quote_text + '\u201d') + '</div>' +
+              '<div class="ct-quote-row-actions">' +
+                '<button class="ct-exp-approve" data-qa="' + esc(q.id) + '"><i class="ti ti-check"></i></button>' +
+                '<button class="ct-exp-reject" data-qr="' + esc(q.id) + '"><i class="ti ti-x"></i></button>' +
+              '</div></div>';
+          }).join('');
+        pendQuoteSlot.querySelectorAll('[data-qa]').forEach(function(b) {
+          b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
+            await Promise.resolve(db().from('character_quotes').update({ status: 'approved' }).eq('id', b.getAttribute('data-qa'))).catch(function(){});
+            rerender();
+          });
+        });
+        pendQuoteSlot.querySelectorAll('[data-qr]').forEach(function(b) {
+          b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
+            await Promise.resolve(db().from('character_quotes').update({ status: 'rejected' }).eq('id', b.getAttribute('data-qr'))).catch(function(){});
+            rerender();
+          });
+        });
+      }
+    }
+
+    // ── Traits ──
+    card.querySelectorAll('.ct-trait-seg:not([disabled])').forEach(function(seg) {
+      seg.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        if (!uid) { window.location.href = 'auth.html'; return; }
+        seg.disabled = true;
+        await Promise.resolve(db().from('character_trait_votes').upsert(
+          { character_id: char.id, user_id: uid, axis: seg.getAttribute('data-trait-axis'), value: parseInt(seg.getAttribute('data-trait-val'), 10), updated_at: new Date().toISOString() },
+          { onConflict: 'character_id,user_id,axis' }
+        )).catch(function(){});
+        rerender();
+      });
+    });
+
+    // ── Mood (once per month; upsert lets them change within the month) ──
+    card.querySelectorAll('.ct-mood-chip:not([disabled])').forEach(function(chip) {
+      chip.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        if (!uid) { window.location.href = 'auth.html'; return; }
+        chip.disabled = true;
+        var res = await Promise.resolve(db().from('character_mood_votes').upsert(
+          { character_id: char.id, user_id: uid, mood: chip.getAttribute('data-mood'), vote_month: new Date().toISOString().slice(0,7) + '-01' },
+          { onConflict: 'character_id,user_id,vote_month' }
+        )).catch(function(err){ return { error: err }; });
+        if (res && res.error) { ctToast('Could not save mood vote.', 'ti-x'); chip.disabled = false; return; }
+        ctToast('Mood set for this month!', 'ti-mood-check');
+        rerender();
+      });
+    });
+
+    // ── Impressions ──
+    card.querySelectorAll('.ct-impr-btn:not([disabled])').forEach(function(btn) {
+      btn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        if (!uid) { window.location.href = 'auth.html'; return; }
+        var phase = btn.getAttribute('data-impr-phase');
+        btn.disabled = true;
+        await Promise.resolve(db().from('character_impression_votes').upsert(
+          { character_id: char.id, user_id: uid, phase: phase, sentiment: btn.getAttribute('data-impr-sent'), updated_at: new Date().toISOString() },
+          { onConflict: 'character_id,user_id,phase' }
+        )).catch(function(){});
+        if (phase === 'first') ctToast('First impression locked in.', 'ti-lock');
+        rerender();
+      });
+    });
+    var imprToggle = card.querySelector('[data-impr-toggle]');
+    if (imprToggle) {
+      imprToggle.addEventListener('change', async function(e) {
+        e.stopPropagation();
+        await Promise.resolve(db().from('novel_characters').update({ impressions_enabled: imprToggle.checked }).eq('id', char.id)).catch(function(){});
+        ctToast(imprToggle.checked ? 'Impression strip shown.' : 'Impression strip hidden.', 'ti-timeline');
+        rerender();
+      });
+    }
+
+    // ── Ask the Character ──
+    var askBtn = card.querySelector('[data-ask-submit]');
+    if (askBtn) {
+      askBtn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        var ta = card.querySelector('[data-ask-text]');
+        var text = ta.value.trim();
+        if (!text) { ta.focus(); return; }
+        askBtn.disabled = true;
+        var res = await Promise.resolve(db().from('character_questions').insert({ character_id: char.id, work_id: workId, user_id: uid, question: text })).catch(function(err){ return { error: err }; });
+        if (res && res.error) { askBtn.disabled = false; ctToast('Could not send \u2014 try again.', 'ti-x'); return; }
+        ta.value = '';
+        askBtn.disabled = false;
+        ctToast('Question sent \u2014 the author will answer in-character!', 'ti-help-circle');
+      });
+    }
+    card.querySelectorAll('.ct-q-pin-btn').forEach(function(btn) {
+      btn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        btn.disabled = true;
+        await Promise.resolve(db().from('character_questions').update({ is_pinned: !btn.classList.contains('active') }).eq('id', btn.getAttribute('data-q-id'))).catch(function(){});
+        rerender();
+      });
+    });
+    // Owner: pending questions with in-character answer composer (GIF toolbar)
+    var pendQSlot = card.querySelector('[data-pending-qs-slot]');
+    if (pendQSlot && isOwner) {
+      Promise.resolve(db().from('character_questions').select('id,user_id,question,created_at').eq('character_id', char.id).eq('status', 'pending').order('created_at', { ascending: true }))
+        .catch(function(){ return { data: [] }; })
+        .then(function(res) {
+          var pend = res.data || [];
+          if (!pend.length) return;
+          pendQSlot.innerHTML = '<div class="ct-exp-form-title" style="padding:8px 12px 4px;">Waiting for an answer (' + pend.length + ')</div>' +
+            pend.map(function(q) {
+              var ctx = 'ctq-' + q.id;
+              var taId = 'ct-q-answer-' + q.id;
+              var toolbar = (window.CommentToolbar && CommentToolbar.renderToolbar) ? CommentToolbar.renderToolbar({ context: ctx, textareaId: taId }) : '';
+              return '<div class="ct-q-row pending" data-pend-q="' + esc(q.id) + '">' +
+                '<div class="ct-q-question"><i class="ti ti-help-circle" style="font-size:11px;"></i> ' + esc(q.question) + '</div>' +
+                '<textarea class="ct-exp-textarea" id="' + taId + '" rows="2" placeholder="Answer as ' + esc(char.name) + '\u2026"></textarea>' +
+                toolbar +
+                '<div class="ct-quote-row-actions" style="margin-top:6px;">' +
+                  '<button class="ct-exp-submit" data-answer-q="' + esc(q.id) + '" style="flex:1;"><i class="ti ti-send"></i> Answer</button>' +
+                  '<button class="ct-exp-reject" data-decline-q="' + esc(q.id) + '" title="Decline"><i class="ti ti-x"></i></button>' +
+                '</div></div>';
+            }).join('');
+          pendQSlot.querySelectorAll('[data-answer-q]').forEach(function(b) {
+            b.addEventListener('click', async function(e) {
+              e.stopPropagation();
+              var qid = b.getAttribute('data-answer-q');
+              var ta2 = document.getElementById('ct-q-answer-' + qid);
+              var text = (ta2 ? ta2.value : '').trim();
+              var gifUrl = (window.CommentToolbar && CommentToolbar.getPendingGif) ? CommentToolbar.getPendingGif('ctq-' + qid) : null;
+              if (!text && !gifUrl) { if (ta2) ta2.focus(); return; }
+              b.disabled = true;
+              var answerHtml = esc(text).replace(/\n/g, '<br>') + (gifUrl ? '<img src="' + esc(gifUrl) + '" alt="" class="ct-q-gif"/>' : '');
+              var res2 = await Promise.resolve(db().from('character_questions').update({ status: 'answered', answer: answerHtml, answered_at: new Date().toISOString() }).eq('id', qid)).catch(function(err){ return { error: err }; });
+              if (res2 && res2.error) { b.disabled = false; ctToast('Could not save answer.', 'ti-x'); return; }
+              if (window.CommentToolbar && CommentToolbar.clearAttachments) CommentToolbar.clearAttachments('ctq-' + qid);
+              ctToast('Answered in-character!', 'ti-message-check');
+              rerender();
+            });
+          });
+          pendQSlot.querySelectorAll('[data-decline-q]').forEach(function(b) {
+            b.addEventListener('click', async function(e) {
+              e.stopPropagation(); b.disabled = true;
+              await Promise.resolve(db().from('character_questions').update({ status: 'declined' }).eq('id', b.getAttribute('data-decline-q'))).catch(function(){});
+              rerender();
+            });
+          });
+        });
+    }
+  }
+
   async function renderPendingSongsPanel(container, workId) {
     var pending = await loadPendingSongs(workId);
     var existingPanel = container.querySelector('.ct-pending-songs-panel');
@@ -1510,6 +2063,24 @@ window.CharacterTitles = (function() {
   }
 
   // ── AURA PALETTE ──────────────────────────────────────────────
+  var CT_MOODS = [
+    { name:'Grieving', hex:'#3b82f6' }, { name:'Scheming', hex:'#a855f7' },
+    { name:'Feral', hex:'#ef4444' },    { name:'Hopeful', hex:'#f5c542' },
+    { name:'At Peace', hex:'#22c55e' }, { name:'Burning', hex:'#f97316' },
+    { name:'Haunted', hex:'#9ca3af' },  { name:'In Love', hex:'#ec4899' }
+  ];
+  var CT_SENTIMENTS = ['Loved','Liked','Neutral','Suspicious','Disliked','Hated'];
+  var CT_SENT_COLOR = { Loved:'#ec4899', Liked:'#22c55e', Neutral:'#9ca3af', Suspicious:'#f5c542', Disliked:'#f97316', Hated:'#ef4444' };
+  var CT_DYN_LABELS = ['Rivals','Slow Burn','Found Family','Doomed','Ride or Die','Enemies to Allies','Mentor & Student','Siblings in Arms','It\u2019s Complicated'];
+  var CT_TRAIT_AXES = [
+    { key:'hero_menace', left:'Hero', right:'Menace' },
+    { key:'brains_brawn', left:'Brains', right:'Brawn' },
+    { key:'soft_cold', left:'Soft Heart', right:'Cold Blood' },
+    { key:'chaos_order', left:'Chaos', right:'Order' },
+    { key:'leader_lone', left:'Leader', right:'Lone Wolf' },
+    { key:'open_mystery', left:'Open Book', right:'Mystery' }
+  ];
+
   var AURA_PALETTE = [
     // Reds & pinks (8)
     { hex: '#fca5a5', name: 'Blush' },

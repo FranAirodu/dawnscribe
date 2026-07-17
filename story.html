@@ -787,6 +787,12 @@
       </div>
       <input type="file" id="collab-file-input" accept="image/*" style="display:none;"/>
       <img id="collab-preview" class="collab-preview" alt="preview"/>
+      <div id="collab-character-wrap" style="display:none;">
+        <label class="collab-field-label">Character depicted <span>(optional — links your art to their card)</span></label>
+        <select id="collab-character-select" class="collab-textarea" style="resize:none;height:auto;padding:8px;">
+          <option value="">— No specific character —</option>
+        </select>
+      </div>
       <label class="collab-field-label">About this artwork <span>(required)</span></label>
       <textarea class="collab-textarea" id="collab-description" rows="3" maxlength="400" placeholder="Tell readers about this piece — who is depicted, how you feel about this character…"></textarea>
       <label class="collab-field-label">What inspired you <span>(optional)</span></label>
@@ -3406,6 +3412,20 @@
       document.getElementById('collab-drop-zone').innerHTML='<i class="ti ti-photo-up" style="font-size:28px;display:block;margin-bottom:8px;"></i>Click to select an image or drag and drop here';
       document.getElementById('collab-description').value='';
       document.getElementById('collab-inspiration').value='';
+      // Populate character picker from this novel's character cards
+      (async function(){
+        var wrap=document.getElementById('collab-character-wrap');
+        var sel=document.getElementById('collab-character-select');
+        sel.innerHTML='<option value="">\u2014 No specific character \u2014</option>';
+        wrap.style.display='none';
+        try {
+          var { data: ccs } = await db.from('novel_characters').select('id,name').eq('work_id', workData.id).order('sort_order',{ascending:true});
+          if (ccs && ccs.length) {
+            ccs.forEach(function(c){ var o=document.createElement('option'); o.value=c.id; o.textContent=c.name; sel.appendChild(o); });
+            wrap.style.display='block';
+          }
+        } catch(e) {}
+      })();
       document.getElementById('collab-modal-backdrop').classList.add('show');
     }
     function closeCollabModal(){ document.getElementById('collab-modal-backdrop').classList.remove('show'); }
@@ -3434,7 +3454,7 @@
         var { error: upErr }=await db.storage.from('collab-art').upload(path,collabFileData,{upsert:false});
         if(upErr) throw upErr;
         var { data: urlData }=db.storage.from('collab-art').getPublicUrl(path);
-        var { data: insertedCollab, error: dbErr }=await db.from('story_collabs').insert({work_id:workData.id,artist_id:currentSession.user.id,image_url:urlData.publicUrl,status:'pending',description:desc,inspiration:inspo||null}).select().single();
+        var { data: insertedCollab, error: dbErr }=await db.from('story_collabs').insert({work_id:workData.id,artist_id:currentSession.user.id,image_url:urlData.publicUrl,status:'pending',description:desc,inspiration:inspo||null,character_id:(document.getElementById('collab-character-select')&&document.getElementById('collab-character-select').value)||null}).select().single();
         if(dbErr) throw dbErr;
         // Notify the novel author
         if(workData.author_id && workData.author_id !== currentSession.user.id){
