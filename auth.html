@@ -9,6 +9,14 @@
 </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Create a free DawnScribe account to read, write, and share artwork with a growing creative community." />
+  <meta property="og:site_name" content="DawnScribe" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Join DawnScribe" />
+  <meta property="og:description" content="Create a free DawnScribe account to read, write, and share artwork with a growing creative community." />
+  <meta property="og:url" content="https://www.dawnscribe.com/auth.html" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230d9488%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2244%22%20r%3D%2214%22%20fill%3D%22%23fbbf24%22/%3E%3Cg%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2232%22%20y1%3D%2214%22%20x2%3D%2232%22%20y2%3D%2224%22/%3E%3Cline%20x1%3D%2214%22%20y1%3D%2224%22%20x2%3D%2221%22%20y2%3D%2231%22/%3E%3Cline%20x1%3D%2250%22%20y1%3D%2224%22%20x2%3D%2243%22%20y2%3D%2231%22/%3E%3C/g%3E%3Crect%20y%3D%2244%22%20width%3D%2264%22%20height%3D%2220%22%20fill%3D%22%230d9488%22/%3E%3C/svg%3E" />
   <title>Dawnscribe — Join or Sign In</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
@@ -324,6 +332,10 @@
     // The ban check MUST live in the same gate as the redirect — otherwise
     // banned users bounce auth -> index -> auth in a silent loop, because
     // onAuthStateChange fires and navigates before any separate check runs.
+    function dsValidNext() {
+      var n = new URLSearchParams(window.location.search).get('next');
+      return (n && /^[a-zA-Z0-9_-]+[.]html([?#]\S*)?$/.test(n)) ? n : null;
+    }
     var dsAuthRedirecting = false;
     async function dsHandleSession(session) {
       if (!session || dsAuthRedirecting) return;
@@ -339,8 +351,8 @@
       dsAuthRedirecting = true;
       // Optional same-site return path: auth.html?next=story.html?id=... —
       // relative .html paths only, absolute URLs are never followed
-      var nextPath = new URLSearchParams(window.location.search).get('next');
-      if (nextPath && /^[a-zA-Z0-9_-]+[.]html([?#]\S*)?$/.test(nextPath)) {
+      var nextPath = dsValidNext();
+      if (nextPath) {
         window.location.href = nextPath;
       } else {
         window.location.href = 'index.html';
@@ -664,7 +676,7 @@
         password: password,
         options: {
           data: { username: username, role: role, date_of_birth: dob },
-          emailRedirectTo: window.location.origin + '/index.html'
+          emailRedirectTo: window.location.origin + '/auth.html' + (dsValidNext() ? '?next=' + encodeURIComponent(dsValidNext()) : '')
         }
       });
 
@@ -768,7 +780,7 @@
         var activeForm = document.getElementById('form-signup').classList.contains('active') ? 'signup' : 'login';
         var result = await db.auth.signInWithOAuth({
           provider: provider,
-          options: { redirectTo: window.location.origin + '/index.html' }
+          options: { redirectTo: window.location.origin + '/auth.html' + (dsValidNext() ? '?next=' + encodeURIComponent(dsValidNext()) : '') }
         });
         if (result.error) {
           if (activeForm === 'signup') { showSignupError(result.error.message); }

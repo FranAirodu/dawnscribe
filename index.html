@@ -24,6 +24,14 @@
   </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Read serialized novels and one-shots, share artwork, and join a creative community where readers and writers grow together." />
+  <meta property="og:site_name" content="DawnScribe" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="DawnScribe — Novels &amp; Art" />
+  <meta property="og:description" content="Read serialized novels and one-shots, share artwork, and join a creative community where readers and writers grow together." />
+  <meta property="og:url" content="https://www.dawnscribe.com/" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230d9488%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2244%22%20r%3D%2214%22%20fill%3D%22%23fbbf24%22/%3E%3Cg%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2232%22%20y1%3D%2214%22%20x2%3D%2232%22%20y2%3D%2224%22/%3E%3Cline%20x1%3D%2214%22%20y1%3D%2224%22%20x2%3D%2221%22%20y2%3D%2231%22/%3E%3Cline%20x1%3D%2250%22%20y1%3D%2224%22%20x2%3D%2243%22%20y2%3D%2231%22/%3E%3C/g%3E%3Crect%20y%3D%2244%22%20width%3D%2264%22%20height%3D%2220%22%20fill%3D%22%230d9488%22/%3E%3C/svg%3E" />
   <title>DawnScribe — Novels & Art</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="spoilerUtils.js"></script>
@@ -1068,7 +1076,7 @@
 
         <div class="home-section" data-section-id="6" id="home-section-6">
         <div class="scroll-label" onclick="toggleRow(6)">
-          <i class="ti ti-file-text"></i>
+          <i class="ti ti-book"></i>
           <span class="label-accent">One-Shots</span>
           <span class="label-white">Short Stories</span>
           <a class="scroll-toggle-btn" href="browse.html?section=one-shots" onclick="event.stopPropagation()" style="text-decoration:none;"><i class="ti ti-arrow-right"></i> View All</a><button class="scroll-toggle-btn" id="toggle-btn-6"><i class="ti ti-chevron-up" id="toggle-icon-6"></i> Hide</button>
@@ -2725,8 +2733,9 @@
         if (!allSeedTags.length) {
           var { data: prefs } = await db.from('user_tag_prefs').select('tag').eq('user_id', uid);
           allSeedTags = [...new Set((prefs||[]).map(function(p){ return p.tag; }).filter(Boolean))];
-          if (!allSeedTags.length) return; // nothing to seed from — section stays hidden
-          prefSeed = allSeedTags[0];
+          // No prefs either — fall through with empty seeds; the popular
+          // fallback below keeps the shelf from silently vanishing.
+          prefSeed = allSeedTags.length ? allSeedTags[0] : null;
         }
 
         // Overlaps-on-text-column isn't expressible in PostgREST (tags_main is
@@ -2743,10 +2752,26 @@
         });
         if (filterFn) matches = filterFn(matches);
         matches = matches.slice(0, 20);
-        if (!matches.length) return;
+        // Fallback: tag matching found nothing (or user has no prefs) —
+        // show top-rated works instead so the section always appears.
+        var fallbackPop = false;
+        if (!matches.length) {
+          matches = (pool||[]).filter(function(w){
+            if (readIds.indexOf(w.id) !== -1) return false;
+            if (uid && w.author_id === uid) return false;
+            return true;
+          });
+          if (filterFn) matches = filterFn(matches);
+          matches = matches.slice(0, 20);
+          fallbackPop = true;
+          if (!matches.length) return;
+        }
         var labelEl = document.getElementById('foryou-title-label');
         var accentEl = document.querySelector('#home-section-foryou .label-accent');
-        if (labelSeed) {
+        if (fallbackPop) {
+          if (accentEl) accentEl.textContent = 'Popular on';
+          if (labelEl) labelEl.textContent = 'DawnScribe';
+        } else if (labelSeed) {
           if (accentEl) accentEl.textContent = 'Because You Read';
           if (labelEl) labelEl.textContent = '\u201C' + labelSeed.title + '\u201D';
         } else {
@@ -3688,7 +3713,7 @@
       '4':  { icon: 'ti-sparkles',   text: 'New Novels' },
       'foryou': { icon: 'ti-wand',         text: 'Because You Read' },
       '5':  { icon: 'ti-photo-star', text: 'New Artwork' },
-      '6':  { icon: 'ti-file-text',  text: 'One-Shots & Short Stories' },
+      '6':  { icon: 'ti-book',  text: 'One-Shots & Short Stories' },
       'list':   { icon: 'ti-list-details', text: 'From Your Reading List' }
     };
     // 'cr' is last by default — users can move it anywhere
@@ -4744,6 +4769,21 @@
             <span class="welcome-char" id="w-dn-counter">0/40</span>
           </div>
         </div>
+        <div id="w-identity-wrap" style="display:none;">
+          <div class="welcome-field">
+            <label class="welcome-label" for="w-username">Username</label>
+            <input class="welcome-input" type="text" id="w-username" placeholder="your_username" maxlength="20" autocomplete="off"/>
+            <div style="display:flex;justify-content:space-between;">
+              <span class="welcome-hint">3&ndash;20 characters. Letters, numbers, underscores only.</span>
+              <span class="welcome-char" id="w-un-status"></span>
+            </div>
+          </div>
+          <div class="welcome-field">
+            <label class="welcome-label" for="w-dob">Date of Birth</label>
+            <input class="welcome-input" type="date" id="w-dob"/>
+            <span class="welcome-hint">You must be at least 13 to use DawnScribe. This is never shown publicly.</span>
+          </div>
+        </div>
         <div class="welcome-field">
           <label class="welcome-label" for="w-bio">Short Bio <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
           <textarea class="welcome-input" id="w-bio" rows="3" placeholder="Tell the community a little about yourself..." maxlength="200" style="resize:none;"></textarea>
@@ -4908,10 +4948,30 @@
       if (snoozed && (Date.now() - snoozed) < 24 * 60 * 60 * 1000) return;
       // Bug 3: wrap in try/catch so a failed profile lookup never throws
       Promise.resolve(
-        db.from('profiles').select('display_name').eq('id', uid).maybeSingle()
+        db.from('profiles').select('display_name,username,date_of_birth,onboarding_done').eq('id', uid).maybeSingle()
       ).then(function(res) {
-        // Show if display_name is null/empty — truly new user
-        if (res && res.data && !res.data.display_name) {
+        if (!res || !res.data) return;
+        var p = res.data;
+        // OAuth signups skip auth.html's form, so username/DOB can be null —
+        // those fields become required here and "Skip for now" is disabled.
+        window._wNeedsIdentity = !p.username || !p.date_of_birth;
+        if (!p.onboarding_done || window._wNeedsIdentity) {
+          if (window._wNeedsIdentity) {
+            document.getElementById('w-identity-wrap').style.display = 'block';
+            var skipEl = document.querySelector('.welcome-skip');
+            if (skipEl) skipEl.style.display = 'none';
+            if (p.username) document.getElementById('w-username').value = p.username;
+            // 13+ / 120yr bounds using local date parts (same as auth.html)
+            (function() {
+              function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+              var t = new Date();
+              var oldest = new Date(); oldest.setFullYear(t.getFullYear() - 120);
+              var youngest = new Date(); youngest.setFullYear(t.getFullYear() - 13);
+              var el = document.getElementById('w-dob');
+              el.min = iso(oldest); el.max = iso(youngest);
+            })();
+          }
+          if (p.display_name) document.getElementById('w-display-name').value = p.display_name;
           document.getElementById('welcome-overlay').classList.add('open');
         }
       }).catch(function(e) {
@@ -4935,13 +4995,45 @@
       });
     }
 
-    function welcomeNext() {
+    var W_RESERVED_USERNAMES = ['admin', 'dawnscribe', 'moderator', 'support', 'staff'];
+    function wStepError(msg) {
+      var errEl = document.getElementById('welcome-next-error');
+      if (errEl) { errEl.textContent = msg; errEl.style.display = msg ? 'block' : 'none'; }
+    }
+    async function welcomeNext() {
+      wStepError('');
       var name = (document.getElementById('w-display-name').value || '').trim();
       if (!name) {
         document.getElementById('w-display-name').focus();
         document.getElementById('w-display-name').style.borderColor = 'var(--red)';
         setTimeout(function() { document.getElementById('w-display-name').style.borderColor = ''; }, 1500);
         return;
+      }
+      var identityPatch = {};
+      if (window._wNeedsIdentity) {
+        var un  = (document.getElementById('w-username').value || '').trim();
+        var dob = document.getElementById('w-dob').value;
+        if (un.length < 3)  { wStepError('Username must be at least 3 characters.'); return; }
+        if (un.length > 20) { wStepError('Username must be 20 characters or fewer.'); return; }
+        if (!/^[a-zA-Z0-9_]+$/.test(un)) { wStepError('Username can only contain letters, numbers and underscores.'); return; }
+        if (W_RESERVED_USERNAMES.indexOf(un.toLowerCase()) !== -1) { wStepError('That username is reserved. Please choose another.'); return; }
+        if (!dob) { wStepError('Please enter your date of birth.'); return; }
+        var parts = dob.split('-').map(Number);
+        var b = new Date(parts[0], parts[1] - 1, parts[2]);
+        var now = new Date();
+        var age = now.getFullYear() - b.getFullYear();
+        if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) age--;
+        if (isNaN(age) || age < 13)  { wStepError('You must be at least 13 to use DawnScribe.'); return; }
+        if (age > 120) { wStepError('Please enter a valid date of birth.'); return; }
+        // Availability check (excluding own row)
+        try {
+          var sr0 = await db.auth.getSession();
+          var myId = sr0 && sr0.data && sr0.data.session ? sr0.data.session.user.id : null;
+          var taken = await db.from('profiles').select('id').ilike('username', un).neq('id', myId).maybeSingle();
+          if (taken && taken.data) { wStepError('That username is already taken.'); return; }
+        } catch(e) { /* fall through — unique constraint is the backstop */ }
+        identityPatch.username = un;
+        identityPatch.date_of_birth = dob;
       }
       // Suggestion B: loading state while DB write is in flight
       var btn = document.getElementById('welcome-next-btn');
@@ -4956,17 +5048,20 @@
           return;
         }
         var bio = (document.getElementById('w-bio').value || '').trim();
-        db.from('profiles').update({ display_name: name, bio: bio || null }).eq('id', uid).then(function(res) {
+        var patch = { display_name: name, bio: bio || null };
+        if (identityPatch.username) { patch.username = identityPatch.username; patch.date_of_birth = identityPatch.date_of_birth; }
+        db.from('profiles').update(patch).eq('id', uid).then(function(res) {
           // Bug 2: check for error before advancing
           if (res && res.error) {
             btn.disabled = false;
             btn.innerHTML = '<i class="ti ti-arrow-right"></i> Next';
             btn.closest('#welcome-step-0').querySelector('.welcome-hint') && (document.querySelector('#welcome-step-0 .welcome-hint').style.color = 'var(--red)');
             // Show inline error near the button
-            var errEl = document.getElementById('welcome-next-error');
-            if (errEl) { errEl.textContent = 'Could not save — please try again.'; errEl.style.display = 'block'; }
+            var isDup = res.error.code === '23505' || /duplicate|unique/i.test(res.error.message || '');
+            wStepError(isDup ? 'That username is already taken.' : 'Could not save — please try again.');
             return;
           }
+          window._wNeedsIdentity = false;
           // Advance to step 1
           document.getElementById('welcome-step-0').style.display = 'none';
           document.getElementById('welcome-step-1').style.display = 'block';
@@ -5035,9 +5130,11 @@
         else if (hasWriter)                      role = 'Writer';
         else if (hasArtist)                      role = 'Artist';
         // Save role to profile (fire-and-forget — don't block closing on this)
-        if (selected.length > 0) {
-          db.from('profiles').update({ role: role }).eq('id', uid).then(function() {}).catch(function() {});
-        }
+        var finishPatch = { onboarding_done: true };
+        if (selected.length > 0) finishPatch.role = role;
+        Promise.resolve(
+          db.from('profiles').update(finishPatch).eq('id', uid)
+        ).then(function() {}).catch(function() {});
         // Save genre taste prefs (fire-and-forget). Upsert so re-running the
         // modal never errors on the (user_id, tag) primary key.
         var genreRows = [];

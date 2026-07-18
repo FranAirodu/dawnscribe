@@ -3,6 +3,14 @@
 <head>
   <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Discover novels, one-shots, and artwork across every genre on DawnScribe." />
+  <meta property="og:site_name" content="DawnScribe" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Browse — DawnScribe" />
+  <meta property="og:description" content="Discover novels, one-shots, and artwork across every genre on DawnScribe." />
+  <meta property="og:url" content="https://www.dawnscribe.com/browse.html" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230d9488%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2244%22%20r%3D%2214%22%20fill%3D%22%23fbbf24%22/%3E%3Cg%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2232%22%20y1%3D%2214%22%20x2%3D%2232%22%20y2%3D%2224%22/%3E%3Cline%20x1%3D%2214%22%20y1%3D%2224%22%20x2%3D%2221%22%20y2%3D%2231%22/%3E%3Cline%20x1%3D%2250%22%20y1%3D%2224%22%20x2%3D%2243%22%20y2%3D%2231%22/%3E%3C/g%3E%3Crect%20y%3D%2244%22%20width%3D%2264%22%20height%3D%2220%22%20fill%3D%22%230d9488%22/%3E%3C/svg%3E" />
   <title>DawnScribe — Browse</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
@@ -200,13 +208,21 @@
     }
     function ratingStarsHtml(w) {
       var r = parseFloat(w.rating) || 0;
-      if (r <= 0) return '';
+      var n = parseInt(w.rating_count, 10) || 0;
+      if (r <= 0 || n <= 0) return '';
       var pct = Math.max(0, Math.min(100, (r / 5) * 100));
       var stars = '<span title="' + r.toFixed(1) + ' / 5" style="position:relative;display:inline-block;font-size:13px;line-height:1;letter-spacing:1px;color:var(--text3);vertical-align:middle;">'
         + '★★★★★'
         + '<span style="position:absolute;top:0;left:0;width:' + pct + '%;overflow:hidden;white-space:nowrap;color:#f59e0b;pointer-events:none;">★★★★★</span>'
         + '</span>';
-      return '<div class="card-rating" style="display:flex;align-items:center;gap:4px;margin:2px 0 1px;">' + stars + '<span style="color:var(--text3);font-size:10px;">' + r.toFixed(1) + '</span></div>';
+      return '<div class="card-rating" style="display:flex;align-items:center;gap:4px;margin:2px 0 1px;">' + stars + '<span style="color:var(--text3);font-size:10px;">' + r.toFixed(1) + ' (' + n + ')</span></div>';
+    }
+    function fmtWords(n) {
+      n = parseInt(n, 10) || 0;
+      if (n <= 0) return '';
+      if (n >= 1000000) return (n/1000000).toFixed(1).replace(/\.0$/,'') + 'M words';
+      if (n >= 1000) return Math.round(n/1000) + 'k words';
+      return n + ' words';
     }
     function contentWarningBadge(w) {
       var warnGore = w.content_rating_gore && (myContentFilters.safe || !myContentFilters.gore);
@@ -231,11 +247,13 @@
         + '<div class="result-body">'
         + '<div class="result-title">' + esc(w.title) + contentWarningBadge(w) + '</div>'
         + ratingStarsHtml(w)
-        + '<div class="result-sub">by <span class="result-author-link" onclick="event.preventDefault();event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'">' + esc(author) + '</span>' + (w.created_at ? ' · <i class="ti ti-clock" style="font-size:10px;"></i> ' + timeAgo(w.created_at) : '') + '</div>'
+        + '<div class="result-sub">by <span class="result-author-link" onclick="event.preventDefault();event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'">' + esc(author) + '</span>' + ((w.updated_at || w.created_at) ? ' · <i class="ti ti-clock" style="font-size:10px;"></i> Updated ' + timeAgo(w.updated_at || w.created_at) : '') + '</div>'
         + '<div class="result-sub" style="margin-top:1px;">'
-          + (w.chapters_count ? '<i class="ti ti-book" style="font-size:10px;"></i> ' + w.chapters_count + ' ch' : '')
-          + (w.chapters_count && w.status ? ' · ' : '')
-          + (w.status ? '<span style="color:' + (w.status==='completed'?'var(--green)':'var(--accent)') + ';font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;">' + (w.status==='completed'?'Complete':'Ongoing') + '</span>' : '')
+          + [
+              (w.chapters_count ? '<i class="ti ti-book" style="font-size:10px;"></i> ' + w.chapters_count + ' ch' : ''),
+              fmtWords(w.word_count),
+              (w.status ? '<span style="color:' + (w.status==='completed'?'var(--green)':'var(--accent)') + ';font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;">' + (w.status==='completed'?'Complete':'Ongoing') + '</span>' : '')
+            ].filter(Boolean).join(' · ')
         + '</div>'
         + (w.synopsis ? '<div class="result-flavor">' + esc(w.synopsis) + '</div>' : '')
         + (tagHtml ? '<div class="result-tags">' + tagHtml + '</div>' : '')
@@ -294,9 +312,10 @@
         + '</div>'
         + '<div class="list-row-meta">'
           + (w.chapters_count ? '<span><i class="ti ti-book" style="font-size:10px;"></i> ' + w.chapters_count + ' ch</span><br>' : '')
+          + (fmtWords(w.word_count) ? '<span>' + fmtWords(w.word_count) + '</span><br>' : '')
           + (w.status ? '<span style="color:' + (w.status==='completed'?'var(--green)':'var(--accent)') + ';font-weight:700;text-transform:uppercase;font-size:10px;">' + (w.status==='completed'?'Complete':'Ongoing') + '</span><br>' : '')
           + '<span style="cursor:pointer;text-decoration:underline;" onclick="event.preventDefault();event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'">' + esc(author) + '</span>'
-          + (w.created_at ? '<br>' + timeAgo(w.created_at) : '')
+          + ((w.updated_at || w.created_at) ? '<br>Updated ' + timeAgo(w.updated_at || w.created_at) : '')
         + '</div></a>';
     }
     function renderChapterListRow(ch, workMap, profileMap) {
@@ -343,7 +362,7 @@
 
     async function fetchPage() {
       if (section === 'new-novels' || section === 'featured-novels') {
-        var q = db.from('works').select('id,title,cover_url,rating,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,chapters_count,status', { count: 'exact' })
+        var q = db.from('works').select('id,title,cover_url,rating,rating_count,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,updated_at,chapters_count,word_count,status', { count: 'exact' })
           .eq('type','novel').eq('is_published',true);
         q = applyContentFilters(q); q = applyLanguageFilters(q);
         if (completeOnly) q = q.eq('status', 'completed');
@@ -359,7 +378,7 @@
         };
       }
       if (section === 'one-shots') {
-        var qos = db.from('works').select('id,title,cover_url,rating,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,chapters_count,status', { count: 'exact' })
+        var qos = db.from('works').select('id,title,cover_url,rating,rating_count,synopsis,tags_main,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at,updated_at,chapters_count,word_count,status', { count: 'exact' })
           .eq('type','novel').eq('is_published',true).eq('is_one_shot',true);
         qos = applyContentFilters(qos); qos = applyLanguageFilters(qos);
         qos = qos.order('created_at', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);

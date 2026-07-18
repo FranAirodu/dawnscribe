@@ -388,7 +388,9 @@
       + '</div>';
 
     if(!accepted.length){
-      s2.innerHTML += '<div class="empty"><i class="ti ti-users"></i><p>No friends yet.<br>Visit someone\'s profile and send them a friend request!</p></div>';
+      s2.innerHTML += '<div class="empty"><i class="ti ti-users"></i><p>No friends yet. Here are some people you might know:</p></div>'
+        + '<div class="find-friends-results" id="friend-suggestions" style="margin-top:12px;"></div>';
+      loadFriendSuggestions();
     } else {
       accepted.forEach(function(row){
         var otherId = row.requester_id === uid ? row.recipient_id : row.requester_id;
@@ -706,6 +708,50 @@
         + actionHtml;
       container.appendChild(row);
     });
+  }
+
+  // ── FRIEND SUGGESTIONS (empty-state) ─────────────────────────
+  // Suggests authors of works in the viewer's library first, then
+  // pads with recently-active users. Reuses renderFindResults so
+  // Add Friend / Pending / blocked handling all behave identically.
+  async function loadFriendSuggestions(){
+    var container = document.getElementById('friend-suggestions');
+    if(!container) return;
+    try {
+      var excluded = {}; excluded[uid] = true;
+      allFriendshipRows.forEach(function(r){ excluded[r.requester_id] = true; excluded[r.recipient_id] = true; });
+
+      var picks = [];
+      // 1) Authors of works in my library
+      var { data: entries } = await db.from('reading_list_entries')
+        .select('work_id').eq('user_id', uid).limit(30);
+      var workIds = [...new Set((entries||[]).map(function(e){ return e.work_id; }).filter(Boolean))];
+      if(workIds.length){
+        var { data: libWorks } = await db.from('works').select('author_id').in('id', workIds);
+        var authorIds = [...new Set((libWorks||[]).map(function(w){ return w.author_id; }).filter(function(a){ return a && !excluded[a]; }))];
+        if(authorIds.length){
+          var { data: authorProfs } = await db.from('profiles')
+            .select('id,username,display_name,avatar_url').in('id', authorIds.slice(0, 10));
+          (authorProfs||[]).forEach(function(p){ if(!excluded[p.id]){ excluded[p.id] = true; picks.push(p); } });
+        }
+      }
+      // 2) Pad with recently-active users
+      if(picks.length < 5){
+        var { data: recent } = await db.from('profiles')
+          .select('id,username,display_name,avatar_url')
+          .neq('id', uid)
+          .order('last_active_at', { ascending: false, nullsFirst: false })
+          .limit(15);
+        (recent||[]).forEach(function(p){
+          if(picks.length >= 5) return;
+          if(excluded[p.id]) return;
+          excluded[p.id] = true; picks.push(p);
+        });
+      }
+      picks = picks.filter(function(p){ return !dsBlock.either(p.id); }).slice(0, 5);
+      if(!picks.length){ container.remove(); return; }
+      renderFindResults(picks, container);
+    } catch(e) { try { container.remove(); } catch(e2) {} }
   }
 
   async function sendRequest(recipientId, btn){

@@ -3,6 +3,14 @@
 <head>
   <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Search titles, one-shots, artwork, and creators on DawnScribe." />
+  <meta property="og:site_name" content="DawnScribe" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Search — DawnScribe" />
+  <meta property="og:description" content="Search titles, one-shots, artwork, and creators on DawnScribe." />
+  <meta property="og:url" content="https://www.dawnscribe.com/search.html" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230d9488%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2244%22%20r%3D%2214%22%20fill%3D%22%23fbbf24%22/%3E%3Cg%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2232%22%20y1%3D%2214%22%20x2%3D%2232%22%20y2%3D%2224%22/%3E%3Cline%20x1%3D%2214%22%20y1%3D%2224%22%20x2%3D%2221%22%20y2%3D%2231%22/%3E%3Cline%20x1%3D%2250%22%20y1%3D%2224%22%20x2%3D%2243%22%20y2%3D%2231%22/%3E%3C/g%3E%3Crect%20y%3D%2244%22%20width%3D%2264%22%20height%3D%2220%22%20fill%3D%22%230d9488%22/%3E%3C/svg%3E" />
   <title>DawnScribe — Search</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
@@ -205,15 +213,33 @@
     const coverColors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa','#fb923c'];
     function coverColor(id) { return coverColors[Math.abs(id || 0) % coverColors.length]; }
     function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-    function ratingStarsHtml(rating) {
+    function ratingStarsHtml(rating, count) {
       var r = parseFloat(rating) || 0;
-      if (r <= 0) return '';
+      var n = parseInt(count, 10) || 0;
+      if (r <= 0 || n <= 0) return '';
       var pct = Math.max(0, Math.min(100, (r / 5) * 100));
       var stars = '<span title="' + r.toFixed(1) + ' / 5" style="position:relative;display:inline-block;font-size:12px;line-height:1;letter-spacing:1px;color:var(--text3);vertical-align:middle;">'
         + '\u2605\u2605\u2605\u2605\u2605'
         + '<span style="position:absolute;top:0;left:0;width:' + pct + '%;overflow:hidden;white-space:nowrap;color:#f59e0b;pointer-events:none;">\u2605\u2605\u2605\u2605\u2605</span>'
         + '</span>';
-      return '<div style="display:flex;align-items:center;gap:4px;margin:1px 0;">' + stars + '<span style="color:var(--text3);font-size:10px;">' + r.toFixed(1) + '</span></div>';
+      return '<div style="display:flex;align-items:center;gap:4px;margin:1px 0;">' + stars + '<span style="color:var(--text3);font-size:10px;">' + r.toFixed(1) + ' (' + n + ')</span></div>';
+    }
+    function fmtWords(n) {
+      n = parseInt(n, 10) || 0;
+      if (n <= 0) return '';
+      if (n >= 1000000) return (n/1000000).toFixed(1).replace(/\.0$/,'') + 'M words';
+      if (n >= 1000) return Math.round(n/1000) + 'k words';
+      return n + ' words';
+    }
+    function timeAgo(ts) {
+      if (!ts) return '';
+      var s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+      if (s < 60) return 'just now';
+      var m = Math.floor(s/60); if (m < 60) return m + 'm ago';
+      var hr = Math.floor(m/60); if (hr < 24) return hr + 'h ago';
+      var d = Math.floor(hr/24); if (d < 30) return d + 'd ago';
+      var mo = Math.floor(d/30); if (mo < 12) return mo + 'mo ago';
+      return Math.floor(mo/12) + 'y ago';
     }
 
     // Parse URL params
@@ -388,7 +414,7 @@
     async function queryTitles(q, offset) {
       var col = tagMode ? 'tags_all' : 'title';
       var query = db.from('works')
-        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id, language, rating, is_one_shot', { count: 'exact' })
+        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, updated_at, author_id, language, rating, rating_count, is_one_shot, chapters_count, word_count, status', { count: 'exact' })
         .eq('type', 'novel')
         .eq('is_published', true);
       if (q) query = query.ilike(col, '%' + (tagMode ? ilikeEsc(q) : q) + '%');
@@ -435,7 +461,7 @@
     async function queryOneShots(q, offset) {
       var col = tagMode ? 'tags_all' : 'title';
       var query = db.from('works')
-        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, author_id, language, rating, is_one_shot', { count: 'exact' })
+        .select('id, title, cover_url, type, tags_main, synopsis, flavor_text, created_at, updated_at, author_id, language, rating, rating_count, is_one_shot, chapters_count, word_count, status', { count: 'exact' })
         .eq('type', 'novel')
         .eq('is_one_shot', true)
         .eq('is_published', true);
@@ -498,8 +524,16 @@
         + '<div class="result-body">'
         + '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:2px;display:block;">' + (w.is_one_shot ? 'One-Shot' : 'Novel') + '</span>'
         + '<div class="result-title">' + esc(w.title) + '</div>'
-        + ratingStarsHtml(w.rating)
+        + ratingStarsHtml(w.rating, w.rating_count)
         + '<div class="result-sub">by <span onclick="event.stopPropagation();window.location.href=\'profile.html?user=' + esc(authorHandle) + '\'" style="color:var(--accent);cursor:pointer;">' + esc(author) + '</span></div>'
+        + '<div class="result-sub" style="margin-top:1px;">'
+          + [
+              ((w.updated_at || w.created_at) ? '<i class="ti ti-clock" style="font-size:10px;"></i> Updated ' + timeAgo(w.updated_at || w.created_at) : ''),
+              (w.chapters_count ? '<i class="ti ti-book" style="font-size:10px;"></i> ' + w.chapters_count + ' ch' : ''),
+              fmtWords(w.word_count),
+              (w.status ? '<span style="color:' + (w.status==='completed'?'var(--green)':'var(--accent)') + ';font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;">' + (w.status==='completed'?'Complete':'Ongoing') + '</span>' : '')
+            ].filter(Boolean).join(' · ')
+        + '</div>'
         + flavorHtml2
         + (tagHtml ? '<div class="result-tags">' + tagHtml + '</div>' : '')
         + '</div></a>';

@@ -335,7 +335,7 @@
   var BATCH   = 30;
 
   // ── UTILS ────────────────────────────────────────────────────────
-  function esc(s){ var d=document.createElement('div');d.textContent=s||'';return d.innerHTML; }
+  function esc(s){ var d=document.createElement('div');d.textContent=s||'';return d.innerHTML.replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   function coverColor(id){ var h=0;var s=(id||'').toString();for(var i=0;i<s.length;i++){h=(h<<5)-h+s.charCodeAt(i);h|=0;}return 'cc'+(Math.abs(h)%8); }
   function coverLetter(t){ return (t||'?').charAt(0).toUpperCase(); }
   function timeAgo(ts){
@@ -355,6 +355,14 @@
   }
   function setClearedIds(tab, map){
     localStorage.setItem('ds_notif_cleared_'+tab, JSON.stringify(Object.keys(map)));
+  }
+  function markCardRead(tab, id, cardEl){
+    if(!id) return;
+    var m=getClearedIds(tab); if(m[id]) return; m[id]=true; setClearedIds(tab,m);
+    if(cardEl){ cardEl.classList.remove('unread'); var dot=cardEl.querySelector('.notif-unread-dot'); if(dot) dot.remove(); }
+    var tabKey = (tab==='novels'||tab==='artists') ? 'following' : tab;
+    var btn=document.getElementById('tab-btn-'+tabKey);
+    if(btn){ var b=btn.querySelector('.tab-badge'); if(b){ var c=parseInt(b.textContent)-1; if(c<=0||isNaN(c)) b.remove(); else b.textContent=c; } }
   }
 
   // ── TABS ─────────────────────────────────────────────────────────
@@ -383,7 +391,7 @@
     var card = document.createElement('div');
     card.className = 'notif-card novel-card' + (isUnread ? ' unread' : '');
     card.dataset.id = ch.id;
-    card.onclick = function(e){ if(e.target.closest('.continue-btn')||e.target.closest('.notif-dismiss')) return; window.location.href='story.html?id='+workId; };
+    card.onclick = function(e){ if(e.target.closest('.continue-btn')||e.target.closest('.notif-dismiss')) return; (card.dataset.groupIds||String(ch.id)).split(',').forEach(function(gid,gi){ markCardRead('novels',gid,gi===0?card:null); }); window.location.href='story.html?id='+workId; };
     card.style.cursor = 'pointer';
     var coverHtml = work&&work.cover_url
       ? '<img src="'+esc(work.cover_url)+'" style="width:48px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;" alt=""/>'
@@ -405,7 +413,7 @@
         '<a class="continue-btn" href="'+continueHref+'" onclick="event.stopPropagation();"><i class="ti ti-player-play"></i> Continue</a>'+
       '</div>'+
       '<button class="notif-dismiss" title="Dismiss">&#x2715;</button>';
-    card.querySelector('.notif-dismiss').addEventListener('click', function(e){ e.stopPropagation(); window.dismissCard(card,'novels',ch.id,false); });
+    card.querySelector('.notif-dismiss').addEventListener('click', function(e){ e.stopPropagation(); var ids=(card.dataset.groupIds||String(ch.id)).split(','); ids.forEach(function(gid){ setDismissedId('novels',gid); }); window.dismissCard(card,'novels',ch.id,false); });
     return card;
   }
 
@@ -417,7 +425,7 @@
     var card = document.createElement('div');
     card.className = 'notif-card'+(isUnread?' unread':'');
     card.dataset.id = work.id;
-    card.onclick = function(){ window.location.href='artwork.html?id='+work.id; };
+    card.onclick = function(){ markCardRead('artists',work.id,card); window.location.href='artwork.html?id='+work.id; };
     var avHtml = prof&&prof.avatar_url ? '<img src="'+esc(prof.avatar_url)+'" alt=""/>' : esc(name.charAt(0).toUpperCase());
     card.innerHTML =
       '<div class="notif-cover '+coverColor(work.author_id)+'" style="overflow:hidden;">'+avHtml+'</div>'+
@@ -467,6 +475,7 @@
     }
 
     card.onclick = function(){
+      markCardRead('comments',cm.id,card);
       if(!cm.work_id) return;
       if(cm._type==='song'){
         if(cm.character_id){ sessionStorage.setItem('ds_open_char_id',cm.character_id); sessionStorage.setItem('ds_open_char_name',cm._charName||''); sessionStorage.setItem('ds_open_char_action','song'); }
@@ -481,7 +490,7 @@
         window.location.href='story.html?id='+cm.work_id; return;
       }
       if(cm._type==='echo'){
-        db.from('notifications').update({is_read:true}).eq('id',cm.id);
+        try{ db.from('notifications').update({is_read:true}).eq('id',cm.id).then(function(){}); }catch(eU){}
         if(cm.chapter_id) window.location.href='chapter.html?id='+cm.chapter_id;
         else window.location.href='story.html?id='+cm.work_id;
         return;
@@ -543,7 +552,7 @@
         else if(n.work_id) window.location.href='story.html?id='+n.work_id;
         return;
       }
-      db.from('notifications').update({is_read:true}).eq('id',n.id);
+      if(!String(n.id).startsWith('poll-')){ try{ db.from('notifications').update({is_read:true}).eq('id',n.id).then(function(){}); }catch(eU){} }
       if(n.type==='new_follower'&&n._username){ window.location.href='profile.html?u='+n._username; return; }
       if(n.type==='collab_request'){ window.location.href='collab-inbox.html'; return; }
       if(n.type==='commission_request'){ if(n.work_id) window.location.href='artwork.html?id='+n.work_id; return; }
@@ -650,7 +659,7 @@
       for(var gi=gStart;gi<gEnd;gi++){
         var wid=groupOrder[gi]; var items=grouped[wid];
         var card=renderNovelCard(items[0],cleared,items.length);
-        if(card) feed.appendChild(card);
+        if(card){ card.dataset.groupIds=items.map(function(it){return it.id;}).join(','); feed.appendChild(card); }
       }
       shown[tab]=gEnd;
       var btn=document.getElementById('load-more-novels');
@@ -688,7 +697,7 @@
         cleared[item.id]=true;
         // Only push IDs that came from the notifications table (echoes, polls from notif table, social)
         // chapter_comments / paragraph_comments / character_opinions / songs are NOT in notifications table
-        var fromNotifTable = (t==='social') || item._type==='echo' || (t==='comments' && item._type==='poll_closing' && item.id && !String(item.id).startsWith('poll-'));
+        var fromNotifTable = (t==='social' && item.type!=='blast') || item._type==='echo';
         if(fromNotifTable && item.id && !String(item.id).startsWith('poll-')) dbIds.push(item.id);
       });
       setClearedIds(t,cleared);
@@ -696,7 +705,7 @@
       renderBatch(t,false);
       // Write to DB in background
       if(dbIds.length){
-        try{ db.from('notifications').update({is_read:true}).in('id',dbIds); }catch(e){}
+        try{ db.from('notifications').update({is_read:true}).in('id',dbIds).then(function(){}); }catch(e){}
       }
     });
     var btn=document.getElementById('tab-btn-'+tab);
@@ -769,9 +778,8 @@
     setTimeout(function(){ if(cardEl.parentNode) cardEl.parentNode.removeChild(cardEl); }, 380);
     if(itemId){
       setDismissedId(tab, itemId);
-      if(dbDelete){
-        try{ db.from('notifications').delete().eq('id', itemId); } catch(e){}
-        try{ db.from('notifications').update({is_read:true}).eq('id', itemId); } catch(e){}
+      if(dbDelete && !String(itemId).startsWith('poll-')){
+        try{ db.from('notifications').delete().eq('id', itemId).then(function(){}); } catch(e){}
       }
     }
   };
@@ -820,6 +828,9 @@
       var {data:progData}=await db.from('reading_progress').select('work_id,chapter_id,chapter_number').eq('user_id',uid).in('work_id',wIds).order('chapter_number',{ascending:false});
       var progMap={};(progData||[]).forEach(function(p){ if(!progMap[p.work_id]||p.chapter_number>progMap[p.work_id].chapter_number) progMap[p.work_id]=p; });
       rows.forEach(function(c){c.progress=progMap[c.work_id]||null;});
+      rows=rows.filter(function(c){ var p=progMap[c.work_id]; return !p || c.chapter_number==null || c.chapter_number>p.chapter_number; });
+      var dismissedNov=getDismissedIds('novels');
+      rows=rows.filter(function(c){ return !dismissedNov[c.id]; });
       var cleared=getClearedIds('novels');
       rows.sort(function(a,b){ var aU=!cleared[a.id],bU=!cleared[b.id]; if(aU!==bU) return aU?-1:1; return new Date(b.created_at)-new Date(a.created_at); });
       allData.novels=rows; renderBatch('novels',false);
@@ -840,6 +851,8 @@
         var aMap={};(aProfs||[]).forEach(function(p){aMap[p.id]=p;});
         rows.forEach(function(w){w.profiles=aMap[w.author_id]||null;});
       }
+      var dismissedArt=getDismissedIds('artists');
+      rows=rows.filter(function(w){ return !dismissedArt[w.id]; });
       var cleared=getClearedIds('artists');
       rows.sort(function(a,b){ var aU=!cleared[a.id],bU=!cleared[b.id]; if(aU!==bU) return aU?-1:1; return new Date(b.created_at)-new Date(a.created_at); });
       allData.artists=rows; renderBatch('artists',false);
@@ -1125,7 +1138,7 @@
         var el=document.getElementById(id); if(el) el.innerHTML='';
       });
       var loginMsg='<div class="empty-state"><i class="ti ti-lock"></i><p>Please <a href="auth.html" style="color:var(--accent);">log in</a> to view notifications.</p></div>';
-      ['feed-novels','feed-comments-chap','feed-social'].forEach(function(id){ var el=document.getElementById(id); if(el) el.innerHTML=loginMsg; });
+      ['feed-novels','feed-artists','feed-social','feed-friend-requests','feed-collabs','feed-comments-chap','feed-comments-songs','feed-comments-opinions','feed-comments-quotes','feed-comments-questions','feed-comments-echoes','feed-comments-polls'].forEach(function(id){ var el=document.getElementById(id); if(el) el.innerHTML=loginMsg; });
       return;
     }
     var uid=session.user.id;

@@ -68,6 +68,17 @@
     .empty-state{text-align:center;padding:56px 24px;color:var(--text3);}
     .empty-state i{font-size:40px;display:block;margin-bottom:12px;opacity:0.35;}
     .empty-state a{color:var(--accent);font-weight:700;text-decoration:none;}
+    .pop-row{margin-top:28px;text-align:left;}
+    .pop-row-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:12px;text-align:center;}
+    .pop-grid{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;}
+    .pop-card{width:110px;display:flex;flex-direction:column;gap:6px;}
+    .pop-cover{width:110px;height:150px;border-radius:8px;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:26px;font-weight:700;color:rgba(0,0,0,0.35);text-decoration:none;}
+    .pop-cover img{width:100%;height:100%;object-fit:cover;}
+    .pop-title{font-size:12px;font-weight:700;color:var(--text);text-decoration:none;line-height:1.3;display:block;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+    .pop-title:hover{color:var(--accent);}
+    .pop-add-btn{font-size:11px;font-weight:700;padding:5px 0;border-radius:7px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:'Lato',sans-serif;transition:all 0.15s;}
+    .pop-add-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .pop-add-btn:disabled{opacity:0.6;cursor:default;}
     .list-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
     .list-head-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;}
     .list-head-title i{color:var(--accent);}
@@ -389,6 +400,7 @@
           dropped: '<i class="ti ti-x"></i><div>Nothing dropped. Life\u2019s too short for books you\u2019re not enjoying — no judgment here.</div>'
         };
         empty.innerHTML = emptyMsgs[currentTab] || '<i class="ti ti-books"></i><div>Nothing here yet.</div>';
+        loadPopularSuggestions(empty);
         return;
       }
       empty.style.display = 'none';
@@ -442,6 +454,60 @@
     document.addEventListener('click', function() {
       document.querySelectorAll('.lib-menu').forEach(function(m){ m.style.display = 'none'; });
     });
+
+    // ── POPULAR SUGGESTIONS (empty-state) ───────────────────────
+    // Turns dead-end empty tabs into a next step: shows the top works
+    // by weekly sparks with a one-click "Plan to Read" add.
+    var popularCache = null;
+    async function loadPopularSuggestions(container) {
+      try {
+        if (!popularCache) {
+          var { data } = await db.from('works')
+            .select('id,title,cover_url,spark_count_week,rating')
+            .eq('type','novel').eq('is_published', true)
+            .neq('content_rating_erotica', true)
+            .order('spark_count_week', { ascending: false })
+            .order('rating', { ascending: false, nullsFirst: false })
+            .limit(12);
+          popularCache = data || [];
+        }
+        var inLib = {};
+        allEntries.forEach(function(e){ inLib[e.work_id] = true; });
+        var picks = popularCache.filter(function(w){ return !inLib[w.id]; }).slice(0, 6);
+        if (!picks.length) return;
+        var colors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa'];
+        var cards = picks.map(function(w, i){
+          var cover = w.cover_url
+            ? '<img src="' + escHtml(w.cover_url) + '" alt=""/>'
+            : escHtml((w.title || '?')[0].toUpperCase());
+          return '<div class="pop-card">'
+            + '<a class="pop-cover" style="background:' + colors[i % colors.length] + ';" href="story.html?id=' + escHtml(w.id) + '">' + cover + '</a>'
+            + '<a class="pop-title" href="story.html?id=' + escHtml(w.id) + '">' + escHtml(w.title || 'Untitled') + '</a>'
+            + '<button class="pop-add-btn" onclick=' + JSON.stringify('addSuggested(' + JSON.stringify(w.id) + ', this)') + '><i class="ti ti-bookmark"></i> Plan to Read</button>'
+            + '</div>';
+        }).join('');
+        var row = document.createElement('div');
+        row.className = 'pop-row';
+        row.innerHTML = '<div class="pop-row-title"><i class="ti ti-flame"></i> Popular right now</div><div class="pop-grid">' + cards + '</div>';
+        container.appendChild(row);
+      } catch(e) { /* suggestions are best-effort */ }
+    }
+
+    async function addSuggested(workId, btn) {
+      if (!currentSession) return;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2"></i>';
+      var { error } = await db.from('reading_list_entries')
+        .insert({ user_id: currentSession.user.id, work_id: workId, status: 'plan_to_read' });
+      if (error) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-bookmark"></i> Plan to Read';
+        showToast('Could not add.', 'ti-x');
+        return;
+      }
+      showToast('Added to Plan to Read!', 'ti-bookmark');
+      loadLibrary();
+    }
 
     async function changeStatus(entryId, newStatus) {
       var entry = allEntries.find(function(e){ return e.id === entryId; });
