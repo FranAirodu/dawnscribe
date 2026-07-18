@@ -42,6 +42,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
   <script src="readingFonts.js"></script>
   <script>
     (function(){
@@ -2060,10 +2061,7 @@
         if (dir === 'down' && dnCount) dnCount.textContent = Math.max(0, parseInt(dnCount.textContent||0) - 1);
         await db.from('paragraph_comment_votes').delete()
           .eq('comment_id', commentId).eq('user_id', currentSession.user.id);
-        // Update counts on comment
-        var upVal = parseInt(upCount ? upCount.textContent : 0);
-        var dnVal = parseInt(dnCount ? dnCount.textContent : 0);
-        await db.from('paragraph_comments').update({ upvotes: upVal, downvotes: dnVal }).eq('id', commentId);
+        // Server trigger recomputes vote counts on paragraph_comments
       } else {
         // Switching or new vote
         if (current === 'up' && upCount) upCount.textContent = Math.max(0, parseInt(upCount.textContent||0) - 1);
@@ -2076,12 +2074,9 @@
         await db.from('paragraph_comment_votes').upsert({
           comment_id: commentId, user_id: currentSession.user.id, vote_type: dir
         }, { onConflict: 'comment_id,user_id' });
-        var upVal = parseInt(upCount ? upCount.textContent : 0);
+        // Server trigger recomputes vote counts and auto-deletes at 7 downvotes
         var dnVal = parseInt(dnCount ? dnCount.textContent : 0);
-        await db.from('paragraph_comments').update({ upvotes: upVal, downvotes: dnVal }).eq('id', commentId);
-        // Auto-delete at 7 downvotes
         if (dir === 'down' && dnVal >= 7) {
-          await db.from('paragraph_comments').delete().eq('id', commentId);
           card.style.transition = 'opacity 0.4s';
           card.style.opacity = '0';
           setTimeout(function(){ card.remove(); }, 400);
@@ -3406,6 +3401,13 @@
       var chapResult = await db.from('chapters').select('*').eq('id', chapterId).maybeSingle();
       if (!chapResult.data) { document.getElementById('chapter-title-display').textContent = 'Chapter not found.'; return; }
       chapterData = chapResult.data;
+      // SECURITY: sanitize stored rich-text HTML before any innerHTML render.
+      // Quill constrains the editor UI, but content can be written directly via the
+      // Supabase API, so treat it as untrusted. Strips scripts/event handlers while
+      // keeping Quill formatting (classes + inline styles).
+      if (window.DOMPurify && chapterData.content) {
+        chapterData.content = DOMPurify.sanitize(chapterData.content);
+      }
       applyChapterFont();
       // Author-dashboard analytics: bump this chapter's daily view bucket.
       // Fire-and-forget; never blocks page load.
