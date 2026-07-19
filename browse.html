@@ -150,6 +150,26 @@
     var myContentFilters = { safe: true, gore: false, erotica: false };
     var completeOnly = false;
 
+    // ── First-page cache (per session, 2 min TTL) ──
+    var CACHE_TTL_MS = 2 * 60 * 1000;
+    function cacheKey() {
+      return 'ds_browse_cache:' + section + '|' + viewMode + '|' + (completeOnly ? '1' : '0') + '|' + (myUid || 'anon');
+    }
+    function cacheGet() {
+      try {
+        var raw = sessionStorage.getItem(cacheKey());
+        if (!raw) return null;
+        var obj = JSON.parse(raw);
+        if (!obj || (Date.now() - obj.t) > CACHE_TTL_MS) { sessionStorage.removeItem(cacheKey()); return null; }
+        return obj.v;
+      } catch(e) { return null; }
+    }
+    function cacheSet(result) {
+      try {
+        sessionStorage.setItem(cacheKey(), JSON.stringify({ t: Date.now(), v: { items: result.items, count: result.count, html: result.html, grid: result.grid } }));
+      } catch(e) {}
+    }
+
     async function surpriseMe(){
       var btn = document.getElementById('surprise-btn');
       btn.disabled = true;
@@ -366,7 +386,7 @@
           .eq('type','novel').eq('is_published',true);
         q = applyContentFilters(q); q = applyLanguageFilters(q);
         if (completeOnly) q = q.eq('status', 'completed');
-        q = q.order(section === 'new-novels' ? 'created_at' : 'rating', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
+        q = q.order(section === 'new-novels' ? 'created_at' : 'rating', { ascending: false, nullsFirst: false }).range(offset, offset + PAGE_SIZE - 1);
         var { data, count, error } = await q;
         if (error) throw error;
         var profileMap = await fetchProfiles((data||[]).map(function(w){ return w.author_id; }));
@@ -396,7 +416,7 @@
         var q2 = db.from('works').select('id,title,cover_url,rating,synopsis,author_id,content_rating_gore,content_rating_erotica,content_warnings,created_at', { count: 'exact' })
           .eq('type','artwork').eq('is_published',true);
         q2 = applyContentFilters(q2);
-        q2 = q2.order(section === 'new-art' ? 'created_at' : 'rating', { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
+        q2 = q2.order(section === 'new-art' ? 'created_at' : 'rating', { ascending: false, nullsFirst: false }).range(offset, offset + PAGE_SIZE - 1);
         var res2 = await q2;
         if (res2.error) throw res2.error;
         var profileMap2 = await fetchProfiles((res2.data||[]).map(function(w){ return w.author_id; }));
@@ -457,7 +477,11 @@
         document.getElementById('load-more-wrap').style.display = 'none';
       }
       try {
-        var result = await fetchPage();
+        var result = null;
+        if (reset) result = cacheGet();
+        var fromCache = !!result;
+        if (!result) result = await fetchPage();
+        if (reset && !fromCache) cacheSet(result);
         totalCount = result.count;
         offset += result.items.length;
 

@@ -144,6 +144,21 @@
     var myEmberBalance = 0;
     var myVotesByWork = {};
 
+    // ── Board HTML cache (per session, 2 min TTL) ──
+    var BOARD_CACHE_TTL_MS = 2 * 60 * 1000;
+    function boardCacheGet(kind) {
+      try {
+        var raw = sessionStorage.getItem('ds_rising_board:' + kind);
+        if (!raw) return null;
+        var obj = JSON.parse(raw);
+        if (!obj || (Date.now() - obj.t) > BOARD_CACHE_TTL_MS) { sessionStorage.removeItem('ds_rising_board:' + kind); return null; }
+        return obj.h;
+      } catch(e) { return null; }
+    }
+    function boardCacheSet(kind, htmlStr) {
+      try { sessionStorage.setItem('ds_rising_board:' + kind, JSON.stringify({ t: Date.now(), h: htmlStr })); } catch(e) {}
+    }
+
     function showToast(msg, icon) {
       var t = document.getElementById('toast');
       document.getElementById('toast-msg').textContent = msg || 'Done!';
@@ -186,6 +201,8 @@
 
     async function loadGenericBoard(kind) {
       var el = document.getElementById('leaderboard-list');
+      var cached = boardCacheGet(kind);
+      if (cached) { el.innerHTML = cached; return; }
       try {
         var q = db.from('works')
           .select('id,title,cover_url,author_id,celestial_flame_count,spark_count_total,avg_chapter_days,chapters_count,created_at')
@@ -212,7 +229,9 @@
             fresh: 'No new stories have earned Sparks in the last 30 days \u2014 check back soon!',
             steady: 'No stories with 5+ chapters and a posting rhythm yet.'
           }[kind] || 'Nothing to rank yet.';
-          el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ' + BOARDS[kind].icon + '"></i></div><div class="state-body">' + emptyMsg + '</div></div>';
+          var emptyHtml = '<div class="state-wrap"><div class="state-icon"><i class="ti ' + BOARDS[kind].icon + '"></i></div><div class="state-body">' + emptyMsg + '</div></div>';
+          el.innerHTML = emptyHtml;
+          boardCacheSet(kind, emptyHtml);
           return;
         }
 
@@ -238,6 +257,7 @@
           '</a>';
         });
         el.innerHTML = html;
+        boardCacheSet(kind, html);
       } catch(e) {
         el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-alert-triangle"></i></div><div class="state-body">Could not load this ranking right now.</div></div>';
       }
@@ -245,18 +265,22 @@
 
     async function loadLeaderboard() {
       var el = document.getElementById('leaderboard-list');
+      var cachedLb = boardCacheGet('sparks');
+      if (cachedLb) { el.innerHTML = cachedLb; return; }
       try {
         var { data: works, error: wErr } = await db.from('works')
           .select('id,title,cover_url,author_id,spark_count_week')
           .eq('type', 'novel')
           .eq('is_published', true)
-          .order('spark_count_week', { ascending: false })
+          .order('spark_count_week', { ascending: false, nullsFirst: false })
           .limit(25);
         if (wErr) throw wErr;
         works = (works || []).filter(function(w){ return (w.spark_count_week || 0) > 0 && !dsBlock.either(w.author_id); });
 
         if (!works.length) {
-          el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-bolt"></i></div><div class="state-body">No Sparks given yet this week \u2014 be the first to spark a story you love!</div></div>';
+          var emptyLb = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-bolt"></i></div><div class="state-body">No Sparks given yet this week \u2014 be the first to spark a story you love!</div></div>';
+          el.innerHTML = emptyLb;
+          boardCacheSet('sparks', emptyLb);
           return;
         }
 
@@ -298,6 +322,7 @@
           '</a>';
         });
         el.innerHTML = html;
+        boardCacheSet('sparks', html);
       } catch(e) {
         el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-alert-triangle"></i></div><div class="state-body">Could not load the weekly ranking right now.</div></div>';
       }

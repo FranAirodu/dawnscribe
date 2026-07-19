@@ -476,6 +476,29 @@
           </div>
           <div class="toggle-switch" id="ts-notif_announce"></div>
         </div>
+        <div class="section-divider"></div>
+        <div class="section-desc" style="margin-top:4px;">Email notifications — sent to your login email address.</div>
+        <div class="toggle-row active" id="tr-email_enabled" onclick="toggleSetting('email_enabled')">
+          <div class="toggle-row-left">
+            <div class="toggle-icon teal"><i class="ti ti-mail"></i></div>
+            <div><div class="toggle-label">Email Notifications</div><div class="toggle-sub">Master switch — turn off to stop all DawnScribe emails (except account security emails like password resets)</div></div>
+          </div>
+          <div class="toggle-switch on" id="ts-email_enabled"></div>
+        </div>
+        <div class="toggle-row active" id="tr-email_digest" onclick="toggleSetting('email_digest')">
+          <div class="toggle-row-left">
+            <div class="toggle-icon blue"><i class="ti ti-mailbox"></i></div>
+            <div><div class="toggle-label">Daily Digest</div><div class="toggle-sub">One daily email summarizing unread notifications — new chapters, comments, follows</div></div>
+          </div>
+          <div class="toggle-switch on" id="ts-email_digest"></div>
+        </div>
+        <div class="toggle-row active" id="tr-email_payouts" onclick="toggleSetting('email_payouts')">
+          <div class="toggle-row-left">
+            <div class="toggle-icon gold"><i class="ti ti-cash"></i></div>
+            <div><div class="toggle-label">Payout Receipts</div><div class="toggle-sub">Email confirmations when a creator payout is sent or fails</div></div>
+          </div>
+          <div class="toggle-switch on" id="ts-email_payouts"></div>
+        </div>
       </div>
 
       <!-- ── 6. PRIVACY ── -->
@@ -816,6 +839,7 @@
       privacy_readinglist: true, privacy_activity: true, privacy_dm: true,
       lang_original: true, lang_strict: false, pref_language: 'any',
       default_rating_gore: false, default_rating_erotica: false, quiet_mode: false,
+      email_enabled: true, email_digest: true, email_payouts: true,
       pref_reduced_motion: false, pref_high_contrast: false
     };
 
@@ -1830,7 +1854,10 @@
           default_rating_erotica: settings.default_rating_erotica,
           pref_reduced_motion: settings.pref_reduced_motion,
           pref_high_contrast: settings.pref_high_contrast,
-          quiet_mode: settings.quiet_mode
+          quiet_mode: settings.quiet_mode,
+          email_enabled: settings.email_enabled,
+          email_digest: settings.email_digest,
+          email_payouts: settings.email_payouts
         };
         // Also save profile fields if changed
         var dn = document.getElementById('field-display-name').value.trim();
@@ -1974,7 +2001,8 @@
       // Toggles
       ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_announce',
        'privacy_readinglist','privacy_activity','privacy_dm','lang_original','lang_strict',
-       'default_rating_gore','default_rating_erotica','pref_reduced_motion','pref_high_contrast','quiet_mode'].forEach(function(k) {
+       'default_rating_gore','default_rating_erotica','pref_reduced_motion','pref_high_contrast','quiet_mode',
+       'email_enabled','email_digest','email_payouts'].forEach(function(k) {
         var ts = document.getElementById('ts-' + k);
         var tr = document.getElementById('tr-' + k);
         if (ts) ts.classList.toggle('on', !!settings[k]);
@@ -2011,7 +2039,7 @@
         document.getElementById('current-email-display').textContent = session.user.email || '(no email on file)';
 
         var res = await db.from('profiles')
-          .select('display_name,username,bio,location,gender,role,pronouns,date_of_birth,quiet_mode,filtered_content_warnings,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,pref_story_language,lang_original,lang_strict,secondary_email,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast')
+          .select('display_name,username,bio,location,gender,role,pronouns,date_of_birth,quiet_mode,filtered_content_warnings,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,pref_story_language,lang_original,lang_strict,secondary_email,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast,email_enabled,email_digest,email_payouts')
           .eq('id', session.user.id)
           .maybeSingle();
 
@@ -2039,6 +2067,10 @@
           if (res.data.pref_reduced_motion !== null && res.data.pref_reduced_motion !== undefined) settings.pref_reduced_motion = res.data.pref_reduced_motion;
           if (res.data.pref_high_contrast  !== null && res.data.pref_high_contrast  !== undefined) settings.pref_high_contrast  = res.data.pref_high_contrast;
           if (res.data.quiet_mode !== null && res.data.quiet_mode !== undefined) settings.quiet_mode = res.data.quiet_mode;
+          // Email preferences: DB is the source of truth (also toggled by unsubscribe links)
+          if (res.data.email_enabled !== null && res.data.email_enabled !== undefined) settings.email_enabled = res.data.email_enabled;
+          if (res.data.email_digest  !== null && res.data.email_digest  !== undefined) settings.email_digest  = res.data.email_digest;
+          if (res.data.email_payouts !== null && res.data.email_payouts !== undefined) settings.email_payouts = res.data.email_payouts;
           // Reading mode: DB is source of truth across devices, also mirrored into
           // localStorage so chapter.html (which reads localStorage) picks it up too
           if (res.data.reading_prefs) {
