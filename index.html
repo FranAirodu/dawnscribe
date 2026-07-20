@@ -1620,44 +1620,24 @@
 
     function renderAvatarSvg(avatarData, allItems) {
       var parts = [];
-      var skin = avatarData.skin_tone || '#f4d9c4';
 
-      parts.push(
-        '<g fill="' + skin + '">' +
-          '<path d="M130 30 q30 -34 60 0 q16 6 14 30 q-2 18 -12 24 l-8 4 q-22 10 -48 0 l-8 -4 q-10 -6 -12 -24 q-2 -24 14 -30 Z"/>' +
-          '<path d="M118 110 q42 18 84 0 l14 36 q-56 22 -112 0 Z"/>' +
-          '<path d="M108 122 l-28 110 q-4 14 10 18 q14 4 18 -10 l30 -106 Z"/>' +
-          '<path d="M212 122 l28 110 q4 14 -10 18 q-14 4 -18 -10 l-30 -106 Z"/>' +
-          '<path d="M100 250 l-26 130 q-4 14 10 18 l16 4 l28 -142 Z"/>' +
-          '<path d="M220 250 l26 130 q4 14 -10 18 l-16 4 l-28 -142 Z"/>' +
-          '<path d="M126 158 q34 14 68 0 l10 130 q-44 16 -88 0 Z"/>' +
-        '</g>' +
-        '<g fill="#000" opacity="0.16" style="mix-blend-mode:multiply">' +
-          '<path d="M130 50 q30 24 60 0 l4 14 q-34 16 -68 0 Z"/>' +
-          '<path d="M118 122 q42 18 84 0 l-2 14 q-40 16 -80 0 Z"/>' +
-          '<path d="M108 130 l-10 60 q14 4 22 -6 l10 -58 Z"/>' +
-          '<path d="M212 130 l10 60 q-14 4 -22 -6 l-10 -58 Z"/>' +
-          '<path d="M100 270 l-10 80 q12 4 18 -6 l10 -78 Z"/>' +
-          '<path d="M220 270 l10 80 q-12 4 -18 -6 l-10 -78 Z"/>' +
-          '<path d="M126 170 q34 14 68 0 l4 70 q-38 14 -76 0 Z"/>' +
-        '</g>' +
-        '<g fill="#fff" opacity="0.45" style="mix-blend-mode:screen">' +
-          '<path d="M142 36 q18 -16 36 0 q-4 14 -18 16 q-14 -2 -18 -16 Z"/>' +
-          '<path d="M128 120 q14 6 24 4 l-4 18 q-14 0 -22 -8 Z"/>' +
-          '<path d="M134 168 q14 6 24 4 l-2 20 q-14 0 -24 -8 Z"/>' +
-        '</g>' +
-        '<g fill="none" stroke="#1a1a1a" stroke-width="2">' +
-          '<path d="M130 30 q30 -34 60 0 q16 6 14 30 q-2 18 -12 24 l-8 4 q-22 10 -48 0 l-8 -4 q-10 -6 -12 -24 q-2 -24 14 -30 Z" stroke-width="2.5"/>' +
-          '<path d="M118 110 q42 18 84 0 l14 36 q-56 22 -112 0 Z" stroke-width="2.5"/>' +
-          '<path d="M108 122 l-28 110 q-4 14 10 18 q14 4 18 -10 l30 -106 Z"/>' +
-          '<path d="M212 122 l28 110 q4 14 -10 18 q-14 4 -18 -10 l-30 -106 Z"/>' +
-          '<path d="M100 250 l-26 130 q-4 14 10 18 l16 4 l28 -142 Z"/>' +
-          '<path d="M220 250 l26 130 q4 14 -10 18 l-16 4 l-28 -142 Z"/>' +
-          '<path d="M126 158 q34 14 68 0 l10 130 q-44 16 -88 0 Z" stroke-width="2.5"/>' +
-        '</g>'
-      );
+      // Base body: pre-colored artwork preset resolved from skin_tone.
+      var BODY_ASSET_BASE = 'https://cajjyyskpmjnpcxcfeuk.supabase.co/storage/v1/object/public/cosmetic-assets/';
+      var presets = window.__bodyPresets || [];
+      var preset = presets.find(function(b){ return b.id === avatarData.skin_tone; }) ||
+                   presets.find(function(b){ return b.is_default; }) || presets[0] || null;
+      if (preset) {
+        var _pp = preset.pose_paths || {};
+        var _bodyPath = _pp[avatarData.pose || 'pose1'] || _pp.pose1 || preset.image_path;
+        var BODY_BOX = { x: 24, y: 78, w: 272, h: 384 }; // leaves headroom for hair/hats + side room for back items/backgrounds; future cosmetic layers must use this same box
+      if (_bodyPath) parts.push('<image href="' + BODY_ASSET_BASE + _bodyPath + '" x="' + BODY_BOX.x + '" y="' + BODY_BOX.y + '" width="' + BODY_BOX.w + '" height="' + BODY_BOX.h + '" preserveAspectRatio="xMidYMax meet"/>');
+      }
 
-      AVATAR_SLOT_ORDER.forEach(function(slot) {
+      // TEMP: placeholder cosmetic layers disabled — real body artwork is
+      // live and the test shapes drew over it. Re-enable when illustrated
+      // cosmetic layers exist (keep in sync with avatar.html).
+      var RENDER_PLACEHOLDER_LAYERS = false;
+      if (RENDER_PLACEHOLDER_LAYERS) AVATAR_SLOT_ORDER.forEach(function(slot) {
         var eq = (avatarData.equipped || {})[slot];
         if (!eq) return;
         var item = allItems.find(function(it){ return it.id === eq.item_id; });
@@ -1691,18 +1671,21 @@
 
     async function loadAvatarWidget(uid) {
       try {
-        var [avatarRes, itemsRes] = await Promise.all([
+        var [avatarRes, itemsRes, presetsRes] = await Promise.all([
           db.from('user_avatars').select('*').eq('user_id', uid).maybeSingle(),
-          db.from('cosmetic_items').select('*')
+          db.from('cosmetic_items').select('*'),
+          db.from('avatar_body_presets').select('*').eq('is_active', true).order('sort_order')
         ]);
 
+        window.__bodyPresets = presetsRes.data || [];
         var allItems = itemsRes.data || [];
         var avatarData = avatarRes.data;
 
         if (!avatarData) {
           // First-time user — build the same default (base items equipped,
           // default skin tone) used by avatar.html, without saving it.
-          avatarData = { skin_tone: '#f4d9c4', equipped: {} };
+          var _dp = (window.__bodyPresets || []).find(function(b){ return b.is_default; }) || (window.__bodyPresets || [])[0];
+          avatarData = { skin_tone: _dp ? _dp.id : '#f4d9c4', equipped: {} };
           allItems.filter(function(it){ return it.is_base_item; }).forEach(function(it) {
             var colors = {};
             (it.fill_regions || []).forEach(function(r){ colors[r.id] = r.default_color; });

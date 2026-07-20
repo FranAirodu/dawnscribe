@@ -49,6 +49,30 @@
     .preview-canvas-wrap { width: 100%; max-width: 320px; aspect-ratio: 2/3; background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; position: relative; }
     .preview-canvas-wrap svg { width: 100%; height: 100%; display: block; }
     .preview-note { font-size: 11px; color: var(--text3); text-align: center; margin-top: 12px; line-height: 1.6; }
+    .pose-row { display: flex; justify-content: center; gap: 8px; margin: 10px 0 12px; }
+    .pose-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg2); color: var(--text3); font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color .15s, color .15s; }
+    .pose-btn i { font-size: 18px; }
+    .pose-btn:hover { color: var(--text1); border-color: var(--text3); }
+    .pose-btn.active { color: var(--accent); border-color: var(--accent); }
+    .pose-btn.pose-locked { opacity: 0.45; cursor: default; }
+    .pose-btn.pose-locked:hover { color: var(--text3); border-color: var(--border); }
+    .pose-btn.pose-unlockable { color: #f97316; border-color: rgba(249,115,22,0.45); }
+    .pose-btn.pose-unlockable:hover { color: #fb923c; border-color: #f97316; }
+    .pose-btn .pose-cost { font-size: 10px; font-weight: 700; display: flex; align-items: center; gap: 3px; }
+    .ds-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); z-index: 500; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .18s; }
+    .ds-modal-overlay.open { opacity: 1; pointer-events: auto; }
+    .ds-modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 26px 28px; width: min(92vw, 380px); text-align: center; transform: translateY(8px); transition: transform .18s; box-shadow: 0 18px 50px rgba(0,0,0,0.5); }
+    .ds-modal-overlay.open .ds-modal { transform: translateY(0); }
+    .ds-modal-icon { width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; background: rgba(249,115,22,0.12); color: #f97316; }
+    .ds-modal-icon.error { background: rgba(232,88,74,0.12); color: var(--accent-red, #e8584a); }
+    .ds-modal-title { font-size: 16px; font-weight: 700; color: var(--text1); margin-bottom: 8px; }
+    .ds-modal-body { font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 20px; }
+    .ds-modal-body b { color: #f97316; }
+    .ds-modal-actions { display: flex; gap: 10px; justify-content: center; }
+    .ds-modal-btn { padding: 9px 22px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--text2); transition: filter .15s, border-color .15s; }
+    .ds-modal-btn:hover { border-color: var(--text3); color: var(--text1); }
+    .ds-modal-btn.primary { background: #f97316; border-color: #f97316; color: #1a0e04; }
+    .ds-modal-btn.primary:hover { filter: brightness(1.1); }
     .save-btn { width: 100%; max-width: 320px; margin-top: 16px; background: var(--accent); border: none; border-radius: 9px; padding: 12px; color: var(--bg); font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s; }
     .save-btn:hover { opacity: 0.9; }
     .save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -205,7 +229,34 @@
   ];
 
   // Default skin tone palette, always available at avatar creation.
+  // (Legacy hex tones — kept for mapping old saved avatars onto presets.)
   const DEFAULT_SKIN_TONES = ['#f4d9c4','#e8b894','#c98a5e','#8d5a3c','#5c3a26','#3a2418'];
+
+  // Real body artwork presets (avatar_body_presets table). Each preset is a
+  // pre-colored PNG in the cosmetic-assets bucket. skin_tone now stores a
+  // preset id like 'male_tone1'; legacy hex values map to the default preset.
+  const BODY_ASSET_BASE = 'https://cajjyyskpmjnpcxcfeuk.supabase.co/storage/v1/object/public/cosmetic-assets/';
+  var bodyPresets = [];
+
+  // Pose metadata. Buttons appear for every pose here; ones missing from
+  // the preset's pose_paths render locked ("coming soon"). Add entries as
+  // the artist delivers more poses.
+  var POSE_DEFS = [
+    { id: 'pose1', label: 'Standing' },
+    { id: 'pose2', label: 'Side View' }
+  ];
+
+  function getPoseImagePath(preset, pose) {
+    if (!preset) return null;
+    var paths = preset.pose_paths || {};
+    return paths[pose] || paths.pose1 || preset.image_path || null;
+  }
+
+  function getBodyPreset(key) {
+    var p = bodyPresets.find(function(b){ return b.id === key; });
+    if (p) return p;
+    return bodyPresets.find(function(b){ return b.is_default; }) || bodyPresets[0] || null;
+  }
 
   const SLOT_ICONS = {
     hat: '__hat__', hair: 'ti-cut', eyes: 'ti-eye', lips: '__lips__', skin: 'ti-droplet',
@@ -332,15 +383,18 @@
     }
     currentUid = session.user.id;
 
-    var [avatarResult, itemsResult, unlockedResult, embersResult, quillsResult, paletteResult, accentPaletteResult] = await Promise.all([
+    var [avatarResult, itemsResult, unlockedResult, embersResult, quillsResult, paletteResult, accentPaletteResult, bodyPresetsResult] = await Promise.all([
       db.from('user_avatars').select('*').eq('user_id', currentUid).maybeSingle(),
       db.from('cosmetic_items').select('*').or('status.eq.approved,is_base_item.eq.true'),
       db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', currentUid),
       db.from('user_embers').select('balance').eq('user_id', currentUid).maybeSingle(),
       db.from('user_quills').select('balance').eq('user_id', currentUid).maybeSingle(),
       db.from('reroll_color_palette').select('hex,label'),
-      db.from('reroll_color_palette').select('hex,label,rarity_weight').eq('region_type','accent').order('label')
+      db.from('reroll_color_palette').select('hex,label,rarity_weight').eq('region_type','accent').order('label'),
+      db.from('avatar_body_presets').select('*').eq('is_active', true).order('sort_order')
     ]);
+
+    bodyPresets = bodyPresetsResult.data || [];
 
     emberBalance = (embersResult.data && embersResult.data.balance) || 0;
     quillBalance = (quillsResult.data && quillsResult.data.balance) || 0;
@@ -369,12 +423,25 @@
       if (!avatarData.accent_color || !avatarData.accent_color.hex) avatarData.accent_color = { hex: '#2dd4bf' };
     } else {
       // First visit — initialize with base items equipped and a default skin tone.
-      avatarData = { skin_tone: DEFAULT_SKIN_TONES[0], equipped: {}, unlocked_skin_tones: [], unlocked_colors: {}, unlocked_accents: ['#2dd4bf'], accent_color: { hex: '#2dd4bf' } };
+      var _defPreset = getBodyPreset(null);
+      avatarData = { skin_tone: _defPreset ? _defPreset.id : DEFAULT_SKIN_TONES[0], equipped: {}, unlocked_skin_tones: [], unlocked_colors: {}, unlocked_accents: ['#2dd4bf'], accent_color: { hex: '#2dd4bf' } };
       allItems.filter(function(it){ return it.is_base_item; }).forEach(function(it) {
         var colors = {};
         (it.fill_regions || []).forEach(function(r){ colors[r.id] = r.default_color; });
         avatarData.equipped[it.slot] = { item_id: it.id, colors: colors };
       });
+    }
+
+    if (!avatarData.pose) avatarData.pose = 'pose1';
+    if (!avatarData.unlocked_poses || !avatarData.unlocked_poses.length) avatarData.unlocked_poses = ['pose1'];
+    // If the saved pose was somehow never unlocked, fall back to pose1
+    if (avatarData.unlocked_poses.indexOf(avatarData.pose) === -1) avatarData.pose = 'pose1';
+
+    // Migrate legacy hex skin tones onto the artwork preset system: if the
+    // saved skin_tone isn't a known preset id, snap it to the default preset.
+    if (bodyPresets.length && !bodyPresets.some(function(b){ return b.id === avatarData.skin_tone; })) {
+      var _mapped = getBodyPreset(null);
+      if (_mapped) avatarData.skin_tone = _mapped.id;
     }
 
     // Seed localStorage with current accent so all pages pick it up instantly
@@ -411,47 +478,22 @@
   function renderPreview() {
     var parts = [];
 
-    // Base body, tinted with skin tone. Same body shapes as earlier
-    // concept art, simplified — fill is the user's chosen skin tone.
-    var skin = sanitizeHex(avatarData.skin_tone);
-    parts.push(
-      '<g fill="' + skin + '">' +
-        '<path d="M130 30 q30 -34 60 0 q16 6 14 30 q-2 18 -12 24 l-8 4 q-22 10 -48 0 l-8 -4 q-10 -6 -12 -24 q-2 -24 14 -30 Z"/>' +
-        '<path d="M118 110 q42 18 84 0 l14 36 q-56 22 -112 0 Z"/>' +
-        '<path d="M108 122 l-28 110 q-4 14 10 18 q14 4 18 -10 l30 -106 Z"/>' +
-        '<path d="M212 122 l28 110 q4 14 -10 18 q-14 4 -18 -10 l-30 -106 Z"/>' +
-        '<path d="M100 250 l-26 130 q-4 14 10 18 l16 4 l28 -142 Z"/>' +
-        '<path d="M220 250 l26 130 q4 14 -10 18 l-16 4 l-28 -142 Z"/>' +
-        '<path d="M126 158 q34 14 68 0 l10 130 q-44 16 -88 0 Z"/>' +
-      '</g>' +
-      '<g fill="#000" opacity="0.16" style="mix-blend-mode:multiply">' +
-        '<path d="M130 50 q30 24 60 0 l4 14 q-34 16 -68 0 Z"/>' +
-        '<path d="M118 122 q42 18 84 0 l-2 14 q-40 16 -80 0 Z"/>' +
-        '<path d="M108 130 l-10 60 q14 4 22 -6 l10 -58 Z"/>' +
-        '<path d="M212 130 l10 60 q-14 4 -22 -6 l-10 -58 Z"/>' +
-        '<path d="M100 270 l-10 80 q12 4 18 -6 l10 -78 Z"/>' +
-        '<path d="M220 270 l10 80 q-12 4 -18 -6 l-10 -78 Z"/>' +
-        '<path d="M126 170 q34 14 68 0 l4 70 q-38 14 -76 0 Z"/>' +
-      '</g>' +
-      '<g fill="#fff" opacity="0.45" style="mix-blend-mode:screen">' +
-        '<path d="M142 36 q18 -16 36 0 q-4 14 -18 16 q-14 -2 -18 -16 Z"/>' +
-        '<path d="M128 120 q14 6 24 4 l-4 18 q-14 0 -22 -8 Z"/>' +
-        '<path d="M134 168 q14 6 24 4 l-2 20 q-14 0 -24 -8 Z"/>' +
-      '</g>' +
-      '<g fill="none" stroke="#1a1a1a" stroke-width="2">' +
-        '<path d="M130 30 q30 -34 60 0 q16 6 14 30 q-2 18 -12 24 l-8 4 q-22 10 -48 0 l-8 -4 q-10 -6 -12 -24 q-2 -24 14 -30 Z" stroke-width="2.5"/>' +
-        '<path d="M118 110 q42 18 84 0 l14 36 q-56 22 -112 0 Z" stroke-width="2.5"/>' +
-        '<path d="M108 122 l-28 110 q-4 14 10 18 q14 4 18 -10 l30 -106 Z"/>' +
-        '<path d="M212 122 l28 110 q4 14 -10 18 q-14 4 -18 -10 l-30 -106 Z"/>' +
-        '<path d="M100 250 l-26 130 q-4 14 10 18 l16 4 l28 -142 Z"/>' +
-        '<path d="M220 250 l26 130 q4 14 -10 18 l-16 4 l-28 -142 Z"/>' +
-        '<path d="M126 158 q34 14 68 0 l10 130 q-44 16 -88 0 Z" stroke-width="2.5"/>' +
-      '</g>'
-    );
+    // Base body: real artwork preset (pre-colored PNG) rendered as an
+    // <image> layer. Preset id comes from avatarData.skin_tone.
+    var preset = getBodyPreset(avatarData.skin_tone);
+    if (preset) {
+      var _bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
+      var BODY_BOX = { x: 24, y: 78, w: 272, h: 384 }; // leaves headroom for hair/hats + side room for back items/backgrounds; future cosmetic layers must use this same box
+      if (_bodyPath) parts.push('<image href="' + BODY_ASSET_BASE + _bodyPath + '" x="' + BODY_BOX.x + '" y="' + BODY_BOX.y + '" width="' + BODY_BOX.w + '" height="' + BODY_BOX.h + '" preserveAspectRatio="xMidYMax meet"/>');
+    }
 
-    // Equipped item layers, in SLOT_ORDER (bottom to top). Each is a
-    // placeholder shape filled with the user's chosen color(s).
-    SLOT_ORDER.forEach(function(slot) {
+    // Equipped item layers, in SLOT_ORDER (bottom to top).
+    // TEMP: placeholder shape layers are disabled now that the real body
+    // artwork is live — the grey/teal test shapes clashed with it. Flip
+    // RENDER_PLACEHOLDER_LAYERS to true (or replace with real art layers)
+    // when illustrated cosmetic assets arrive. Equip data still saves.
+    var RENDER_PLACEHOLDER_LAYERS = false;
+    if (RENDER_PLACEHOLDER_LAYERS) SLOT_ORDER.forEach(function(slot) {
       var eq = avatarData.equipped[slot];
       if (!eq) return;
       var item = allItems.find(function(it){ return it.id === eq.item_id; });
@@ -485,18 +527,113 @@
     document.getElementById('avatar-preview-svg').innerHTML = svg;
   }
 
+  // ── RENDER: POSE PICKER ──────────────────────────────────────────
+  function renderPoseRow() {
+    var el = document.getElementById('pose-row');
+    if (!el) return;
+    var preset = getBodyPreset(avatarData.skin_tone);
+    var paths = (preset && preset.pose_paths) || {};
+    var ownedPoses = avatarData.unlocked_poses || ['pose1'];
+    el.innerHTML = POSE_DEFS.map(function(p) {
+      var available = !!paths[p.id];
+      if (!available) {
+        // Artwork not delivered yet — never sell what can't render
+        return '<div class="pose-btn pose-locked" title="Coming soon"><i class="ti ti-lock"></i><span>' + p.label + '</span></div>';
+      }
+      if (ownedPoses.indexOf(p.id) === -1) {
+        return '<button class="pose-btn pose-unlockable" onclick="unlockPose(\'' + p.id + '\')" title="Unlock ' + p.label + ' for 10 Embers"><i class="ti ti-user"></i><span>' + p.label + '</span><span class="pose-cost"><i class="ti ti-flame"></i>10</span></button>';
+      }
+      var active = (avatarData.pose || 'pose1') === p.id ? ' active' : '';
+      return '<button class="pose-btn' + active + '" onclick="setPose(\'' + p.id + '\')" title="' + p.label + '"><i class="ti ti-user"></i><span>' + p.label + '</span></button>';
+    }).join('');
+  }
+
+  // ── MODAL (styled replacement for alert/confirm) ────────────────
+  function dsModal(opts) {
+    return new Promise(function(resolve) {
+      var overlay = document.createElement('div');
+      overlay.className = 'ds-modal-overlay';
+      overlay.innerHTML =
+        '<div class="ds-modal" role="dialog" aria-modal="true">' +
+          '<div class="ds-modal-icon' + (opts.error ? ' error' : '') + '"><i class="ti ' + (opts.icon || 'ti-flame') + '"></i></div>' +
+          '<div class="ds-modal-title">' + opts.title + '</div>' +
+          '<div class="ds-modal-body">' + opts.body + '</div>' +
+          '<div class="ds-modal-actions">' +
+            (opts.confirm
+              ? '<button class="ds-modal-btn" data-act="cancel">Cancel</button><button class="ds-modal-btn primary" data-act="ok">' + (opts.okLabel || 'Confirm') + '</button>'
+              : '<button class="ds-modal-btn primary" data-act="ok">' + (opts.okLabel || 'OK') + '</button>') +
+          '</div>' +
+        '</div>';
+      function close(val) {
+        overlay.classList.remove('open');
+        setTimeout(function(){ overlay.remove(); }, 200);
+        resolve(val);
+      }
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) close(false);
+        var act = e.target.closest && e.target.closest('[data-act]');
+        if (act) close(act.dataset.act === 'ok');
+      });
+      document.body.appendChild(overlay);
+      requestAnimationFrame(function(){ overlay.classList.add('open'); });
+    });
+  }
+
+  async function unlockPose(pose) {
+    var poseDef = POSE_DEFS.find(function(p){ return p.id === pose; });
+    var poseLabel = poseDef ? poseDef.label : 'this pose';
+    if (emberBalance < 10) {
+      await dsModal({ title: 'Not enough Embers', body: 'You need <b>10 Embers</b> to unlock the ' + poseLabel + ' pose. You currently have <b>' + emberBalance + '</b>.', icon: 'ti-flame', error: true });
+      return;
+    }
+    var ok = await dsModal({ confirm: true, title: 'Unlock ' + poseLabel + ' pose?', body: 'Spend <b>10 Embers</b> to permanently unlock this pose for your avatar.', icon: 'ti-flame', okLabel: 'Unlock \u2022 10 Embers' });
+    if (!ok) return;
+    var { data, error } = await db.rpc('unlock_avatar_pose', { p_user_id: currentUid, p_pose: pose });
+    if (error || !data) {
+      await dsModal({ title: 'Something went wrong', body: 'Could not unlock the pose right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
+      return;
+    }
+    if (data.status === 'insufficient_embers') {
+      await dsModal({ title: 'Not enough Embers', body: 'You need <b>' + data.cost + ' Embers</b> to unlock this pose. You currently have <b>' + data.balance + '</b>.', icon: 'ti-flame', error: true });
+      return;
+    }
+    if (data.status !== 'success' && data.status !== 'already_unlocked') {
+      await dsModal({ title: 'Something went wrong', body: 'Could not unlock the pose right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
+      return;
+    }
+    if (data.status === 'success') {
+      emberBalance -= data.cost;
+      window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: -data.cost } }));
+    }
+    if (!avatarData.unlocked_poses) avatarData.unlocked_poses = ['pose1'];
+    if (avatarData.unlocked_poses.indexOf(pose) === -1) avatarData.unlocked_poses.push(pose);
+    // Auto-select the new pose (still needs Save to persist the selection)
+    avatarData.pose = pose;
+    dirty = true;
+    renderPoseRow();
+    renderPreview();
+    updateSaveState();
+  }
+
+  function setPose(pose) {
+    if ((avatarData.pose || 'pose1') === pose) return;
+    avatarData.pose = pose;
+    dirty = true;
+    renderPoseRow();
+    renderPreview();
+    updateSaveState();
+  }
+
   // ── RENDER: SKIN TONE PICKER ─────────────────────────────────────
   function renderSkinTones() {
-    var unlockedTones = (avatarData.unlocked_skin_tones || []).slice().sort(function(a,b){ return hexHue(a) - hexHue(b); });
-    var allTones = DEFAULT_SKIN_TONES.concat(unlockedTones);
-    var html = allTones.map(function(tone) {
-      var selectedClass = tone === avatarData.skin_tone ? ' selected' : '';
-      var tip = colorName(tone);
-      return flameSwatch(tone, tip, 'swatch' + selectedClass, "setSkinTone('" + tone + "')");
+    // Preset-based: each swatch is a pre-colored body artwork preset.
+    var html = bodyPresets.map(function(p) {
+      var selectedClass = p.id === avatarData.skin_tone ? ' selected' : '';
+      return flameSwatch(p.swatch_hex, p.label, 'swatch' + selectedClass, "setSkinTone('" + p.id + "')");
     }).join('');
-    // A few locked placeholder tones to hint at future unlocks
-    html += '<div class="swatch swatch-locked" title="Unlock with Embers"><i class="ti ti-lock"></i></div>';
-    html += '<div class="swatch swatch-locked" title="Unlock with Embers"><i class="ti ti-lock"></i></div>';
+    // Locked placeholders hint at tones the artist hasn't delivered yet
+    html += '<div class="swatch swatch-locked" title="More tones coming soon"><i class="ti ti-lock"></i></div>';
+    html += '<div class="swatch swatch-locked" title="More tones coming soon"><i class="ti ti-lock"></i></div>';
     document.getElementById('skin-tone-row').innerHTML = html;
   }
 
@@ -504,6 +641,7 @@
     avatarData.skin_tone = tone;
     dirty = true;
     renderSkinTones();
+    renderPoseRow();
     renderPreview();
     updateSaveState();
   }
@@ -1022,6 +1160,7 @@
     var payload = {
       user_id: currentUid,
       skin_tone: avatarData.skin_tone,
+      pose: avatarData.pose || 'pose1',
       equipped: avatarData.equipped,
       unlocked_skin_tones: avatarData.unlocked_skin_tones || [],
       unlocked_colors: avatarData.unlocked_colors || {},
@@ -1059,9 +1198,10 @@
       '<div class="editor-layout">' +
         '<div class="preview-panel">' +
           '<div class="preview-canvas-wrap"><div id="avatar-preview-svg"></div></div>' +
+          '<div class="pose-row" id="pose-row"></div>' +
           '<button class="save-btn" id="save-btn" onclick="saveAvatar()" disabled><i class="ti ti-device-floppy"></i> Save Avatar</button>' +
           '<div class="save-status" id="save-status"></div>' +
-          '<div class="preview-note">Placeholder art shown — final illustrated layers are in progress. Colors and equipped items will carry over once real artwork is added.</div>' +
+          '<div class="preview-note">Illustrated cosmetic art is in progress — equipped items and unlocked colors are saved and will appear on your avatar once the artwork arrives.</div>' +
         '</div>' +
         '<div class="controls-panel">' +
           '<div class="tab-bar">' +
@@ -1074,7 +1214,10 @@
             '<div id="skin-panel" style="display:none;margin-top:8px;">' +
               '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px;">Skin Tone</div>' +
               '<div class="swatch-row" id="skin-tone-row"></div>' +
-              '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">' +
+              /* Ember skin-tone roll hidden while tones are a fixed preset set.
+                 Re-enable (and switch rollSkinToneUnlock to preset ids) once
+                 unlockable artwork tones exist. */
+              '<div style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">' +
                 '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Spend 1 Ember to unlock a new skin tone.</div>' +
                 '<button class="randomizer-btn" id="skin-reroll-btn" onclick="rollSkinToneUnlock()"><i class="ti ti-sparkles"></i> Unlock Skin Tone (1 Ember)</button>' +
               '</div>' +
@@ -1121,6 +1264,7 @@
       '</div>';
 
     renderSkinTones();
+    renderPoseRow();
     renderSlotTabs();
     renderItemGrid();
     renderColorPickers();
