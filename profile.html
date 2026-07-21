@@ -74,14 +74,15 @@
        integrity preserved. pointer-events:none so banner buttons/credit
        chips behind it stay clickable. */
     .ds-avatar-figure{position:absolute;top:-300px;left:12px;width:200px;height:300px;pointer-events:none;z-index:4;display:none;filter:drop-shadow(0 6px 16px rgba(0,0,0,0.45));}
+    a.ds-avatar-figure{cursor:default;}
+    .ds-avatar-figure.clickable{pointer-events:auto;cursor:pointer;transition:filter 0.2s, transform 0.2s;}
+    .ds-avatar-figure.clickable:hover{filter:drop-shadow(0 6px 16px rgba(0,0,0,0.45)) drop-shadow(0 0 10px rgba(45,212,191,0.45));transform:translateY(-3px);}
     .ds-avatar-figure.visible{display:block;}
     .ds-avatar-figure svg{width:100%;height:100%;display:block;}
     @media (max-width:720px){ .ds-avatar-figure{top:-210px;left:2px;width:140px;height:210px;} }
     .avatar-row{display:flex;align-items:flex-end;justify-content:space-between;margin-top:-52px;margin-bottom:16px;flex-wrap:wrap;gap:12px;}
     .avatar-wrap{position:relative;flex-shrink:0;width:112px;}
     .avatar-row-left{display:flex;align-items:flex-end;gap:12px;}
-    .customize-avatar-btn{display:none;align-items:center;gap:6px;padding:7px 14px;background:rgba(45,212,191,0.1);border:1.5px solid rgba(45,212,191,0.35);border-radius:8px;color:var(--accent);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;text-decoration:none;transition:all 0.2s;margin-bottom:4px;}
-    .customize-avatar-btn:hover{background:rgba(45,212,191,0.18);}
     .avatar{width:104px;height:104px;border-radius:50%;border:4px solid var(--bg);background:linear-gradient(135deg,#1e0040,#6b21a8);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:36px;font-weight:700;color:#c084fc;overflow:hidden;}
     .avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
     .avatar-edit-btn{position:absolute;bottom:4px;right:4px;background:var(--accent2);border:2px solid var(--bg);border-radius:50%;width:30px;height:30px;display:none;align-items:center;justify-content:center;cursor:pointer;color:white;font-size:14px;transition:background 0.2s;z-index:5;}
@@ -484,10 +485,9 @@
 
   <!-- PROFILE HEADER -->
   <div class="profile-header">
-    <div class="ds-avatar-figure" id="ds-avatar-figure" aria-hidden="true"></div>
+    <a class="ds-avatar-figure" id="ds-avatar-figure" aria-hidden="true"></a>
     <div class="avatar-row">
       <div class="avatar-row-left">
-      <a class="customize-avatar-btn owner-only" href="avatar.html"><i class="ti ti-shirt"></i> Customize Avatar</a>
       <div class="avatar-wrap">
         <div class="avatar" id="avatar-display"><span id="avatar-initial">M</span></div>
         <button class="avatar-edit-btn owner-only" id="avatar-edit-btn" onclick="document.getElementById('avatar-input').click()" title="Change photo">
@@ -1188,6 +1188,27 @@
         if (!r.presets || !r.presets.length) return;
         fig.innerHTML = r.svg;
         fig.classList.add('visible');
+        // Round pfp: show the avatar's face (SVG headshot) instead of the
+        // uploaded photo — the site's own avatars take priority. The photo
+        // upload still exists and feeds avatar_url used in nav/comments.
+        var pfp = document.getElementById('avatar-display');
+        if (pfp && r.headshotSvg) {
+          pfp.innerHTML = r.headshotSvg;
+          var _hs = pfp.querySelector('svg');
+          if (_hs) { _hs.style.width = '100%'; _hs.style.height = '100%'; _hs.style.display = 'block'; _hs.style.borderRadius = '50%'; }
+        }
+        // Owner: clicking the avatar opens the editor (replaces the old
+        // Customize Avatar button). Visitors: purely decorative.
+        try {
+          var _s = (await db.auth.getSession()).data.session;
+          if (_s && _s.user && _s.user.id === profileUserId) {
+            fig.href = 'avatar.html';
+            fig.title = 'Customize your avatar';
+            fig.setAttribute('aria-hidden', 'false');
+            fig.setAttribute('aria-label', 'Customize your avatar');
+            fig.classList.add('clickable');
+          }
+        } catch(_e) { /* stays decorative */ }
       } catch(e) { /* avatar figure is decorative — fail silently */ }
     }
 

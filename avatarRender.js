@@ -68,6 +68,29 @@
     return paths[pose] || paths.pose1 || preset.image_path || null;
   }
 
+  // ── HEADSHOT CROPS ────────────────────────────────────────────
+  // ViewBox regions (in the 320x480 avatar coordinate space) that frame
+  // the character's face, per pose. Tunable per body preset via the
+  // avatar_body_presets.head_crops jsonb column, e.g.
+  //   { "pose1": {"x":118,"y":84,"w":84,"h":84} }
+  // Falls back to these defaults when the preset has no override.
+  var DEFAULT_HEAD_CROPS = {
+    pose1: { x: 118, y: 84, w: 84, h: 84 },
+    pose2: { x: 118, y: 84, w: 84, h: 84 }
+  };
+
+  function getHeadCrop(preset, pose) {
+    pose = pose || 'pose1';
+    var fromDb = preset && preset.head_crops && (preset.head_crops[pose] || preset.head_crops.pose1);
+    var c = fromDb || DEFAULT_HEAD_CROPS[pose] || DEFAULT_HEAD_CROPS.pose1;
+    // Validate: all numeric, sane bounds
+    if (!c || typeof c.x !== 'number' || typeof c.y !== 'number' ||
+        typeof c.w !== 'number' || typeof c.h !== 'number' || c.w <= 0 || c.h <= 0) {
+      c = DEFAULT_HEAD_CROPS.pose1;
+    }
+    return c;
+  }
+
   /**
    * Render the avatar SVG string.
    * @param {Object} avatarData - row from user_avatars (or default-shaped object)
@@ -139,6 +162,67 @@
   }
 
   /**
+   * Render a zoomed-in headshot of the avatar (for circular profile
+   * pictures etc). Same layers as renderSvg but the viewBox is cropped
+   * to the face region for the active pose. Position shift is ignored
+   * (it would move the face out of frame); mirror is applied around the
+   * crop's own center so the face stays framed.
+   * @param {Object} [opts] - { skipSlots: [] } passed through
+   */
+  function renderHeadshotSvg(avatarData, presets, allItems, opts) {
+    avatarData = avatarData || {};
+    allItems = allItems || [];
+    opts = opts || {};
+    var skipSlots = opts.skipSlots || [];
+
+    var parts = [];
+    var preset = getBodyPreset(presets, avatarData.skin_tone);
+    if (preset) {
+      var bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
+      if (bodyPath) {
+        parts.push('<image href="' + BODY_ASSET_BASE + bodyPath + '" x="' + BODY_BOX.x + '" y="' + BODY_BOX.y + '" width="' + BODY_BOX.w + '" height="' + BODY_BOX.h + '" preserveAspectRatio="xMidYMax meet"/>');
+      }
+    }
+
+    if (RENDER_PLACEHOLDER_LAYERS) SLOT_ORDER.forEach(function (slot) {
+      if (skipSlots.indexOf(slot) !== -1) return;
+      var eq = (avatarData.equipped || {})[slot];
+      if (!eq) return;
+      var item = allItems.find(function (it) { return it.id === eq.item_id; });
+      if (!item) return;
+      var shape = SLOT_PLACEHOLDER_SHAPES[slot];
+      if (!shape) return;
+      var fillColor = '#888888';
+      if (shape.region && eq.colors && eq.colors[shape.region]) {
+        fillColor = sanitizeHex(eq.colors[shape.region]);
+      } else if (item.fill_regions && item.fill_regions[0]) {
+        fillColor = sanitizeHex(item.fill_regions[0].default_color);
+      }
+      if (shape.stroke) {
+        parts.push('<path d="' + shape.d + '" fill="none" stroke="' + fillColor + '" stroke-width="3" stroke-linecap="round"/>');
+      } else {
+        parts.push(
+          '<path d="' + shape.d + '" fill="' + fillColor + '"/>' +
+          '<path d="' + shape.d + '" fill="#000" opacity="0.14" style="mix-blend-mode:multiply"/>' +
+          '<path d="' + shape.d + '" fill="none" stroke="#1a1a1a" stroke-width="1.5" opacity="0.7"/>'
+        );
+      }
+    });
+
+    var crop = getHeadCrop(preset, avatarData.pose || 'pose1');
+    var tf = '';
+    if (avatarData.mirrored) {
+      // Flip around the crop's horizontal center so the face stays framed
+      var cx = crop.x + crop.w / 2;
+      tf = ' transform="translate(' + (2 * cx) + ',0) scale(-1,1)"';
+    }
+
+    return '<svg viewBox="' + crop.x + ' ' + crop.y + ' ' + crop.w + ' ' + crop.h + '" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">' +
+      '<g' + tf + '>' + parts.join('') + '</g>' +
+      '</svg>';
+  }
+
+  /**
    * Build a default (unsaved) avatar for first-time users: base items
    * equipped with default colors, default skin-tone preset.
    */
@@ -173,7 +257,8 @@
       avatarData: avatarData,
       presets: presets,
       items: items,
-      svg: renderSvg(avatarData, presets, items, opts)
+      svg: renderSvg(avatarData, presets, items, opts),
+      headshotSvg: renderHeadshotSvg(avatarData, presets, items, opts)
     };
   }
 
@@ -186,6 +271,8 @@
     getBodyPreset: getBodyPreset,
     getPoseImagePath: getPoseImagePath,
     renderSvg: renderSvg,
+    renderHeadshotSvg: renderHeadshotSvg,
+    getHeadCrop: getHeadCrop,
     buildDefaultAvatar: buildDefaultAvatar,
     load: load
   };
