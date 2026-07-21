@@ -37,6 +37,7 @@
   <script src="spoilerUtils.js"></script>
   <script src="accessibilityPrefs.js"></script>
 <script src="blockUtils.js"></script>
+<script src="avatarRender.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <meta name="theme-color" content="#2dd4bf"/>
   <meta name="mobile-web-app-capable" content="yes"/>
@@ -1599,74 +1600,9 @@
     // Renders a small preview of the user's customized avatar (same
     // placeholder layering used in avatar.html) and links through to
     // the full avatar editor.
-    var AVATAR_SLOT_ORDER = [
-      'background','companion','effect','pants','shoes','outfit','shirt',
-      'jacket','gloves','accessory','neck','back','hair','face','hat'
-    ];
-    var AVATAR_PLACEHOLDER_SHAPES = {
-      shirt:    { d: 'M150 165 q50 22 100 0 l14 34 q-64 28 -128 0 Z', region: 'main' },
-      outfit:   { d: 'M150 165 q50 22 100 0 l14 34 q-64 28 -128 0 Z M155 205 q45 16 90 0 l8 140 q-53 18 -106 0 Z', region: 'main' },
-      jacket:   { d: 'M145 160 q55 26 110 0 l18 40 q-72 32 -146 0 Z', region: 'main' },
-      pants:    { d: 'M155 205 q45 16 90 0 l8 140 q-53 18 -106 0 Z', region: 'main' },
-      shoes:    { d: 'M150 410 l-10 50 q-2 12 12 14 l16 2 q12 -2 12 -14 l-2 -52 Z M200 410 l10 50 q2 12 -12 14 l-16 2 q-12 -2 -12 -14 l2 -52 Z', region: 'main' },
-      gloves:   { d: 'M115 245 l-12 36 q-3 8 6 11 l10 3 q8 2 11 -7 l11 -35 Z M235 245 l12 36 q3 8 -6 11 l-10 3 q-8 2 -11 -7 l-11 -35 Z', region: 'main' },
-      accessory:{ d: 'M150 195 l50 0 l0 14 l-50 0 Z', region: 'main' },
-      neck:     { d: 'M165 158 q20 10 20 10 q0 0 20 -10 l4 12 q-24 12 -48 0 Z', region: 'main' },
-      back:     { d: 'M120 175 q-20 40 -10 90 l16 -4 q-8 -44 8 -78 Z M230 175 q20 40 10 90 l-16 -4 q8 -44 -8 -78 Z', region: 'main' },
-      hair:     { d: 'M120 60 q10 -34 52 -34 q44 0 54 36 q6 22 -2 40 q-2 -22 -16 -30 q-6 14 -18 18 q2 -12 -6 -18 q-8 12 -28 12 q-22 0 -28 -16 q-8 8 -8 22 q-12 -16 -8 -38 Z', region: 'main' },
-      face:     { d: 'M148 95 q4 -6 10 -2 M192 95 q-4 -6 -10 -2', stroke: true, region: null },
-      hat:      { d: 'M125 45 q45 -38 100 0 l-4 18 q-46 -26 -92 0 Z', region: 'main' }
-    };
-
+    // Avatar rendering is shared — see avatarRender.js (DSAvatar).
     function renderAvatarSvg(avatarData, allItems) {
-      var parts = [];
-
-      // Base body: pre-colored artwork preset resolved from skin_tone.
-      var BODY_ASSET_BASE = 'https://cajjyyskpmjnpcxcfeuk.supabase.co/storage/v1/object/public/cosmetic-assets/';
-      var presets = window.__bodyPresets || [];
-      var preset = presets.find(function(b){ return b.id === avatarData.skin_tone; }) ||
-                   presets.find(function(b){ return b.is_default; }) || presets[0] || null;
-      if (preset) {
-        var _pp = preset.pose_paths || {};
-        var _bodyPath = _pp[avatarData.pose || 'pose1'] || _pp.pose1 || preset.image_path;
-        var BODY_BOX = { x: 24, y: 78, w: 272, h: 384 }; // leaves headroom for hair/hats + side room for back items/backgrounds; future cosmetic layers must use this same box
-      if (_bodyPath) parts.push('<image href="' + BODY_ASSET_BASE + _bodyPath + '" x="' + BODY_BOX.x + '" y="' + BODY_BOX.y + '" width="' + BODY_BOX.w + '" height="' + BODY_BOX.h + '" preserveAspectRatio="xMidYMax meet"/>');
-      }
-
-      // TEMP: placeholder cosmetic layers disabled — real body artwork is
-      // live and the test shapes drew over it. Re-enable when illustrated
-      // cosmetic layers exist (keep in sync with avatar.html).
-      var RENDER_PLACEHOLDER_LAYERS = false;
-      if (RENDER_PLACEHOLDER_LAYERS) AVATAR_SLOT_ORDER.forEach(function(slot) {
-        var eq = (avatarData.equipped || {})[slot];
-        if (!eq) return;
-        var item = allItems.find(function(it){ return it.id === eq.item_id; });
-        if (!item) return;
-        var shape = AVATAR_PLACEHOLDER_SHAPES[slot];
-        if (!shape) return;
-
-        var fillColor = '#888';
-        if (shape.region && eq.colors && eq.colors[shape.region]) {
-          fillColor = eq.colors[shape.region];
-        } else if (item.fill_regions && item.fill_regions[0]) {
-          fillColor = item.fill_regions[0].default_color;
-        }
-
-        if (shape.stroke) {
-          parts.push('<path d="' + shape.d + '" fill="none" stroke="' + fillColor + '" stroke-width="3" stroke-linecap="round"/>');
-        } else {
-          parts.push(
-            '<path d="' + shape.d + '" fill="' + fillColor + '"/>' +
-            '<path d="' + shape.d + '" fill="#000" opacity="0.14" style="mix-blend-mode:multiply"/>' +
-            '<path d="' + shape.d + '" fill="none" stroke="#1a1a1a" stroke-width="1.5" opacity="0.7"/>'
-          );
-        }
-      });
-
-      return '<svg viewBox="0 0 320 480" xmlns="http://www.w3.org/2000/svg">' +
-        '<ellipse cx="160" cy="465" rx="90" ry="12" fill="rgba(0,0,0,0.15)"/>' +
-        parts.join('') +
-        '</svg>';
+      return DSAvatar.renderSvg(avatarData, window.__bodyPresets || [], allItems);
     }
 
     async function loadAvatarWidget(uid) {
@@ -1682,15 +1618,8 @@
         var avatarData = avatarRes.data;
 
         if (!avatarData) {
-          // First-time user — build the same default (base items equipped,
-          // default skin tone) used by avatar.html, without saving it.
-          var _dp = (window.__bodyPresets || []).find(function(b){ return b.is_default; }) || (window.__bodyPresets || [])[0];
-          avatarData = { skin_tone: _dp ? _dp.id : '#f4d9c4', equipped: {} };
-          allItems.filter(function(it){ return it.is_base_item; }).forEach(function(it) {
-            var colors = {};
-            (it.fill_regions || []).forEach(function(r){ colors[r.id] = r.default_color; });
-            avatarData.equipped[it.slot] = { item_id: it.id, colors: colors };
-          });
+          // First-time user — same default avatar.html builds, without saving.
+          avatarData = DSAvatar.buildDefaultAvatar(window.__bodyPresets, allItems);
         }
 
         var svgHtml = renderAvatarSvg(avatarData, allItems);

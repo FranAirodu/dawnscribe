@@ -13,6 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="avatarRender.js"></script>
   <style>
     :root {
       --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
@@ -59,6 +60,12 @@
     .pose-btn.pose-unlockable { color: #f97316; border-color: rgba(249,115,22,0.45); }
     .pose-btn.pose-unlockable:hover { color: #fb923c; border-color: #f97316; }
     .pose-btn .pose-cost { font-size: 10px; font-weight: 700; display: flex; align-items: center; gap: 3px; }
+    .display-roll-wrap { text-align: center; margin: 2px 0 10px; }
+    .display-roll-btn { background: #f97316; border: none; border-radius: 9px; padding: 8px 16px; color: #1a1208; font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: opacity .2s; }
+    .display-roll-btn:hover { opacity: 0.85; }
+    .display-roll-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .display-roll-btn .pose-cost { font-size: 11px; }
+    .display-roll-note { font-size: 10px; color: var(--text3); margin-top: 5px; }
     .ds-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); z-index: 500; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .18s; }
     .ds-modal-overlay.open { opacity: 1; pointer-events: auto; }
     .ds-modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 26px 28px; width: min(92vw, 380px); text-align: center; transform: translateY(8px); transition: transform .18s; box-shadow: 0 18px 50px rgba(0,0,0,0.5); }
@@ -246,17 +253,9 @@
     { id: 'pose2', label: 'Side View' }
   ];
 
-  function getPoseImagePath(preset, pose) {
-    if (!preset) return null;
-    var paths = preset.pose_paths || {};
-    return paths[pose] || paths.pose1 || preset.image_path || null;
-  }
-
-  function getBodyPreset(key) {
-    var p = bodyPresets.find(function(b){ return b.id === key; });
-    if (p) return p;
-    return bodyPresets.find(function(b){ return b.is_default; }) || bodyPresets[0] || null;
-  }
+  // Shared with all avatar-rendering pages — see avatarRender.js.
+  function getPoseImagePath(preset, pose) { return DSAvatar.getPoseImagePath(preset, pose); }
+  function getBodyPreset(key) { return DSAvatar.getBodyPreset(bodyPresets, key); }
 
   const SLOT_ICONS = {
     hat: '__hat__', hair: 'ti-cut', eyes: 'ti-eye', lips: '__lips__', skin: 'ti-droplet',
@@ -347,27 +346,7 @@
   var emberBalance = 0;
   var quillBalance = 0;
 
-  // ── PLACEHOLDER RENDERING ─────────────────────────────────────
-  // Until real layered art exists, each slot renders as a simple
-  // colored region on the body silhouette. This keeps the data model,
-  // equip logic, and recolor system fully functional — swapping in
-  // real PNG/SVG layers later only changes renderLayer(), not the
-  // surrounding system.
-  const SLOT_PLACEHOLDER_SHAPES = {
-    shirt:    { d: 'M150 165 q50 22 100 0 l14 34 q-64 28 -128 0 Z', region: 'main' },
-    outfit:   { d: 'M150 165 q50 22 100 0 l14 34 q-64 28 -128 0 Z M155 205 q45 16 90 0 l8 140 q-53 18 -106 0 Z', region: 'main' },
-    jacket:   { d: 'M145 160 q55 26 110 0 l18 40 q-72 32 -146 0 Z', region: 'main' },
-    pants:    { d: 'M155 205 q45 16 90 0 l8 140 q-53 18 -106 0 Z', region: 'main' },
-    shoes:    { d: 'M150 410 l-10 50 q-2 12 12 14 l16 2 q12 -2 12 -14 l-2 -52 Z M200 410 l10 50 q2 12 -12 14 l-16 2 q-12 -2 -12 -14 l2 -52 Z', region: 'main' },
-    gloves:   { d: 'M115 245 l-12 36 q-3 8 6 11 l10 3 q8 2 11 -7 l11 -35 Z M235 245 l12 36 q3 8 -6 11 l-10 3 q-8 2 -11 -7 l-11 -35 Z', region: 'main' },
-    accessory:{ d: 'M150 195 l50 0 l0 14 l-50 0 Z', region: 'main' },
-    neck:     { d: 'M165 158 q20 10 20 10 q0 0 20 -10 l4 12 q-24 12 -48 0 Z', region: 'main' },
-    back:     { d: 'M120 175 q-20 40 -10 90 l16 -4 q-8 -44 8 -78 Z M230 175 q20 40 10 90 l-16 -4 q8 -44 -8 -78 Z', region: 'main' },
-    hair:     { d: 'M120 60 q10 -34 52 -34 q44 0 54 36 q6 22 -2 40 q-2 -22 -16 -30 q-6 14 -18 18 q2 -12 -6 -18 q-8 12 -28 12 q-22 0 -28 -16 q-8 8 -8 22 q-12 -16 -8 -38 Z', region: 'main' },
-    eyes:     { d: 'M148 95 q4 -6 10 -2 M192 95 q-4 -6 -10 -2', stroke: true, region: null },
-    lips:     { d: 'M160 118 q10 6 30 0', stroke: true, region: null },
-    hat:      { d: 'M125 45 q45 -38 100 0 l-4 18 q-46 -26 -92 0 Z', region: 'main' }
-  };
+  // Placeholder slot shapes moved to avatarRender.js (DSAvatar.SLOT_PLACEHOLDER_SHAPES).
 
   // ── INIT ────────────────────────────────────────────────────────
   (async function init(){
@@ -436,6 +415,13 @@
     if (!avatarData.unlocked_poses || !avatarData.unlocked_poses.length) avatarData.unlocked_poses = ['pose1'];
     // If the saved pose was somehow never unlocked, fall back to pose1
     if (avatarData.unlocked_poses.indexOf(avatarData.pose) === -1) avatarData.pose = 'pose1';
+    if (!avatarData.unlocked_display) avatarData.unlocked_display = [];
+    if (!avatarData.avatar_position) avatarData.avatar_position = 'center';
+    if (typeof avatarData.mirrored !== 'boolean') avatarData.mirrored = false;
+    // Guard: saved position/mirror must actually be unlocked
+    if (avatarData.avatar_position === 'left' && avatarData.unlocked_display.indexOf('pos_left') === -1) avatarData.avatar_position = 'center';
+    if (avatarData.avatar_position === 'right' && avatarData.unlocked_display.indexOf('pos_right') === -1) avatarData.avatar_position = 'center';
+    if (avatarData.mirrored && avatarData.unlocked_display.indexOf('mirror') === -1) avatarData.mirrored = false;
 
     // Migrate legacy hex skin tones onto the artwork preset system: if the
     // saved skin_tone isn't a known preset id, snap it to the default preset.
@@ -476,55 +462,10 @@
 
   // ── RENDER: PREVIEW ──────────────────────────────────────────────
   function renderPreview() {
-    var parts = [];
-
-    // Base body: real artwork preset (pre-colored PNG) rendered as an
-    // <image> layer. Preset id comes from avatarData.skin_tone.
-    var preset = getBodyPreset(avatarData.skin_tone);
-    if (preset) {
-      var _bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
-      var BODY_BOX = { x: 24, y: 78, w: 272, h: 384 }; // leaves headroom for hair/hats + side room for back items/backgrounds; future cosmetic layers must use this same box
-      if (_bodyPath) parts.push('<image href="' + BODY_ASSET_BASE + _bodyPath + '" x="' + BODY_BOX.x + '" y="' + BODY_BOX.y + '" width="' + BODY_BOX.w + '" height="' + BODY_BOX.h + '" preserveAspectRatio="xMidYMax meet"/>');
-    }
-
-    // Equipped item layers, in SLOT_ORDER (bottom to top).
-    // TEMP: placeholder shape layers are disabled now that the real body
-    // artwork is live — the grey/teal test shapes clashed with it. Flip
-    // RENDER_PLACEHOLDER_LAYERS to true (or replace with real art layers)
-    // when illustrated cosmetic assets arrive. Equip data still saves.
-    var RENDER_PLACEHOLDER_LAYERS = false;
-    if (RENDER_PLACEHOLDER_LAYERS) SLOT_ORDER.forEach(function(slot) {
-      var eq = avatarData.equipped[slot];
-      if (!eq) return;
-      var item = allItems.find(function(it){ return it.id === eq.item_id; });
-      if (!item) return;
-      var shape = SLOT_PLACEHOLDER_SHAPES[slot];
-      if (!shape) return;
-
-      var fillColor = '#888888';
-      if (shape.region && eq.colors && eq.colors[shape.region]) {
-        fillColor = sanitizeHex(eq.colors[shape.region]);
-      } else if (item.fill_regions && item.fill_regions[0]) {
-        fillColor = sanitizeHex(item.fill_regions[0].default_color);
-      }
-
-      if (shape.stroke) {
-        parts.push('<path d="' + shape.d + '" fill="none" stroke="' + fillColor + '" stroke-width="3" stroke-linecap="round"/>');
-      } else {
-        parts.push(
-          '<path d="' + shape.d + '" fill="' + fillColor + '"/>' +
-          '<path d="' + shape.d + '" fill="#000" opacity="0.14" style="mix-blend-mode:multiply"/>' +
-          '<path d="' + shape.d + '" fill="none" stroke="#1a1a1a" stroke-width="1.5" opacity="0.7"/>'
-        );
-      }
-    });
-
-    var svg = '<svg viewBox="0 0 320 480" xmlns="http://www.w3.org/2000/svg">' +
-      '<ellipse cx="160" cy="465" rx="90" ry="12" fill="rgba(0,0,0,0.15)"/>' +
-      parts.join('') +
-      '</svg>';
-
-    document.getElementById('avatar-preview-svg').innerHTML = svg;
+    // Rendering is shared — see avatarRender.js. Any visual change to the
+    // avatar must be made there so index/profile stay in sync.
+    document.getElementById('avatar-preview-svg').innerHTML =
+      DSAvatar.renderSvg(avatarData, bodyPresets, allItems);
   }
 
   // ── RENDER: POSE PICKER ──────────────────────────────────────────
@@ -541,11 +482,132 @@
         return '<div class="pose-btn pose-locked" title="Coming soon"><i class="ti ti-lock"></i><span>' + p.label + '</span></div>';
       }
       if (ownedPoses.indexOf(p.id) === -1) {
-        return '<button class="pose-btn pose-unlockable" onclick="unlockPose(\'' + p.id + '\')" title="Unlock ' + p.label + ' for 10 Embers"><i class="ti ti-user"></i><span>' + p.label + '</span><span class="pose-cost"><i class="ti ti-flame"></i>10</span></button>';
+        return '<div class="pose-btn pose-locked" title="Unlock via a Random Display Unlock below"><i class="ti ti-dice-5"></i><span>' + p.label + '</span></div>';
       }
       var active = (avatarData.pose || 'pose1') === p.id ? ' active' : '';
       return '<button class="pose-btn' + active + '" onclick="setPose(\'' + p.id + '\')" title="' + p.label + '"><i class="ti ti-user"></i><span>' + p.label + '</span></button>';
     }).join('');
+    renderDisplayRow(paths);
+  }
+
+  // ── RENDER: DISPLAY OPTIONS (position + mirror) ─────────────────
+  // pos_left / pos_right / mirror are one-time random Ember unlocks;
+  // once owned they toggle freely forever.
+  function renderDisplayRow(posePaths) {
+    var el = document.getElementById('display-row');
+    if (!el) return;
+    var owned = avatarData.unlocked_display || [];
+    var pos = avatarData.avatar_position || 'center';
+
+    function posBtn(id, key, label, icon) {
+      if (key && owned.indexOf(key) === -1) {
+        return '<div class="pose-btn pose-locked" title="Unlock via a Random Display Unlock"><i class="ti ti-dice-5"></i><span>' + label + '</span></div>';
+      }
+      var active = pos === id ? ' active' : '';
+      return '<button class="pose-btn' + active + '" onclick="setPosition(\'' + id + '\')" title="' + label + '"><i class="ti ' + icon + '"></i><span>' + label + '</span></button>';
+    }
+
+    var html = posBtn('left', 'pos_left', 'Left', 'ti-align-left') +
+               posBtn('center', null, 'Center', 'ti-align-center') +
+               posBtn('right', 'pos_right', 'Right', 'ti-align-right');
+
+    if (owned.indexOf('mirror') === -1) {
+      html += '<div class="pose-btn pose-locked" title="Unlock via a Random Display Unlock"><i class="ti ti-dice-5"></i><span>Mirror</span></div>';
+    } else {
+      html += '<button class="pose-btn' + (avatarData.mirrored ? ' active' : '') + '" onclick="toggleMirror()" title="Flip your avatar horizontally"><i class="ti ti-arrows-left-right"></i><span>Mirror</span></button>';
+    }
+    el.innerHTML = html;
+
+    // Roll button: show only while something in the pool is still locked
+    var rollWrap = document.getElementById('display-roll-wrap');
+    if (rollWrap) {
+      var poolLeft = 0;
+      POSE_DEFS.forEach(function(p) {
+        if (posePaths && posePaths[p.id] && (avatarData.unlocked_poses || []).indexOf(p.id) === -1) poolLeft++;
+      });
+      ['pos_left', 'pos_right', 'mirror'].forEach(function(k) {
+        if (owned.indexOf(k) === -1) poolLeft++;
+      });
+      if (poolLeft > 0) {
+        rollWrap.innerHTML = '<button class="display-roll-btn" ' + (emberBalance < 10 ? 'disabled ' : '') + 'onclick="rollDisplayUnlock()"><i class="ti ti-dice-5"></i> Random Display Unlock <span class="pose-cost"><i class="ti ti-flame"></i>10</span></button>' +
+          '<div class="display-roll-note">' + poolLeft + ' option' + (poolLeft === 1 ? '' : 's') + ' left \u2022 poses, positions & mirror</div>';
+      } else {
+        rollWrap.innerHTML = '';
+      }
+    }
+  }
+
+  function setPosition(pos) {
+    if ((avatarData.avatar_position || 'center') === pos) return;
+    avatarData.avatar_position = pos;
+    dirty = true;
+    renderPoseRow();
+    renderPreview();
+    updateSaveState();
+  }
+
+  function toggleMirror() {
+    avatarData.mirrored = !avatarData.mirrored;
+    dirty = true;
+    renderPoseRow();
+    renderPreview();
+    updateSaveState();
+  }
+
+  async function rollDisplayUnlock() {
+    if (emberBalance < 10) {
+      await dsModal({ title: 'Not enough Embers', body: 'You need <b>10 Embers</b> for a Random Display Unlock. You currently have <b>' + emberBalance + '</b>.', icon: 'ti-flame', error: true });
+      return;
+    }
+    var ok = await dsModal({ confirm: true, title: 'Random Display Unlock', body: 'Spend <b>10 Embers</b> to unlock one <b>random</b> display option \u2014 a pose, avatar position, or the mirror effect. Whatever you get is yours forever.', icon: 'ti-dice-5', okLabel: 'Roll \u2022 10 Embers' });
+    if (!ok) return;
+    var { data, error } = await db.rpc('roll_display_unlock', { p_user_id: currentUid });
+    if (error || !data) {
+      await dsModal({ title: 'Something went wrong', body: 'Could not roll right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
+      return;
+    }
+    if (data.status === 'insufficient_embers') {
+      await dsModal({ title: 'Not enough Embers', body: 'You need <b>' + data.cost + ' Embers</b> for this roll. You currently have <b>' + data.balance + '</b>.', icon: 'ti-flame', error: true });
+      return;
+    }
+    if (data.status === 'all_unlocked') {
+      await dsModal({ title: 'All unlocked!', body: 'You already own every display option. Nice collection!', icon: 'ti-sparkles' });
+      renderPoseRow();
+      return;
+    }
+    if (data.status !== 'success') {
+      await dsModal({ title: 'Something went wrong', body: 'Could not roll right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
+      return;
+    }
+    emberBalance -= data.cost;
+    window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: -data.cost } }));
+
+    var got = data.unlocked;
+    var label, applyMsg;
+    if (data.kind === 'pose') {
+      if (!avatarData.unlocked_poses) avatarData.unlocked_poses = ['pose1'];
+      if (avatarData.unlocked_poses.indexOf(got) === -1) avatarData.unlocked_poses.push(got);
+      var pd = POSE_DEFS.find(function(p){ return p.id === got; });
+      label = (pd ? pd.label : got) + ' pose';
+      avatarData.pose = got;
+      applyMsg = 'It has been applied to your preview.';
+    } else if (data.kind === 'mirror') {
+      if (avatarData.unlocked_display.indexOf('mirror') === -1) avatarData.unlocked_display.push('mirror');
+      label = 'Mirror effect';
+      avatarData.mirrored = true;
+      applyMsg = 'It has been applied \u2014 toggle it any time.';
+    } else {
+      if (avatarData.unlocked_display.indexOf(got) === -1) avatarData.unlocked_display.push(got);
+      var side = got === 'pos_left' ? 'left' : 'right';
+      label = (side === 'left' ? 'Left' : 'Right') + ' position';
+      avatarData.avatar_position = side;
+      applyMsg = 'It has been applied \u2014 switch positions any time.';
+    }
+    dirty = true;
+    renderPoseRow();
+    renderPreview();
+    updateSaveState();
+    await dsModal({ title: 'You unlocked: ' + label + '!', body: 'The <b>' + label + '</b> is now permanently yours. ' + applyMsg + ' Remember to hit <b>Save Avatar</b>.', icon: 'ti-confetti' });
   }
 
   // ── MODAL (styled replacement for alert/confirm) ────────────────
@@ -577,42 +639,6 @@
       document.body.appendChild(overlay);
       requestAnimationFrame(function(){ overlay.classList.add('open'); });
     });
-  }
-
-  async function unlockPose(pose) {
-    var poseDef = POSE_DEFS.find(function(p){ return p.id === pose; });
-    var poseLabel = poseDef ? poseDef.label : 'this pose';
-    if (emberBalance < 10) {
-      await dsModal({ title: 'Not enough Embers', body: 'You need <b>10 Embers</b> to unlock the ' + poseLabel + ' pose. You currently have <b>' + emberBalance + '</b>.', icon: 'ti-flame', error: true });
-      return;
-    }
-    var ok = await dsModal({ confirm: true, title: 'Unlock ' + poseLabel + ' pose?', body: 'Spend <b>10 Embers</b> to permanently unlock this pose for your avatar.', icon: 'ti-flame', okLabel: 'Unlock \u2022 10 Embers' });
-    if (!ok) return;
-    var { data, error } = await db.rpc('unlock_avatar_pose', { p_user_id: currentUid, p_pose: pose });
-    if (error || !data) {
-      await dsModal({ title: 'Something went wrong', body: 'Could not unlock the pose right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
-      return;
-    }
-    if (data.status === 'insufficient_embers') {
-      await dsModal({ title: 'Not enough Embers', body: 'You need <b>' + data.cost + ' Embers</b> to unlock this pose. You currently have <b>' + data.balance + '</b>.', icon: 'ti-flame', error: true });
-      return;
-    }
-    if (data.status !== 'success' && data.status !== 'already_unlocked') {
-      await dsModal({ title: 'Something went wrong', body: 'Could not unlock the pose right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
-      return;
-    }
-    if (data.status === 'success') {
-      emberBalance -= data.cost;
-      window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: -data.cost } }));
-    }
-    if (!avatarData.unlocked_poses) avatarData.unlocked_poses = ['pose1'];
-    if (avatarData.unlocked_poses.indexOf(pose) === -1) avatarData.unlocked_poses.push(pose);
-    // Auto-select the new pose (still needs Save to persist the selection)
-    avatarData.pose = pose;
-    dirty = true;
-    renderPoseRow();
-    renderPreview();
-    updateSaveState();
   }
 
   function setPose(pose) {
@@ -1161,6 +1187,8 @@
       user_id: currentUid,
       skin_tone: avatarData.skin_tone,
       pose: avatarData.pose || 'pose1',
+      avatar_position: avatarData.avatar_position || 'center',
+      mirrored: !!avatarData.mirrored,
       equipped: avatarData.equipped,
       unlocked_skin_tones: avatarData.unlocked_skin_tones || [],
       unlocked_colors: avatarData.unlocked_colors || {},
@@ -1199,6 +1227,8 @@
         '<div class="preview-panel">' +
           '<div class="preview-canvas-wrap"><div id="avatar-preview-svg"></div></div>' +
           '<div class="pose-row" id="pose-row"></div>' +
+          '<div class="pose-row" id="display-row"></div>' +
+          '<div id="display-roll-wrap" class="display-roll-wrap"></div>' +
           '<button class="save-btn" id="save-btn" onclick="saveAvatar()" disabled><i class="ti ti-device-floppy"></i> Save Avatar</button>' +
           '<div class="save-status" id="save-status"></div>' +
           '<div class="preview-note">Illustrated cosmetic art is in progress — equipped items and unlocked colors are saved and will appear on your avatar once the artwork arrives.</div>' +
