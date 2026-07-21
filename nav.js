@@ -1014,7 +1014,7 @@ function dsApplyAccent(hex) {
           var _uai1=document.getElementById('user-avatar-initial'); if(_uai1) _uai1.textContent = res.data.display_name.charAt(0).toUpperCase();
         }
         // Apply avatar image immediately — not gated on username
-        if(res.data.avatar_url){
+        if(res.data.avatar_url && !window.__dsNavHeadshot){
           avatarBtn.innerHTML = '<img src="'+res.data.avatar_url+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
         }
       }
@@ -1037,6 +1037,7 @@ function dsApplyAccent(hex) {
           if (!r.presets || !r.presets.length || !r.headshotSvg) return;
           var btn = document.getElementById('user-avatar-btn');
           if (!btn) return;
+          window.__dsNavHeadshot = true; // photo fetches must not overwrite
           btn.innerHTML = r.headshotSvg;
           var sv = btn.querySelector('svg');
           if (sv) { sv.style.width='100%'; sv.style.height='100%'; sv.style.display='block'; sv.style.borderRadius='50%'; }
@@ -1100,7 +1101,7 @@ function dsApplyAccent(hex) {
             var _ddn2=document.getElementById('dd-display-name'); if(_ddn2) _ddn2.textContent = res.data.display_name;
             var _uai2=document.getElementById('user-avatar-initial'); if(_uai2) _uai2.textContent = res.data.display_name.charAt(0).toUpperCase();
           }
-          if(res.data.avatar_url){
+          if(res.data.avatar_url && !window.__dsNavHeadshot){
             avatarBtn.innerHTML = '<img src="'+res.data.avatar_url+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
           }
           var uid2 = res.data.id || session.user.id;

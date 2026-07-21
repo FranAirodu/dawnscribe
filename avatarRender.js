@@ -238,6 +238,53 @@
   }
 
   /**
+   * Export the headshot as a PNG Blob (for storing as profiles.avatar_url).
+   * SVGs loaded via <img> can't fetch external images, so the body PNG is
+   * inlined as a data URI, the self-contained SVG is rasterized to a
+   * square canvas, and a PNG blob is returned.
+   */
+  async function exportHeadshotPng(avatarData, presets, allItems, size) {
+    size = size || 256;
+    var svg = renderHeadshotSvg(avatarData, presets, allItems);
+
+    // Inline every external <image href> as a data URI
+    var hrefs = [];
+    svg.replace(/href="(https?:[^"]+)"/g, function (m, u) { if (hrefs.indexOf(u) === -1) hrefs.push(u); return m; });
+    for (var i = 0; i < hrefs.length; i++) {
+      var resp = await fetch(hrefs[i]);
+      var blob = await resp.blob();
+      var dataUri = await new Promise(function (res, rej) {
+        var fr = new FileReader();
+        fr.onload = function () { res(fr.result); };
+        fr.onerror = rej;
+        fr.readAsDataURL(blob);
+      });
+      svg = svg.split('href="' + hrefs[i] + '"').join('href="' + dataUri + '"');
+    }
+
+    // Explicit dimensions so Firefox rasterizes at full size
+    svg = svg.replace('<svg ', '<svg width="' + size + '" height="' + size + '" ');
+
+    var svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    try {
+      var img = await new Promise(function (res, rej) {
+        var im = new Image();
+        im.onload = function () { res(im); };
+        im.onerror = rej;
+        im.src = svgUrl;
+      });
+      var canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      canvas.getContext('2d').drawImage(img, 0, 0, size, size);
+      return await new Promise(function (res, rej) {
+        canvas.toBlob(function (b) { b ? res(b) : rej(new Error('toBlob failed')); }, 'image/png');
+      });
+    } finally {
+      URL.revokeObjectURL(svgUrl);
+    }
+  }
+
+  /**
    * Fetch everything needed and render in one call.
    * @param {Object} db  - Supabase client
    * @param {String} uid - user id whose avatar to render
@@ -272,6 +319,7 @@
     getPoseImagePath: getPoseImagePath,
     renderSvg: renderSvg,
     renderHeadshotSvg: renderHeadshotSvg,
+    exportHeadshotPng: exportHeadshotPng,
     getHeadCrop: getHeadCrop,
     buildDefaultAvatar: buildDefaultAvatar,
     load: load

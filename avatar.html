@@ -1207,6 +1207,26 @@
 
     dirty = false;
     status.textContent = 'Saved!';
+
+    // Publish the avatar's face as the sitewide profile picture.
+    // Every surface that shows profiles.avatar_url (nav, comments,
+    // friends, search, messages) picks this up automatically — this is
+    // the single sync point for "avatar face everywhere".
+    try {
+      status.textContent = 'Saved! Updating profile picture…';
+      var pngBlob = await DSAvatar.exportHeadshotPng(avatarData, bodyPresets, allItems, 256);
+      var hsPath = currentUid + '/avatar-headshot.png';
+      var upErr = (await db.storage.from('avatars').upload(hsPath, pngBlob, { upsert: true, contentType: 'image/png' })).error;
+      if (!upErr) {
+        var hsUrl = db.storage.from('avatars').getPublicUrl(hsPath).data.publicUrl + '?v=' + Date.now();
+        await db.from('profiles').upsert({ id: currentUid, avatar_url: hsUrl }, { onConflict: 'id' });
+        // Refresh the nav pfp on this page immediately
+        var _nb = document.getElementById('user-avatar-btn');
+        if (_nb) _nb.innerHTML = '<img src="' + hsUrl + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
+      }
+      status.textContent = 'Saved!';
+    } catch(e) { status.textContent = 'Saved!'; /* headshot publish is best-effort */ }
+
     setTimeout(function(){ status.textContent = ''; }, 2000);
   }
 
