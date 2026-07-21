@@ -35,6 +35,7 @@
   <title>DawnScribe — Profile</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="blockUtils.js"></script>
+<script src="avatarRender.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
   <style>
@@ -67,6 +68,15 @@
 
     /* AVATAR */
     .profile-header{max-width:960px;margin:0 auto;padding:0 24px;position:relative;}
+    /* Full-body customized avatar (shared renderer — avatarRender.js).
+       Anchored so the character's feet sit on the banner's bottom edge,
+       standing in front of the banner art. Transparent SVG = banner
+       integrity preserved. pointer-events:none so banner buttons/credit
+       chips behind it stay clickable. */
+    .ds-avatar-figure{position:absolute;top:-300px;left:12px;width:200px;height:300px;pointer-events:none;z-index:4;display:none;filter:drop-shadow(0 6px 16px rgba(0,0,0,0.45));}
+    .ds-avatar-figure.visible{display:block;}
+    .ds-avatar-figure svg{width:100%;height:100%;display:block;}
+    @media (max-width:720px){ .ds-avatar-figure{top:-210px;left:2px;width:140px;height:210px;} }
     .avatar-row{display:flex;align-items:flex-end;justify-content:space-between;margin-top:-52px;margin-bottom:16px;flex-wrap:wrap;gap:12px;}
     .avatar-wrap{position:relative;flex-shrink:0;width:112px;}
     .avatar-row-left{display:flex;align-items:flex-end;gap:12px;}
@@ -474,6 +484,7 @@
 
   <!-- PROFILE HEADER -->
   <div class="profile-header">
+    <div class="ds-avatar-figure" id="ds-avatar-figure" aria-hidden="true"></div>
     <div class="avatar-row">
       <div class="avatar-row-left">
       <a class="customize-avatar-btn owner-only" href="avatar.html"><i class="ti ti-shirt"></i> Customize Avatar</a>
@@ -1146,6 +1157,7 @@
       }
       if (data.id) {
         currentProfileId = data.id;
+        loadFullBodyAvatar(data.id);
         // Flush any pending tab loads that fired before profileId was known
         var pendingPanel = document.querySelector('.tab-panel[data-pending-load]');
         if (pendingPanel) {
@@ -1163,6 +1175,22 @@
     }
 
     /* ── LOAD COLLABS TAB ──────────────────────────────────────────── */
+    /* ── FULL-BODY AVATAR (shared renderer) ─────────────────────
+       Renders the profile owner's customized avatar standing on the
+       banner's bottom edge. Non-critical: hides itself on any error. */
+    async function loadFullBodyAvatar(profileUserId) {
+      try {
+        if (!window.DSAvatar) return;
+        var fig = document.getElementById('ds-avatar-figure');
+        if (!fig) return;
+        var r = await DSAvatar.load(db, profileUserId, { skipSlots: ['background'] });
+        // Skip render if user has no body preset artwork available
+        if (!r.presets || !r.presets.length) return;
+        fig.innerHTML = r.svg;
+        fig.classList.add('visible');
+      } catch(e) { /* avatar figure is decorative — fail silently */ }
+    }
+
     async function loadCollabsTab(profileId, isOwner) {
       var panel = document.getElementById('collabs-panel-content');
       if (!panel) return;

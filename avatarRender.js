@@ -73,7 +73,7 @@
    * @param {Object} avatarData - row from user_avatars (or default-shaped object)
    * @param {Array}  presets    - active rows from avatar_body_presets
    * @param {Array}  allItems   - rows from cosmetic_items (only needed for placeholder layers)
-   * @param {Object} [opts]     - { applyPosition: true, applyMirror: true }
+   * @param {Object} [opts]     - { applyPosition: true, applyMirror: true, skipSlots: [] }
    */
   function renderSvg(avatarData, presets, allItems, opts) {
     avatarData = avatarData || {};
@@ -81,6 +81,7 @@
     opts = opts || {};
     var applyPosition = opts.applyPosition !== false;
     var applyMirror = opts.applyMirror !== false;
+    var skipSlots = opts.skipSlots || [];
 
     var parts = [];
 
@@ -95,6 +96,7 @@
 
     // Equipped item layers, in SLOT_ORDER (bottom to top).
     if (RENDER_PLACEHOLDER_LAYERS) SLOT_ORDER.forEach(function (slot) {
+      if (skipSlots.indexOf(slot) !== -1) return; // e.g. profile suppresses 'background' so the user's banner shows through
       var eq = (avatarData.equipped || {})[slot];
       if (!eq) return;
       var item = allItems.find(function (it) { return it.id === eq.item_id; });
