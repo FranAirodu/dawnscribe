@@ -1019,6 +1019,30 @@ function dsApplyAccent(hex) {
         }
       }
 
+      // ── SVG AVATAR HEADSHOT (sitewide) ──────────────────────────
+      // Overrides the photo pfp with the user's customized avatar face.
+      // Loads avatarRender.js on demand so every page gets it without
+      // needing its own <script> include. Falls back silently to the
+      // avatar_url photo if presets/artwork aren't available.
+      (async function dsApplyAvatarHeadshot(uid){
+        try {
+          if (!window.DSAvatar) {
+            await new Promise(function(res, rej){
+              var sc = document.createElement('script');
+              sc.src = 'avatarRender.js'; sc.onload = res; sc.onerror = rej;
+              document.head.appendChild(sc);
+            });
+          }
+          var r = await DSAvatar.load(db, uid);
+          if (!r.presets || !r.presets.length || !r.headshotSvg) return;
+          var btn = document.getElementById('user-avatar-btn');
+          if (!btn) return;
+          btn.innerHTML = r.headshotSvg;
+          var sv = btn.querySelector('svg');
+          if (sv) { sv.style.width='100%'; sv.style.height='100%'; sv.style.display='block'; sv.style.borderRadius='50%'; }
+        } catch(e) { /* keep photo fallback */ }
+      })(session.user.id);
+
       // Apply user's saved accent color sitewide
       // Cache in localStorage so it applies instantly on next page load with no DB wait.
       var accentRes = await db.from('user_avatars').select('accent_color').eq('user_id', session.user.id).maybeSingle();

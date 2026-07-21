@@ -81,13 +81,8 @@
     .ds-avatar-figure svg{width:100%;height:100%;display:block;}
     @media (max-width:720px){ .ds-avatar-figure{top:-210px;left:2px;width:140px;height:210px;} }
     .avatar-row{display:flex;align-items:flex-end;justify-content:space-between;margin-top:-52px;margin-bottom:16px;flex-wrap:wrap;gap:12px;}
-    .avatar-wrap{position:relative;flex-shrink:0;width:112px;}
     .avatar-row-left{display:flex;align-items:flex-end;gap:12px;}
-    .avatar{width:104px;height:104px;border-radius:50%;border:4px solid var(--bg);background:linear-gradient(135deg,#1e0040,#6b21a8);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:36px;font-weight:700;color:#c084fc;overflow:hidden;}
-    .avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
-    .avatar-edit-btn{position:absolute;bottom:4px;right:4px;background:var(--accent2);border:2px solid var(--bg);border-radius:50%;width:30px;height:30px;display:none;align-items:center;justify-content:center;cursor:pointer;color:white;font-size:14px;transition:background 0.2s;z-index:5;}
-    .avatar-edit-btn:hover{background:var(--accent);}
-
+    
     /* VISIBILITY — visitor buttons always visible, owner buttons hidden until JS confirms */
     .owner-only{display:none;}
     .visitor-only{display:inline-flex;align-items:center;gap:6px;}
@@ -463,7 +458,6 @@
   </style>
 </head>
 <body>
-  <input type="file" class="hidden-input" id="avatar-input" accept="image/*">
   <input type="file" class="hidden-input" id="banner-input" accept="image/*">
   <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
 
@@ -488,12 +482,6 @@
     <a class="ds-avatar-figure" id="ds-avatar-figure" aria-hidden="true"></a>
     <div class="avatar-row">
       <div class="avatar-row-left">
-      <div class="avatar-wrap">
-        <div class="avatar" id="avatar-display"><span id="avatar-initial">M</span></div>
-        <button class="avatar-edit-btn owner-only" id="avatar-edit-btn" onclick="document.getElementById('avatar-input').click()" title="Change photo">
-          <i class="ti ti-camera"></i>
-        </button>
-      </div>
       </div>
       <div class="header-actions">
         <button id="follow-btn" class="visitor-only" onclick="toggleFollow()" style="visibility:hidden;">
@@ -1119,13 +1107,6 @@
           lastActiveEl.textContent = daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : daysAgo + ' days ago';
         }
       }
-      if (data.avatar_url) {
-        var d = document.getElementById('avatar-display');
-        d.innerHTML = '<img src="' + data.avatar_url + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
-      } else if (data.display_name || data.username) {
-        var init = document.getElementById('avatar-initial');
-        if (init) { init.textContent = (data.display_name || data.username).charAt(0).toUpperCase(); }
-      }
       if (data.banner_url) {
         var wrap = document.getElementById('banner-wrap');
         var img = wrap.querySelector('.banner-img');
@@ -1188,15 +1169,7 @@
         if (!r.presets || !r.presets.length) return;
         fig.innerHTML = r.svg;
         fig.classList.add('visible');
-        // Round pfp: show the avatar's face (SVG headshot) instead of the
-        // uploaded photo — the site's own avatars take priority. The photo
-        // upload still exists and feeds avatar_url used in nav/comments.
-        var pfp = document.getElementById('avatar-display');
-        if (pfp && r.headshotSvg) {
-          pfp.innerHTML = r.headshotSvg;
-          var _hs = pfp.querySelector('svg');
-          if (_hs) { _hs.style.width = '100%'; _hs.style.height = '100%'; _hs.style.display = 'block'; _hs.style.borderRadius = '50%'; }
-        }
+
         // Owner: clicking the avatar opens the editor (replaces the old
         // Customize Avatar button). Visitors: purely decorative.
         try {
@@ -2207,30 +2180,6 @@ async function handleFriendBtn() {
       if (navigator.clipboard) { navigator.clipboard.writeText(url); }
       showToast('Profile link copied!', 'ti-link');
     }
-
-    /* ── AVATAR UPLOAD ──────────────────────────────────────────── */
-    document.getElementById('avatar-input').addEventListener('change', async function(e) {
-      var file = e.target.files[0];
-      if (!file) { return; }
-      if (!file.type.startsWith('image/')) { showToast('Please select an image file', 'ti-alert-triangle'); this.value = ''; return; }
-      if (file.size > 5 * 1024 * 1024) { showToast('Image must be under 5MB', 'ti-alert-triangle'); this.value = ''; return; }
-      var reader = new FileReader();
-      reader.onload = function(ev) {
-        document.getElementById('avatar-display').innerHTML = '<img src="' + ev.target.result + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
-      };
-      reader.readAsDataURL(file);
-      try {
-        var sessionRes = await db.auth.getSession();
-        var s = sessionRes && sessionRes.data ? sessionRes.data.session : null;
-        if (!s) { return; }
-        var ext = file.name.split('.').pop();
-        var path = s.user.id + '/avatar.' + ext;
-        await db.storage.from('avatars').upload(path, file, { upsert: true });
-        var url = db.storage.from('avatars').getPublicUrl(path).data.publicUrl;
-        await db.from('profiles').upsert({ id: s.user.id, avatar_url: url }, { onConflict: 'id' });
-        showToast('Profile picture updated!', 'ti-user');
-      } catch(err) { console.error('Avatar upload error:', err); }
-    });
 
     /* ── BANNER UPLOAD ──────────────────────────────────────────── */
     document.getElementById('banner-input').addEventListener('change', async function(e) {
