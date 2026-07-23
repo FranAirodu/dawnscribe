@@ -577,7 +577,7 @@ window.CharacterTitles = (function() {
   // ══════════════════════════════════════════════════════════════
   // RENDER — STORY.HTML CHARACTER CARDS
   // ══════════════════════════════════════════════════════════════
-  async function renderStoryCharacterCards(container, workId, isOwner) {
+  async function renderStoryCharacterCards(container, workId, isOwner, workAuthorId) {
     container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;font-size:20px;"></i></div>';
 
     var { data: chars } = await db().from('novel_characters')
@@ -1335,6 +1335,7 @@ window.CharacterTitles = (function() {
             fanVoteBtn.innerHTML = '<i class="ti ti-heart"></i> Voted today';
             fanVoteBtn.style.background = 'rgba(236,72,153,0.18)';
             fanVoteBtn.style.cursor = 'default';
+            try { await db().rpc('award_beloved_character_badge', { p_author_id: workAuthorId, p_character_id: char.id }); } catch(e) {}
           } catch(err) {
             fanVoteBtn.disabled = false;
             fanVoteBtn.innerHTML = '<i class="ti ti-heart"></i> Fan Vote';
@@ -1606,6 +1607,7 @@ window.CharacterTitles = (function() {
           await Promise.resolve(db().from('character_dynamic_votes').delete().eq('dynamic_id', id).eq('user_id', uid)).catch(function(){});
         } else {
           await Promise.resolve(db().from('character_dynamic_votes').insert({ dynamic_id: id, user_id: uid })).catch(function(){});
+          try { await db().rpc('award_shipper_badge', { p_user_id: uid, p_character_id: char.id }); } catch(e) {}
         }
         rerender();
       });
@@ -1635,6 +1637,7 @@ window.CharacterTitles = (function() {
         }
         if (res && res.data) {
           await Promise.resolve(db().from('character_dynamic_votes').insert({ dynamic_id: res.data.id, user_id: uid })).catch(function(){});
+          try { await db().rpc('award_shipper_badge', { p_user_id: uid, p_character_id: char.id }); } catch(e) {}
         }
         ctToast('Dynamic proposed!', 'ti-arrows-left-right');
         rerender();
@@ -1652,6 +1655,7 @@ window.CharacterTitles = (function() {
           await Promise.resolve(db().from('character_quote_votes').delete().eq('quote_id', id).eq('user_id', uid)).catch(function(){});
         } else {
           await Promise.resolve(db().from('character_quote_votes').insert({ quote_id: id, user_id: uid })).catch(function(){});
+          try { await db().rpc('award_quote_keeper_badge', { p_user_id: uid, p_character_id: char.id }); } catch(e) {}
         }
         rerender();
       });
@@ -1727,6 +1731,7 @@ window.CharacterTitles = (function() {
           { character_id: char.id, user_id: uid, axis: seg.getAttribute('data-trait-axis'), value: parseInt(seg.getAttribute('data-trait-val'), 10), updated_at: new Date().toISOString() },
           { onConflict: 'character_id,user_id,axis' }
         )).catch(function(){});
+        try { await db().rpc('award_trait_scout_badge', { p_user_id: uid, p_character_id: char.id }); } catch(e) {}
         rerender();
       });
     });
@@ -1743,6 +1748,7 @@ window.CharacterTitles = (function() {
         )).catch(function(err){ return { error: err }; });
         if (res && res.error) { ctToast('Could not save mood vote.', 'ti-x'); chip.disabled = false; return; }
         ctToast('Mood set for this month!', 'ti-mood-check');
+        try { await db().rpc('award_vibe_check_badge', { p_user_id: uid, p_character_id: char.id }); } catch(e) {}
         rerender();
       });
     });
@@ -1786,6 +1792,7 @@ window.CharacterTitles = (function() {
         ta.value = '';
         askBtn.disabled = false;
         ctToast('Question sent \u2014 the author will answer in-character!', 'ti-help-circle');
+        try { await db().rpc('award_ask_a_character_badge', { p_user_id: uid, p_character_id: char.id }); } catch(e) {}
         ctNotifyWorkAuthor(workId, uid, char.id, 'question_submitted', function(n, t) {
           return n + ' asked ' + char.name + ' a question in \u201c' + t + '\u201d';
         });
@@ -1837,6 +1844,7 @@ window.CharacterTitles = (function() {
               if (res2 && res2.error) { b.disabled = false; ctToast('Could not save answer.', 'ti-x'); return; }
               if (window.CommentToolbar && CommentToolbar.clearAttachments) CommentToolbar.clearAttachments('ctq-' + qid);
               ctToast('Answered in-character!', 'ti-message-check');
+              try { await db().rpc('award_in_character_badge', { p_user_id: uid, p_character_id: char.id }); } catch(e) {}
               ctNotifyUser((pendQById[qid] || {}).user_id, uid, workId, char.id, 'question_answered', char.name + ' answered your question! \ud83d\udcac');
               rerender();
             });
@@ -2204,6 +2212,9 @@ window.CharacterTitles = (function() {
   async function submitAuraVote(characterId, hex, userId) {
     var { error } = await db().from('character_aura_votes')
       .upsert({ character_id: characterId, user_id: userId, hex: hex }, { onConflict: 'character_id,user_id' });
+    if (!error) {
+      try { await db().rpc('award_aura_reader_badge', { p_user_id: userId, p_character_id: characterId }); } catch(e) {}
+    }
     return !error;
   }
 
