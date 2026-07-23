@@ -26,9 +26,18 @@
   // layers must use this same box.
   var BODY_BOX = { x: 24, y: 78, w: 272, h: 384 };
 
-  // TEMP: placeholder cosmetic layers disabled — real body artwork is
-  // live and the test shapes drew over it. Flip to true (or replace
-  // with real art layers) when illustrated cosmetic assets arrive.
+  // Full-canvas box for background layers (drawn behind everything).
+  var BG_BOX = { x: 0, y: 0, w: 320, h: 480 };
+
+  // Cosmetic art delivered by commissioned artists lives in the same
+  // public bucket as body art. image_url may be either a bare storage
+  // path ('hats/straw_hat.png') or a fully-qualified https URL.
+  var COSMETIC_ASSET_BASE = BODY_ASSET_BASE;
+
+  // Placeholder vector cosmetic layers (test geometry) stay disabled —
+  // real body artwork is live and the test shapes drew over it. Real
+  // illustrated cosmetics render through renderItemLayers() instead,
+  // which is driven by cosmetic_items.image_url and needs no flag.
   var RENDER_PLACEHOLDER_LAYERS = false;
 
   // Until real layered art exists, each slot renders as a simple
@@ -93,6 +102,84 @@
   }
 
   /**
+   * Resolve a cosmetic_items.image_url into a loadable URL.
+   * Accepts absolute http(s) URLs, protocol-relative URLs, and data URIs
+   * as-is; anything else is treated as a path inside the public bucket.
+   * Returns null for empty/invalid values so callers can skip the layer.
+   */
+  // Build a skipSlots list that suppresses every slot except 'background',
+  // so a render pass can emit background art alone.
+  function nonBackgroundSlots(skipSlots) {
+    var out = SLOT_ORDER.filter(function (s) { return s !== 'background'; });
+    return out.concat(skipSlots || []);
+  }
+
+  function resolveAssetUrl(url) {
+    if (!url) return null;
+    var u = String(url).trim();
+    if (!u) return null;
+    if (/^(https?:|data:|\/\/)/i.test(u)) return u;
+    if (u.charAt(0) === '/') u = u.slice(1);
+    return COSMETIC_ASSET_BASE + u;
+  }
+
+  function escapeAttr(v) {
+    return String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /**
+   * Render the equipped cosmetic art layers as <image> elements.
+   * Artists deliver flat PNG/JPG per item, sized to the same 320x480
+   * canvas as the body art, so each layer is drawn into BODY_BOX (or
+   * the full canvas for backgrounds) and stacks by z_index.
+   *
+   * Items with no image_url are skipped entirely — an unillustrated
+   * item renders as nothing rather than as a broken image icon.
+   *
+   * @param {Object} avatarData
+   * @param {Array}  allItems - rows from cosmetic_items
+   * @param {Array}  skipSlots
+   * @returns {Array<String>} SVG fragments, already in draw order
+   */
+  function renderItemLayers(avatarData, allItems, skipSlots) {
+    allItems = allItems || [];
+    skipSlots = skipSlots || [];
+    var equipped = (avatarData && avatarData.equipped) || {};
+    var layers = [];
+
+    SLOT_ORDER.forEach(function (slot, slotIndex) {
+      if (skipSlots.indexOf(slot) !== -1) return;
+      var eq = equipped[slot];
+      if (!eq) return;
+      var item = allItems.find(function (it) { return it.id === eq.item_id; });
+      if (!item) return;
+      var href = resolveAssetUrl(item.image_url);
+      if (!href) return; // no art delivered yet — draw nothing
+
+      var box = (slot === 'background') ? BG_BOX : BODY_BOX;
+      // Backgrounds fill the canvas; body-aligned art preserves its
+      // aspect ratio anchored to the same baseline as the body preset.
+      var par = (slot === 'background') ? 'xMidYMid slice' : 'xMidYMax meet';
+
+      layers.push({
+        z: (typeof item.z_index === 'number' ? item.z_index : 0),
+        slotIndex: slotIndex,
+        svg: '<image href="' + escapeAttr(href) + '" x="' + box.x + '" y="' + box.y +
+             '" width="' + box.w + '" height="' + box.h +
+             '" preserveAspectRatio="' + par + '"/>'
+      });
+    });
+
+    // z_index wins; SLOT_ORDER breaks ties so the spec ordering holds.
+    layers.sort(function (a, b) {
+      return (a.z - b.z) || (a.slotIndex - b.slotIndex);
+    });
+
+    return layers.map(function (l) { return l.svg; });
+  }
+
+  /**
    * Render the avatar SVG string.
    * @param {Object} avatarData - row from user_avatars (or default-shaped object)
    * @param {Array}  presets    - active rows from avatar_body_presets
@@ -109,6 +196,10 @@
 
     var parts = [];
 
+    // Background art sits behind the body and the ground shadow.
+    var bgParts = renderItemLayers(avatarData, allItems, nonBackgroundSlots(skipSlots));
+    parts.push.apply(parts, bgParts);
+
     // Base body: pre-colored artwork preset resolved from skin_tone.
     var preset = getBodyPreset(presets, avatarData.skin_tone);
     if (preset) {
@@ -117,6 +208,9 @@
         parts.push('<image href="' + BODY_ASSET_BASE + bodyPath + '" x="' + BODY_BOX.x + '" y="' + BODY_BOX.y + '" width="' + BODY_BOX.w + '" height="' + BODY_BOX.h + '" preserveAspectRatio="xMidYMax meet"/>');
       }
     }
+
+    // Illustrated cosmetic layers, stacked over the body.
+    parts.push.apply(parts, renderItemLayers(avatarData, allItems, skipSlots.concat(['background'])));
 
     // Equipped item layers, in SLOT_ORDER (bottom to top).
     if (RENDER_PLACEHOLDER_LAYERS) SLOT_ORDER.forEach(function (slot) {
@@ -177,6 +271,9 @@
     var skipSlots = opts.skipSlots || [];
 
     var parts = [];
+
+    parts.push.apply(parts, renderItemLayers(avatarData, allItems, nonBackgroundSlots(skipSlots)));
+
     var preset = getBodyPreset(presets, avatarData.skin_tone);
     if (preset) {
       var bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
@@ -184,6 +281,8 @@
         parts.push('<image href="' + BODY_ASSET_BASE + bodyPath + '" x="' + BODY_BOX.x + '" y="' + BODY_BOX.y + '" width="' + BODY_BOX.w + '" height="' + BODY_BOX.h + '" preserveAspectRatio="xMidYMax meet"/>');
       }
     }
+
+    parts.push.apply(parts, renderItemLayers(avatarData, allItems, skipSlots.concat(['background'])));
 
     if (RENDER_PLACEHOLDER_LAYERS) SLOT_ORDER.forEach(function (slot) {
       if (skipSlots.indexOf(slot) !== -1) return;
@@ -252,15 +351,24 @@
     var hrefs = [];
     svg.replace(/href="(https?:[^"]+)"/g, function (m, u) { if (hrefs.indexOf(u) === -1) hrefs.push(u); return m; });
     for (var i = 0; i < hrefs.length; i++) {
-      var resp = await fetch(hrefs[i]);
-      var blob = await resp.blob();
-      var dataUri = await new Promise(function (res, rej) {
-        var fr = new FileReader();
-        fr.onload = function () { res(fr.result); };
-        fr.onerror = rej;
-        fr.readAsDataURL(blob);
-      });
-      svg = svg.split('href="' + hrefs[i] + '"').join('href="' + dataUri + '"');
+      try {
+        var resp = await fetch(hrefs[i]);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var blob = await resp.blob();
+        var dataUri = await new Promise(function (res, rej) {
+          var fr = new FileReader();
+          fr.onload = function () { res(fr.result); };
+          fr.onerror = rej;
+          fr.readAsDataURL(blob);
+        });
+        svg = svg.split('href="' + hrefs[i] + '"').join('href="' + dataUri + '"');
+      } catch (e) {
+        // A single unreachable cosmetic asset must not block the whole
+        // headshot save — drop that layer and carry on.
+        if (window.console) console.warn('avatar export: skipping asset', hrefs[i], e);
+        svg = svg.replace(new RegExp('<image[^>]*href="' +
+          hrefs[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"[^>]*/>', 'g'), '');
+      }
     }
 
     // Explicit dimensions so Firefox rasterizes at full size
@@ -322,6 +430,9 @@
     renderHeadshotSvg: renderHeadshotSvg,
     exportHeadshotPng: exportHeadshotPng,
     getHeadCrop: getHeadCrop,
+    resolveAssetUrl: resolveAssetUrl,
+    renderItemLayers: renderItemLayers,
+    BG_BOX: BG_BOX,
     buildDefaultAvatar: buildDefaultAvatar,
     load: load
   };
