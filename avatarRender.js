@@ -65,11 +65,26 @@
     return /^#[0-9a-fA-F]{3,8}$/.test(clean) ? clean : '#888888';
   }
 
-  function getBodyPreset(presets, key) {
+  /**
+   * Resolve the body artwork preset. `key` is the saved skin_tone id;
+   * bodyType narrows the fallback so a male avatar with an unset or
+   * stale skin tone doesn't fall back onto a female body (or vice versa).
+   */
+  function getBodyPreset(presets, key, bodyType) {
     presets = presets || [];
     var p = presets.find(function (b) { return b.id === key; });
-    if (p) return p;
-    return presets.find(function (b) { return b.is_default; }) || presets[0] || null;
+    if (p && (!bodyType || !b_type(p) || b_type(p) === bodyType)) return p;
+
+    var pool = bodyType
+      ? presets.filter(function (b) { return b_type(b) === bodyType; })
+      : presets;
+    if (!pool.length) pool = presets;
+
+    return pool.find(function (b) { return b.is_default; }) || pool[0] || null;
+  }
+
+  function b_type(preset) {
+    return preset && preset.body_type ? preset.body_type : null;
   }
 
   function getPoseImagePath(preset, pose) {
@@ -114,6 +129,20 @@
     return out.concat(skipSlots || []);
   }
 
+  /**
+   * Pick the artwork path for an item given the avatar's body type.
+   * Garments are cut per body type; backgrounds and other body-agnostic
+   * art use the 'any' key. Falls back to the legacy flat image_url so
+   * pre-existing rows keep working.
+   */
+  function pickAssetPath(item, bodyType) {
+    if (!item) return null;
+    var paths = item.asset_paths || {};
+    var p = paths[bodyType || 'male'] || paths.any || null;
+    if (p && String(p).trim()) return p;
+    return item.image_url || null;
+  }
+
   function resolveAssetUrl(url) {
     if (!url) return null;
     var u = String(url).trim();
@@ -130,12 +159,13 @@
 
   /**
    * Render the equipped cosmetic art layers as <image> elements.
-   * Artists deliver flat PNG/JPG per item, sized to the same 320x480
-   * canvas as the body art, so each layer is drawn into BODY_BOX (or
-   * the full canvas for backgrounds) and stacks by z_index.
+   * Artists deliver a transparent PNG per item per body type, sized to
+   * the same 320x480 canvas as the body art, so each layer is drawn into
+   * BODY_BOX (or the full canvas for backgrounds) and stacks by z_index.
    *
-   * Items with no image_url are skipped entirely — an unillustrated
-   * item renders as nothing rather than as a broken image icon.
+   * The path is resolved from asset_paths[avatarData.body_type]; items
+   * with no art for that body type are skipped entirely, rendering as
+   * nothing rather than as a broken image icon.
    *
    * @param {Object} avatarData
    * @param {Array}  allItems - rows from cosmetic_items
@@ -146,6 +176,7 @@
     allItems = allItems || [];
     skipSlots = skipSlots || [];
     var equipped = (avatarData && avatarData.equipped) || {};
+    var bodyType = (avatarData && avatarData.body_type) || 'male';
     var layers = [];
 
     SLOT_ORDER.forEach(function (slot, slotIndex) {
@@ -154,8 +185,8 @@
       if (!eq) return;
       var item = allItems.find(function (it) { return it.id === eq.item_id; });
       if (!item) return;
-      var href = resolveAssetUrl(item.image_url);
-      if (!href) return; // no art delivered yet — draw nothing
+      var href = resolveAssetUrl(pickAssetPath(item, bodyType));
+      if (!href) return; // no art for this body type yet — draw nothing
 
       var box = (slot === 'background') ? BG_BOX : BODY_BOX;
       // Backgrounds fill the canvas; body-aligned art preserves its
@@ -201,7 +232,7 @@
     parts.push.apply(parts, bgParts);
 
     // Base body: pre-colored artwork preset resolved from skin_tone.
-    var preset = getBodyPreset(presets, avatarData.skin_tone);
+    var preset = getBodyPreset(presets, avatarData.skin_tone, avatarData.body_type);
     if (preset) {
       var bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
       if (bodyPath) {
@@ -274,7 +305,7 @@
 
     parts.push.apply(parts, renderItemLayers(avatarData, allItems, nonBackgroundSlots(skipSlots)));
 
-    var preset = getBodyPreset(presets, avatarData.skin_tone);
+    var preset = getBodyPreset(presets, avatarData.skin_tone, avatarData.body_type);
     if (preset) {
       var bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
       if (bodyPath) {
@@ -326,9 +357,15 @@
    * Build a default (unsaved) avatar for first-time users: base items
    * equipped with default colors, default skin-tone preset.
    */
-  function buildDefaultAvatar(presets, allItems) {
-    var dp = getBodyPreset(presets, null);
-    var avatarData = { skin_tone: dp ? dp.id : '#f4d9c4', equipped: {}, pose: 'pose1' };
+  function buildDefaultAvatar(presets, allItems, bodyType) {
+    bodyType = bodyType || 'male';
+    var dp = getBodyPreset(presets, null, bodyType);
+    var avatarData = {
+      skin_tone: dp ? dp.id : '#f4d9c4',
+      body_type: bodyType,
+      equipped: {},
+      pose: 'pose1'
+    };
     (allItems || []).filter(function (it) { return it.is_base_item; }).forEach(function (it) {
       var colors = {};
       (it.fill_regions || []).forEach(function (r) { colors[r.id] = r.default_color; });
@@ -409,6 +446,7 @@
     var presets = results[2].data || [];
     var items = results[1].data || [];
     var avatarData = results[0].data || buildDefaultAvatar(presets, items);
+    if (avatarData && !avatarData.body_type) avatarData.body_type = 'male';
     return {
       avatarData: avatarData,
       presets: presets,
@@ -431,6 +469,7 @@
     exportHeadshotPng: exportHeadshotPng,
     getHeadCrop: getHeadCrop,
     resolveAssetUrl: resolveAssetUrl,
+    pickAssetPath: pickAssetPath,
     renderItemLayers: renderItemLayers,
     BG_BOX: BG_BOX,
     buildDefaultAvatar: buildDefaultAvatar,
