@@ -1262,11 +1262,35 @@ function dsApplyAccent(hex) {
   // Dispatched by nav.js badge triggers and by any page's badge RPC calls.
   // Pages that have a showToast function will show the toast automatically.
   // Pages without it (or that want custom handling) can override this listener.
+  // Unlocks are drained server-side (marked delivered) regardless of whether
+  // this page can render a toast. 14 pages don't define showToast, so without
+  // a client-side stash a drained unlock would be lost permanently. Park it in
+  // sessionStorage and replay on the next page that can show it.
+  var DS_UNLOCK_STASH = 'ds_pending_badge_toasts';
+
+  function dsStashUnlocks(results) {
+    try {
+      var prev = JSON.parse(sessionStorage.getItem(DS_UNLOCK_STASH) || '[]');
+      sessionStorage.setItem(DS_UNLOCK_STASH, JSON.stringify(prev.concat(results)));
+    } catch(e) {}
+  }
+
+  function dsTakeStashedUnlocks() {
+    try {
+      var held = JSON.parse(sessionStorage.getItem(DS_UNLOCK_STASH) || '[]');
+      if (held.length) sessionStorage.removeItem(DS_UNLOCK_STASH);
+      return held;
+    } catch(e) { return []; }
+  }
+
   window.addEventListener('ds-badge-unlocked', function(e) {
     var results = (e.detail && e.detail.results) || [];
     if (!results.length) return;
-    // Only show toasts if a showToast function is available on this page
-    if (typeof window.showToast !== 'function') return;
+    // No toast function on this page — hold them rather than lose them.
+    if (typeof window.showToast !== 'function') { dsStashUnlocks(results); return; }
+    // Prepend anything held from an earlier page that couldn't display.
+    var held = dsTakeStashedUnlocks();
+    if (held.length) results = held.concat(results);
     results.forEach(function(r, i) {
       // Prefer server-supplied display metadata (badge_unlock_queue drain
       // provides it); fall back to the slug for legacy dispatchers that don't.
@@ -1290,6 +1314,19 @@ function dsApplyAccent(hex) {
       }
       if (msg) setTimeout(function(){ window.showToast(msg, icon); }, (i + 1) * 700);
     });
+  });
+
+  // On any page that can show toasts, flush unlocks held from earlier pages.
+  // Deferred so page scripts have defined showToast by the time this runs.
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      if (typeof window.showToast !== 'function') return;
+      var held = dsTakeStashedUnlocks();
+      if (!held.length) return;
+      window.dispatchEvent(new CustomEvent('ds-badge-unlocked', {
+        detail: { results: held }
+      }));
+    }, 400);
   });
 
   // Live-update ember count when embers are awarded elsewhere on the page
