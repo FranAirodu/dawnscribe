@@ -1173,6 +1173,47 @@ function dsApplyAccent(hex) {
             } catch(e) {}
 
             try {
+              // ── BADGE UNLOCK QUEUE DRAIN ────────────────────────
+              // Durable mailbox of tier crossings recorded server-side by
+              // award_badge_progress / award_one_time_badge / sync_kindled_badge.
+              // Runs last so anything the triggers above just queued is picked
+              // up in the same pass. Survives the user closing the tab mid-read:
+              // an unlock earned yesterday still surfaces on next login.
+              // Identity comes from auth.uid() — the RPC takes no arguments.
+              var drained = await db.rpc('drain_badge_unlocks');
+              var unlocks = (drained.data && drained.data.unlocks) || [];
+              if (unlocks.length > 0) {
+                // Reshape queue rows into the { badge_slug, newly_unlocked[] }
+                // shape the existing ds-badge-unlocked listener already speaks,
+                // grouping consecutive tiers of the same badge into one result.
+                var grouped = [];
+                var byBadge = {};
+                unlocks.forEach(function(u) {
+                  var key = u.badge_slug || 'badge';
+                  if (!byBadge[key]) {
+                    byBadge[key] = {
+                      badge_slug: key,
+                      badge_name: u.badge_name,
+                      badge_icon: u.badge_icon,
+                      badge_color: u.badge_color,
+                      newly_unlocked: []
+                    };
+                    grouped.push(byBadge[key]);
+                  }
+                  byBadge[key].newly_unlocked.push({
+                    tier: u.tier,
+                    gem_name: u.gem_name,
+                    gem_color: u.gem_color,
+                    xp_reward: u.xp_reward
+                  });
+                });
+                window.dispatchEvent(new CustomEvent('ds-badge-unlocked', {
+                  detail: { results: grouped }
+                }));
+              }
+            } catch(e) {}
+
+            try {
               // ── DAILY CHECK-IN: click-to-claim (no auto-claim, no pop-up) ──
               // The sunrise nav button opens the calendar modal; a pulsing
               // gold dot shows while today's reward is unclaimed. localStorage
@@ -1227,22 +1268,27 @@ function dsApplyAccent(hex) {
     // Only show toasts if a showToast function is available on this page
     if (typeof window.showToast !== 'function') return;
     results.forEach(function(r, i) {
+      // Prefer server-supplied display metadata (badge_unlock_queue drain
+      // provides it); fall back to the slug for legacy dispatchers that don't.
+      var label = r.badge_name ||
+                  (r.badge_slug ? r.badge_slug.replace(/_/g,' ') : 'badge');
+      var icon  = r.badge_icon || 'ti-award';
       var msg = null;
       if (r.awarded && r.badge_slug) {
-        msg = '🏅 Badge unlocked: ' + r.badge_slug.replace(/_/g,' ') + '!';
+        msg = 'Badge unlocked: ' + label;
       } else if (r.newly_unlocked && r.newly_unlocked.length > 0) {
         r.newly_unlocked.forEach(function(tier, j) {
           setTimeout(function() {
-            window.showToast(
-              '🏅 ' + (r.badge_slug || 'badge').replace(/_/g,' ') +
-              ' — ' + tier.gem_name + '! +' + tier.xp_reward + ' XP',
-              'ti-award'
-            );
+            var xp = (tier.xp_reward > 0)
+              ? ' · +' + Number(tier.xp_reward).toLocaleString() + ' XP'
+              : '';
+            var gem = tier.gem_name ? ' · ' + tier.gem_name : '';
+            window.showToast(label + gem + xp, icon);
           }, (i + j + 1) * 700);
         });
         return;
       }
-      if (msg) setTimeout(function(){ window.showToast(msg, 'ti-award'); }, (i + 1) * 700);
+      if (msg) setTimeout(function(){ window.showToast(msg, icon); }, (i + 1) * 700);
     });
   });
 

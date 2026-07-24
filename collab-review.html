@@ -490,7 +490,12 @@
 
       var { error } = await db.from('artwork_collabs').update({ status: 'approved' }).eq('id', collabId);
       if(error){ showToast('Failed to approve: ' + error.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
-      var { error: pubErr } = await db.from('works').update({ is_published: true }).eq('id', collabData.work_id);
+      // Publishing the collab novel goes through a SECURITY DEFINER RPC. The old
+      // direct UPDATE relied on an RLS policy that (lacking WITH CHECK) allowed the
+      // artwork owner to modify any column on the work, not just is_published.
+      var pubRes = await db.rpc('publish_approved_collab_work', { p_work_id: collabData.work_id });
+      var pubErr = pubRes.error;
+      if (!pubErr && pubRes.data && pubRes.data.ok === false) pubErr = { message: pubRes.data.error || 'Not permitted' };
       if(pubErr){ showToast('Approved but failed to publish the story: ' + pubErr.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
       var denyTarget = isFanArtFlow ? collabData.artist_id : collabData.author_id;
       if(denyTarget && denyTarget !== session.user.id){
