@@ -4733,6 +4733,23 @@
 
       <!-- Step 1: Role & interests -->
       <div id="welcome-step-1" style="display:none;">
+        <div class="welcome-reward">
+          <div class="welcome-reward-head"><i class="ti ti-gift"></i> A welcome gift is waiting</div>
+          <div class="welcome-reward-items">
+            <span class="welcome-reward-chip embers"><i class="ti ti-flame"></i> 10 Embers</span>
+            <span class="welcome-reward-chip spark">✦ 1 Spark</span>
+          </div>
+          <p class="welcome-reward-note">Embers are our free currency &mdash; you earn more just by reading, and spend them to cheer on the artists and writers you love. Sparks power special boosts. Both are already in your account.</p>
+        </div>
+        <style>
+          .welcome-reward { background: rgba(var(--accent-rgb),0.06); border: 1px solid var(--border); border-radius: 14px; padding: 16px 16px 14px; margin-bottom: 20px; }
+          .welcome-reward-head { font-family: 'Cinzel', serif; font-size: 14px; color: var(--accent); display:flex; align-items:center; gap:7px; margin-bottom: 10px; }
+          .welcome-reward-items { display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 10px; }
+          .welcome-reward-chip { display:inline-flex; align-items:center; gap:5px; padding:6px 12px; border-radius:20px; font-size:13px; font-weight:700; background: var(--bg3); border:1px solid var(--border); }
+          .welcome-reward-chip.embers { color:#f97316; }
+          .welcome-reward-chip.spark { color:#a78bfa; }
+          .welcome-reward-note { font-size:12px; color: var(--text2); line-height:1.5; margin:0; }
+        </style>
         <div class="welcome-field">
           <div class="welcome-label">What brings you to DawnScribe?</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;" id="w-interests">
@@ -4884,14 +4901,21 @@
       if (snoozed && (Date.now() - snoozed) < 24 * 60 * 60 * 1000) return;
       // Bug 3: wrap in try/catch so a failed profile lookup never throws
       Promise.resolve(
-        db.from('profiles').select('display_name,username,date_of_birth,onboarding_done').eq('id', uid).maybeSingle()
+        db.from('profiles').select('display_name,username,date_of_birth,onboarding_done,welcome_grant_seen').eq('id', uid).maybeSingle()
       ).then(function(res) {
         if (!res || !res.data) return;
         var p = res.data;
         // OAuth signups skip auth.html's form, so username/DOB can be null —
         // those fields become required here and "Skip for now" is disabled.
         window._wNeedsIdentity = !p.username || !p.date_of_birth;
-        if (!p.onboarding_done || window._wNeedsIdentity) {
+        // welcome_grant_seen is the durable, server-side 'fully onboarded' record —
+        // it survives a cleared cache or a new device where the localStorage flag is absent.
+        // Backfill the local flag from it so the fast-path check short-circuits next time.
+        if (p.welcome_grant_seen) { try { localStorage.setItem('ds_welcome_done_' + uid, '1'); } catch (e) {} }
+        // Show the modal if onboarding isn't done OR the durable flag is unset OR identity is
+        // still missing. Identity always wins: an OAuth user with no username must finish it
+        // even if a flag was somehow set.
+        if (!p.onboarding_done || !p.welcome_grant_seen || window._wNeedsIdentity) {
           if (window._wNeedsIdentity) {
             document.getElementById('w-identity-wrap').style.display = 'block';
             var skipEl = document.querySelector('.welcome-skip');
@@ -5066,7 +5090,7 @@
         else if (hasWriter)                      role = 'Writer';
         else if (hasArtist)                      role = 'Artist';
         // Save role to profile (fire-and-forget — don't block closing on this)
-        var finishPatch = { onboarding_done: true };
+        var finishPatch = { onboarding_done: true, welcome_grant_seen: true };
         if (selected.length > 0) finishPatch.role = role;
         Promise.resolve(
           db.from('profiles').update(finishPatch).eq('id', uid)

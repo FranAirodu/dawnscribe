@@ -70,6 +70,8 @@
     .tip-result{font-size:12px;color:var(--text2);margin-top:8px;min-height:18px;}
     .tip-counts{display:flex;gap:12px;margin-top:10px;font-size:12px;color:var(--text3);}
     .tip-counts span{display:flex;align-items:center;gap:4px;}
+    .tip-cap-note{font-size:11px;color:var(--text3);margin-top:8px;}
+    .tip-cap-note.cap-hit{color:#f97316;font-weight:700;}
 
     /* COLLAB TAG */
     .collab-tag{background:rgba(45,212,191,0.07);border:1px solid rgba(45,212,191,0.2);border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:12px;margin-bottom:20px;text-decoration:none;transition:border-color 0.2s;}
@@ -567,6 +569,9 @@
     var viewerEmberBalance = 0;
     var viewerCelestialBalance = 0;
     var alreadyTippedToday = false;
+    var viewerWindowTips = 0;      // artwork_tip Ember tips in the rolling 30-day window
+    var viewerTipCap = 150;        // matches give_artwork_embers v_cap (server is source of truth)
+    var viewerTipWindowDays = 30;
 
     function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function applyDocumentLang(code){
@@ -652,13 +657,15 @@
       // Load viewer's ember + celestial balances (for tip widget)
       if(session && session.user.id !== data.author_id){
         var todayUTC = new Date(); todayUTC.setUTCHours(0,0,0,0);
-        var [embRes, celRes, tipRes] = await Promise.all([
+        var [embRes, celRes, tipRes, winRes] = await Promise.all([
           Promise.resolve(db.from('user_embers').select('balance').eq('user_id', session.user.id).maybeSingle()).catch(function(){ return {}; }),
           Promise.resolve(db.from('user_celestial_flames').select('balance').eq('user_id', session.user.id).maybeSingle()).catch(function(){ return {}; }),
-          Promise.resolve(db.from('ember_spends').select('id').eq('user_id', session.user.id).eq('spend_type', 'artwork_tip').gte('created_at', todayUTC.toISOString()).limit(100)).catch(function(){ return {}; })
+          Promise.resolve(db.from('ember_spends').select('id').eq('user_id', session.user.id).eq('spend_type', 'artwork_tip').gte('created_at', todayUTC.toISOString()).limit(100)).catch(function(){ return {}; }),
+          Promise.resolve(db.from('ember_spends').select('id', { count: 'exact', head: true }).eq('user_id', session.user.id).eq('spend_type', 'artwork_tip').gte('created_at', new Date(Date.now() - 30*24*60*60*1000).toISOString())).catch(function(){ return {}; })
         ]);
         viewerEmberBalance = (embRes.data && embRes.data.balance) || 0;
         viewerCelestialBalance = (celRes.data && celRes.data.balance) || 0;
+        viewerWindowTips = (winRes && typeof winRes.count === 'number') ? winRes.count : 0;
         // Check if any of today's tips are for this artwork (client-side filter avoids JSONB query issues)
         if (tipRes.data && tipRes.data.length > 0) {
           var ids = tipRes.data.map(function(r){ return r.id; });
@@ -802,7 +809,7 @@
                 + '<div class="tip-widget-label">Support this artist</div>'
                 + '<div class="tip-btn-row">'
                   + '<button class="tip-ember-btn" onclick="giveArtworkEmbers(1)" id="tip-ember-1"'
-                    + (viewerEmberBalance < 1 || alreadyTippedToday ? ' disabled' : '') + '>'
+                    + (viewerEmberBalance < 1 || alreadyTippedToday || viewerWindowTips >= viewerTipCap ? ' disabled' : '') + '>'
                     + '<i class="ti ti-flame"></i> Give 1 Ember'
                     + '</button>'
                   + '<button class="tip-celestial-btn" id="tip-celestial-btn" onclick="giveArtworkCelestialFlame()"'
@@ -810,11 +817,12 @@
                     + '✦ Celestial Flame'
                     + '</button>'
                 + '</div>'
-                + '<div class="tip-result" id="tip-result">' + (alreadyTippedToday ? 'You\'ve already sent an Ember to this artwork today. Come back tomorrow!' : '') + '</div>'
+                + '<div class="tip-result" id="tip-result">' + (viewerWindowTips >= viewerTipCap ? 'You\'ve reached your monthly Ember-tip limit. It resets on a rolling ' + viewerTipWindowDays + '-day basis.' : (alreadyTippedToday ? 'You\'ve already sent an Ember to this artwork today. Come back tomorrow!' : '')) + '</div>'
                 + '<div class="tip-counts">'
                   + '<span><i class="ti ti-flame" style="color:#f97316;"></i> <span id="artwork-ember-count">' + (workData.artwork_ember_count || 0) + '</span> Embers</span>'
                   + '<span>✦ <span id="artwork-celestial-count">' + (workData.celestial_flame_count || 0) + '</span> Celestial Flames</span>'
                 + '</div>'
+                + '<div class="tip-cap-note" id="tip-cap-note">' + tipCapNoteText() + '</div>'
               + '</div>'
             : '')
 
@@ -1051,6 +1059,20 @@
 
     // ── FOLLOW
     // ── ARTWORK TIPPING ─────────────────────────────────────────────
+    function tipCapNoteText() {
+      var used = viewerWindowTips.toLocaleString();
+      var cap = viewerTipCap.toLocaleString();
+      if (viewerWindowTips >= viewerTipCap) {
+        return 'Monthly Ember-tip limit reached (' + used + ' / ' + cap + '). Resets on a rolling ' + viewerTipWindowDays + '-day basis.';
+      }
+      return used + ' / ' + cap + ' Ember tips used this month';
+    }
+    function refreshTipCapNote() {
+      var el = document.getElementById('tip-cap-note');
+      if (!el) return;
+      el.textContent = tipCapNoteText();
+      el.classList.toggle('cap-hit', viewerWindowTips >= viewerTipCap);
+    }
     async function giveArtworkEmbers(amount) {
       if (!session) return;
       var resultEl = document.getElementById('tip-result');
@@ -1064,24 +1086,35 @@
         resultEl.textContent = 'Something went wrong: ' + (error && error.message ? error.message : 'unknown error');
         if (btn) btn.disabled = alreadyTippedToday || viewerEmberBalance < 1;
       } else if (!data.success) {
+        // Server reports the rolling-window tip count on most error paths — keep the counter honest.
+        if (typeof data.tips_used === 'number') viewerWindowTips = data.tips_used;
+        if (typeof data.tip_cap === 'number') viewerTipCap = data.tip_cap;
+        if (typeof data.window_days === 'number') viewerTipWindowDays = data.window_days;
         var msgs = {
           not_authenticated: 'You must be logged in.',
           own_work: 'You can\'t tip your own artwork.',
           invalid_amount: 'Invalid tip amount.',
           artwork_not_found: 'Artwork not found.',
           insufficient_embers: 'Not enough Embers. You have ' + (data.balance || 0) + '.',
-          already_tipped_today: 'You\'ve already sent an Ember to this artwork today. Come back tomorrow!'
+          already_tipped_today: 'You\'ve already sent an Ember to this artwork today. Come back tomorrow!',
+          tip_cap_reached: 'You\'ve reached your monthly Ember-tip limit (' + (data.tip_cap || viewerTipCap).toLocaleString() + '). It resets on a rolling ' + (data.window_days || viewerTipWindowDays) + '-day basis.'
         };
         resultEl.textContent = msgs[data.error] || 'Could not send Embers.';
         if (data.error === 'already_tipped_today') alreadyTippedToday = true;
-        if (btn) btn.disabled = alreadyTippedToday || viewerEmberBalance < 1;
+        refreshTipCapNote();
+        if (btn) btn.disabled = alreadyTippedToday || viewerEmberBalance < 1 || viewerWindowTips >= viewerTipCap;
       } else {
         viewerEmberBalance = data.balance;
         alreadyTippedToday = true;
+        if (typeof data.tips_used === 'number') viewerWindowTips = data.tips_used;
+        else viewerWindowTips += 1;
+        if (typeof data.tip_cap === 'number') viewerTipCap = data.tip_cap;
+        if (typeof data.window_days === 'number') viewerTipWindowDays = data.window_days;
         var countEl = document.getElementById('artwork-ember-count');
         if (countEl) countEl.textContent = data.artwork_ember_count;
         resultEl.textContent = '🔥 Ember sent! Thank you for supporting this artist.';
         window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: -1 } }));
+        refreshTipCapNote();
         if (btn) btn.disabled = true;
       }
     }
