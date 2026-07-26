@@ -440,6 +440,13 @@
     .sidebar-skel { height: 72px; border-radius: 10px; background: linear-gradient(90deg,var(--bg3) 25%,var(--bg4) 50%,var(--bg3) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; margin-bottom: 6px; }
     .layout-customize-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--bg2); border: 1px solid var(--border); color: var(--text2); font-size: 12px; font-weight: 700; padding: 8px 14px; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
     .layout-customize-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .view-filter-group { display: inline-flex; align-items: center; gap: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-right: 8px; }
+    .view-filter-btn { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--text2); font-size: 12px; font-weight: 700; padding: 8px 13px; cursor: pointer; transition: all 0.15s; font-family: 'Lato', sans-serif; border-right: 1px solid var(--border); }
+    .view-filter-btn:last-child { border-right: none; }
+    .view-filter-btn:hover { color: var(--accent); }
+    .view-filter-btn.active { background: var(--accent2); color: #fff; }
+    .view-filter-btn.active:hover { color: #fff; }
+    @media (max-width: 640px) { .view-filter-btn { padding: 8px 10px; font-size: 11px; } .view-filter-btn .vf-label { display: none; } }
     .home-section.section-hidden { display: none; }
     .layout-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 300; align-items: center; justify-content: center; padding: 20px; }
     .layout-modal-overlay.open { display: flex; }
@@ -682,8 +689,8 @@
             </button>
             <div class="dd-accordion-body open">
               <a class="user-dropdown-item" id="dd-profile-link" href="profile.html"><i class="ti ti-user"></i> My Profile</a>
-              <a class="user-dropdown-item" id="dd-books-link" href="profile.html#tab=works&sub=writing"><i class="ti ti-book-2"></i> My Books</a>
-              <a class="user-dropdown-item" id="dd-art-link" href="profile.html#tab=works&sub=art"><i class="ti ti-palette"></i> My Art</a>
+              <a class="user-dropdown-item" id="dd-books-link" href="creator.html?tab=novels"><i class="ti ti-book-2"></i> My Books</a>
+              <a class="user-dropdown-item" id="dd-art-link" href="creator.html?tab=art"><i class="ti ti-palette"></i> My Art</a>
               <a class="user-dropdown-item" href="library.html"><i class="ti ti-books"></i> My Library</a>
               <a class="user-dropdown-item" id="dd-friends-link" href="friends.html"><i class="ti ti-users"></i> Friends</a>
               <a class="user-dropdown-item" href="following.html#titles"><i class="ti ti-bookmark"></i> Following Titles</a>
@@ -900,6 +907,11 @@
 
 <div class="layout-customize-row" id="layout-customize-row" style="display:none;">
           <button class="layout-customize-btn" onclick="openLayoutModal()"><i class="ti ti-layout-grid"></i> Customize Layout</button>
+          <div class="view-filter-group" id="view-filter-group" role="group" aria-label="Filter homepage by content type">
+            <button class="view-filter-btn active" id="vf-all"    onclick="dsSetViewMode('all')"    title="Show novels and artwork"><i class="ti ti-layout-list"></i> <span class="vf-label">All</span></button>
+            <button class="view-filter-btn"        id="vf-novels" onclick="dsSetViewMode('novels')" title="Show only novels"><i class="ti ti-book-2"></i> <span class="vf-label">Novels</span></button>
+            <button class="view-filter-btn"        id="vf-art"    onclick="dsSetViewMode('art')"    title="Show only artwork"><i class="ti ti-palette"></i> <span class="vf-label">Artwork</span></button>
+          </div>
         </div>
 
         <!-- READING HISTORY — shown only when user has read at least one novel, moveable via Customize Layout -->
@@ -1145,6 +1157,7 @@
           <button class="layout-modal-close" onclick="closeLayoutModal()"><i class="ti ti-x"></i></button>
         </div>
         <div class="layout-modal-desc">Drag to reorder sections. Use the eye icon to hide a section you don't want to see.</div>
+        <div class="layout-modal-desc" id="layout-modal-mode-note" style="padding-top:6px;color:var(--accent);font-weight:700;"></div>
         <div class="layout-modal-list" id="layout-modal-list"></div>
         <div class="layout-modal-footer">
           <button class="layout-modal-reset" onclick="resetLayoutOrder()"><i class="ti ti-refresh"></i> Reset to Default</button>
@@ -2454,48 +2467,82 @@
       // Rows loaded below
     }
 
-    /* ── TRENDING NOW ─────────────────────────────────────────────── */
+    /* ── TRENDING NOW (novels + artwork, unified) ─────────────────────
+       Both media types compete on the SAME publicly-readable, timestamped
+       7-day signals so artwork isn't structurally disadvantaged:
+         • Sparks in window  (dawn_sparks)      +2 each, capped +10/work
+         • Comments in window                    +2 each
+             novels → chapter_comments (via chapter→work)
+             art    → artwork_comments
+         • Follows in window (novels only)        +2 each  (work_follows)
+         • Offerings in window (novels only)      +1 each  (work_offerings)
+       Ember tips (artwork's own love signal) are intentionally NOT scored
+       here: ember_spends has no public SELECT policy, so the client can't
+       read other users' tips without exposing all spend history. Sparks +
+       comments are art's readable equivalents. */
     async function loadTrendingRow(filterFn) {
       var track = document.getElementById('track-trending');
       if (!track) return;
       try {
-        var sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+        var sevenAgoISO  = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+        var sevenAgoDate = sevenAgoISO.slice(0,10); // dawn_sparks.spark_date is a DATE
+
+        // Candidate pool: recent + active works of BOTH types. Pull a generous
+        // slice ordered by weekly sparks so anything with momentum is included.
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,content_warnings,spark_count_week')
-          .eq('type','novel').eq('is_published',true).order('spark_count_week',{ascending:false}).limit(60);
+          .select('id,title,cover_url,rating,author_id,chapters_count,type,content_rating_gore,content_rating_erotica,tags_main,content_warnings,spark_count_week')
+          .in('type',['novel','artwork']).eq('is_published',true)
+          .order('spark_count_week',{ascending:false}).limit(120);
         if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Nothing trending yet.</div>'; return; }
-        var workIds = works.map(function(w){ return w.id; });
 
-        // Echo counts in window (paragraph_echoes has work_id via chapter join — use chapter_echoes/paragraph table names from schema)
-        var scores = {};
-        workIds.forEach(function(id){ scores[id] = 0; });
+        var novelIds = works.filter(function(w){ return w.type !== 'artwork'; }).map(function(w){ return w.id; });
+        var artIds   = works.filter(function(w){ return w.type === 'artwork'; }).map(function(w){ return w.id; });
+        var allIds   = works.map(function(w){ return w.id; });
 
-        // Fire all 3 signal queries in parallel for speed
-        var [trFollowsRes, trChapsRes, trOfferingsRes] = await Promise.all([
-          db.from('work_follows').select('work_id,created_at').in('work_id', workIds).gte('created_at', sevenDaysAgo),
-          db.from('chapters').select('id,work_id').in('work_id', workIds),
-          db.from('work_offerings').select('work_id,created_at').in('work_id', workIds).gte('created_at', sevenDaysAgo)
-        ]);
+        var scores = {}; allIds.forEach(function(id){ scores[id] = 0; });
 
-        // Follows in window (+2 each)
-        (trFollowsRes.data||[]).forEach(function(f){ if(scores[f.work_id]!==undefined) scores[f.work_id] += 2; });
+        // Fire all signal queries in parallel.
+        var novChapsP = novelIds.length
+          ? db.from('chapters').select('id,work_id').in('work_id', novelIds)
+          : Promise.resolve({ data: [] });
+        var followsP = novelIds.length
+          ? db.from('work_follows').select('work_id,created_at').in('work_id', novelIds).gte('created_at', sevenAgoISO)
+          : Promise.resolve({ data: [] });
+        var offeringsP = novelIds.length
+          ? db.from('work_offerings').select('work_id,created_at').in('work_id', novelIds).gte('created_at', sevenAgoISO)
+          : Promise.resolve({ data: [] });
+        var artCommentsP = artIds.length
+          ? db.from('artwork_comments').select('work_id,created_at').in('work_id', artIds).gte('created_at', sevenAgoISO)
+          : Promise.resolve({ data: [] });
+        var sparksP = allIds.length
+          ? db.from('dawn_sparks').select('work_id,spark_date').in('work_id', allIds).gte('spark_date', sevenAgoDate)
+          : Promise.resolve({ data: [] });
 
-        // Chapter comments in window — chapter_comments has NO work_id column,
-        // so resolve chapter → work via the chapters result we already fetched.
-        var trChapMap = {}; (trChapsRes.data||[]).forEach(function(ch){ trChapMap[ch.id] = ch.work_id; });
-        var trChapIds = (trChapsRes.data||[]).map(function(ch){ return ch.id; });
-        if (trChapIds.length) {
-          var { data: recentComments } = await db.from('chapter_comments').select('chapter_id,created_at').in('chapter_id', trChapIds).gte('created_at', sevenDaysAgo);
-          (recentComments||[]).forEach(function(cm){ var wid = trChapMap[cm.chapter_id]; if(wid && scores[wid]!==undefined) scores[wid] += 2; });
+        var [novChapsRes, followsRes, offeringsRes, artCommentsRes, sparksRes] =
+          await Promise.all([novChapsP, followsP, offeringsP, artCommentsP, sparksP]);
+
+        // Sparks (both types) +2 each, capped at +10 per work.
+        var sparkCounts = {};
+        (sparksRes.data||[]).forEach(function(s){ sparkCounts[s.work_id] = (sparkCounts[s.work_id]||0) + 1; });
+        Object.keys(sparkCounts).forEach(function(id){ if(scores[id]!==undefined) scores[id] += Math.min(10, sparkCounts[id]*2); });
+
+        // Novel follows +2 each.
+        (followsRes.data||[]).forEach(function(f){ if(scores[f.work_id]!==undefined) scores[f.work_id] += 2; });
+
+        // Novel offerings +1 each.
+        (offeringsRes.data||[]).forEach(function(o){ if(scores[o.work_id]!==undefined) scores[o.work_id] += 1; });
+
+        // Artwork comments +2 each.
+        (artCommentsRes.data||[]).forEach(function(c){ if(scores[c.work_id]!==undefined) scores[c.work_id] += 2; });
+
+        // Novel chapter-comments +2 each (chapter_comments has no work_id → map via chapters).
+        var chapMap = {}; (novChapsRes.data||[]).forEach(function(ch){ chapMap[ch.id] = ch.work_id; });
+        var chapIds = (novChapsRes.data||[]).map(function(ch){ return ch.id; });
+        if (chapIds.length) {
+          var { data: recentComments } = await db.from('chapter_comments').select('chapter_id,created_at').in('chapter_id', chapIds).gte('created_at', sevenAgoISO);
+          (recentComments||[]).forEach(function(cm){ var wid = chapMap[cm.chapter_id]; if(wid && scores[wid]!==undefined) scores[wid] += 2; });
         }
-
-        // Sparks of Dawn — spark_count_week accumulates on works (resets Mondays via pg_cron).
-        // Capped so one viral spark-storm can't drown out follows/comments.
-        works.forEach(function(w){ if(w.spark_count_week > 0 && scores[w.id]!==undefined) scores[w.id] += Math.min(10, w.spark_count_week); });
-
-        // Offerings (+1 each)
-        (trOfferingsRes.data||[]).forEach(function(o){ if(scores[o.work_id]!==undefined) scores[o.work_id] += 1; });
 
         var ranked = works.filter(function(w){ return scores[w.id] > 0; })
           .sort(function(a,b){ return scores[b.id] - scores[a.id]; })
@@ -2509,40 +2556,102 @@
 
         renderCoverRow(track, ranked, function(w){
           var p = profMap[w.author_id]||null;
-          return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, authorName:p?(p.display_name||p.username||null):null, authorUsername:p?p.username:null, contentRatingGore:w.content_rating_gore, contentRatingErotica:w.content_rating_erotica };
+          var isArt = w.type === 'artwork';
+          return {
+            id:w.id, title:w.title, cover:w.cover_url,
+            href: isArt ? 'artwork.html?id='+w.id : 'story.html?id='+w.id,
+            rating: isArt ? undefined : (parseFloat(w.rating)||0),
+            chaptersCount: isArt ? undefined : (w.chapters_count||0),
+            authorName:p?(p.display_name||p.username||null):null,
+            authorUsername:p?p.username:null,
+            contentRatingGore:w.content_rating_gore, contentRatingErotica:w.content_rating_erotica
+          };
         });
       } catch(e) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Could not load trending stories.</div>'; }
     }
 
-    /* ── RISING STARS ──────────────────────────────────────────────── */
+    /* ── RISING STARS (novels + artwork, unified) ─────────────────────
+       New works (≤30 days old) of BOTH types, ranked by engagement velocity
+       = (windowed engagement) / age_in_days, so a fast-climbing 3-day-old
+       piece outranks an older one with more raw totals.
+         novels : (follows_30d + sparks_30d + comments_30d) / age_days
+         art    : (sparks_30d  + comments_30d)               / age_days
+       Same readability rationale as Trending — art rides sparks + comments
+       (its public signals), novels add follows. */
     async function loadRisingRow(filterFn) {
       var track = document.getElementById('track-rising');
       if (!track) return;
       try {
-        var thirtyDaysAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString();
-        // Newer works (last 30 days) ranked by follower velocity
+        var thirtyAgoISO  = new Date(Date.now() - 30*24*60*60*1000).toISOString();
+        var thirtyAgoDate = thirtyAgoISO.slice(0,10);
+
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,created_at,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
-          .eq('type','novel').eq('is_published',true).gte('created_at', thirtyDaysAgo).order('created_at',{ascending:false}).limit(60);
+          .select('id,title,cover_url,rating,author_id,chapters_count,created_at,type,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
+          .in('type',['novel','artwork']).eq('is_published',true)
+          .gte('created_at', thirtyAgoISO).order('created_at',{ascending:false}).limit(120);
         if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">No new rising stories yet.</div>'; return; }
-        var workIds = works.map(function(w){ return w.id; });
-        // Use date-windowed follows for true velocity (recent follows per day, not all-time)
-        var { data: follows } = await db.from('work_follows').select('work_id,created_at').in('work_id', workIds).gte('created_at', thirtyDaysAgo);
-        var followCounts = {}; (follows||[]).forEach(function(f){ followCounts[f.work_id] = (followCounts[f.work_id]||0) + 1; });
+
+        var novelIds = works.filter(function(w){ return w.type !== 'artwork'; }).map(function(w){ return w.id; });
+        var artIds   = works.filter(function(w){ return w.type === 'artwork'; }).map(function(w){ return w.id; });
+        var allIds   = works.map(function(w){ return w.id; });
+
+        var eng = {}; allIds.forEach(function(id){ eng[id] = 0; });
+
+        var followsP = novelIds.length
+          ? db.from('work_follows').select('work_id,created_at').in('work_id', novelIds).gte('created_at', thirtyAgoISO)
+          : Promise.resolve({ data: [] });
+        var novChapsP = novelIds.length
+          ? db.from('chapters').select('id,work_id').in('work_id', novelIds)
+          : Promise.resolve({ data: [] });
+        var artCommentsP = artIds.length
+          ? db.from('artwork_comments').select('work_id,created_at').in('work_id', artIds).gte('created_at', thirtyAgoISO)
+          : Promise.resolve({ data: [] });
+        var sparksP = allIds.length
+          ? db.from('dawn_sparks').select('work_id,spark_date').in('work_id', allIds).gte('spark_date', thirtyAgoDate)
+          : Promise.resolve({ data: [] });
+
+        var [followsRes, novChapsRes, artCommentsRes, sparksRes] =
+          await Promise.all([followsP, novChapsP, artCommentsP, sparksP]);
+
+        (followsRes.data||[]).forEach(function(f){ if(eng[f.work_id]!==undefined) eng[f.work_id] += 1; });
+        (sparksRes.data||[]).forEach(function(s){ if(eng[s.work_id]!==undefined) eng[s.work_id] += 1; });
+        (artCommentsRes.data||[]).forEach(function(c){ if(eng[c.work_id]!==undefined) eng[c.work_id] += 1; });
+
+        var chapMap = {}; (novChapsRes.data||[]).forEach(function(ch){ chapMap[ch.id] = ch.work_id; });
+        var chapIds = (novChapsRes.data||[]).map(function(ch){ return ch.id; });
+        if (chapIds.length) {
+          var { data: novComments } = await db.from('chapter_comments').select('chapter_id,created_at').in('chapter_id', chapIds).gte('created_at', thirtyAgoISO);
+          (novComments||[]).forEach(function(cm){ var wid = chapMap[cm.chapter_id]; if(wid && eng[wid]!==undefined) eng[wid] += 1; });
+        }
+
         works.forEach(function(w){
           var ageMs = Date.now() - new Date(w.created_at).getTime();
           var ageDays = Math.max(1, ageMs / (24*60*60*1000));
-          w._velocity = (followCounts[w.id]||0) / ageDays;
+          w._velocity = (eng[w.id]||0) / ageDays;
         });
-        var ranked = works.filter(function(w){ return w._velocity > 0; }).sort(function(a,b){ return b._velocity - a._velocity; }).slice(0, 20);
+
+        var ranked = works.filter(function(w){ return w._velocity > 0; })
+          .sort(function(a,b){ return b._velocity - a._velocity; }).slice(0, 20);
         if (!ranked.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">No new rising stories yet.</div>'; return; }
+
         var aIds = [...new Set(ranked.map(function(w){ return w.author_id; }).filter(Boolean))];
         var profMap = {};
         if (aIds.length) { var { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', aIds); (profs||[]).forEach(function(p){ profMap[p.id]=p; }); }
+
         renderCoverRow(track, ranked, function(w){
           var p = profMap[w.author_id]||null;
-          return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, postedTime:w.created_at, authorName:p?(p.display_name||p.username||null):null, authorUsername:p?p.username:null, contentRatingGore:w.content_rating_gore, contentRatingErotica:w.content_rating_erotica };
+          var isArt = w.type === 'artwork';
+          return {
+            id:w.id, title:w.title, cover:w.cover_url,
+            href: isArt ? 'artwork.html?id='+w.id : 'story.html?id='+w.id,
+            rating: isArt ? undefined : (parseFloat(w.rating)||0),
+            chaptersCount: isArt ? undefined : (w.chapters_count||0),
+            postedTime:w.created_at,
+            authorName:p?(p.display_name||p.username||null):null,
+            authorUsername:p?p.username:null,
+            contentRatingGore:w.content_rating_gore, contentRatingErotica:w.content_rating_erotica
+          };
         });
       } catch(e) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Could not load rising stories.</div>'; }
     }
@@ -3657,59 +3766,143 @@
     // 'cr' is last by default — users can move it anywhere
     var DS_DEFAULT_ORDER = ['0','1','2','trending','rising','favorite','sparked','rally','3','4','foryou','5','6','list','rh','cr'];
     var DS_ALL_SECTION_IDS = ['0','1','2','trending','rising','favorite','sparked','rally','3','4','foryou','5','6','list','rh','cr'];
+    // Content-type of each home section, used by the All/Novels/Artwork view
+    // filter. 'mixed' sections (Trending, Rising) show in every mode because
+    // they now rank novels and artwork together.
+    var DS_SECTION_TYPE = {
+      '0':'novel', '1':'art', '2':'novel', 'trending':'mixed', 'rising':'mixed',
+      'favorite':'novel', 'sparked':'novel', 'rally':'novel', '3':'art',
+      '4':'novel', 'foryou':'novel', '5':'art', '6':'novel', 'list':'novel',
+      'rh':'novel', 'cr':'novel'
+    };
+    // Is section `id` eligible to appear in view `mode`? Mixed always eligible.
+    function dsSectionInMode(id, mode) {
+      if (mode === 'all') return true;
+      var t = DS_SECTION_TYPE[id] || 'novel';
+      if (t === 'mixed') return true;
+      return (mode === 'novels' && t === 'novel') || (mode === 'art' && t === 'art');
+    }
+    var DS_VIEW_MODES = ['all','novels','art'];
+    var dsViewMode = 'all';
+    // Per-mode customization: each mode remembers its own order + hidden set.
+    var dsModeLayouts = { all:null, novels:null, art:null };
     var dsLayoutOrder = null;   // array of section ids, in display order
     var dsLayoutHidden = {};    // { sectionId: true } for hidden sections
     var dsLayoutDragSrc = null;
 
-    function dsLoadLayoutFromCache() {
+function dsLoadLayoutFromCache() {
       try {
         var raw = localStorage.getItem('ds_home_layout');
         if (!raw) return null;
         return JSON.parse(raw);
       } catch(e) { return null; }
     }
-    function dsSaveLayoutToCache(layout) {
-      localStorage.setItem('ds_home_layout', JSON.stringify(layout));
+    function dsSaveLayoutToCache(store) {
+      localStorage.setItem('ds_home_layout', JSON.stringify(store));
     }
 
-    function dsApplyLayout(layout) {
-      if (!layout || !layout.order) return;
-      dsLayoutOrder = layout.order.slice();
-      // Back-fill 'rh' and 'cr' for users who have an old saved layout without them
-      if (dsLayoutOrder.indexOf('rh') === -1) dsLayoutOrder.push('rh');
-      if (dsLayoutOrder.indexOf('cr') === -1) dsLayoutOrder.push('cr');
-      // Back-fill the 4 new ranking/discovery sections for old saved layouts —
-      // insert them right after '2' (Featured Novels) to match default placement
+    // Normalize any stored value into the mode-aware shape:
+    //   { mode:'all'|'novels'|'art', all:{order,hidden}, novels:{...}, art:{...} }
+    // Old flat { order, hidden } layouts migrate into the 'all' slot, and the
+    // per-mode slots default to the full order (each mode filters at render time).
+    function dsNormalizeStore(raw) {
+      var store = { mode:'all', all:null, novels:null, art:null };
+      if (raw && typeof raw === 'object') {
+        if (raw.order) {
+          // legacy flat layout → seed 'all'
+          store.all = { order: raw.order.slice(), hidden: raw.hidden || {} };
+        } else {
+          if (DS_VIEW_MODES.indexOf(raw.mode) !== -1) store.mode = raw.mode;
+          ['all','novels','art'].forEach(function(m){
+            if (raw[m] && raw[m].order) store[m] = { order: raw[m].order.slice(), hidden: raw[m].hidden || {} };
+          });
+        }
+      }
+      ['all','novels','art'].forEach(function(m){
+        if (!store[m]) store[m] = { order: DS_DEFAULT_ORDER.slice(), hidden: {} };
+      });
+      return store;
+    }
+
+    // Back-fill any sections missing from an old saved order, at their default anchors.
+    function dsBackfillOrder(order) {
+      order = order.slice();
+      if (order.indexOf('rh') === -1) order.push('rh');
+      if (order.indexOf('cr') === -1) order.push('cr');
       ['trending','rising','favorite'].forEach(function(newId) {
-        if (dsLayoutOrder.indexOf(newId) === -1) {
-          var idx2 = dsLayoutOrder.indexOf('2');
-          if (idx2 !== -1) dsLayoutOrder.splice(idx2 + 1, 0, newId);
-          else dsLayoutOrder.push(newId);
+        if (order.indexOf(newId) === -1) {
+          var idx2 = order.indexOf('2');
+          if (idx2 !== -1) order.splice(idx2 + 1, 0, newId); else order.push(newId);
         }
       });
-      // Back-fill the July additions at their default anchors for old layouts
       [['sparked','favorite'],['rally','sparked'],['foryou','4'],['list','5'],['6','5']].forEach(function(pair) {
         var newId = pair[0], afterId = pair[1];
-        if (dsLayoutOrder.indexOf(newId) === -1) {
-          var ai = dsLayoutOrder.indexOf(afterId);
-          if (ai !== -1) dsLayoutOrder.splice(ai + 1, 0, newId);
-          else dsLayoutOrder.push(newId);
+        if (order.indexOf(newId) === -1) {
+          var ai = order.indexOf(afterId);
+          if (ai !== -1) order.splice(ai + 1, 0, newId); else order.push(newId);
         }
       });
-      dsLayoutHidden = layout.hidden || {};
-      // Re-append sections in saved order using the banner-scroll-wrap as the stable container
+      // Ensure every known section is present exactly once
+      DS_ALL_SECTION_IDS.forEach(function(id){ if (order.indexOf(id) === -1) order.push(id); });
+      return order;
+    }
+
+    // The live globals dsLayoutOrder / dsLayoutHidden always mirror the CURRENT
+    // mode's layout, so the drag/hide/save code keeps working unchanged.
+    function dsSyncActiveMode() {
+      var lay = dsModeLayouts[dsViewMode] || { order: DS_DEFAULT_ORDER.slice(), hidden: {} };
+      dsLayoutOrder = dsBackfillOrder(lay.order);
+      dsLayoutHidden = lay.hidden || {};
+      dsModeLayouts[dsViewMode] = { order: dsLayoutOrder.slice(), hidden: dsLayoutHidden };
+    }
+
+    function dsCurrentStore() {
+      return {
+        mode: dsViewMode,
+        all:    dsModeLayouts.all    || { order: DS_DEFAULT_ORDER.slice(), hidden:{} },
+        novels: dsModeLayouts.novels || { order: DS_DEFAULT_ORDER.slice(), hidden:{} },
+        art:    dsModeLayouts.art    || { order: DS_DEFAULT_ORDER.slice(), hidden:{} }
+      };
+    }
+
+    // Render the homepage per the active mode: order by that mode's saved order,
+    // and show a section only if it is (a) eligible for the mode AND (b) not
+    // hidden in that mode's customization AND (c) not force-hidden elsewhere.
+    function dsApplyLayout() {
+      dsSyncActiveMode();
       var container = document.querySelector('.banner-scroll-wrap');
       if (!container) return;
       dsLayoutOrder.forEach(function(id) {
         var el = document.getElementById('home-section-' + id);
         if (el) container.appendChild(el);
       });
-      // Apply hidden state for all known sections
       DS_ALL_SECTION_IDS.forEach(function(id) {
         var el = document.getElementById('home-section-' + id);
         if (!el) return;
-        el.classList.toggle('section-hidden', !!dsLayoutHidden[id]);
+        var eligible = dsSectionInMode(id, dsViewMode);
+        var hidden = !!dsLayoutHidden[id];
+        el.classList.toggle('section-hidden', !eligible || hidden);
       });
+      // Reflect active button state
+      DS_VIEW_MODES.forEach(function(m){
+        var b = document.getElementById('vf-' + m);
+        if (b) b.classList.toggle('active', m === dsViewMode);
+      });
+    }
+
+    function dsSetViewMode(mode) {
+      if (DS_VIEW_MODES.indexOf(mode) === -1) return;
+      dsViewMode = mode;
+      dsApplyLayout();
+      dsSaveLayoutToCache(dsCurrentStore());
+      // Persist the mode switch (fire-and-forget)
+      (async function(){
+        try {
+          var s = await db.auth.getSession();
+          var uid = s && s.data && s.data.session ? s.data.session.user.id : null;
+          if (uid) await db.from('profiles').update({ homepage_section_order: dsCurrentStore() }).eq('id', uid);
+        } catch(e) {}
+      })();
     }
 
     async function dsInitLayoutCustomization(uid) {
@@ -3717,36 +3910,58 @@
       if (!uid) { if (btnRow) btnRow.style.display = 'none'; return; }
       if (btnRow) btnRow.style.display = 'flex';
 
-      // 1. Apply cached layout immediately (no flicker / no waiting on DB)
+      // 1. Apply cached layout immediately (no flicker)
       var cached = dsLoadLayoutFromCache();
-      if (cached) dsApplyLayout(cached);
+      if (cached) {
+        var storeC = dsNormalizeStore(cached);
+        dsModeLayouts = { all:storeC.all, novels:storeC.novels, art:storeC.art };
+        dsViewMode = storeC.mode;
+        dsApplyLayout();
+      }
 
-      // 2. Confirm against the DB and correct cache if it's stale
+      // 2. Confirm against the DB and correct cache if stale
       try {
         var { data } = await db.from('profiles').select('homepage_section_order').eq('id', uid).maybeSingle();
         if (data && data.homepage_section_order) {
-          var serverLayout = data.homepage_section_order;
-          dsApplyLayout(serverLayout);
-          dsSaveLayoutToCache(serverLayout);
+          var storeS = dsNormalizeStore(data.homepage_section_order);
+          dsModeLayouts = { all:storeS.all, novels:storeS.novels, art:storeS.art };
+          dsViewMode = storeS.mode;
+          dsApplyLayout();
+          dsSaveLayoutToCache(dsCurrentStore());
         } else if (!cached) {
-          dsLayoutOrder = DS_DEFAULT_ORDER.slice();
-          dsLayoutHidden = {};
+          dsModeLayouts = {
+            all:   { order: DS_DEFAULT_ORDER.slice(), hidden:{} },
+            novels:{ order: DS_DEFAULT_ORDER.slice(), hidden:{} },
+            art:   { order: DS_DEFAULT_ORDER.slice(), hidden:{} }
+          };
+          dsViewMode = 'all';
+          dsApplyLayout();
         }
-      } catch(e) { /* keep whatever we had cached/default */ }
+      } catch(e) { /* keep cached/default */ }
 
-      if (!dsLayoutOrder) dsLayoutOrder = DS_DEFAULT_ORDER.slice();
-      // Always ensure 'cr' is in the order (back-compat with old saved layouts)
-      if (dsLayoutOrder.indexOf('cr') === -1) dsLayoutOrder.push('cr');
+      if (!dsModeLayouts.all) dsModeLayouts.all = { order: DS_DEFAULT_ORDER.slice(), hidden:{} };
+      dsSyncActiveMode();
     }
 
+    var DS_MODE_LABELS = { all:'All content', novels:'Novels only', art:'Artwork only' };
+
     function openLayoutModal() {
+      dsSyncActiveMode();
       var list = document.getElementById('layout-modal-list');
       list.innerHTML = '';
+      // Header note telling the user which view they are customizing
+      var note = document.getElementById('layout-modal-mode-note');
+      if (note) note.textContent = 'Editing your “' + (DS_MODE_LABELS[dsViewMode] || 'All content') + '” view. Each view (All / Novels / Artwork) keeps its own layout.';
       var order = dsLayoutOrder || DS_DEFAULT_ORDER.slice();
       order.forEach(function(id) {
         var label = DS_SECTION_LABELS[id];
         if (!label) return;
+        // In a filtered view, only offer the sections that appear in it.
+        if (!dsSectionInMode(id, dsViewMode)) return;
         var hidden = !!dsLayoutHidden[id];
+        var typeTag = DS_SECTION_TYPE[id] === 'art' ? '<span style="font-size:9px;font-weight:700;color:#a78bfa;background:rgba(167,139,250,0.12);border-radius:4px;padding:1px 5px;margin-left:6px;">ART</span>'
+                    : DS_SECTION_TYPE[id] === 'mixed' ? '<span style="font-size:9px;font-weight:700;color:var(--accent);background:rgba(45,212,191,0.12);border-radius:4px;padding:1px 5px;margin-left:6px;">BOTH</span>'
+                    : '';
         var item = document.createElement('div');
         item.className = 'layout-item' + (hidden ? ' is-hidden' : '');
         item.setAttribute('draggable', 'true');
@@ -3757,7 +3972,7 @@
         item.innerHTML =
           '<i class="ti ti-grip-vertical drag-grip"></i>' +
           '<i class="ti ' + label.icon + '"></i>' +
-          '<span class="layout-item-label">' + label.text + subText + '</span>' +
+          '<span class="layout-item-label">' + label.text + typeTag + subText + '</span>' +
           '<button class="layout-item-toggle" onclick="dsToggleLayoutItemHidden(\'' + id + '\')" title="' + (hidden ? 'Show section' : 'Hide section') + '"><i class="ti ' + (hidden ? 'ti-eye-off' : 'ti-eye') + '"></i></button>';
         list.appendChild(item);
       });
@@ -3780,28 +3995,44 @@
       }
     }
 
+    // Reset only the CURRENT mode's layout (leaves the other two views intact).
     function resetLayoutOrder() {
-      dsLayoutOrder = DS_DEFAULT_ORDER.slice(); // includes 'cr'
-      dsLayoutHidden = {};
+      dsModeLayouts[dsViewMode] = { order: DS_DEFAULT_ORDER.slice(), hidden: {} };
+      dsSyncActiveMode();
       openLayoutModal();
     }
 
     async function saveLayoutOrder() {
-      // Read current DOM order from the modal list
+      // Read current DOM order from the modal list. The modal only lists sections
+      // eligible for this mode, so we merge that partial order back into the full
+      // per-mode order, preserving the position of sections not shown here.
       var items = document.querySelectorAll('#layout-modal-list .layout-item');
-      var order = [];
-      items.forEach(function(item) { order.push(item.dataset.sectionId); });
-      dsLayoutOrder = order;
-      var layout = { order: dsLayoutOrder, hidden: dsLayoutHidden };
-      dsApplyLayout(layout);
-      dsSaveLayoutToCache(layout);
+      var shownOrder = [];
+      items.forEach(function(item) { shownOrder.push(item.dataset.sectionId); });
+
+      var prevFull = dsBackfillOrder((dsModeLayouts[dsViewMode] || {}).order || DS_DEFAULT_ORDER.slice());
+      var shownSet = {}; shownOrder.forEach(function(id){ shownSet[id] = true; });
+      // Walk the previous full order; wherever a shown section sat, pull the next
+      // shown section from the modal order, keeping hidden-in-this-view sections put.
+      var newFull = [], si2 = 0;
+      prevFull.forEach(function(id){
+        if (shownSet[id]) { newFull.push(shownOrder[si2++]); }
+        else { newFull.push(id); }
+      });
+      // Append any shown ids not yet placed (safety)
+      while (si2 < shownOrder.length) { if (newFull.indexOf(shownOrder[si2]) === -1) newFull.push(shownOrder[si2]); si2++; }
+
+      dsModeLayouts[dsViewMode] = { order: newFull, hidden: dsLayoutHidden };
+      dsSyncActiveMode();
+      dsApplyLayout();
+      dsSaveLayoutToCache(dsCurrentStore());
       closeLayoutModal();
-      showToast('Layout saved', 'ti-check');
+      showToast('Layout saved for “' + (DS_MODE_LABELS[dsViewMode] || 'All content') + '”', 'ti-check');
       try {
         var sessionRes = await db.auth.getSession();
         var uid = sessionRes && sessionRes.data && sessionRes.data.session ? sessionRes.data.session.user.id : null;
         if (uid) {
-          await db.from('profiles').update({ homepage_section_order: layout }).eq('id', uid);
+          await db.from('profiles').update({ homepage_section_order: dsCurrentStore() }).eq('id', uid);
         }
       } catch(e) { /* localStorage already has it — DB sync can retry next visit */ }
     }
@@ -4149,11 +4380,10 @@
     (async function initUserNav() {
       // Deep-link "My Books" / "My Art" to the owner's Works tab sub-tabs.
       function dsSetOwnWorkLinks(uname){
-        if(!uname) return;
         var b=document.getElementById('dd-books-link');
-        if(b) b.href='profile.html?user='+uname+'#tab=works&sub=writing';
+        if(b) b.href='creator.html?tab=novels';
         var a=document.getElementById('dd-art-link');
-        if(a) a.href='profile.html?user='+uname+'#tab=works&sub=art';
+        if(a) a.href='creator.html?tab=art';
       }
       try {
         var session = (await db.auth.getSession()).data.session;

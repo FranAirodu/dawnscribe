@@ -309,8 +309,8 @@ function dsApplyAccent(hex) {
           </button>
           <div class="dd-accordion-body open">
             <a class="user-dropdown-item" id="dd-profile-link" href="profile.html"><i class="ti ti-user"></i> My Profile</a>
-            <a class="user-dropdown-item" id="dd-books-link" href="profile.html#tab=works&sub=writing"><i class="ti ti-book-2"></i> My Books</a>
-            <a class="user-dropdown-item" id="dd-art-link" href="profile.html#tab=works&sub=art"><i class="ti ti-palette"></i> My Art</a>
+            <a class="user-dropdown-item" id="dd-books-link" href="creator.html?tab=novels"><i class="ti ti-book-2"></i> My Books</a>
+            <a class="user-dropdown-item" id="dd-art-link" href="creator.html?tab=art"><i class="ti ti-palette"></i> My Art</a>
             <a class="user-dropdown-item" href="library.html"><i class="ti ti-books"></i> My Library</a>
             <a class="user-dropdown-item" id="dd-friends-link" href="friends.html"><i class="ti ti-users"></i> Friends</a>
             <a class="user-dropdown-item" href="following.html#titles"><i class="ti ti-bookmark"></i> Following Titles</a>
@@ -987,11 +987,13 @@ function dsApplyAccent(hex) {
       // Point "My Books" / "My Art" dropdown links at the owner's own profile,
       // deep-linking straight to the Works tab's Novels or Artwork sub-tab.
       function dsSetOwnWorkLinks(uname){
-        if(!uname) return;
+        // "My Books" / "My Art" open the creator workspace, which resolves the
+        // author from the session — no username needed. Hrefs are already set
+        // in markup; this keeps the call sites valid and future-proof.
         var b=document.getElementById('dd-books-link');
-        if(b) b.href='profile.html?user='+uname+'#tab=works&sub=writing';
+        if(b) b.href='creator.html?tab=novels';
         var a=document.getElementById('dd-art-link');
-        if(a) a.href='profile.html?user='+uname+'#tab=works&sub=art';
+        if(a) a.href='creator.html?tab=art';
       }
       var username = meta.username || null;
       var displayName = meta.display_name || username || session.user.email.split('@')[0];

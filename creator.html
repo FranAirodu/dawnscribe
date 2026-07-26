@@ -32,6 +32,13 @@
     .page-title{font-family:'Cinzel',serif;font-size:26px;font-weight:700;color:var(--text);}
     .page-title span{color:var(--accent);}
     .new-story-btn{background:var(--accent2);border:none;border-radius:10px;padding:11px 22px;color:white;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all 0.2s;text-decoration:none;}
+    .cw-filter-group{display:inline-flex;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+    .cw-filter-btn{display:inline-flex;align-items:center;gap:6px;background:transparent;border:none;border-right:1px solid var(--border);color:var(--text2);font-size:12px;font-weight:700;padding:9px 15px;cursor:pointer;transition:all 0.15s;font-family:'Lato',sans-serif;}
+    .cw-filter-btn:last-child{border-right:none;}
+    .cw-filter-btn:hover{color:var(--accent);}
+    .cw-filter-btn.active{background:var(--accent2);color:#fff;}
+    .cw-filter-btn.active:hover{color:#fff;}
+    @media(max-width:560px){.cw-filter-btn{padding:9px 11px;}.cw-filter-btn .cwf-label{display:none;}}
     .new-story-btn:hover{background:var(--accent);color:var(--bg);}
 
     /* WORKS GRID */
@@ -214,7 +221,14 @@
           <div class="page-title">My <span>Works</span></div>
           <div style="font-size:13px;color:var(--text3);margin-top:4px;" id="works-count"></div>
         </div>
-        <a class="new-story-btn" href="publish.html"><i class="ti ti-plus"></i> Publish New Story</a>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div class="cw-filter-group" role="group" aria-label="Filter your works by type">
+            <button class="cw-filter-btn active" id="cwf-all"    onclick="cwSetFilter('all')"    title="Show novels and artwork"><i class="ti ti-layout-list"></i> <span class="cwf-label">All</span></button>
+            <button class="cw-filter-btn"        id="cwf-novels" onclick="cwSetFilter('novels')" title="Show only novels"><i class="ti ti-book-2"></i> <span class="cwf-label">Novels</span></button>
+            <button class="cw-filter-btn"        id="cwf-art"    onclick="cwSetFilter('art')"    title="Show only artwork"><i class="ti ti-palette"></i> <span class="cwf-label">Artwork</span></button>
+          </div>
+          <a class="new-story-btn" href="publish.html"><i class="ti ti-plus"></i> Publish New</a>
+        </div>
       </div>
       <div class="works-list" id="works-list">
         <div style="text-align:center;padding:40px;color:var(--text3);"><i class="ti ti-loader" style="animation:spin 1s linear infinite;font-size:24px;display:block;margin-bottom:8px;"></i>Loading your works…</div>
@@ -228,6 +242,9 @@
     var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     var currentSession = null;
     var activeWorkId = null;
+    var cwAllWorks = [];        // full fetched list (both types)
+    var cwChapterCounts = {};   // cached chapter counts, keyed by work id
+    var cwActiveFilter = 'all'; // 'all' | 'novels' | 'art'
     var activeWorkChapterCount = 0;
     var quill = null;
 
@@ -245,13 +262,22 @@
     // ── RENDER WORKS ─────────────────────────────────────────────
     function renderWorks(works, chapterCounts) {
       var list = document.getElementById('works-list');
-      document.getElementById('works-count').textContent = works.length + ' stor' + (works.length !== 1 ? 'ies' : 'y') + ' published';
+      var nNov = works.filter(function(w){ return w.type !== 'artwork'; }).length;
+      var nArt = works.filter(function(w){ return w.type === 'artwork'; }).length;
+      var countBits = [];
+      if (cwActiveFilter !== 'art'    && nNov) countBits.push(nNov + ' novel'   + (nNov !== 1 ? 's' : ''));
+      if (cwActiveFilter !== 'novels' && nArt) countBits.push(nArt + ' artwork' + (nArt !== 1 ? 's' : ''));
+      document.getElementById('works-count').textContent = countBits.length ? countBits.join(' · ') : '';
 
       if (!works.length) {
+        var emptyIcon, emptyH, emptyP;
+        if (cwActiveFilter === 'novels') { emptyIcon='ti-book-off'; emptyH='No novels yet'; emptyP='Your published novels will appear here.'; }
+        else if (cwActiveFilter === 'art') { emptyIcon='ti-photo-off'; emptyH='No artwork yet'; emptyP='Artwork you publish will appear here.'; }
+        else { emptyIcon='ti-folder-off'; emptyH='No works yet'; emptyP='Novels and artwork you publish will appear here.'; }
         list.innerHTML = '<div class="empty-state">' +
-          '<i class="ti ti-book-off"></i>' +
-          '<h2>No stories yet</h2>' +
-          '<p>Your published stories will appear here.</p>' +
+          '<i class="ti ' + emptyIcon + '"></i>' +
+          '<h2>' + emptyH + '</h2>' +
+          '<p>' + emptyP + '</p>' +
           '</div>';
         return;
       }
@@ -262,35 +288,43 @@
         var mainTags = [];
         try { mainTags = JSON.parse(work.tags_main || '[]'); } catch(e) {}
 
+        var isArt = work.type === 'artwork';
+        var statusTxt = work.status ? (work.status.charAt(0).toUpperCase() + work.status.slice(1)) : '';
+
         var card = document.createElement('div');
         card.className = 'work-card';
         card.innerHTML =
           (work.cover_url
             ? '<img class="work-cover" src="'+escHtml(work.cover_url)+'" alt="cover"/>'
-            : '<div class="work-cover-placeholder"><i class="ti ti-book"></i></div>') +
+            : '<div class="work-cover-placeholder"><i class="ti ' + (isArt ? 'ti-palette' : 'ti-book') + '"></i></div>') +
           '<div class="work-info">' +
             '<div class="work-title">' + escHtml(work.title) + '</div>' +
             '<div class="work-meta-row">' +
-              '<span class="work-badge ' + work.status + '">' + work.status.charAt(0).toUpperCase() + work.status.slice(1) + '</span>' +
-              '<span class="work-badge ' + (work.is_fanfiction ? 'fanfic' : 'original') + '">' + (work.is_fanfiction ? 'Fanfiction' : 'Original') + '</span>' +
+              '<span class="work-badge ' + (isArt ? 'artwork' : 'novel') + '" style="background:' + (isArt ? 'rgba(167,139,250,0.15);color:#a78bfa' : 'rgba(45,212,191,0.15);color:var(--accent)') + ';">' + (isArt ? 'Artwork' : 'Novel') + '</span>' +
+              (statusTxt ? '<span class="work-badge ' + work.status + '">' + statusTxt + '</span>' : '') +
+              (isArt ? '' : '<span class="work-badge ' + (work.is_fanfiction ? 'fanfic' : 'original') + '">' + (work.is_fanfiction ? 'Fanfiction' : 'Original') + '</span>') +
               (mainTags.slice(0,2).map(function(t){ return '<span style="font-size:11px;color:var(--text3);">'+escHtml(t)+'</span>'; }).join('<span style="color:var(--text3);font-size:11px;"> · </span>')) +
             '</div>' +
             '<div class="work-stats">' +
-              '<span class="work-stat"><i class="ti ti-list"></i> ' + chCount + ' chapter' + (chCount !== 1 ? 's' : '') + '</span>' +
+              (isArt ? '' : '<span class="work-stat"><i class="ti ti-list"></i> ' + chCount + ' chapter' + (chCount !== 1 ? 's' : '') + '</span>') +
               '<span class="work-stat"><i class="ti ti-calendar"></i> Published ' + formatDate(work.created_at) + '</span>' +
               (work.updated_at ? '<span class="work-stat"><i class="ti ti-clock"></i> Updated ' + formatDate(work.updated_at) + '</span>' : '') +
             '</div>' +
             '<div class="work-actions">' +
-              '<button class="work-btn primary add-ch-btn" data-id="'+work.id+'" data-title="'+escHtml(work.title)+'" data-count="'+chCount+'"><i class="ti ti-plus"></i> Add Chapter</button>' +
-              (work.type!=="artwork" ? '<a class="work-btn" href="chapters.html?edit='+work.id+'"><i class="ti ti-list"></i> Manage Chapters</a>' : '') +
-              '<a class="work-btn" href="publish.html?edit='+work.id+'"><i class="ti ti-edit"></i> Edit Story</a>' +
-              '<a class="work-btn" href="'+(work.type==="artwork"?"artwork.html":"story.html")+'?id='+work.id+'"><i class="ti ti-eye"></i> '+(work.type==="artwork"?"View Art":"View Story")+'</a>' +
+              (isArt
+                ? '<a class="work-btn primary" href="artwork.html?id='+work.id+'"><i class="ti ti-edit"></i> Edit Art</a>'
+                : '<button class="work-btn primary add-ch-btn" data-id="'+work.id+'" data-title="'+escHtml(work.title)+'" data-count="'+chCount+'"><i class="ti ti-plus"></i> Add Chapter</button>'
+              ) +
+              (isArt ? '' : '<a class="work-btn" href="chapters.html?edit='+work.id+'"><i class="ti ti-list"></i> Manage Chapters</a>') +
+              (isArt ? '' : '<a class="work-btn" href="publish.html?edit='+work.id+'"><i class="ti ti-edit"></i> Edit Details</a>') +
+              '<a class="work-btn" href="'+(isArt?"artwork.html":"story.html")+'?id='+work.id+'"><i class="ti ti-eye"></i> '+(isArt?"View Art":"View Story")+'</a>' +
               '<button class="work-btn danger delete-btn" data-id="'+work.id+'"><i class="ti ti-trash"></i> Delete</button>' +
             '</div>' +
           '</div>';
 
-        // Wire up buttons
-        card.querySelector('.add-ch-btn').addEventListener('click', function() {
+        // Wire up buttons (Add Chapter only exists for novels)
+        var addBtn = card.querySelector('.add-ch-btn');
+        if (addBtn) addBtn.addEventListener('click', function() {
           openChapterOverlay(this.dataset.id, this.dataset.title, parseInt(this.dataset.count));
         });
         card.querySelector('.delete-btn').addEventListener('click', function() {
@@ -444,10 +478,11 @@
       var worksResult = await db.from('works')
         .select('*')
         .eq('author_id', currentSession.user.id)
-        .neq('type', 'artwork')
+        .in('type', ['novel', 'artwork'])
         .order('created_at', { ascending: false });
 
-      var works = worksResult.data || [];
+      cwAllWorks = worksResult.data || [];
+      var works = cwAllWorks;
 
       // Get chapter counts for each work
       var chapterCounts = {};
@@ -464,7 +499,34 @@
         }
       }
 
-      renderWorks(works, chapterCounts);
+      cwChapterCounts = chapterCounts;
+      cwApplyFilter();
+    }
+
+    // Apply the active All/Novels/Artwork filter to the already-fetched list.
+    function cwApplyFilter() {
+      var subset = cwAllWorks.filter(function(w){
+        if (cwActiveFilter === 'novels') return w.type !== 'artwork';
+        if (cwActiveFilter === 'art')    return w.type === 'artwork';
+        return true;
+      });
+      ['all','novels','art'].forEach(function(m){
+        var b = document.getElementById('cwf-' + m);
+        if (b) b.classList.toggle('active', m === cwActiveFilter);
+      });
+      renderWorks(subset, cwChapterCounts);
+    }
+
+    function cwSetFilter(mode) {
+      if (['all','novels','art'].indexOf(mode) === -1) return;
+      cwActiveFilter = mode;
+      // reflect in the URL so the view is shareable / preserved on reload
+      try {
+        var u = new URL(window.location.href);
+        u.searchParams.set('tab', mode === 'novels' ? 'novels' : (mode === 'art' ? 'art' : 'all'));
+        history.replaceState(null, '', u.pathname + u.search);
+      } catch(e) {}
+      cwApplyFilter();
     }
 
     // ── INIT ─────────────────────────────────────────────────────
@@ -478,6 +540,13 @@
       }
 
       document.getElementById('page-content').style.display = 'block';
+      // Honor a deep-link filter (?tab=novels / ?tab=art) from the "My Books" /
+      // "My Art" nav shortcuts; default to All.
+      try {
+        var tab = new URLSearchParams(window.location.search).get('tab');
+        if (tab === 'novels' || tab === 'writing') cwActiveFilter = 'novels';
+        else if (tab === 'art' || tab === 'artwork') cwActiveFilter = 'art';
+      } catch(e) {}
       await loadWorks();
     })();
     // ── DELETE MODAL EVENTS ──────────────────────────────────────
