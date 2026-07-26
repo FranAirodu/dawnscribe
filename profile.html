@@ -544,6 +544,10 @@
 
 
 
+  </div><!-- /profile-header -->
+
+  <!-- BIO / IDENTITY SECTION (reorderable, not hideable) -->
+  <div id="ps-section-bio" class="ps-section" data-section-id="bio">
     <div style="margin-bottom:20px;">
       <div class="profile-name-row">
         <div class="profile-name" id="display-name">moonscribe</div>
@@ -576,7 +580,10 @@
         </div>
       </div>
     </div>
+  </div><!-- /ps-section-bio -->
 
+  <!-- STATS SECTION (reorderable, hideable) -->
+  <div id="ps-section-stats" class="ps-section" data-section-id="stats">
     <div class="stats-bar">
       <div class="stat-item" style="cursor:pointer;" onclick="openFollowersModal('followers')" title="View followers"><span class="stat-num" id="stat-followers">—</span><span class="stat-label">Followers</span></div>
       <div class="stat-item" style="cursor:pointer;" onclick="openFollowersModal('following')" title="View following"><span class="stat-num" id="stat-following">—</span><span class="stat-label">Following</span></div>
@@ -584,8 +591,7 @@
       <div class="stat-item"><span class="stat-num" id="stat-artworks">—</span><span class="stat-label">Artworks</span></div>
       <div class="stat-item"><span class="stat-num" id="stat-views">—</span><span class="stat-label">Total Views</span></div>
     </div>
-
-  </div><!-- /profile-header -->
+  </div><!-- /ps-section-stats -->
 
   <!-- PRESTIGE SECTION (reorderable) -->
   <div id="ps-section-prestige" class="ps-section" data-section-id="prestige">
@@ -902,6 +908,11 @@
         if (btn) switchTab(btn);
       }
     })();
+    // Which Works sub-tab (Novels vs Artwork) a deep-link requested, if any.
+    function dsWorksSubFromHash() {
+      var m = window.location.hash.match(/[#&]sub=(writing|art)/);
+      return m ? m[1] : null;
+    }
 
     /* ── OWNER VISIBILITY ───────────────────────────────────────── */
     async function setOwner(isOwner, currentSession, currentProfileData) {
@@ -1772,9 +1783,11 @@
 
         layout.appendChild(tabBar);
         Object.values(panels).forEach(function(p){ layout.appendChild(p); });
-        activateTab('writing');
+        activateTab(dsWorksSubFromHash() || 'writing');
 
       // ── single type: render directly, full width ───────────────
+      } else if (dsWorksSubFromHash() === 'art' && hasArt) {
+        layout.appendChild(buildArtworkPanel());
       } else if (hasWriting || isOwner) {
         layout.appendChild(buildWritingPanel());
       } else if (hasArt) {
@@ -3595,12 +3608,14 @@ async function handleFriendBtn() {
        Sections: announcements, prestige, collabs (owner-only), tabs (locked/required)
     ══════════════════════════════════════════════════════════════ */
     var PS_SECTION_DEFS = [
+      { id: 'bio',           icon: 'ti-user',         label: 'Bio & Currently Writing', hideable: false, ownerOnly: false },
+      { id: 'stats',         icon: 'ti-chart-bar',    label: 'Stats (Followers, etc.)', hideable: true,  ownerOnly: false },
       { id: 'announcements', icon: 'ti-speakerphone', label: 'Announcements',   hideable: true,  ownerOnly: false },
       { id: 'prestige',      icon: 'ti-award',        label: 'Prestige Badges', hideable: true,  ownerOnly: false },
       { id: 'collabs',       icon: 'ti-writing',      label: 'Collab Shortcuts',hideable: true,  ownerOnly: true  },
       { id: 'tabs',          icon: 'ti-layout-grid',  label: 'Works & Tabs',    hideable: false, ownerOnly: false },
     ];
-    var PS_DEFAULT_ORDER  = ['prestige','announcements','collabs','tabs'];
+    var PS_DEFAULT_ORDER  = ['bio','stats','prestige','announcements','collabs','tabs'];
     var psLayoutOrder     = null;
     var psLayoutHidden    = {};
     var psLayoutDragSrc   = null;
@@ -3617,9 +3632,19 @@ async function handleFriendBtn() {
       if (!layout || !layout.order) return;
       psLayoutOrder  = layout.order.slice();
       psLayoutHidden = layout.hidden || {};
-      // Back-fill new sections not in old saved layouts
-      PS_DEFAULT_ORDER.forEach(function(id) {
-        if (psLayoutOrder.indexOf(id) === -1) psLayoutOrder.push(id);
+      // Back-fill new sections not in old saved layouts, inserting each at
+      // its default position (so bio/stats added after launch stay on top for
+      // profiles whose saved order predates them, instead of dropping to end).
+      PS_DEFAULT_ORDER.forEach(function(id, defIdx) {
+        if (psLayoutOrder.indexOf(id) !== -1) return;
+        // Find the nearest already-present section that comes AFTER this one
+        // in the default order, and splice in just before it.
+        var insertAt = psLayoutOrder.length;
+        for (var i = defIdx + 1; i < PS_DEFAULT_ORDER.length; i++) {
+          var pos = psLayoutOrder.indexOf(PS_DEFAULT_ORDER[i]);
+          if (pos !== -1) { insertAt = pos; break; }
+        }
+        psLayoutOrder.splice(insertAt, 0, id);
       });
       var wrap = document.getElementById('profile-sections-wrap');
       if (!wrap) return;

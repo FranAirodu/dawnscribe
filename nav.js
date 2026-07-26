@@ -309,6 +309,8 @@ function dsApplyAccent(hex) {
           </button>
           <div class="dd-accordion-body open">
             <a class="user-dropdown-item" id="dd-profile-link" href="profile.html"><i class="ti ti-user"></i> My Profile</a>
+            <a class="user-dropdown-item" id="dd-books-link" href="profile.html#tab=works&sub=writing"><i class="ti ti-book-2"></i> My Books</a>
+            <a class="user-dropdown-item" id="dd-art-link" href="profile.html#tab=works&sub=art"><i class="ti ti-palette"></i> My Art</a>
             <a class="user-dropdown-item" href="library.html"><i class="ti ti-books"></i> My Library</a>
             <a class="user-dropdown-item" id="dd-friends-link" href="friends.html"><i class="ti ti-users"></i> Friends</a>
             <a class="user-dropdown-item" href="following.html#titles"><i class="ti ti-bookmark"></i> Following Titles</a>
@@ -982,12 +984,22 @@ function dsApplyAccent(hex) {
       }
 
       var meta = session.user.user_metadata || {};
+      // Point "My Books" / "My Art" dropdown links at the owner's own profile,
+      // deep-linking straight to the Works tab's Novels or Artwork sub-tab.
+      function dsSetOwnWorkLinks(uname){
+        if(!uname) return;
+        var b=document.getElementById('dd-books-link');
+        if(b) b.href='profile.html?user='+uname+'#tab=works&sub=writing';
+        var a=document.getElementById('dd-art-link');
+        if(a) a.href='profile.html?user='+uname+'#tab=works&sub=art';
+      }
       var username = meta.username || null;
       var displayName = meta.display_name || username || session.user.email.split('@')[0];
       var _ddn0=document.getElementById('dd-display-name'); if(_ddn0) _ddn0.textContent = displayName;
       var _ddh0=document.getElementById('dd-handle'); if(_ddh0) _ddh0.textContent = username ? '@'+username : session.user.email;
       var _uai0=document.getElementById('user-avatar-initial'); if(_uai0) _uai0.textContent = displayName.charAt(0).toUpperCase();
       var _dpl0=document.getElementById('dd-profile-link'); if(username && _dpl0) _dpl0.href = 'profile.html?user='+username;
+      if(username){ dsSetOwnWorkLinks(username); }
 
       // Always fetch profile by uid — metadata may be missing/stale
       var res = await db.from('profiles').select('avatar_url,display_name,username,id,account_status').eq('id',session.user.id).maybeSingle();
@@ -1008,6 +1020,7 @@ function dsApplyAccent(hex) {
           username = res.data.username;
           document.getElementById('dd-handle').textContent = '@'+username;
           document.getElementById('dd-profile-link').href = 'profile.html?user='+username;
+          dsSetOwnWorkLinks(username);
         }
         if(res.data.display_name){
           var _ddn1=document.getElementById('dd-display-name'); if(_ddn1) _ddn1.textContent = res.data.display_name;
