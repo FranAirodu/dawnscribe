@@ -758,7 +758,7 @@
     <div style="background:var(--bg2);border:1px solid var(--red);border-radius:16px;padding:28px;max-width:420px;width:90%;">
       <div style="font-family:'Cinzel',serif;font-size:19px;font-weight:700;color:var(--red);margin-bottom:6px;display:flex;align-items:center;gap:8px;"><i class="ti ti-skull"></i> Delete Your Account</div>
       <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px;">
-        This permanently erases your profile, every work and chapter you've published, all your comments, reviews, messages, and reading history. There is no undo, and no recovery period — it happens immediately.
+        This immediately deactivates your account and removes everything that identifies you — your username, avatar, bio, and profile. Your comments, reviews, and reading history are erased. There is no undo. If you've earned payouts, royalties, or granted character licenses, we're legally required to retain those financial records, but they'll no longer be linked to any identifying information about you.
       </div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:8px;">
         Type <strong style="color:var(--text);" id="delete-confirm-username"></strong> below to confirm:
@@ -1764,17 +1764,31 @@
     }
 
     async function deleteAccount() {
+      if (!currentSession) { showToast('Your session has expired. Please sign in again.', 'ti-x'); return; }
+      var submitBtn = document.getElementById('delete-confirm-submit');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Deleting…'; }
       showToast('Deleting account…', 'ti-loader');
 
       try {
-        var res = await db.rpc('delete_my_account');
-        if (res.error) {
-          console.error('Delete account error:', res.error);
-          showToast('Something went wrong. Please contact support.', 'ti-x');
-          return;
+        // soft_delete_account anonymizes the profile immediately and reports a
+        // disposition: 'hard_eligible' (no financial records -> fully removable) or
+        // 'soft' (has payout/royalty/license records that must be retained for
+        // financial/legal reasons; the account is deactivated + anonymized but the
+        // underlying record is kept).
+        var res = await db.rpc('soft_delete_account', { p_user_id: currentSession.user.id });
+        if (res.error || !res.data || !res.data.success) {
+          var errCode = (res.data && res.data.error) || (res.error && res.error.message) || 'unknown';
+          console.error('Delete account error:', errCode, res.error);
+          if (res.data && res.data.error === 'already_deleted') {
+            // Idempotent: already gone. Treat as success and sign them out.
+          } else {
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="ti ti-skull"></i> Delete Forever'; }
+            showToast('Something went wrong. Please contact support.', 'ti-x');
+            return;
+          }
         }
 
-        // Sign out the (now-deleted) auth session client-side
+        // Sign out client-side (the profile is now anonymized + deactivated)
         await db.auth.signOut();
 
         // Clear all local data
@@ -1783,11 +1797,12 @@
          'ds_reading_progress','ds_audit_log','ds_sidebar_collapsed','ds_row_states'
         ].forEach(function(k){ localStorage.removeItem(k); });
 
-        alert('Your account has been deleted. Thank you for being part of DawnScribe.');
+        alert('Your account has been deactivated and everything identifying you has been removed \u2014 your username, avatar, bio, and profile are gone, along with your comments, reviews, and reading history. Thank you for being part of DawnScribe.');
         window.location.href = 'index.html';
 
       } catch(err) {
         console.error('Delete account error:', err);
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="ti ti-skull"></i> Delete Forever'; }
         showToast('Something went wrong. Please contact support.', 'ti-x');
       }
     }
