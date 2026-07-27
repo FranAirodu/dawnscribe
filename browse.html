@@ -59,6 +59,8 @@
     .state-btn:hover{background:var(--accent);color:var(--bg);}
 
     .artwork-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+    .mixed-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+    @media(max-width:700px){.mixed-grid{grid-template-columns:1fr;}}
     .artwork-bubble{display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;text-decoration:none;color:inherit;transition:border-color 0.2s;}
     .artwork-bubble:hover{border-color:rgba(45,212,191,0.35);}
     .artwork-thumb{width:100%;aspect-ratio:3/4;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;color:white;overflow:hidden;border-radius:0;}
@@ -144,7 +146,7 @@
     var totalCount = null;
     var section = new URLSearchParams(window.location.search).get('section') || 'new-novels';
     var myUid = null;
-    var NOVEL_SECTIONS = ['new-novels', 'featured-novels', 'one-shots', 'followed-chapters'];
+    var NOVEL_SECTIONS = ['new-novels', 'featured-novels', 'one-shots', 'followed-chapters', 'fan-favorite'];
     var viewMode = localStorage.getItem('ds_browse_view_mode') || 'bubble';
 
     var myContentFilters = { safe: true, gore: false, erotica: false };
@@ -209,8 +211,13 @@
       'new-art':           { title: 'New Artwork', sub: 'The latest artwork uploaded to DawnScribe.', icon: 'ti-sparkles' },
       'featured-art':      { title: 'Featured Artwork', sub: 'Top-rated artwork on DawnScribe.', icon: 'ti-star' },
       'followed-chapters': { title: 'New Chapters', sub: 'New chapters from novels you follow.', icon: 'ti-bell' },
-      'followed-art':      { title: 'New Art From Followed Artists', sub: 'New artwork from artists you follow.', icon: 'ti-palette' }
+      'followed-art':      { title: 'New Art From Followed Artists', sub: 'New artwork from artists you follow.', icon: 'ti-palette' },
+      'trending':          { title: 'Trending Now', sub: 'Novels and artwork gaining the most engagement over the past week.', icon: 'ti-flame' },
+      'rising':            { title: 'Rising', sub: 'New novels and artwork picking up momentum fastest.', icon: 'ti-trending-up' },
+      'fan-favorite':      { title: 'Fan Favorites', sub: 'The most-followed novels on DawnScribe.', icon: 'ti-heart' }
     };
+    // Sections computed/ranked client-side; single ranked page, no pagination.
+    var COMPUTED_SECTIONS = ['trending', 'rising', 'fan-favorite'];
 
     function applyContentFilters(q) {
       var allowGore = myContentFilters.gore && !myContentFilters.safe;
@@ -467,6 +474,126 @@
         var profileMap4 = await fetchProfiles(items4.map(function(w){ return w.author_id; }));
         return { items: items4, count: artRes.count, html: items4.map(function(w){ return renderArtCard(w, profileMap4); }), grid: 'artwork-grid' };
       }
+
+      // ── Computed sections (trending / rising): mixed novel+artwork, ranked
+      //    client-side, mirroring the homepage rows. Single ranked page. ──
+      if (section === 'trending' || section === 'rising') {
+        var isRising = section === 'rising';
+        var winMs = (isRising ? 30 : 7) * 24*60*60*1000;
+        var winISO  = new Date(Date.now() - winMs).toISOString();
+        var winDate = winISO.slice(0,10); // dawn_sparks.spark_date is a DATE
+
+        var poolQ = db.from('works')
+          .select('id,title,cover_url,rating,rating_count,synopsis,author_id,chapters_count,word_count,status,updated_at,created_at,type,spark_count_week,content_rating_gore,content_rating_erotica,content_warnings,tags_main,is_fan_translation,language')
+          .in('type',['novel','artwork']).eq('is_published',true);
+        poolQ = applyContentFilters(poolQ); poolQ = applyLanguageFilters(poolQ);
+        if (isRising) poolQ = poolQ.gte('created_at', winISO).order('created_at',{ascending:false}).limit(120);
+        else          poolQ = poolQ.order('spark_count_week',{ascending:false}).limit(120);
+        var poolRes = await poolQ;
+        if (poolRes.error) throw poolRes.error;
+        var works = (poolRes.data||[]).filter(function(w){
+          try { if (window.dsBlock && dsBlock.either(w.author_id)) return false; } catch(e) {}
+          return true;
+        });
+        if (!works.length) return { items: [], count: 0, html: [], grid: 'mixed-grid' };
+
+        var novelIds = works.filter(function(w){ return w.type !== 'artwork'; }).map(function(w){ return w.id; });
+        var artIds   = works.filter(function(w){ return w.type === 'artwork'; }).map(function(w){ return w.id; });
+        var allIds   = works.map(function(w){ return w.id; });
+        var score = {}; allIds.forEach(function(id){ score[id] = 0; });
+
+        var followsP = novelIds.length
+          ? db.from('work_follows').select('work_id,created_at').in('work_id', novelIds).gte('created_at', winISO)
+          : Promise.resolve({ data: [] });
+        var novChapsP = novelIds.length
+          ? db.from('chapters').select('id,work_id').in('work_id', novelIds)
+          : Promise.resolve({ data: [] });
+        var offeringsP = (!isRising && novelIds.length)
+          ? db.from('work_offerings').select('work_id,created_at').in('work_id', novelIds).gte('created_at', winISO)
+          : Promise.resolve({ data: [] });
+        var artCommentsP = artIds.length
+          ? db.from('artwork_comments').select('work_id,created_at').in('work_id', artIds).gte('created_at', winISO)
+          : Promise.resolve({ data: [] });
+        var sparksP = allIds.length
+          ? db.from('dawn_sparks').select('work_id,spark_date').in('work_id', allIds).gte('spark_date', winDate)
+          : Promise.resolve({ data: [] });
+
+        var sig = await Promise.all([followsP, novChapsP, offeringsP, artCommentsP, sparksP]);
+        var followsRes = sig[0], novChapsRes = sig[1], offeringsRes = sig[2], artCommentsRes = sig[3], sparksRes = sig[4];
+
+        if (isRising) {
+          // Rising: flat +1 per signal, then divide by age in days (velocity).
+          (followsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
+          (sparksRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
+          (artCommentsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
+        } else {
+          // Trending: weighted. Sparks +2 (cap +10), follows +2, offerings +1, art comments +2.
+          var sparkCounts = {};
+          (sparksRes.data||[]).forEach(function(s){ sparkCounts[s.work_id] = (sparkCounts[s.work_id]||0) + 1; });
+          Object.keys(sparkCounts).forEach(function(id){ if(score[id]!==undefined) score[id] += Math.min(10, sparkCounts[id]*2); });
+          (followsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 2; });
+          (offeringsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
+          (artCommentsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 2; });
+        }
+
+        // Novel chapter-comments (chapter_comments has no work_id → map via chapters).
+        var chapMap = {}; (novChapsRes.data||[]).forEach(function(ch){ chapMap[ch.id] = ch.work_id; });
+        var chapIds = (novChapsRes.data||[]).map(function(ch){ return ch.id; });
+        if (chapIds.length) {
+          var ccRes = await db.from('chapter_comments').select('chapter_id,created_at').in('chapter_id', chapIds).gte('created_at', winISO);
+          (ccRes.data||[]).forEach(function(cm){ var wid = chapMap[cm.chapter_id]; if(wid && score[wid]!==undefined) score[wid] += (isRising ? 1 : 2); });
+        }
+
+        var ranked;
+        if (isRising) {
+          works.forEach(function(w){
+            var ageDays = Math.max(1, (Date.now() - new Date(w.created_at).getTime()) / (24*60*60*1000));
+            w._rank = (score[w.id]||0) / ageDays;
+          });
+          ranked = works.filter(function(w){ return w._rank > 0; }).sort(function(a,b){ return b._rank - a._rank; }).slice(0, 60);
+        } else {
+          ranked = works.filter(function(w){ return score[w.id] > 0; }).sort(function(a,b){ return score[b.id] - score[a.id]; }).slice(0, 60);
+        }
+        if (!ranked.length) return { items: [], count: 0, html: [], grid: 'mixed-grid' };
+
+        var profileMapT = await fetchProfiles(ranked.map(function(w){ return w.author_id; }));
+        return {
+          items: ranked, count: ranked.length, // count == items so load-more hides
+          html: ranked.map(function(w){ return w.type === 'artwork' ? renderArtCard(w, profileMapT) : renderNovelCard(w, profileMapT); }),
+          grid: 'mixed-grid'
+        };
+      }
+
+      // ── Fan Favorites: novels ranked by follow count (mirrors homepage). ──
+      if (section === 'fan-favorite') {
+        var ffQ = db.from('works')
+          .select('id,title,cover_url,rating,rating_count,synopsis,author_id,chapters_count,word_count,status,updated_at,created_at,content_rating_gore,content_rating_erotica,content_warnings,tags_main,is_fan_translation,language')
+          .eq('type','novel').eq('is_published',true);
+        ffQ = applyContentFilters(ffQ); ffQ = applyLanguageFilters(ffQ);
+        if (completeOnly) ffQ = ffQ.eq('status','completed');
+        ffQ = ffQ.order('rating',{ascending:false,nullsFirst:false}).limit(120);
+        var ffRes = await ffQ;
+        if (ffRes.error) throw ffRes.error;
+        var ffWorks = (ffRes.data||[]).filter(function(w){
+          try { if (window.dsBlock && dsBlock.either(w.author_id)) return false; } catch(e) {}
+          return true;
+        });
+        if (!ffWorks.length) return { items: [], count: 0, html: [], grid: 'results-grid' };
+        var ffIds = ffWorks.map(function(w){ return w.id; });
+        var ffFollowRes = await db.from('work_follows').select('work_id').in('work_id', ffIds);
+        var ffCounts = {}; (ffFollowRes.data||[]).forEach(function(x){ ffCounts[x.work_id] = (ffCounts[x.work_id]||0) + 1; });
+        var ffRanked = ffWorks.filter(function(w){ return (ffCounts[w.id]||0) > 0; })
+          .sort(function(a,b){ return (ffCounts[b.id]||0) - (ffCounts[a.id]||0); }).slice(0, 60);
+        if (!ffRanked.length) return { items: [], count: 0, html: [], grid: 'results-grid' };
+        var ffProfileMap = await fetchProfiles(ffRanked.map(function(w){ return w.author_id; }));
+        var useListFf = viewMode === 'list';
+        return {
+          items: ffRanked, count: ffRanked.length,
+          html: ffRanked.map(function(w){ return useListFf ? renderNovelListRow(w, ffProfileMap) : renderNovelCard(w, ffProfileMap); }),
+          grid: useListFf ? 'list-view' : 'results-grid'
+        };
+      }
+
       return { items: [], count: 0, html: [], grid: 'results-grid' };
     }
 

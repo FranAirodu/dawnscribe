@@ -2386,6 +2386,176 @@
     }
 
     // ── PUBLISH ────────────────────────────────────────────────────
+    // ── EDIT MODE ──────────────────────────────────────────────────
+    // Set when publish.html is opened as ?edit=<workId>. Turns the page from
+    // a create form into an edit form: reverse-populates every field, loads
+    // chapter 1 into the editor, and makes the publish button UPDATE in place.
+    var isEditMode = false;
+    var editWorkId = null;
+    var editChapterId = null;      // existing chapter 1 row (novels only)
+    var editExistingCoverUrl = null;
+    var editExistingBannerUrl = null;
+    var editBookCardId = null;     // existing is_book_card novel_characters row, if any
+
+    async function loadWorkForEdit(workId) {
+      try {
+        var wr = await db.from('works').select('*').eq('id', workId).maybeSingle();
+        if (wr.error || !wr.data) { showToast('Could not load this work', 'ti-alert-triangle'); return; }
+        var w = wr.data;
+        if (w.author_id !== currentSession.user.id) {
+          showToast('You can only edit your own works', 'ti-alert-triangle');
+          setTimeout(function(){ window.location.href = 'creator.html'; }, 1200);
+          return;
+        }
+
+        isEditMode = true;
+        editWorkId = w.id;
+        ctWorkId = w.id; // let the character manager operate on the real work
+        editExistingCoverUrl = w.cover_url || null;
+        editExistingBannerUrl = w.banner_url || null;
+        var isArt = w.type === 'artwork';
+
+        // Put the page into the right mode. setArtworkMode() reshapes labels
+        // and hides novel-only sections; for novels we init the Quill editor.
+        if (isArt) { setArtworkMode(); }
+        else { initQuill(); }
+
+        // In edit mode a cover already exists, so satisfy the cover gate by
+        // treating the stored image as the current cover. A real re-upload
+        // (onArtworkUpload → coverFile) still overrides this on save.
+        if (editExistingCoverUrl) {
+          coverFile = coverFile || 'EXISTING'; // sentinel so validation passes
+          var prev = document.getElementById('cover-preview');
+          if (prev) { prev.src = editExistingCoverUrl; prev.style.display = 'block'; }
+          var drop = document.getElementById('cover-drop');
+          if (drop) drop.classList.add('has-img');
+          var sc = document.getElementById('sidebar-cover');
+          if (sc) { sc.src = editExistingCoverUrl; sc.style.display = 'block'; }
+          var scp = document.getElementById('sidebar-cover-placeholder');
+          if (scp) scp.style.display = 'none';
+          var cc = document.getElementById('check-cover');
+          if (cc) cc.innerHTML = '<i class="ti ti-circle-check" style="color:var(--green);"></i> ' + (isArt ? 'Artwork image uploaded' : 'Cover image uploaded');
+        }
+
+        // Core text fields.
+        var titleEl = document.getElementById('field-title');
+        if (titleEl) { titleEl.value = w.title || ''; }
+        var synEl = document.getElementById('field-synopsis');
+        if (synEl) { synEl.value = w.synopsis || ''; }
+        var discEl = document.getElementById('field-disclaimer');
+        if (discEl) discEl.value = w.disclaimer || '';
+
+        // Content rating.
+        ratings.gore = !!w.content_rating_gore;
+        ratings.erotica = !!w.content_rating_erotica;
+        ratings.safe = !(ratings.gore || ratings.erotica);
+        ['safe','gore','erotica'].forEach(function(k){
+          var el = document.getElementById('rating-' + k);
+          if (el) { el.classList.toggle('checked', ratings[k]); var box = el.querySelector('.checkbox-box'); if (box) box.innerHTML = ratings[k] ? '<i class="ti ti-check"></i>' : ''; }
+        });
+
+        // Content warnings.
+        try { selectedContentWarnings = w.content_warnings ? (typeof w.content_warnings === 'string' ? JSON.parse(w.content_warnings) : w.content_warnings) : []; }
+        catch(e) { selectedContentWarnings = []; }
+        if (!Array.isArray(selectedContentWarnings)) selectedContentWarnings = [];
+        renderContentWarningsPicker();
+
+        // Collab-open flag (novels).
+        collabOpen = !!w.collab_open;
+        var coToggle = document.getElementById('collab-toggle'); if (coToggle) coToggle.classList.toggle('on', collabOpen);
+        var coPill = document.getElementById('collab-pill'); if (coPill) coPill.classList.toggle('on', collabOpen);
+
+        // Tags. tags_all is the flat superset written positionally as
+        // gold[0..3) + silver[3..8) + extra[8..). tags_main is gold. Reload
+        // using the same positional convention the save path uses.
+        var allTags = [];
+        try { allTags = w.tags_all ? (typeof w.tags_all === 'string' ? JSON.parse(w.tags_all) : w.tags_all) : []; } catch(e) { allTags = []; }
+        if (!Array.isArray(allTags)) allTags = [];
+        if (!allTags.length) {
+          // Fallback: some rows may only have tags_main populated.
+          try { var tm = w.tags_main ? (typeof w.tags_main === 'string' ? JSON.parse(w.tags_main) : w.tags_main) : []; if (Array.isArray(tm)) allTags = tm; } catch(e) {}
+        }
+        selectedGoldTags = allTags.slice(0, 3);
+        selectedSilverTags = allTags.slice(3, 8);
+        selectedExtraTags = allTags.slice(8);
+
+        // Novel-only fields.
+        if (!isArt) {
+          isFanfic = !!w.is_fanfiction;
+          try { fandomTags = w.fandom_tags ? (typeof w.fandom_tags === 'string' ? JSON.parse(w.fandom_tags) : w.fandom_tags) : []; } catch(e) { fandomTags = []; }
+          if (!Array.isArray(fandomTags)) fandomTags = [];
+          if (typeof renderFandomTags === 'function') { try { renderFandomTags(); } catch(e) {} }
+
+          var oneShotEl = document.getElementById('field-is-one-shot');
+          if (oneShotEl) oneShotEl.checked = !!w.is_one_shot;
+          var statusEl = document.getElementById('field-status');
+          if (statusEl && w.status && w.status !== 'one-shot') statusEl.value = w.status;
+          var langEl = document.getElementById('field-language');
+          if (langEl && w.language) langEl.value = w.language;
+          var transEl = document.getElementById('field-is-translation');
+          if (transEl) transEl.checked = !!w.is_fan_translation;
+          var transNoteEl = document.getElementById('field-translation-note');
+          if (transNoteEl) transNoteEl.value = w.translation_note || '';
+          if (typeof toggleTranslationNote === 'function') { try { toggleTranslationNote(); } catch(e) {} }
+
+          // AI-art flags (stored on the work).
+          if (w.art_is_ai) {
+            aiArt = 'yes';
+            aiIntent.collab = !!w.art_intent_collab;
+            aiIntent.hire = !!w.art_intent_hire;
+          } else { aiArt = 'no'; }
+          var aiNo = document.getElementById('ai-no'); if (aiNo) aiNo.classList.toggle('selected', aiArt === 'no');
+          var aiYes = document.getElementById('ai-yes'); if (aiYes) aiYes.classList.toggle('selected', aiArt === 'yes');
+          var aiWrap = document.getElementById('ai-intent-wrap'); if (aiWrap) aiWrap.style.display = aiArt === 'yes' ? 'block' : 'none';
+          if (typeof updateIntentUI === 'function') { try { updateIntentUI(); } catch(e) {} }
+
+          // Load chapter 1 into the editor (edit in place; do NOT insert a new one).
+          var chRes = await db.from('chapters').select('id,title,content,chapter_number')
+            .eq('work_id', w.id).eq('chapter_number', 1).maybeSingle();
+          if (chRes.data) {
+            editChapterId = chRes.data.id;
+            var chTitleEl = document.getElementById('chapter-title');
+            if (chTitleEl) chTitleEl.value = chRes.data.title || '';
+            // quill may still be initialising; retry briefly.
+            var setBody = function(){
+              if (quill && quill.root) { quill.root.innerHTML = chRes.data.content || ''; }
+              else setTimeout(setBody, 120);
+            };
+            setBody();
+          }
+
+          // Book Card: reflect current state so the author can toggle it.
+          var bcRes = await db.from('novel_characters').select('id')
+            .eq('work_id', w.id).eq('is_book_card', true).maybeSingle();
+          editBookCardId = bcRes.data ? bcRes.data.id : null;
+          var bcEl = document.getElementById('field-book-card');
+          if (bcEl) bcEl.checked = !!editBookCardId;
+        }
+
+        // Suppress create-only sections that don't apply when editing an
+        // existing work: the collab-with-artwork launcher and the story-link
+        // finder both create relationships that are set once, at creation.
+        ['card-story-collab','card-story-type'].forEach(function(id){
+          var c = document.getElementById(id);
+          if (c) c.style.display = 'none';
+        });
+
+        // Relabel the page + button for edit context.
+        document.title = 'DawnScribe — Edit ' + (isArt ? 'Artwork' : 'Story');
+        var pubBtn = document.getElementById('publish-btn');
+        if (pubBtn) pubBtn.innerHTML = '<i class="ti ti-device-floppy"></i> Save Changes';
+
+        // Character titles / manager can now load real DB-backed characters.
+        if (!isArt && typeof ctInit === 'function') { try { ctInit(w.id, editChapterId); } catch(e) {} }
+
+        updatePreview();
+        updateChecklist();
+      } catch(e) {
+        console.error('Edit load failed:', e);
+        showToast('Could not load this work for editing', 'ti-alert-triangle');
+      }
+    }
+
     async function publishWork() {
       var title = document.getElementById('field-title').value.trim();
       var synopsis = document.getElementById('field-synopsis').value.trim();
@@ -2468,6 +2638,73 @@
           if (isFanfic && fandomTags.length) {
             insertPayload.fandom_tags = JSON.stringify(fandomTags);
           }
+        }
+
+        // ── EDIT MODE: UPDATE in place instead of INSERT ──────────────
+        // insertPayload was built identically for create and edit. In edit
+        // mode we strip create-only keys, update the existing work + chapter 1
+        // + book-card row, then redirect. The create flow below never runs.
+        if (isEditMode) {
+          // author_id / is_published are set at creation and must not change
+          // here (editing shouldn't flip a live collab story's visibility).
+          delete insertPayload.author_id;
+          delete insertPayload.is_published;
+          // Only overwrite cover/banner if a real re-upload happened this session.
+          if (coverFile === 'EXISTING') { insertPayload.cover_url = editExistingCoverUrl; }
+          if (!fullArtworkFile) { insertPayload.banner_url = editExistingBannerUrl; }
+
+          var updRes = await db.from('works').update(insertPayload).eq('id', editWorkId).select().single();
+          if (updRes.error) { console.error('Works update error:', JSON.stringify(updRes.error)); throw updRes.error; }
+          var updWork = updRes.data;
+
+          // Chapter 1 (novels): update the existing row in place; never insert.
+          if (!isArtworkMode && editChapterId) {
+            var chContent = quill ? quill.root.innerHTML : '';
+            var chText = quill ? quill.getText().trim() : '';
+            var chWords = chText.split(/\s+/).filter(Boolean).length;
+            var chUpd = await db.from('chapters').update({
+              title: document.getElementById('chapter-title').value.trim(),
+              content: chContent,
+              word_count: chWords
+            }).eq('id', editChapterId);
+            if (chUpd.error) console.error('Chapter update error:', JSON.stringify(chUpd.error));
+          }
+
+          // Book Card: sync the row to match the checkbox. Create if newly
+          // checked, remove if newly unchecked, refresh name/portrait if kept.
+          if (!isArtworkMode) {
+            var wantBC = document.getElementById('field-book-card');
+            var checkedBC = !!(wantBC && wantBC.checked);
+            try {
+              if (checkedBC && !editBookCardId) {
+                await db.from('novel_characters').insert({
+                  work_id: editWorkId,
+                  name: (updWork && updWork.title) || 'This Book',
+                  portrait_url: (updWork && updWork.cover_url) || null,
+                  is_book_card: true,
+                  sort_order: -1
+                });
+              } else if (!checkedBC && editBookCardId) {
+                // CASCADE handles the aura/song/take/quote/vibe/ask facet rows.
+                await db.from('novel_characters').delete().eq('id', editBookCardId);
+              } else if (checkedBC && editBookCardId) {
+                await db.from('novel_characters').update({
+                  name: (updWork && updWork.title) || 'This Book',
+                  portrait_url: (updWork && updWork.cover_url) || null
+                }).eq('id', editBookCardId);
+              }
+            } catch(e) { console.warn('Book Card sync failed:', e); }
+          }
+
+          // Keep the shared fandom lookup in sync for fanfic edits.
+          if (!isArtworkMode && isFanfic && fandomTags.length) { try { await syncFandomTags(); } catch(e) {} }
+
+          localStorage.removeItem('ds_publish_draft');
+          showToast('Changes saved!', 'ti-device-floppy');
+          setTimeout(function(){
+            window.location.href = isArtworkMode ? ('artwork.html?id=' + editWorkId) : ('story.html?id=' + editWorkId);
+          }, 1200);
+          return;
         }
 
         var workResult = await db.from('works').insert(insertPayload).select().single();
@@ -2722,9 +2959,14 @@
       document.getElementById('publish-content').style.display = 'block';
       applyDefaultRatingPrefs();
 
-      // Check URL param — artwork mode
+      // Check URL param — artwork mode / edit mode
       var urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('type') === 'artwork') {
+      var editIdParam = urlParams.get('edit');
+      if (editIdParam) {
+        // Edit an existing work. loadWorkForEdit sets artwork vs novel mode
+        // itself based on the fetched row, then reverse-populates every field.
+        await loadWorkForEdit(editIdParam);
+      } else if (urlParams.get('type') === 'artwork') {
         setArtworkMode();
       } else {
         initQuill();
@@ -2757,8 +2999,8 @@
       updatePreview();
       updateChecklist();
 
-      // Load draft if exists
-      if (localStorage.getItem('ds_publish_draft')) {
+      // Load draft if exists — skipped in edit mode (we're editing a live work)
+      if (!editIdParam && localStorage.getItem('ds_publish_draft')) {
         if (confirm('You have an unsaved draft. Would you like to restore it?')) {
           setTimeout(loadDraft, 100);
         }
@@ -2780,6 +3022,7 @@ async function ctInit(workId, chapterId) {
   var { data } = await db.from('novel_characters')
     .select('id, name, portrait_url, status')
     .eq('work_id', workId)
+    .neq('is_book_card', true)  // book card is managed via the checkbox, not the character list
     .order('sort_order', { ascending: true });
   ctCharacters = (data||[]).map(function(c){
     return Object.assign({}, c, { chapter_status: 'active' });
