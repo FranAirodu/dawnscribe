@@ -100,8 +100,8 @@
   //   { "pose1": {"x":118,"y":84,"w":84,"h":84} }
   // Falls back to these defaults when the preset has no override.
   var DEFAULT_HEAD_CROPS = {
-    pose1: { x: 122, y: 110, w: 85, h: 85 },
-    pose2: { x: 115, y: 107, w: 85, h: 85 }
+    pose1: { x: 118, y: 84, w: 84, h: 84 },
+    pose2: { x: 118, y: 84, w: 84, h: 84 }
   };
 
   function getHeadCrop(preset, pose) {
@@ -366,11 +366,9 @@
       equipped: {},
       pose: 'pose1'
     };
-    (allItems || []).filter(function (it) { return it.is_base_item; }).forEach(function (it) {
-      var colors = {};
-      (it.fill_regions || []).forEach(function (r) { colors[r.id] = r.default_color; });
-      avatarData.equipped[it.slot] = { item_id: it.id, colors: colors };
-    });
+    // No base garments are auto-equipped: base-item art hasn't been
+    // delivered, so a fresh avatar is the bare body until the user
+    // equips something real. (Base items remain selectable in the editor.)
     return avatarData;
   }
 

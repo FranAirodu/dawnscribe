@@ -220,6 +220,20 @@
     .loading-state { padding: 40px 0; text-align: center; color: var(--text3); font-size: 13px; }
     .loading-state i { display: block; margin-bottom: 8px; font-size: 22px; animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* First-run skin tone picker overlay */
+    #firstrun-overlay { position: fixed; inset: 0; z-index: 4000; background: rgba(6,10,14,0.86); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .firstrun-card { background: var(--panel, #0f1720); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 28px 26px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    .firstrun-title { font-family: 'Lato', sans-serif; font-size: 22px; font-weight: 800; margin: 0 0 6px; color: #fff; }
+    .firstrun-title span, .firstrun-title { color: #fff; }
+    .firstrun-sub { font-size: 13px; color: rgba(255,255,255,0.6); margin: 0 0 18px; line-height: 1.5; }
+    .firstrun-preview { width: 150px; height: 225px; margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; }
+    .firstrun-preview svg, .firstrun-preview img { width: 100%; height: 100%; object-fit: contain; }
+    .firstrun-swatches { justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
+    .firstrun-confirm { width: 100%; max-width: 260px; background: var(--accent); border: none; border-radius: 9px; padding: 12px; color: var(--bg, #0a0e12); font-size: 14px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; }
+    .firstrun-confirm:hover { filter: brightness(1.08); }
+    .firstrun-confirm:disabled { opacity: 0.6; cursor: default; }
+    .firstrun-status { font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 10px; min-height: 16px; }
   </style>
 </head>
 <body>
@@ -288,8 +302,8 @@
   // the preset's pose_paths render locked ("coming soon"). Add entries as
   // the artist delivers more poses.
   var POSE_DEFS = [
-    { id: 'pose1', label: 'Pose A' },
-    { id: 'pose2', label: 'Pose B' }
+    { id: 'pose1', label: 'Standing' },
+    { id: 'pose2', label: 'Side View' }
   ];
 
   // Shared with all avatar-rendering pages — see avatarRender.js.
@@ -377,6 +391,7 @@
   // ── STATE ───────────────────────────────────────────────────────
   var currentUid = null;
   var avatarData = null;     // { skin_tone, equipped: {slot:{item_id,colors}}, unlocked_skin_tones }
+  var isFirstVisit = false;  // true when no user_avatars row existed at load — triggers the one-time skin picker
   var allItems = [];          // all cosmetic_items rows
   var unlockedItemIds = new Set();
   var activeSlot = 'shirt';
@@ -431,6 +446,7 @@
     allItems = itemsResult.data || [];
     unlockedItemIds = new Set((unlockedResult.data || []).map(function(u){ return u.cosmetic_item_id; }));
 
+    isFirstVisit = !avatarResult.data;
     if (avatarResult.data) {
       avatarData = avatarResult.data;
       if (!avatarData.unlocked_colors) avatarData.unlocked_colors = {};
@@ -440,14 +456,11 @@
       // Default accent to teal if never set
       if (!avatarData.accent_color || !avatarData.accent_color.hex) avatarData.accent_color = { hex: '#2dd4bf' };
     } else {
-      // First visit — initialize with base items equipped and a default skin tone.
+      // First visit — bare body + default skin tone. No base garments are
+      // auto-equipped (their art hasn't been delivered); the user builds
+      // up from the bare body. Base items stay selectable in the editor.
       var _defPreset = getBodyPreset(null);
       avatarData = { skin_tone: _defPreset ? _defPreset.id : DEFAULT_SKIN_TONES[0], equipped: {}, unlocked_skin_tones: [], unlocked_colors: {}, unlocked_accents: ['#2dd4bf'], accent_color: { hex: '#2dd4bf' } };
-      allItems.filter(function(it){ return it.is_base_item; }).forEach(function(it) {
-        var colors = {};
-        (it.fill_regions || []).forEach(function(r){ colors[r.id] = r.default_color; });
-        avatarData.equipped[it.slot] = { item_id: it.id, colors: colors };
-      });
     }
 
     if (!avatarData.pose) avatarData.pose = 'pose1';
@@ -476,7 +489,7 @@
     } else {
       localStorage.setItem('ds_accent_hex', _currentAccentHex);
     }
-    renderEditor();
+    if (isFirstVisit) { showFirstRunPicker(); } else { renderEditor(); }
   })();
 
   function getItemsForSlot(slot) {
@@ -687,6 +700,77 @@
     renderPoseRow();
     renderPreview();
     updateSaveState();
+  }
+
+  // ── FIRST-RUN SKIN TONE PICKER ───────────────────────────────────
+  // Shown once, only when the user had no user_avatars row at load.
+  // Because the trigger is row-absence, saving the row makes this never
+  // fire again. Skin tone stays fully editable later in the normal editor;
+  // additional tones are unlocked via the Ember randomizer.
+  function showFirstRunPicker() {
+    // Pick a sensible starting selection: the default preset, else first.
+    var startPreset = getBodyPreset(null) || bodyPresets[0];
+    if (startPreset) avatarData.skin_tone = startPreset.id;
+
+    var ov = document.createElement('div');
+    ov.id = 'firstrun-overlay';
+    ov.innerHTML =
+      '<div class="firstrun-card">' +
+        '<h2 class="firstrun-title">Choose your skin tone</h2>' +
+        '<p class="firstrun-sub">This is your starting look. You can change it any time \u2014 and unlock more tones later with Embers.</p>' +
+        '<div class="firstrun-preview" id="firstrun-preview"></div>' +
+        '<div class="swatch-row firstrun-swatches" id="firstrun-swatches"></div>' +
+        '<button class="firstrun-confirm" id="firstrun-confirm">Confirm</button>' +
+        '<div class="firstrun-status" id="firstrun-status"></div>' +
+      '</div>';
+    document.body.appendChild(ov);
+
+    renderFirstRunSwatches();
+    renderFirstRunPreview();
+
+    document.getElementById('firstrun-confirm').addEventListener('click', confirmFirstRun);
+  }
+
+  function renderFirstRunSwatches() {
+    var html = bodyPresets.map(function(p) {
+      var sel = p.id === avatarData.skin_tone ? ' selected' : '';
+      return flameSwatch(p.swatch_hex, p.label, 'swatch' + sel, "pickFirstRunTone('" + p.id + "')");
+    }).join('');
+    document.getElementById('firstrun-swatches').innerHTML = html;
+  }
+
+  function renderFirstRunPreview() {
+    var el = document.getElementById('firstrun-preview');
+    if (!el) return;
+    // Show the selected tone's pose-A body art directly, so users see
+    // exactly what each swatch means. Plain <img> (not the layered SVG)
+    // keeps it simple and guaranteed to render.
+    var preset = getBodyPreset(avatarData.skin_tone) || bodyPresets[0];
+    var path = preset ? DSAvatar.getPoseImagePath(preset, 'pose1') : null;
+    if (!path) { el.innerHTML = ''; return; }
+    var url = BODY_ASSET_BASE + path;
+    el.innerHTML = '<img src="' + url + '" alt="' + esc(preset.label || '') + ' body" />';
+  }
+
+  window.pickFirstRunTone = function(tone) {
+    avatarData.skin_tone = tone;
+    renderFirstRunSwatches();
+    renderFirstRunPreview();
+  };
+
+  async function confirmFirstRun() {
+    var btn = document.getElementById('firstrun-confirm');
+    var status = document.getElementById('firstrun-status');
+    btn.disabled = true;
+    status.textContent = 'Setting up your avatar\u2026';
+    // saveAvatar persists the user_avatars row (so this never fires again)
+    // and bakes the headshot into profiles.avatar_url.
+    dirty = true;
+    await saveAvatar();
+    isFirstVisit = false;
+    var ov = document.getElementById('firstrun-overlay');
+    if (ov) ov.remove();
+    renderEditor();
   }
 
   // ── RENDER: SKIN TONE PICKER ─────────────────────────────────────
@@ -1249,8 +1333,13 @@
   async function saveAvatar() {
     var btn = document.getElementById('save-btn');
     var status = document.getElementById('save-status');
-    btn.disabled = true;
-    status.textContent = 'Saving...';
+    // During the first-run picker the editor isn't mounted yet, so these
+    // elements can be absent — route status to the picker's own line and
+    // guard every DOM touch so the save still completes.
+    var frStatus = document.getElementById('firstrun-status');
+    var setStatus = function(t){ if (status) status.textContent = t; if (frStatus) frStatus.textContent = t; };
+    if (btn) btn.disabled = true;
+    setStatus('Saving...');
 
     var payload = {
       user_id: currentUid,
@@ -1269,20 +1358,20 @@
     var { error } = await db.from('user_avatars').upsert(payload, { onConflict: 'user_id' });
 
     if (error) {
-      status.textContent = 'Could not save: ' + error.message;
-      btn.disabled = false;
+      setStatus('Could not save: ' + error.message);
+      if (btn) btn.disabled = false;
       return;
     }
 
     dirty = false;
-    status.textContent = 'Saved!';
+    setStatus('Saved!');
 
     // Publish the avatar's face as the sitewide profile picture.
     // Every surface that shows profiles.avatar_url (nav, comments,
     // friends, search, messages) picks this up automatically — this is
     // the single sync point for "avatar face everywhere".
     try {
-      status.textContent = 'Saved! Updating profile picture…';
+      setStatus('Saved! Updating profile picture…');
       var pngBlob = await DSAvatar.exportHeadshotPng(avatarData, bodyPresets, allItems, 256);
       var hsPath = currentUid + '/avatar-headshot.png';
       var upErr = (await db.storage.from('avatars').upload(hsPath, pngBlob, { upsert: true, contentType: 'image/png' })).error;
@@ -1293,10 +1382,10 @@
         var _nb = document.getElementById('user-avatar-btn');
         if (_nb) _nb.innerHTML = '<img src="' + hsUrl + '" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
       }
-      status.textContent = 'Saved!';
-    } catch(e) { status.textContent = 'Saved!'; /* headshot publish is best-effort */ }
+      setStatus('Saved!');
+    } catch(e) { setStatus('Saved!'); /* headshot publish is best-effort */ }
 
-    setTimeout(function(){ status.textContent = ''; }, 2000);
+    setTimeout(function(){ setStatus(''); }, 2000);
   }
 
   // ── MAIN RENDER ─────────────────────────────────────────────────

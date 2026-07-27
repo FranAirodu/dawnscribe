@@ -341,6 +341,10 @@
     .avatar-sidebar-inner { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
     .avatar-sidebar-figure { width: 264px; height: 260px; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
     .avatar-sidebar-figure svg { width: 100%; height: 100%; display: block; }
+    .avatar-empty-state { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text3); border: 1.5px dashed var(--border); border-radius: 12px; transition: color 0.15s, border-color 0.15s; }
+    .avatar-sidebar:hover .avatar-empty-state { color: var(--accent); border-color: var(--accent); }
+    .avatar-empty-state i { font-size: 34px; }
+    .avatar-empty-state span { font-size: 12px; font-weight: 700; font-family: 'Lato', sans-serif; }
     .avatar-sidebar-link { font-size: 10px; font-weight: 700; color: var(--text3); text-decoration: none; display: flex; align-items: center; gap: 4px; transition: color 0.15s; font-family: 'Lato', sans-serif; white-space: nowrap; }
     .avatar-sidebar-link:hover { color: var(--accent); }
     .avatar-sidebar-link i { font-size: 11px; }
@@ -1632,12 +1636,20 @@
         var allItems = itemsRes.data || [];
         var avatarData = avatarRes.data;
 
-        if (!avatarData) {
-          // First-time user — same default avatar.html builds, without saving.
-          avatarData = DSAvatar.buildDefaultAvatar(window.__bodyPresets, allItems);
-        }
+        // First-time user (no user_avatars row): show an empty "set up your
+        // avatar" placeholder rather than a rendered body. They pick a skin
+        // tone on their first visit to avatar.html.
+        var isFirstTime = !avatarData;
 
-        var svgHtml = renderAvatarSvg(avatarData, allItems);
+        var svgHtml;
+        if (isFirstTime) {
+          svgHtml = '<div class="avatar-empty-state">' +
+              '<i class="ti ti-user-plus"></i>' +
+              '<span>Set up your avatar</span>' +
+            '</div>';
+        } else {
+          svgHtml = renderAvatarSvg(avatarData, allItems);
+        }
         // Populate fixed sidebar
         var sidebarFig = document.getElementById('avatar-sidebar-figure');
         var sidebar = document.getElementById('avatar-sidebar');
@@ -1652,7 +1664,7 @@
         // Mirror of nav.js headshot sync (index.html keeps its own nav copy):
         // nav pfp shows the avatar's face instead of the uploaded photo.
         try {
-          if ((window.__bodyPresets || []).length) {
+          if (!isFirstTime && (window.__bodyPresets || []).length) {
             var _hsSvg = DSAvatar.renderHeadshotSvg(avatarData, window.__bodyPresets, allItems);
             var _navBtn = document.getElementById('user-avatar-btn');
             if (_navBtn && _hsSvg) {
