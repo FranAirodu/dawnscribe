@@ -144,6 +144,10 @@
     .swatch-locked { position: relative; opacity: 0.35; cursor: not-allowed; }
     .swatch-locked:hover { transform: none; filter: none; }
     .swatch-locked i { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 12px; color: var(--text); }
+    .swatch-complete { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 32px; color: var(--accent); opacity: 0.85; }
+    .swatch-complete i { font-size: 18px; }
+    .swatch-tone-locked { opacity: 0.4; filter: grayscale(0.5); position: relative; }
+    .swatch-tone-locked:hover { opacity: 0.65; filter: grayscale(0.2); }
 
     /* slot tabs */
     .slot-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
@@ -662,6 +666,52 @@
     await dsModal({ title: 'You unlocked: ' + label + '!', body: 'The <b>' + label + '</b> is now permanently yours. ' + applyMsg + ' Remember to hit <b>Save Avatar</b>.', icon: 'ti-confetti' });
   }
 
+  async function rollSkinUnlock() {
+    if (emberBalance < SKIN_UNLOCK_COST) {
+      await dsModal({ title: 'Not enough Embers', body: 'You need <b>' + SKIN_UNLOCK_COST + ' Embers</b> to unlock a new skin tone. You currently have <b>' + emberBalance + '</b>.', icon: 'ti-flame', error: true });
+      return;
+    }
+    var ok = await dsModal({ confirm: true, title: 'Random Skin Unlock', body: 'Spend <b>' + SKIN_UNLOCK_COST + ' Embers</b> to unlock one <b>random</b> skin tone you don\'t own yet. It\'s yours to keep.', icon: 'ti-dice-5', okLabel: 'Roll \u2022 ' + SKIN_UNLOCK_COST + ' Embers' });
+    if (!ok) return;
+    var { data, error } = await db.rpc('roll_skin_unlock', { p_user_id: currentUid });
+    if (error || !data) {
+      await dsModal({ title: 'Something went wrong', body: 'Could not roll right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
+      return;
+    }
+    if (data.status === 'insufficient_embers') {
+      await dsModal({ title: 'Not enough Embers', body: 'You need <b>' + data.cost + ' Embers</b> for this roll. You currently have <b>' + data.balance + '</b>.', icon: 'ti-flame', error: true });
+      return;
+    }
+    if (data.status === 'all_unlocked') {
+      await dsModal({ title: 'All unlocked!', body: 'You already own every skin tone. Nice collection!', icon: 'ti-circle-check' });
+      renderSkinTones();
+      return;
+    }
+    if (data.status !== 'success') {
+      await dsModal({ title: 'Something went wrong', body: 'Could not roll right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
+      return;
+    }
+    emberBalance -= data.cost;
+    window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: -data.cost } }));
+
+    var got = data.unlocked;
+    if (!avatarData.unlocked_skin_tones) avatarData.unlocked_skin_tones = [];
+    // Preserve the currently-worn (free) tone so applying the rolled tone
+    // can't lock it away.
+    if (avatarData.skin_tone && avatarData.unlocked_skin_tones.indexOf(avatarData.skin_tone) === -1) {
+      avatarData.unlocked_skin_tones.push(avatarData.skin_tone);
+    }
+    if (avatarData.unlocked_skin_tones.indexOf(got) === -1) avatarData.unlocked_skin_tones.push(got);
+    // Apply the newly unlocked tone to the preview immediately.
+    avatarData.skin_tone = got;
+    dirty = true;
+    renderSkinTones();
+    renderPoseRow();
+    renderPreview();
+    updateSaveState();
+    await dsModal({ title: 'You unlocked: ' + (data.label || 'a new tone') + '!', body: 'The <b>' + (data.label || 'new') + '</b> skin tone is now permanently yours and applied to your preview. Remember to hit <b>Save Avatar</b>.', icon: 'ti-confetti' });
+  }
+
   // ── MODAL (styled replacement for alert/confirm) ────────────────
   function dsModal(opts) {
     return new Promise(function(resolve) {
@@ -774,19 +824,50 @@
   }
 
   // ── RENDER: SKIN TONE PICKER ─────────────────────────────────────
+  var SKIN_UNLOCK_COST = 20;
+
+  function ownsSkinTone(id) {
+    // The current tone is always owned (free starting tone); plus anything
+    // explicitly unlocked via Embers.
+    if (id === avatarData.skin_tone) return true;
+    var u = avatarData.unlocked_skin_tones || [];
+    return u.indexOf(id) !== -1;
+  }
+
   function renderSkinTones() {
-    // Preset-based: each swatch is a pre-colored body artwork preset.
+    // Owned tones are selectable; locked tones are dimmed and roll-only.
+    var lockedCount = 0;
     var html = bodyPresets.map(function(p) {
-      var selectedClass = p.id === avatarData.skin_tone ? ' selected' : '';
-      return flameSwatch(p.swatch_hex, p.label, 'swatch' + selectedClass, "setSkinTone('" + p.id + "')");
+      if (ownsSkinTone(p.id)) {
+        var selectedClass = p.id === avatarData.skin_tone ? ' selected' : '';
+        return flameSwatch(p.swatch_hex, p.label, 'swatch' + selectedClass, "setSkinTone('" + p.id + "')");
+      }
+      lockedCount++;
+      // Locked: dimmed swatch with a dice hint; clicking rolls.
+      return flameSwatch(p.swatch_hex, p.label + ' \u2014 locked (roll to unlock)', 'swatch swatch-tone-locked', 'rollSkinUnlock()');
     }).join('');
-    // Locked placeholders hint at tones the artist hasn't delivered yet
-    html += '<div class="swatch swatch-locked" title="More tones coming soon"><i class="ti ti-lock"></i></div>';
-    html += '<div class="swatch swatch-locked" title="More tones coming soon"><i class="ti ti-lock"></i></div>';
+
+    if (lockedCount === 0) {
+      // Full set owned — completion marker instead of dangling locks.
+      html += '<div class="swatch-complete" title="You have every skin tone"><i class="ti ti-circle-check"></i></div>';
+    }
     document.getElementById('skin-tone-row').innerHTML = html;
+
+    // Roll button below the row (only while tones remain to unlock).
+    var rollWrap = document.getElementById('skin-roll-wrap');
+    if (rollWrap) {
+      if (lockedCount > 0) {
+        rollWrap.innerHTML = '<button class="display-roll-btn" ' + (emberBalance < SKIN_UNLOCK_COST ? 'disabled ' : '') +
+          'onclick="rollSkinUnlock()"><i class="ti ti-dice-5"></i> Random Skin Unlock ' +
+          '<span class="pose-cost"><i class="ti ti-flame"></i>' + SKIN_UNLOCK_COST + '</span></button>';
+      } else {
+        rollWrap.innerHTML = '';
+      }
+    }
   }
 
   function setSkinTone(tone) {
+    if (!ownsSkinTone(tone)) { rollSkinUnlock(); return; }
     avatarData.skin_tone = tone;
     dirty = true;
     renderSkinTones();
@@ -1348,7 +1429,11 @@
       avatar_position: avatarData.avatar_position || 'center',
       mirrored: !!avatarData.mirrored,
       equipped: avatarData.equipped,
-      unlocked_skin_tones: avatarData.unlocked_skin_tones || [],
+      unlocked_skin_tones: (function(){
+        var u = avatarData.unlocked_skin_tones || [];
+        if (avatarData.skin_tone && u.indexOf(avatarData.skin_tone) === -1) u = u.concat([avatarData.skin_tone]);
+        return u;
+      })(),
       unlocked_colors: avatarData.unlocked_colors || {},
       unlocked_accents: avatarData.unlocked_accents || [],
       accent_color: avatarData.accent_color || null,
@@ -1423,14 +1508,7 @@
           '<div id="skin-panel" style="display:none;margin-top:8px;">' +
               '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px;">Skin Tone</div>' +
               '<div class="swatch-row" id="skin-tone-row"></div>' +
-              /* Ember skin-tone roll hidden while tones are a fixed preset set.
-                 Re-enable (and switch rollSkinToneUnlock to preset ids) once
-                 unlockable artwork tones exist. */
-              '<div style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">' +
-                '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Spend 1 Ember to unlock a new skin tone.</div>' +
-                '<button class="randomizer-btn" id="skin-reroll-btn" onclick="rollSkinToneUnlock()"><i class="ti ti-sparkles"></i> Unlock Skin Tone (1 Ember)</button>' +
-              '</div>' +
-              '<div class="randomizer-result" id="skin-reroll-result"></div>' +
+              '<div id="skin-roll-wrap" style="margin-top:16px;"></div>' +
             '</div>' +
             '<div class="item-grid" id="item-grid"></div>' +
             '<div id="color-pickers-wrap" style="margin-top:16px;">' +
