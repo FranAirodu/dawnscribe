@@ -581,11 +581,18 @@ window.CharacterTitles = (function() {
     container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;font-size:20px;"></i></div>';
 
     var { data: chars } = await db().from('novel_characters')
-      .select('id, name, portrait_url, status, ended_reason, impressions_enabled')
+      .select('id, name, portrait_url, status, ended_reason, impressions_enabled, is_book_card')
       .eq('work_id', workId)
       .order('sort_order', { ascending: true });
 
     if (!chars || !chars.length) { container.innerHTML = ''; return; }
+
+    // Book Card (if any) always renders first, ahead of the characters.
+    chars.sort(function(a, b){
+      var ab = a.is_book_card ? 0 : 1, bb = b.is_book_card ? 0 : 1;
+      if (ab !== bb) return ab - bb;
+      return 0; // preserve sort_order within each group
+    });
 
     var titles = await loadTitles();
     var titleMap = {};
@@ -781,6 +788,7 @@ window.CharacterTitles = (function() {
     }
 
     chars.forEach(function(char) {
+      var isBook = !!char.is_book_card;
       var charVotes = voteCounts[char.id] || {};
       var charCollabs = collabsByChar[char.name.toLowerCase().trim()] || [];
       var auraData = auraByChar[char.id] || { winner: null, total: 0 };
@@ -862,7 +870,7 @@ window.CharacterTitles = (function() {
 
       var imgHtml = char.portrait_url
         ? '<img src="'+esc(char.portrait_url)+'" class="ct-story-portrait" data-char="'+esc(char.id)+'" alt="'+esc(char.name)+'"/>'
-        : '<div class="ct-story-portrait-placeholder" data-char="'+esc(char.id)+'"><i class="ti ti-user" style="font-size:28px;"></i></div>';
+        : '<div class="ct-story-portrait-placeholder" data-char="'+esc(char.id)+'"><i class="ti ' + (isBook ? 'ti-book-2' : 'ti-user') + '" style="font-size:28px;"></i></div>';
 
       var endedBadge = char.status === 'ended'
         ? '<div class="ct-ended-badge"><i class="ti ti-skull"></i> ' + esc(char.ended_reason || 'No longer in story') + '</div>'
@@ -1021,7 +1029,7 @@ window.CharacterTitles = (function() {
       if (currentUserSession && !isOwner) {
         var confirmedSel = alreadyVoted ? ' confirmed' : '';
         auraPickerHtml =
-          '<div class="ct-aura-label"><i class="ti ti-droplet"></i> Character\'s Aura</div>' +
+          '<div class="ct-aura-label"><i class="ti ti-droplet"></i> ' + (isBook ? 'Book\'s Aura' : 'Character\'s Aura') + '</div>' +
           '<div style="font-size:10px;color:var(--text3);padding:0 12px 6px;line-height:1.5;">Pick the color that best reflects this character\'s soul — a feeling, not a fact. The most voted color shades their card.</div>' +
           '<div class="ct-aura-swatch-row" data-aura-char="'+esc(char.id)+'">' +
           AURA_PALETTE.map(function(p) {
@@ -1041,7 +1049,7 @@ window.CharacterTitles = (function() {
           (alreadyVoted ? buildAuraBreakdown(auraData.counts || {}, auraData.total) : '<div data-aura-breakdown-placeholder></div>');
       } else if (isOwner) {
         auraPickerHtml =
-          '<div class="ct-aura-label"><i class="ti ti-droplet"></i> Character\'s Aura</div>' +
+          '<div class="ct-aura-label"><i class="ti ti-droplet"></i> ' + (isBook ? 'Book\'s Aura' : 'Character\'s Aura') + '</div>' +
           '<div style="font-size:10px;color:var(--text3);padding:0 12px 8px;line-height:1.5;">Readers vote on the color that reflects this character\'s soul. The most popular choice tints their card.</div>' +
           (auraData.winner
             ? '<div class="ct-aura-voted"><div class="ct-aura-voted-dot" style="background:'+auraData.winner+';"></div> Leading: ' + (AURA_PALETTE.find(function(p){return p.hex===auraData.winner;})||{name:auraData.winner}).name + ' · ' + auraData.total + ' vote' + (auraData.total!==1?'s':'') + '</div>'
@@ -1057,13 +1065,13 @@ window.CharacterTitles = (function() {
           '<div class="ct-flip-front">' +
             '<div class="ct-story-char-top">' +
               imgHtml +
-              '<div class="ct-story-char-name">' + esc(char.name) + '</div>' +
+              '<div class="ct-story-char-name">' + esc(char.name) + (isBook ? ' <span class="ct-book-badge" style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--accent);background:rgba(45,212,191,0.12);border:1px solid rgba(45,212,191,0.3);border-radius:5px;padding:2px 6px;vertical-align:middle;margin-left:6px;"><i class=\'ti ti-book-2\'></i> Book Card</span>' : '') + '</div>' +
               endedBadge + editBtn +
             '</div>' +
-            '<div class="ct-story-titles-wrap">' + titlesHtml + '</div>' +
-            fanRowHtml +
-            impressionHtml +
-            dynChipHtml +
+            (isBook ? '' : '<div class="ct-story-titles-wrap">' + titlesHtml + '</div>') +
+            (isBook ? '' : fanRowHtml) +
+            (isBook ? '' : impressionHtml) +
+            (isBook ? '' : dynChipHtml) +
             featuredOpinionHtml +
             quoteStripHtml +
             featuredHtml +
@@ -1071,19 +1079,22 @@ window.CharacterTitles = (function() {
             fanArtHtml +
             (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
             (approvedOpinions.length ? '<button class="ct-flip-trigger ct-flip-opinions" title="View reader opinions" style="color:#ec4899;border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-heart"></i> ' + approvedOpinions.length + ' opinion' + (approvedOpinions.length > 1 ? 's' : '') + '</button>' : '') +
+            // Book Card only: opinions are chapter-scoped everywhere else, so the
+            // book card needs its own "share a take" entry (chapter-agnostic).
+            ((isBook && currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-book-take-btn" title="Share your take on this book" style="color:#ec4899;border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-plus"></i> Share a Take</button>' : '') +
             ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
             (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
             cosmeticTabBtn +
-            '<button class="ct-flip-trigger" data-open="dynamics" style="color:#38bdf8;border-color:rgba(56,189,248,0.35);"><i class="ti ti-arrows-left-right"></i>' + (charDyns.length ? ' ' + charDyns.length : ' Dynamics') + '</button>' +
+            (isBook ? '' : '<button class="ct-flip-trigger" data-open="dynamics" style="color:#38bdf8;border-color:rgba(56,189,248,0.35);"><i class="ti ti-arrows-left-right"></i>' + (charDyns.length ? ' ' + charDyns.length : ' Dynamics') + '</button>') +
             '<button class="ct-flip-trigger" data-open="quotes" style="color:#a78bfa;border-color:rgba(167,139,250,0.35);"><i class="ti ti-quote"></i>' + (charQuotes.length ? ' ' + charQuotes.length : ' Quotes') + ((isOwner && charPendQuotes) ? ' <span class="ct-pend-dot">' + charPendQuotes + '</span>' : '') + '</button>' +
-            '<button class="ct-flip-trigger" data-open="traits" style="color:#34d399;border-color:rgba(52,211,153,0.35);"><i class="ti ti-adjustments-horizontal"></i> Traits</button>' +
+            (isBook ? '' : '<button class="ct-flip-trigger" data-open="traits" style="color:#34d399;border-color:rgba(52,211,153,0.35);"><i class="ti ti-adjustments-horizontal"></i> Traits</button>') +
             '<button class="ct-flip-trigger" data-open="vibe" style="' + (moodHex ? 'color:'+moodHex+';border-color:'+moodHex+'55;' : '') + '"><i class="ti ti-mood-neutral"></i> Vibe</button>' +
             '<button class="ct-flip-trigger" data-open="ask" style="color:#fbbf24;border-color:rgba(251,191,36,0.35);"><i class="ti ti-help-circle"></i>' + (charAnsweredQs.length ? ' ' + charAnsweredQs.length : ' Ask') + ((isOwner && charPendQ) ? ' <span class="ct-pend-dot">' + charPendQ + '</span>' : '') + '</button>' +
           '</div>' +
           // BACK — Opinions
           '<div class="ct-flip-back" data-back="opinions" style="display:none;">' +
             '<div class="ct-flip-back-header">' +
-              '<div class="ct-flip-back-name"><i class="ti ti-message-heart" style="color:#ec4899;"></i> ' + esc(char.name) + '\u2019s Reader Takes</div>' +
+              '<div class="ct-flip-back-name"><i class="ti ti-message-heart" style="color:#ec4899;"></i> ' + (isBook ? 'Reader Takes on this Book' : esc(char.name) + '\u2019s Reader Takes') + '</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
             '<div class="ct-opinions-back-scroll">' +
@@ -1245,7 +1256,7 @@ window.CharacterTitles = (function() {
           // BACK — Ask the Character
           '<div class="ct-flip-back" data-back="ask" style="display:none;">' +
             '<div class="ct-flip-back-header">' +
-              '<div class="ct-flip-back-name"><i class="ti ti-help-circle" style="color:#fbbf24;"></i> Ask ' + esc(char.name) + '</div>' +
+              '<div class="ct-flip-back-name"><i class="ti ti-help-circle" style="color:#fbbf24;"></i> ' + (isBook ? 'Ask about this book' : 'Ask ' + esc(char.name)) + '</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
             '<div class="ct-exp-scroll">' +
@@ -1255,8 +1266,8 @@ window.CharacterTitles = (function() {
               }).join('') : '<div class="ct-exp-empty">No answered questions yet' + (currentUserSession && !isOwner ? ' \u2014 ask the first!' : '.') + '</div>') +
               (isOwner ? '<div data-pending-qs-slot="' + esc(char.id) + '"></div>' : '') +
               ((currentUserSession && !isOwner) ?
-                '<div class="ct-exp-form"><div class="ct-exp-form-title">Ask ' + esc(char.name) + ' a question</div>' +
-                '<textarea class="ct-exp-textarea" data-ask-text maxlength="500" rows="2" placeholder="The author answers in-character\u2026"></textarea>' +
+                '<div class="ct-exp-form"><div class="ct-exp-form-title">' + (isBook ? 'Ask the author about this book' : 'Ask ' + esc(char.name) + ' a question') + '</div>' +
+                '<textarea class="ct-exp-textarea" data-ask-text maxlength="500" rows="2" placeholder="' + (isBook ? 'The author answers about the story\u2026' : 'The author answers in-character\u2026') + '"></textarea>' +
                 '<button class="ct-exp-submit" data-ask-submit><i class="ti ti-send"></i> Ask</button></div>'
               : '') +
             '</div>' +
@@ -1522,6 +1533,15 @@ window.CharacterTitles = (function() {
         ssBtn.addEventListener('click', function(e) {
           e.stopPropagation();
           openSongModal(ssBtn.dataset.charId, ssBtn.dataset.charName, workId, currentUserSession.user.id);
+        });
+      }
+
+      // Wire Book Card "Share a Take" (opinion with no chapter)
+      var btBtn = card.querySelector('.ct-book-take-btn');
+      if (btBtn) {
+        btBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          openOpinionModal(char.id, char.name, null, workId, currentUserSession.user.id, true);
         });
       }
 
@@ -2256,7 +2276,7 @@ window.CharacterTitles = (function() {
   async function submitOpinion(characterId, chapterId, workId, userId, body) {
     var { error } = await db().from('character_opinions').insert({
       character_id: characterId,
-      chapter_id: chapterId,
+      chapter_id: chapterId || null,   // book-card takes are chapter-agnostic
       work_id: workId,
       user_id: userId,
       body: body.trim()
@@ -2277,19 +2297,21 @@ window.CharacterTitles = (function() {
 
   // ── OPINION MODAL ─────────────────────────────────────────────
   var _opinionModal = null;
-  function openOpinionModal(charId, charName, chapterId, workId, userId) {
+  var _ctIsBookOpinion = false;
+  function openOpinionModal(charId, charName, chapterId, workId, userId, isBook) {
+    _ctIsBookOpinion = !!isBook;
     if (_opinionModal) _opinionModal.remove();
     var modal = document.createElement('div');
     modal.className = 'ct-opinion-modal-overlay';
     modal.innerHTML =
       '<div class="ct-opinion-modal">' +
         '<div class="ct-opinion-modal-header">' +
-          '<div class="ct-opinion-modal-title"><i class="ti ti-message-heart"></i> Your Take on ' + esc(charName) + '</div>' +
+          '<div class="ct-opinion-modal-title"><i class="ti ti-message-heart"></i> ' + (_ctIsBookOpinion ? 'Your Take on this Book' : 'Your Take on ' + esc(charName)) + '</div>' +
           '<button class="ct-opinion-modal-close"><i class="ti ti-x"></i></button>' +
         '</div>' +
         '<div class="ct-opinion-modal-body">' +
-          '<div class="ct-opinion-hint">Share your personal take on ' + esc(charName) + ' based on what happened this chapter. One opinion per chapter — the author may feature it on the character card. Keep it honest, keep it kind.</div>' +
-          '<textarea class="ct-opinion-textarea" id="ct-opinion-body" maxlength="280" placeholder="What do you make of ' + esc(charName) + ' after this chapter?"></textarea>' +
+          '<div class="ct-opinion-hint">' + (_ctIsBookOpinion ? 'Share your overall take on this book. The author may feature it on the Book Card. Keep it honest, keep it kind.' : 'Share your personal take on ' + esc(charName) + ' based on what happened this chapter. One opinion per chapter — the author may feature it on the character card. Keep it honest, keep it kind.') + '</div>' +
+          '<textarea class="ct-opinion-textarea" id="ct-opinion-body" maxlength="280" placeholder="' + (_ctIsBookOpinion ? 'What did this book leave you with?' : 'What do you make of ' + esc(charName) + ' after this chapter?') + '"></textarea>' +
           '<div class="ct-opinion-char-counter"><span id="ct-opinion-counter">0</span>/280</div>' +
           '<div id="ct-opinion-error" style="color:var(--red);font-size:12px;display:none;"></div>' +
         '</div>' +

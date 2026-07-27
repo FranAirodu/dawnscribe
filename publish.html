@@ -443,6 +443,15 @@
           <textarea class="field-textarea" id="field-synopsis" placeholder="Hook your readers — tell them what your story is about without spoiling it." maxlength="30000" oninput="document.getElementById('synopsis-count').textContent=this.value.length+'/30000';updateChecklist();" style="min-height:200px;"></textarea>
           <div class="char-count" id="synopsis-count">0/30000</div>
         </div>
+        <div class="field-group" id="book-card-optin-group">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;">
+            <input type="checkbox" id="field-book-card" style="margin-top:2px;width:16px;height:16px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;"/>
+            <span>
+              <span style="font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;"><i class="ti ti-book-2" style="color:var(--accent);"></i> Add a Book Card</span>
+              <span style="font-size:11px;color:var(--text3);display:block;margin-top:3px;line-height:1.5;">Optional. Adds a card (shown first, before your characters) where readers can give the whole book an aura, theme song, reader takes, quotes, a vibe, and ask you about it. You can add or remove this anytime from the story page.</span>
+            </span>
+          </label>
+        </div>
         <div class="field-row" id="field-row-status-language" style="">
           <div class="field-group">
             <label class="field-label">Status <span class="required">*</span></label>
@@ -1022,7 +1031,7 @@
       document.title = 'DawnScribe — Post Artwork';
 
       // Hide novel-only sections
-      ['card-story-type','card-art-collab','card-story-collab','card-first-chapter','field-row-status-language'].forEach(function(id) {
+      ['card-story-type','card-art-collab','card-story-collab','card-first-chapter','field-row-status-language','book-card-optin-group'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
@@ -2500,6 +2509,22 @@
             throw chapterResult.error;
           }
           var chapterId = chapterResult.data.id;
+
+          // Optional Book Card — a novel_characters row flagged is_book_card so
+          // it flows through the same aura/song/take/quote/vibe/ask pipeline as
+          // characters, rendered first on the story page. Author opt-in.
+          try {
+            var wantBookCard = document.getElementById('field-book-card');
+            if (wantBookCard && wantBookCard.checked) {
+              await db.from('novel_characters').insert({
+                work_id: workId,
+                name: (workResult.data && workResult.data.title) || 'This Book',
+                portrait_url: (workResult.data && workResult.data.cover_url) || null,
+                is_book_card: true,
+                sort_order: -1
+              });
+            }
+          } catch(e) { console.warn('Book Card insert failed:', e); }
 
           // Save any characters staged while writing chapter 1 — this page only
           // ever runs before the work exists, so everything in ctCharacters is

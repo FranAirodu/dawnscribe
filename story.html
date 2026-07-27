@@ -666,7 +666,10 @@
 
       <!-- CHARACTER CARDS -->
       <div class="section ct-story-section" id="character-cards-section" style="display:none;">
-        <div class="ct-story-section-title"><i class="ti ti-users"></i> Characters</div>
+        <div class="ct-story-section-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span><i class="ti ti-users"></i> Character Cards</span>
+          <button id="book-card-toggle-btn" onclick="toggleBookCard()" style="display:none;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;padding:7px 13px;border-radius:8px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'"></button>
+        </div>
         <div id="character-cards-container"></div>
       </div>
 
@@ -2723,6 +2726,66 @@
       document.getElementById('delete-story-btn').addEventListener('click', openDeleteModal);
     }
 
+    // ── BOOK CARD TOGGLE (author only) ───────────────────────────
+    // The Book Card is a novel_characters row flagged is_book_card, so it
+    // flows through the same aura/song/opinion/quote/vibe/ask pipeline as
+    // characters — just rendered first and with character-only facets hidden.
+    var _bookCardId = null;
+    async function setupBookCardToggle(workId, work) {
+      var btn = document.getElementById('book-card-toggle-btn');
+      if (!btn) return;
+      try {
+        var { data } = await db.from('novel_characters')
+          .select('id').eq('work_id', workId).eq('is_book_card', true).maybeSingle();
+        _bookCardId = data ? data.id : null;
+      } catch(e) { _bookCardId = null; }
+      btn.style.display = 'inline-flex';
+      btn.innerHTML = _bookCardId
+        ? '<i class="ti ti-book-off"></i> Remove Book Card'
+        : '<i class="ti ti-book-2"></i> Add Book Card';
+      btn.dataset.workId = workId;
+      btn.dataset.workTitle = work.title || 'This Book';
+      btn.dataset.workCover = work.cover_url || '';
+    }
+
+    async function toggleBookCard() {
+      var btn = document.getElementById('book-card-toggle-btn');
+      if (!btn) return;
+      btn.disabled = true;
+      var workId = btn.dataset.workId;
+      try {
+        if (_bookCardId) {
+          // Remove — deletes the book-card character row. Its facet rows
+          // (aura/song/opinion/quote/vibe/ask votes) cascade or orphan per FK;
+          // this only removes the card, not any character data.
+          if (!confirm('Remove the Book Card? Its aura, songs, takes, quotes, vibe, and Q&A will be deleted.')) { btn.disabled = false; return; }
+          await db.from('novel_characters').delete().eq('id', _bookCardId);
+          _bookCardId = null;
+          showToast('Book Card removed', 'ti-check');
+        } else {
+          var ins = await db.from('novel_characters').insert({
+            work_id: workId,
+            name: btn.dataset.workTitle,
+            portrait_url: btn.dataset.workCover || null,
+            is_book_card: true,
+            sort_order: -1
+          }).select('id').maybeSingle();
+          if (ins.error) throw ins.error;
+          _bookCardId = ins.data ? ins.data.id : null;
+          showToast('Book Card added', 'ti-check');
+        }
+        // Re-render the cards to reflect the change
+        var ctContainer = document.getElementById('character-cards-container');
+        if (ctContainer && window.CharacterTitles) {
+          await CharacterTitles.renderStoryCharacterCards(ctContainer, workId, true, (workData && workData.author_id) || null);
+        }
+        await setupBookCardToggle(workId, workData || { title: btn.dataset.workTitle, cover_url: btn.dataset.workCover });
+      } catch(e) {
+        showToast('Could not update Book Card', 'ti-x');
+      }
+      btn.disabled = false;
+    }
+
     // ── DELETE MODAL ─────────────────────────────────────────────
     function openDeleteModal() {
       document.getElementById('del-confirm-input').value = '';
@@ -2936,7 +2999,10 @@
         if (ctContainer && ctSection) {
           window._ctSession = currentSession;
           await CharacterTitles.renderStoryCharacterCards(ctContainer, workId, isAuthor, workData.author_id);
-          if (ctContainer.innerHTML.trim()) ctSection.style.display = 'block';
+          // Show the section if it has any cards, OR if the author is viewing
+          // (so they can reach the "Add Book Card" control even with no chars).
+          if (ctContainer.innerHTML.trim() || isAuthor) ctSection.style.display = 'block';
+          if (isAuthor) await setupBookCardToggle(workId, workData);
         }
       }
 
