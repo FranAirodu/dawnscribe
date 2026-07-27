@@ -132,6 +132,14 @@
     .flame-counter{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px;background:rgba(240,192,64,0.08);border:1px solid rgba(240,192,64,0.35);color:#f0c040;}
     .btn-flame-give{background:linear-gradient(135deg,rgba(240,192,64,0.15),rgba(240,192,64,0.05));border:1px solid #f0c040;border-radius:20px;padding:5px 14px;color:#f0c040;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;margin-top:8px;margin-left:8px;transition:all 0.2s;}
     .btn-flame-give:hover{background:rgba(240,192,64,0.2);}
+    /* Clickable flame chip: click the flame itself to bestow. Highlighted = available
+       today; dimmed = already flamed today or no balance (click does nothing). */
+    .flame-give-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;margin-top:8px;margin-left:8px;transition:all 0.2s;user-select:none;}
+    .flame-give-chip.available{background:linear-gradient(135deg,rgba(240,192,64,0.15),rgba(240,192,64,0.05));border:1px solid #f0c040;color:#f0c040;cursor:pointer;}
+    .flame-give-chip.available:hover{background:rgba(240,192,64,0.28);box-shadow:0 0 10px rgba(240,192,64,0.35);}
+    .flame-give-chip.spent{background:rgba(120,120,130,0.08);border:1px solid rgba(140,140,150,0.3);color:var(--text3);cursor:default;}
+    .flame-give-chip .ti{font-size:14px;}
+    .flame-mine-count{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#f0c040;margin-left:8px;opacity:0.85;}
     .top-fan-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
     .top-fan-row:last-child{border-bottom:none;}
     .top-fan-rank{width:26px;text-align:center;font-size:14px;font-weight:700;color:var(--text2);}
@@ -1606,7 +1614,7 @@
     }
 
     // ─ ─ SPARK OF DAWN / RALLIES / CELESTIAL FLAMES ───────
-    var engageState = { sparkWeek: 0, sparkTotal: 0, sparkedToday: false, flameCount: 0, myFlames: 0, freeSparks: 0, activeRallies: 0, iAmRallying: false, scribeFlameCount: 0, infernalDawnCount: 0, myScribeFlames: 0, myInfernalDawns: 0, votedScribeThisMonth: false, votedInfernalThisYear: false };
+    var engageState = { sparkWeek: 0, sparkTotal: 0, sparkedToday: false, flameCount: 0, myFlames: 0, flamedToday: false, freeSparks: 0, activeRallies: 0, iAmRallying: false, scribeFlameCount: 0, infernalDawnCount: 0, myScribeFlames: 0, myInfernalDawns: 0, votedScribeThisMonth: false, votedInfernalThisYear: false };
 
     async function loadEngagementState() {
       engageState.sparkWeek       = workData.spark_count_week || 0;
@@ -1631,6 +1639,11 @@
       try {
         var fl = await db.from('user_celestial_flames').select('balance').eq('user_id', uid).maybeSingle();
         engageState.myFlames = (fl.data && fl.data.balance) || 0;
+      } catch(e) {}
+      try {
+        var todayF = new Date().toISOString().slice(0, 10);
+        var fg = await db.from('celestial_flame_gifts').select('id').eq('work_id', workData.id).eq('user_id', uid).eq('flame_date', todayF).maybeSingle();
+        engageState.flamedToday = !!(fg.data);
       } catch(e) {}
       try {
         var st = await db.from('user_streaks').select('free_sparks').eq('user_id', uid).maybeSingle();
@@ -1690,8 +1703,23 @@
       if (!wrap) return;
       var isOwner = currentSession && currentSession.user.id === workData.author_id;
       var html = '<div class="flame-counter" title="Celestial Flames \u2014 a rare honor bestowed by devoted readers"><i class="ti ti-flare"></i> ' + engageState.flameCount + ' Celestial Flame' + (engageState.flameCount !== 1 ? 's' : '') + '</div>';
-      if (currentSession && !isOwner && engageState.myFlames > 0) {
-        html += '<button class="btn-flame-give" onclick="submitFlame()" title="Bestow one of your ' + engageState.myFlames + ' Celestial Flame(s) on this novel"><i class="ti ti-flare"></i> Give a Flame (' + engageState.myFlames + ')</button>';
+      if (currentSession && !isOwner) {
+        // Click the flame itself to bestow. Available = has balance AND hasn't flamed
+        // this novel today. Once clicked it de-highlights and locks until tomorrow;
+        // clicking the dimmed flame does nothing.
+        var canFlame = engageState.myFlames > 0 && !engageState.flamedToday;
+        if (canFlame) {
+          html += '<span class="flame-give-chip available" onclick="submitFlame()" title="Bestow a Celestial Flame on this novel (one per day)"><i class="ti ti-flare"></i> Give a Flame</span>';
+        } else {
+          var whyDim = engageState.flamedToday
+            ? 'You\u2019ve given your Flame to this novel today \u2014 back tomorrow'
+            : 'You have no Celestial Flames to give';
+          html += '<span class="flame-give-chip spent" title="' + whyDim + '"><i class="ti ti-flare"></i> ' + (engageState.flamedToday ? 'Flame given today' : 'No Flames') + '</span>';
+        }
+        // Side count of the viewer's own Flame balance; hidden once they hit 0.
+        if (engageState.myFlames > 0) {
+          html += '<span class="flame-mine-count" title="Your Celestial Flame balance"><i class="ti ti-flare"></i> My Flames: ' + engageState.myFlames + '</span>';
+        }
       }
       wrap.innerHTML = html;
       renderVoteTallies();
@@ -1850,21 +1878,27 @@
 
     async function submitFlame() {
       if (!currentSession) { window.location.href = dsAuthNext(); return; }
+      // Dimmed flame is inert: already flamed today, or no balance.
+      if (engageState.flamedToday || engageState.myFlames < 1) return;
       try {
         var { data, error } = await db.rpc('give_celestial_flame', { p_work_id: workData.id });
         if (error || !data || !data.success) {
           var msg = (data && data.error) || (error && error.message) || 'Could not give flame';
           var friendly = {
             no_flames: 'You have no Celestial Flames to give.',
+            already_flamed_today: 'You\u2019ve already given your Flame to this novel today.',
             own_work: 'You can\u2019t bestow a Flame on your own novel.',
             not_authenticated: 'Please sign in first.',
             work_not_found: 'This work can\u2019t receive a Flame.'
           }[msg] || msg;
+          // If the server says already flamed today, sync the dimmed state.
+          if (msg === 'already_flamed_today') { engageState.flamedToday = true; renderFlameCounter(); }
           showToast(friendly, 'ti-x');
           return;
         }
         engageState.flameCount = data.celestial_flame_count;
         engageState.myFlames = data.balance;
+        engageState.flamedToday = true;
         showToast('Celestial Flame bestowed! ✨', 'ti-flare');
         renderFlameCounter();
         loadTopFans();
