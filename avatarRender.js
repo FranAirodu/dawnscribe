@@ -100,8 +100,8 @@
   //   { "pose1": {"x":118,"y":84,"w":84,"h":84} }
   // Falls back to these defaults when the preset has no override.
   var DEFAULT_HEAD_CROPS = {
-    pose1: { x: 118, y: 20, w: 92, h: 92 },
-    pose2: { x: 111, y: 16, w: 92, h: 92 }
+    pose1: { x: 122, y: 110, w: 85, h: 85 },
+    pose2: { x: 115, y: 107, w: 85, h: 85 }
   };
 
   function getHeadCrop(preset, pose) {
