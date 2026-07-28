@@ -1359,14 +1359,10 @@
       if (!isChapterRead()) {
         // Save to Supabase FIRST — only mark locally once confirmed (or if logged out)
         if (currentSession) {
-          await db.from('reading_progress').upsert({
-            user_id: currentSession.user.id,
-            work_id: workData.id,
-            chapter_id: chapterData.id,
-            chapter_number: chapterData.chapter_number,
-            completed: true,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id,chapter_id' });
+          // Completion is recorded server-side: the RPC derives work_id,
+          // chapter_number and updated_at from the stored chapter, so read
+          // state cannot be forged or backdated from the client.
+          await db.rpc('record_chapter_read', { p_chapter_id: chapterData.id });
         }
         markChapterRead();
 

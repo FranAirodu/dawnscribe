@@ -1346,7 +1346,6 @@ window.CharacterTitles = (function() {
             fanVoteBtn.innerHTML = '<i class="ti ti-heart"></i> Voted today';
             fanVoteBtn.style.background = 'rgba(236,72,153,0.18)';
             fanVoteBtn.style.cursor = 'default';
-            try { await db().rpc('award_beloved_character_badge', { p_author_id: workAuthorId, p_character_id: char.id }); } catch(e) {}
           } catch(err) {
             fanVoteBtn.disabled = false;
             fanVoteBtn.innerHTML = '<i class="ti ti-heart"></i> Fan Vote';
