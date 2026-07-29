@@ -1004,7 +1004,7 @@ function dsApplyAccent(hex) {
       if(username){ dsSetOwnWorkLinks(username); }
 
       // Always fetch profile by uid — metadata may be missing/stale
-      var res = await db.from('profiles').select('avatar_url,display_name,username,id,account_status').eq('id',session.user.id).maybeSingle();
+      var res = await db.from('profiles').select('avatar_url,display_name,username,id,account_status,timezone').eq('id',session.user.id).maybeSingle();
 
       // ── BAN CHECK ────────────────────────────────────────────────
       // This is the authoritative site-wide enforcement of the banned state.
@@ -1033,6 +1033,25 @@ function dsApplyAccent(hex) {
           avatarBtn.innerHTML = '<img src="'+res.data.avatar_url+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
         }
       }
+
+      // ── TIMEZONE CAPTURE (sitewide, best-effort) ────────────────
+      // Night Owl (and any future local-time badge) evaluates "night" in the
+      // reader's own timezone via profiles.timezone. Capture the browser IANA
+      // zone and store it, but ONLY when it differs from what's already saved —
+      // so a stable user writes zero times after the first load, and a traveler
+      // writes only on change. Fire-and-forget: never blocks nav, never throws.
+      // The set_my_timezone RPC re-validates against pg_timezone_names and has
+      // its own IS DISTINCT FROM no-write guard, so a bad or unchanged value is
+      // a safe no-op even if this client gate is bypassed.
+      (function dsCaptureTimezone(){
+        try {
+          var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (!tz) return;
+          var saved = (res && res.data) ? res.data.timezone : null;
+          if (tz === saved) return; // unchanged — skip the write entirely
+          db.rpc('set_my_timezone', { p_tz: tz }).then(function(){}, function(){});
+        } catch(e) { /* timezone capture is never worth an error */ }
+      })();
 
       // ── SVG AVATAR HEADSHOT (sitewide) ──────────────────────────
       // Overrides the photo pfp with the user's customized avatar face.
