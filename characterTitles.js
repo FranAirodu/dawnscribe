@@ -865,6 +865,12 @@ window.CharacterTitles = (function() {
         ? '<button class="ct-submit-fanart-btn" data-fanart-char="' + esc(char.id) + '" data-fanart-name="' + esc(char.name) + '"><i class="ti ti-photo-up"></i> Submit fan art</button>'
         : '';
 
+      // "Add book landscape" \u2014 book card only. Any signed-in user can submit a
+      // wide scenic background for author review; opens story.html's landscape modal.
+      var addLandscapeBtnHtml = (isBook && currentUserSession && typeof window.openLandscapeModal === 'function')
+        ? '<button class="ct-add-landscape-btn" data-landscape-work="' + esc(workId) + '"><i class="ti ti-mountain"></i> Add book landscape</button>'
+        : '';
+
       var charTraits = EXP.traits[char.id] || {};
       var traitsVoteCount = Object.keys(charTraits).reduce(function(n,k){ return n + charTraits[k].count; }, 0);
       var charAnsweredQs = (EXP.qs[char.id] || []).sort(function(a,b){ return (b.is_pinned?1:0) - (a.is_pinned?1:0) || (a.created_at < b.created_at ? 1 : -1); });
@@ -1085,6 +1091,7 @@ window.CharacterTitles = (function() {
             collabsHtml +
             fanArtHtml +
             submitFanArtBtnHtml +
+            addLandscapeBtnHtml +
             (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
             (approvedOpinions.length ? '<button class="ct-flip-trigger ct-flip-opinions" title="View reader opinions" style="color:#ec4899;border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-heart"></i> ' + approvedOpinions.length + ' opinion' + (approvedOpinions.length > 1 ? 's' : '') + '</button>' : '') +
             // Book Card only: opinions are chapter-scoped everywhere else, so the
@@ -1560,6 +1567,17 @@ window.CharacterTitles = (function() {
           e.stopPropagation();
           if (typeof window.openCollabModal === 'function') {
             window.openCollabModal(faBtn.dataset.fanartChar);
+          }
+        });
+      }
+
+      // Wire add book landscape button -> opens story.html's landscape modal
+      var lsBtn = card.querySelector('.ct-add-landscape-btn');
+      if (lsBtn) {
+        lsBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          if (typeof window.openLandscapeModal === 'function') {
+            window.openLandscapeModal(lsBtn.dataset.landscapeWork);
           }
         });
       }

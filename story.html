@@ -828,6 +828,29 @@
       </div>
     </div>
   </div>
+
+  <div class="collab-modal-backdrop" id="landscape-modal-backdrop">
+    <div class="collab-modal">
+      <h3><i class="ti ti-mountain" style="color:#34d399;"></i> Add Book Landscape</h3>
+      <p>Submit a wide scenic background for this novel. Approved landscapes appear behind the title at the top of the story page \u2014 if several are approved they cross-fade in rotation. The author reviews every submission.</p>
+      <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text2);line-height:1.6;">
+        <div style="font-weight:700;color:#34d399;margin-bottom:4px;"><i class="ti ti-photo"></i> Size requirements</div>
+        Recommended <strong>1920 &times; 640&nbsp;px</strong> (3:1 landscape). Wide, horizon-style images work best \u2014 the top and bottom edges are dimmed by an overlay. Formats: JPG, PNG or WebP &middot; Max&nbsp;5MB.
+      </div>
+      <div class="collab-drop-zone" id="landscape-drop-zone" onclick="document.getElementById('landscape-file-input').click()">
+        <i class="ti ti-photo-up" style="font-size:28px;display:block;margin-bottom:8px;"></i>
+        Click to select an image or drag and drop here
+      </div>
+      <input type="file" id="landscape-file-input" accept="image/*" style="display:none;"/>
+      <img id="landscape-preview" class="collab-preview" alt="preview"/>
+      <label class="collab-field-label">About this landscape <span>(optional)</span></label>
+      <textarea class="collab-textarea" id="landscape-description" rows="2" maxlength="280" placeholder="The setting or scene this depicts\u2026"></textarea>
+      <div class="collab-modal-btns">
+        <button class="collab-cancel-btn" onclick="closeLandscapeModal()">Cancel</button>
+        <button class="collab-submit-btn" id="landscape-submit-btn" onclick="submitLandscape()" disabled><i class="ti ti-upload"></i> Submit</button>
+      </div>
+    </div>
+  </div>
   <!-- Collab detail modal -->
   <div class="collab-detail-backdrop" id="collab-detail-backdrop">
     <div class="collab-detail-modal">
@@ -1053,12 +1076,10 @@
       }
 
       // ── NOVEL MODE ───────────────────────────────────────────────
-      var bannerUrl = authors[0] && authors[0].banner_url;
-      if (bannerUrl) {
-        var bannerImg = document.getElementById('hero-banner-img');
-        bannerImg.src = bannerUrl;
-        bannerImg.style.display = 'block';
-      }
+      var bannerUrl = (authors[0] && authors[0].banner_url) || null;
+      // Approved book landscapes override the author banner (cycling if multiple);
+      // falls back to the author's banner when there are none.
+      loadLandscapes(work.id, bannerUrl);
 
       // Cover
       if (work.cover_url) {
@@ -3561,6 +3582,79 @@
       if (collabId) { setTimeout(function(){ loadCollabComments(collabId); }, 200); }
     }
 
+    // \u2500\u2500 BOOK LANDSCAPES \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    var landscapeFileData = null;
+    var landscapeTimer = null;
+    async function loadLandscapes(workId, fallbackUrl) {
+      var bannerImg = document.getElementById('hero-banner-img');
+      if (!bannerImg) return;
+      var urls = [];
+      try {
+        var { data } = await db.from('story_landscapes')
+          .select('image_url').eq('work_id', workId).eq('status','approved')
+          .order('sort_order',{ascending:true}).order('created_at',{ascending:true});
+        urls = (data||[]).map(function(l){ return l.image_url; }).filter(Boolean);
+      } catch(e) {}
+      if (landscapeTimer) { clearInterval(landscapeTimer); landscapeTimer = null; }
+      if (!urls.length) {
+        if (fallbackUrl) { bannerImg.src = fallbackUrl; bannerImg.style.display = 'block'; }
+        return;
+      }
+      bannerImg.style.transition = 'opacity 0.8s ease';
+      bannerImg.style.opacity = '1';
+      var idx = Math.floor(Math.random() * urls.length);
+      bannerImg.src = urls[idx];
+      bannerImg.style.display = 'block';
+      if (urls.length > 1) {
+        landscapeTimer = setInterval(function(){
+          idx = (idx + 1) % urls.length;
+          bannerImg.style.opacity = '0';
+          setTimeout(function(){ bannerImg.src = urls[idx]; bannerImg.style.opacity = '1'; }, 800);
+        }, 8000);
+      }
+    }
+
+    window.openLandscapeModal = function(){ return openLandscapeModal(); };
+    function openLandscapeModal() {
+      if(!currentSession){ window.location.href=dsAuthNext(); return; }
+      if(!workData){ return; }
+      landscapeFileData=null;
+      document.getElementById('landscape-preview').style.display='none';
+      document.getElementById('landscape-submit-btn').disabled=true;
+      document.getElementById('landscape-drop-zone').innerHTML='<i class="ti ti-photo-up" style="font-size:28px;display:block;margin-bottom:8px;"></i>Click to select an image or drag and drop here';
+      document.getElementById('landscape-description').value='';
+      document.getElementById('landscape-modal-backdrop').classList.add('show');
+    }
+    function closeLandscapeModal(){ document.getElementById('landscape-modal-backdrop').classList.remove('show'); }
+
+    async function submitLandscape() {
+      if(!landscapeFileData||!currentSession||!workData) return;
+      var btn=document.getElementById('landscape-submit-btn'); btn.disabled=true; btn.innerHTML='<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Uploading\u2026';
+      var desc=document.getElementById('landscape-description').value.trim();
+      try {
+        var ext=landscapeFileData.name.split('.').pop();
+        var path=currentSession.user.id+'/landscape-'+workData.id+'-'+Date.now()+'.'+ext;
+        var { error: upErr }=await db.storage.from('collab-art').upload(path,landscapeFileData,{upsert:false});
+        if(upErr) throw upErr;
+        var { data: urlData }=db.storage.from('collab-art').getPublicUrl(path);
+        var { error: dbErr }=await db.from('story_landscapes').insert({work_id:workData.id,artist_id:currentSession.user.id,image_url:urlData.publicUrl,status:'pending',description:desc||null});
+        if(dbErr) throw dbErr;
+        if(workData.author_id && workData.author_id !== currentSession.user.id){
+          var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id',currentSession.user.id).maybeSingle();
+          var myName = myProf ? (myProf.display_name||myProf.username||'Someone') : 'Someone';
+          try { await db.from('notifications').insert({
+            user_id: workData.author_id,
+            type: 'collab_request',
+            from_user_id: currentSession.user.id,
+            work_id: workData.id,
+            message: myName + ' submitted a book landscape for "' + workData.title + '". Tap to review.'
+          }); } catch(e) {}
+        }
+        closeLandscapeModal(); showToast('Landscape submitted! Waiting for the author to approve.','ti-clock');
+      } catch(e){ showToast('Upload failed: '+(e.message||'Unknown error'),'ti-x'); }
+      btn.disabled=false; btn.innerHTML='<i class="ti ti-upload"></i> Submit';
+    }
+
     window.openCollabModal = function(cid){ return openCollabModal(cid); };
     function openCollabModal(preselectCharId) {
       if(!currentSession){ window.location.href=dsAuthNext(); return; }
@@ -3661,6 +3755,12 @@
       function handleFile(file){ if(!file||!file.type.startsWith('image/')) return; if(file.size > 5 * 1024 * 1024){ showToast('Image must be under 5MB', 'ti-alert-triangle'); return; } collabFileData=file; var reader=new FileReader(); reader.onload=function(e){ preview.src=e.target.result; preview.style.display='block'; document.getElementById('collab-submit-btn').disabled=false; dropZone.innerHTML='<i class="ti ti-check" style="color:var(--accent);font-size:20px;display:block;margin-bottom:6px;"></i> Image ready'; }; reader.readAsDataURL(file); }
       if(fileInput) fileInput.addEventListener('change',function(){ handleFile(this.files[0]); });
       if(dropZone){ dropZone.addEventListener('dragover',function(e){ e.preventDefault(); this.classList.add('drag-over'); }); dropZone.addEventListener('dragleave',function(){ this.classList.remove('drag-over'); }); dropZone.addEventListener('drop',function(e){ e.preventDefault(); this.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); }); }
+      // Landscape modal wiring
+      var lb=document.getElementById('landscape-modal-backdrop'); if(lb) lb.addEventListener('click',function(e){ if(e.target===this) closeLandscapeModal(); });
+      var lFileInput=document.getElementById('landscape-file-input'); var lDropZone=document.getElementById('landscape-drop-zone'); var lPreview=document.getElementById('landscape-preview');
+      function handleLandscapeFile(file){ if(!file||!file.type.startsWith('image/')) return; if(file.size > 5 * 1024 * 1024){ showToast('Image must be under 5MB', 'ti-alert-triangle'); return; } landscapeFileData=file; var reader=new FileReader(); reader.onload=function(e){ lPreview.src=e.target.result; lPreview.style.display='block'; document.getElementById('landscape-submit-btn').disabled=false; lDropZone.innerHTML='<i class="ti ti-check" style="color:var(--accent);font-size:20px;display:block;margin-bottom:6px;"></i> Image ready'; }; reader.readAsDataURL(file); }
+      if(lFileInput) lFileInput.addEventListener('change',function(){ handleLandscapeFile(this.files[0]); });
+      if(lDropZone){ lDropZone.addEventListener('dragover',function(e){ e.preventDefault(); this.classList.add('drag-over'); }); lDropZone.addEventListener('dragleave',function(){ this.classList.remove('drag-over'); }); lDropZone.addEventListener('drop',function(e){ e.preventDefault(); this.classList.remove('drag-over'); handleLandscapeFile(e.dataTransfer.files[0]); }); }
     });
 
   </script>

@@ -199,6 +199,7 @@
     function showError(msg){ document.getElementById('page-wrap').innerHTML='<div class="state-wrap"><div class="state-icon"><i class="ti ti-alert-circle"></i></div><div class="state-title">Oops</div><div class="state-body">'+msg+'</div></div>'; }
 
     var isFanArtFlow = false;
+    var isLandscapeFlow = false;
 
     async function init(){
       var params = new URLSearchParams(window.location.search);
@@ -226,6 +227,25 @@
         authorProfile = artistProf || {};
         document.getElementById('back-btn').href = 'story.html?id=' + nov.id;
         renderFanArtPage(nov);
+        return;
+      }
+
+      // ── BOOK LANDSCAPE ON NOVEL flow
+      var landscapeId = params.get('landscape');
+      if(landscapeId){
+        isLandscapeFlow = true;
+        var { data: ls } = await db.from('story_landscapes').select('*').eq('id', landscapeId).maybeSingle();
+        if(!ls){ showError('Landscape submission not found.'); return; }
+        collabData = ls; collabId = ls.id;
+        var { data: lnov } = await db.from('works').select('*').eq('id', ls.work_id).maybeSingle();
+        if(!lnov){ showError('Novel not found.'); return; }
+        novelData = lnov;
+        if(lnov.author_id !== s.user.id){ showError("You don't have permission to review this request."); return; }
+        if(ls.status !== 'pending'){ renderAlreadyDecidedFanArt(ls.status, lnov.id); return; }
+        var { data: lArtistProf } = await db.from('profiles').select('id,username,display_name,avatar_url').eq('id', ls.artist_id).maybeSingle();
+        authorProfile = lArtistProf || {};
+        document.getElementById('back-btn').href = 'story.html?id=' + lnov.id;
+        renderLandscapePage(lnov);
         return;
       }
 
@@ -317,6 +337,37 @@
         '<div class="state-wrap"><div class="state-icon" style="color:' + color + '"><i class="ti ' + icon + '"></i></div>'
         + '<div class="state-title">' + label + '</div>'
         + '<a href="story.html?id=' + esc(novelId) + '" style="display:inline-flex;align-items:center;gap:6px;margin-top:24px;color:var(--accent);text-decoration:none;font-size:14px;font-weight:700;"><i class="ti ti-arrow-left"></i> Back to novel</a>'
+        + '</div>';
+    }
+
+    function renderLandscapePage(novel){
+      var artistName = authorProfile.display_name || authorProfile.username || 'Artist';
+      var avHtml = authorProfile.avatar_url ? '<img src="' + esc(authorProfile.avatar_url) + '" alt=""/>' : (artistName[0]||'?').toUpperCase();
+      var wrap = document.getElementById('page-wrap');
+      wrap.innerHTML =
+        '<div class="review-banner" style="background:rgba(52,211,153,0.07);border-color:rgba(52,211,153,0.3);">'
+          + '<div class="review-banner-icon" style="background:rgba(52,211,153,0.12);color:#34d399;"><i class="ti ti-mountain"></i></div>'
+          + '<div class="review-banner-text"><h2 style="color:#34d399;">Book Landscape Review</h2>'
+          + '<p>Review the scenic background submitted for your novel. Approved landscapes appear behind the title on your story page; if several are approved they cross-fade in rotation.</p>'
+          + '</div></div>'
+        + '<div class="artwork-strip">'
+          + '<div class="artwork-strip-img" style="width:auto;">'
+            + (collabData.image_url ? '<img class="fanart-img-thumb" src="' + esc(collabData.image_url) + '" alt="Landscape" onclick="openLightbox(' + JSON.stringify(collabData.image_url) + ')" title="Click to expand" style="max-width:340px;"/>' : '<i class="ti ti-mountain"></i>')
+          + '</div>'
+          + '<div style="flex:1;">'
+            + (collabData.image_url ? '<div style="font-size:10px;color:var(--text3);margin-bottom:6px;"><i class="ti ti-zoom-in" style="font-size:11px;"></i> Click image to expand</div>' : '')
+            + '<div class="artwork-strip-label">Landscape Submission</div>'
+            + '<div class="artwork-strip-title">' + esc(collabData.description || 'Book landscape') + '</div>'
+            + '<div class="artwork-strip-artist">by <strong>' + esc(artistName) + '</strong> &middot; for <strong>' + esc(novel.title) + '</strong></div>'
+          + '</div>'
+          + '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">'
+            + '<div style="width:36px;height:36px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--text2);overflow:hidden;">' + avHtml + '</div>'
+            + '<span style="font-size:13px;font-weight:700;color:var(--text);">' + esc(artistName) + '</span>'
+          + '</div>'
+        + '</div>'
+        + '<div style="display:flex;justify-content:center;gap:14px;margin-top:32px;">'
+          + '<button class="approve-btn" id="approve-btn" onclick="confirmApprove()"><i class="ti ti-check"></i> Approve</button>'
+          + '<button class="deny-btn" id="deny-btn" onclick="openDenyModal()"><i class="ti ti-x"></i> Deny</button>'
         + '</div>';
     }
 
@@ -455,6 +506,31 @@
       btn.disabled = true; if(denyBtn) denyBtn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Approving…';
 
+      if(isLandscapeFlow){
+        if(!collabData.image_url){
+          showToast('Cannot approve: landscape has no image attached.', 'ti-alert-circle');
+          btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return;
+        }
+        var lres = await db.rpc('review_landscape', { p_landscape_id: collabId, p_status: 'approved' });
+        var lerr = lres.error; if(!lerr && lres.data && lres.data.ok === false) lerr = { message: lres.data.error || 'Not permitted' };
+        if(lerr){ showToast('Failed to approve: ' + lerr.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
+        if(collabData.artist_id && collabData.artist_id !== session.user.id){
+          var { data: myProfL } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
+          var myNameL = myProfL ? (myProfL.display_name || myProfL.username || 'Someone') : 'Someone';
+          try {
+            var rpcL = await db.rpc('get_or_create_conversation', { user_a: session.user.id, user_b: collabData.artist_id });
+            if(!rpcL.error && rpcL.data){
+              var msgL = '\uD83C\uDFD4\uFE0F ' + myNameL + ' approved your book landscape for "' + (novelData.title||'Untitled') + '"! It is now live behind the title on the story page.';
+              await db.from('messages').insert({ conversation_id: rpcL.data, sender_id: session.user.id, content: msgL });
+              await db.from('conversations').update({ last_message: msgL, last_message_at: new Date().toISOString() }).eq('id', rpcL.data);
+            }
+          } catch(e){}
+        }
+        showToast('Landscape approved!', 'ti-check');
+        setTimeout(function(){ window.location.href = 'story.html?id=' + novelData.id; }, 1500);
+        return;
+      }
+
       if(isFanArtFlow){
         if(!collabData.image_url){
           showToast('Cannot approve: fan art has no image attached.', 'ti-alert-circle');
@@ -527,7 +603,7 @@
       // Update description to match flow (don't wipe existing reason text)
       var descEl = document.getElementById('deny-modal-desc');
       if(descEl){
-        descEl.textContent = isFanArtFlow
+        descEl.textContent = (isFanArtFlow || isLandscapeFlow)
           ? 'Let the artist know why you\'re declining. Your reason will be sent to them as a direct message.'
           : 'Let the author know why you\'re declining. Your reason will be sent to them as a direct message.';
       }
@@ -567,6 +643,28 @@
       var btn = document.getElementById('deny-confirm-btn');
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Sending…';
+
+      if(isLandscapeFlow){
+        var ldres = await db.rpc('review_landscape', { p_landscape_id: collabId, p_status: 'rejected' });
+        var lderr = ldres.error; if(!lderr && ldres.data && ldres.data.ok === false) lderr = { message: ldres.data.error || 'Not permitted' };
+        if(lderr){ showToast('Failed: ' + lderr.message, 'ti-alert-circle'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Send & Deny'; return; }
+        if(collabData.artist_id && collabData.artist_id !== session.user.id){
+          var { data: myProfLD } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
+          var myNameLD = myProfLD ? (myProfLD.display_name || myProfLD.username || 'Someone') : 'Someone';
+          try {
+            var rpcLD = await db.rpc('get_or_create_conversation', { user_a: session.user.id, user_b: collabData.artist_id });
+            if(!rpcLD.error && rpcLD.data){
+              var dmL = myNameLD + ' declined your book landscape for "' + (novelData.title||'Untitled') + '".\n\nReason: ' + reason;
+              await db.from('messages').insert({ conversation_id: rpcLD.data, sender_id: session.user.id, content: dmL });
+              await db.from('conversations').update({ last_message: dmL, last_message_at: new Date().toISOString() }).eq('id', rpcLD.data);
+            }
+          } catch(e){}
+        }
+        closeDenyModal();
+        showToast('Landscape denied. Reason sent to artist.', 'ti-x');
+        setTimeout(function(){ window.location.href = 'story.html?id=' + novelData.id; }, 1800);
+        return;
+      }
 
       var { error } = isFanArtFlow ? await db.from('story_collabs').update({ status: 'rejected' }).eq('id', collabId) : await db.from('artwork_collabs').update({ status: 'rejected' }).eq('id', collabId);
       if(error){ showToast('Failed: ' + error.message, 'ti-alert-circle'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Send & Deny'; return; }

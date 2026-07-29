@@ -141,7 +141,7 @@
   async function deleteInboxDeclined(collabId, tableKey, rowEl){
     if(!confirm('Remove this declined submission from your inbox?')) return;
     // tableKey 'story' = artwork_collabs row; tableKey 'fanart' = story_collabs row
-    var tbl = tableKey === 'story' ? 'artwork_collabs' : 'story_collabs';
+    var tbl = tableKey === 'story' ? 'artwork_collabs' : (tableKey === 'landscape' ? 'story_landscapes' : 'story_collabs');
     var { error } = await db.from(tbl).delete().eq('id', collabId);
     if(error){ showToast('Failed to delete: ' + error.message, 'ti-x'); return; }
     if(rowEl){ rowEl.style.transition='opacity 0.3s,transform 0.3s'; rowEl.style.opacity='0'; rowEl.style.transform='translateX(-12px)'; setTimeout(function(){ rowEl.remove(); },300); }
@@ -230,8 +230,19 @@
       artRequests = ar || [];
     }
 
+    // ── LANDSCAPE SUBMISSIONS ON YOUR NOVELS
+    // Table: story_landscapes — artist submits a scenic background for your novel
+    var landscapeRequests = [];
+    if(myNovelIds.length){
+      var { data: lr } = await db.from('story_landscapes')
+        .select('id, work_id, artist_id, image_url, description, status, created_at')
+        .in('work_id', myNovelIds)
+        .order('created_at', { ascending: false });
+      landscapeRequests = lr || [];
+    }
+
     // Artist profiles for artwork requests
-    var artistIds = [...new Set(artRequests.map(function(r){ return r.artist_id; }).filter(Boolean))];
+    var artistIds = [...new Set(artRequests.concat(landscapeRequests).map(function(r){ return r.artist_id; }).filter(Boolean))];
     var artistMap = {};
     if(artistIds.length){
       var { data: artists } = await db.from('profiles').select('id, username, display_name').in('id', artistIds);
@@ -437,6 +448,101 @@
       s3b.appendChild(s3bheader);
       s3b.appendChild(s3bbody);
       content.appendChild(s3b);
+    }
+
+    // ── SECTION 4: Book landscapes on your novels (pending/reviewed split)
+    var validLand = landscapeRequests.filter(function(r){ return !!novelMap[r.work_id]; });
+    var pendingLand = validLand.filter(function(r){ return r.status === 'pending'; });
+    var decidedLand = validLand.filter(function(r){ return r.status !== 'pending'; });
+
+    // Section 4a — Pending landscapes
+    if(myNovelIds.length){
+      var s4 = document.createElement('div');
+      s4.className = 'section';
+      s4.innerHTML =
+        '<div class="section-header">'
+          + '<div class="section-icon teal"><i class="ti ti-mountain"></i></div>'
+          + '<div class="section-title">Book Landscapes — Pending</div>'
+          + '<div class="section-count' + (pendingLand.length ? '' : ' zero') + '">' + pendingLand.length + ' pending</div>'
+        + '</div>';
+      var s4body = document.createElement('div');
+      if(!pendingLand.length){
+        s4body.innerHTML = '<div class="empty"><i class="ti ti-mountain"></i><p>No pending landscape submissions.</p></div>';
+      } else {
+        pendingLand.forEach(function(row){
+          var novel = novelMap[row.work_id] || {};
+          var artist = artistMap[row.artist_id] || {};
+          var artistName = artist.display_name || artist.username || 'Artist';
+          var stale = isStale(row.created_at);
+          var div = document.createElement('div');
+          div.className = 'collab-row pending' + (stale ? ' stale' : '');
+          div.innerHTML =
+            '<div class="collab-cover">'
+              + (row.image_url ? '<img src="' + esc(row.image_url) + '" alt=""/>' : '<i class="ti ti-mountain"></i>')
+            + '</div>'
+            + '<div class="collab-info">'
+              + '<div class="collab-title">' + esc(row.description || 'Book landscape') + '</div>'
+              + '<div class="collab-meta">by <em>' + esc(artistName) + '</em> for your novel <em>' + esc(novel.title || 'Untitled') + '</em></div>'
+              + '<div class="collab-meta" style="margin-top:3px;">' + esc(timeAgo(row.created_at)) + (stale ? ' &nbsp;<span class="stale-chip">\u23f3 Awaiting your review</span>' : '') + '</div>'
+            + '</div>'
+            + '<div class="collab-actions">'
+              + '<a class="btn-view" href="story.html?id=' + esc(row.work_id) + '" title="View your novel"><i class="ti ti-book"></i> Novel</a>'
+              + '<a class="btn-review" href="collab-review.html?landscape=' + esc(row.id) + '&novel=' + esc(row.work_id) + '"><i class="ti ti-eye"></i> Review</a>'
+            + '</div>';
+          s4body.appendChild(div);
+        });
+      }
+      s4.appendChild(s4body);
+      content.appendChild(s4);
+    }
+
+    // Section 4b — Reviewed landscapes
+    if(decidedLand.length){
+      var s4b = document.createElement('div');
+      s4b.className = 'section';
+      var s4bheader = document.createElement('div');
+      s4bheader.className = 'section-header';
+      s4bheader.innerHTML =
+        '<div class="section-icon teal"><i class="ti ti-history"></i></div>'
+        + '<div class="section-title">Book Landscapes — Reviewed</div>';
+      var s4bbody = document.createElement('div');
+      decidedLand.forEach(function(row){
+        var novel = novelMap[row.work_id] || {};
+        var artist = artistMap[row.artist_id] || {};
+        var artistName = artist.display_name || artist.username || 'Artist';
+        var div = document.createElement('div');
+        div.className = 'collab-row';
+        var deleteBtn = '';
+        if(row.status !== 'approved'){
+          var rowId = JSON.stringify(row.id);
+          deleteBtn = '<button class="btn-delete" onclick="deleteInboxDeclined(' + rowId + ',\'landscape\',this.closest(\'.collab-row\'))"><i class="ti ti-trash"></i> Delete</button>';
+        }
+        div.innerHTML =
+          '<div class="collab-cover">'
+            + (row.image_url ? '<img src="' + esc(row.image_url) + '" alt=""/>' : '<i class="ti ti-mountain"></i>')
+          + '</div>'
+          + '<div class="collab-info">'
+            + '<div class="collab-title">' + esc(row.description || 'Book landscape') + '</div>'
+            + '<div class="collab-meta">by <em>' + esc(artistName) + '</em> for your novel <em>' + esc(novel.title || 'Untitled') + '</em></div>'
+            + '<div class="collab-meta" style="margin-top:2px;">' + esc(timeAgo(row.created_at)) + '</div>'
+            + (row.status === 'approved' ? '<div class="collab-meta" style="margin-top:3px;"><a href="story.html?id=' + esc(row.work_id) + '" style="color:var(--accent);font-size:12px;text-decoration:none;"><i class="ti ti-external-link"></i> View novel</a></div>' : '')
+          + '</div>'
+          + '<div class="collab-actions">'
+            + (row.status === 'approved'
+              ? '<span class="badge-approved"><i class="ti ti-check"></i> Approved</span>'
+              : '<span class="badge-rejected"><i class="ti ti-x"></i> Declined</span>' + deleteBtn)
+          + '</div>';
+        s4bbody.appendChild(div);
+      });
+      var s4bcount = document.createElement('div');
+      s4bcount.className = 'section-count' + (decidedLand.length ? '' : ' zero');
+      s4bcount.textContent = decidedLand.length;
+      var s4btoggle = makeToggle(s4bbody, 'Show reviewed (' + decidedLand.length + ')');
+      s4bheader.appendChild(s4bcount);
+      s4bheader.appendChild(s4btoggle);
+      s4b.appendChild(s4bheader);
+      s4b.appendChild(s4bbody);
+      content.appendChild(s4b);
     }
 
     } catch(err) {
