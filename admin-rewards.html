@@ -354,7 +354,7 @@
     <div id="grantbadge-mode" style="display:none;">
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:20px;">
         <div class="form-section-title"><i class="ti ti-award"></i> Manually Grant a Badge</div>
-        <div class="form-section-sub">Award any badge to a user &mdash; for contest prizes, one-off recognitions, or badges without an automatic path. Tiered badges award the correct cumulative Prestige XP up to the tier you choose. Revoking reclaims that XP.</div>
+        <div class="form-section-sub">Only badges that can&rsquo;t be awarded automatically appear here &mdash; one-off recognitions like art drawn for a prestige tag, or contest prizes. Tiered badges award the correct cumulative Prestige XP up to the tier you choose. Revoking reclaims that XP. To add a badge to this list, set <code style="color:var(--accent);">is_manual_grant = true</code> on it.</div>
 
         <div class="gb-grid">
           <div class="gb-field">
@@ -2196,19 +2196,19 @@
     async function gbLoadBadges() {
       var sel = document.getElementById('gb-badge-select');
       try {
-        var bRes = await db.from('badges').select('id,slug,name,category,is_one_time,description').order('category').order('sort_order');
-        if (bRes.error) throw bRes.error;
-        var badges = bRes.data || [];
-        // fetch max tier per badge
-        var tRes = await db.from('badge_tiers').select('badge_id,tier');
-        var maxByBadge = {};
-        (tRes.data || []).forEach(function(t){
-          if (!maxByBadge[t.badge_id] || t.tier > maxByBadge[t.badge_id]) maxByBadge[t.badge_id] = t.tier;
-        });
-        gbBadges = badges.map(function(b){
+        // Only badges flagged is_manual_grant are offered here (no automatic path).
+        var res = await db.rpc('admin_list_manual_badges');
+        if (res.error) throw res.error;
+        var d = res.data || {};
+        if (!d.ok) throw new Error(d.error || 'Not authorized');
+        gbBadges = (d.badges || []).map(function(b){
           return { slug:b.slug, name:b.name, category:b.category, is_one_time:b.is_one_time,
-                   description:b.description||'', max_tier: maxByBadge[b.id] || 0 };
+                   description:b.description||'', max_tier: b.max_tier || 0 };
         });
+        if (!gbBadges.length) {
+          sel.innerHTML = '<option value="">No manual-grant badges configured</option>';
+          return;
+        }
         // build grouped options
         var byCat = {};
         gbBadges.forEach(function(b){ (byCat[b.category] = byCat[b.category] || []).push(b); });
@@ -2351,25 +2351,17 @@
       var list = document.getElementById('gb-log-list');
       loading.style.display='block'; list.style.display='none';
       try {
-        var r = await db.from('admin_badge_grants').select('*').order('created_at',{ascending:false}).limit(30);
-        if (r.error) throw r.error;
-        var rows = r.data || [];
-        // resolve usernames + badge names
-        var uids = {}; rows.forEach(function(x){ uids[x.user_id]=1; });
-        var uidList = Object.keys(uids);
-        var pmap = {};
-        if (uidList.length) {
-          var pr = await db.from('profiles').select('id,username,display_name').in('id', uidList);
-          (pr.data||[]).forEach(function(u){ pmap[u.id]=u; });
-        }
-        var bmap = {}; gbBadges.forEach(function(bb){ bmap[bb.slug]=bb.name; });
+        var res = await db.rpc('admin_badge_grant_log', { p_limit: 30 });
+        if (res.error) throw res.error;
+        var d = res.data || {};
+        if (!d.ok) throw new Error(d.error || 'Not authorized');
+        var rows = d.log || [];
         if (!rows.length) {
           list.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px 0;">No manual grants yet.</div>';
         } else {
           list.innerHTML = rows.map(function(x){
-            var u = pmap[x.user_id] || {};
-            var uname = u.display_name || u.username || x.user_id.slice(0,8);
-            var bname = bmap[x.badge_slug] || x.badge_slug;
+            var uname = x.user_name || (x.user_id ? x.user_id.slice(0,8) : '?');
+            var bname = x.badge_name || x.badge_slug;
             var when = new Date(x.created_at).toLocaleString();
             var isGrant = x.action==='grant';
             var icon = isGrant ? 'ti-award' : 'ti-circle-minus';

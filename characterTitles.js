@@ -858,6 +858,13 @@ window.CharacterTitles = (function() {
           '</div>'
         : '';
 
+      // "Submit fan art" — inverse of the owner-only portrait upload: shown to
+      // logged-in NON-owners (an author submitting to their own novel earns nothing).
+      // Guarded on openCollabModal so it only appears where the modal exists.
+      var submitFanArtBtnHtml = (currentUserSession && !isOwner && !isBook && typeof window.openCollabModal === 'function')
+        ? '<button class="ct-submit-fanart-btn" data-fanart-char="' + esc(char.id) + '" data-fanart-name="' + esc(char.name) + '"><i class="ti ti-photo-up"></i> Submit fan art</button>'
+        : '';
+
       var charTraits = EXP.traits[char.id] || {};
       var traitsVoteCount = Object.keys(charTraits).reduce(function(n,k){ return n + charTraits[k].count; }, 0);
       var charAnsweredQs = (EXP.qs[char.id] || []).sort(function(a,b){ return (b.is_pinned?1:0) - (a.is_pinned?1:0) || (a.created_at < b.created_at ? 1 : -1); });
@@ -1077,6 +1084,7 @@ window.CharacterTitles = (function() {
             featuredHtml +
             collabsHtml +
             fanArtHtml +
+            submitFanArtBtnHtml +
             (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
             (approvedOpinions.length ? '<button class="ct-flip-trigger ct-flip-opinions" title="View reader opinions" style="color:#ec4899;border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-heart"></i> ' + approvedOpinions.length + ' opinion' + (approvedOpinions.length > 1 ? 's' : '') + '</button>' : '') +
             // Book Card only: opinions are chapter-scoped everywhere else, so the
@@ -1541,6 +1549,18 @@ window.CharacterTitles = (function() {
         btBtn.addEventListener('click', function(e) {
           e.stopPropagation();
           openOpinionModal(char.id, char.name, null, workId, currentUserSession.user.id, true);
+        });
+      }
+
+      // Wire submit fan art button -> opens story.html's collab modal with this
+      // character preselected, so the submission carries character_id.
+      var faBtn = card.querySelector('.ct-submit-fanart-btn');
+      if (faBtn) {
+        faBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          if (typeof window.openCollabModal === 'function') {
+            window.openCollabModal(faBtn.dataset.fanartChar);
+          }
         });
       }
 
