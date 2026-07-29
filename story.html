@@ -123,6 +123,13 @@
     .offering-tier-badge.burning{background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.3);color:#f97316;}
     .offering-tier-badge.blazing{background:rgba(234,88,12,0.12);border:1px solid rgba(234,88,12,0.35);color:#ea580c;}
     .offering-tier-badge.inferno{background:rgba(194,65,12,0.14);border:1px solid rgba(194,65,12,0.4);color:#c2410c;}
+    .ls-mode-opt{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--text2);cursor:pointer;padding:8px 10px;border:1px solid var(--border);border-radius:8px;transition:border-color 0.15s;}
+    .ls-mode-opt:hover{border-color:rgba(52,211,153,0.4);}
+    .ls-mode-opt input{margin-top:2px;accent-color:#34d399;}
+    .ls-pick-thumb{position:relative;border:2px solid var(--border);border-radius:8px;overflow:hidden;cursor:pointer;aspect-ratio:3/1;transition:border-color 0.15s;}
+    .ls-pick-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+    .ls-pick-thumb.selected{border-color:#34d399;box-shadow:0 0 0 2px rgba(52,211,153,0.35);}
+    .ls-pick-thumb.selected::after{content:'\2713';position:absolute;top:4px;right:6px;background:#34d399;color:#04140d;font-weight:800;font-size:12px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
     .offering-tier-badge.none{background:rgba(251,146,60,0.05);border:1px solid rgba(251,146,60,0.18);color:rgba(251,146,60,0.8);}
     .btn-spark{background:transparent;border:1px solid rgba(240,192,64,0.4);border-radius:9px;padding:9px 16px;color:#f0c040;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all 0.2s;}
     .btn-spark:hover{border-color:#f0c040;background:rgba(240,192,64,0.08);}
@@ -851,6 +858,34 @@
       </div>
     </div>
   </div>
+
+  <!-- Manage Landscapes modal (author only) -->
+  <div class="collab-modal-backdrop" id="landscape-manage-backdrop">
+    <div class="collab-modal">
+      <h3><i class="ti ti-mountain" style="color:#34d399;"></i> Manage Landscapes</h3>
+      <p>Choose how your approved book landscapes appear behind the title. Changes take effect for everyone viewing this story.</p>
+      <div id="landscape-manage-empty" style="display:none;background:rgba(148,163,184,0.08);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;color:var(--text2);text-align:center;">
+        No approved landscapes yet. Once you approve a submitted landscape, you can manage how it displays here.
+      </div>
+      <div id="landscape-manage-body">
+        <label class="collab-field-label">Display mode</label>
+        <div id="landscape-mode-options" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+          <label class="ls-mode-opt"><input type="radio" name="ls-mode" value="single"> <span><strong>Show one</strong> — pick a single landscape below</span></label>
+          <label class="ls-mode-opt"><input type="radio" name="ls-mode" value="rotate_8s"> <span><strong>Rotate every 8 seconds</strong> — cross-fade through all</span></label>
+          <label class="ls-mode-opt"><input type="radio" name="ls-mode" value="rotate_hour"> <span><strong>Rotate every hour</strong></span></label>
+          <label class="ls-mode-opt"><input type="radio" name="ls-mode" value="rotate_day"> <span><strong>Rotate once a day</strong></span></label>
+        </div>
+        <div id="landscape-pick-wrap" style="display:none;">
+          <label class="collab-field-label">Choose which landscape to show</label>
+          <div id="landscape-pick-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:8px;"></div>
+        </div>
+      </div>
+      <div class="collab-modal-btns">
+        <button class="collab-cancel-btn" onclick="closeLandscapeManage()">Cancel</button>
+        <button class="collab-submit-btn" id="landscape-manage-save-btn" onclick="saveLandscapeMode()"><i class="ti ti-check"></i> Save</button>
+      </div>
+    </div>
+  </div>
   <!-- Collab detail modal -->
   <div class="collab-detail-backdrop" id="collab-detail-backdrop">
     <div class="collab-detail-modal">
@@ -1077,6 +1112,7 @@
 
       // ── NOVEL MODE ───────────────────────────────────────────────
       var bannerUrl = (authors[0] && authors[0].banner_url) || null;
+      heroFallbackUrl = bannerUrl;
       // Approved book landscapes override the author banner (cycling if multiple);
       // falls back to the author's banner when there are none.
       loadLandscapes(work.id, bannerUrl);
@@ -2889,6 +2925,7 @@
         var ctContainer = document.getElementById('character-cards-container');
         if (ctContainer && window.CharacterTitles) {
           await CharacterTitles.renderStoryCharacterCards(ctContainer, workId, true, (workData && workData.author_id) || null);
+          injectManageLandscapeBtn();
         }
         await setupBookCardToggle(workId, workData || { title: btn.dataset.workTitle, cover_url: btn.dataset.workCover });
       } catch(e) {
@@ -3110,6 +3147,7 @@
         if (ctContainer && ctSection) {
           window._ctSession = currentSession;
           await CharacterTitles.renderStoryCharacterCards(ctContainer, workId, isAuthor, workData.author_id);
+          injectManageLandscapeBtn();
           // Show the section if it has any cards, OR if the author is viewing
           // (so they can reach the "Add Book Card" control even with no chars).
           if (ctContainer.innerHTML.trim() || isAuthor) ctSection.style.display = 'block';
@@ -3596,33 +3634,64 @@
     // \u2500\u2500 BOOK LANDSCAPES \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     var landscapeFileData = null;
     var landscapeTimer = null;
+    var heroFallbackUrl = null;
+    var landscapeRows = [];
     async function loadLandscapes(workId, fallbackUrl) {
       var bannerImg = document.getElementById('hero-banner-img');
       if (!bannerImg) return;
-      var urls = [];
+      landscapeRows = [];
       try {
         var { data } = await db.from('story_landscapes')
-          .select('image_url').eq('work_id', workId).eq('status','approved')
+          .select('id,image_url').eq('work_id', workId).eq('status','approved')
           .order('sort_order',{ascending:true}).order('created_at',{ascending:true});
-        urls = (data||[]).map(function(l){ return l.image_url; }).filter(Boolean);
+        landscapeRows = (data||[]).filter(function(l){ return l.image_url; });
       } catch(e) {}
       if (landscapeTimer) { clearInterval(landscapeTimer); landscapeTimer = null; }
+      var urls = landscapeRows.map(function(l){ return l.image_url; });
       if (!urls.length) {
         if (fallbackUrl) { bannerImg.src = fallbackUrl; bannerImg.style.display = 'block'; }
         return;
       }
       bannerImg.style.transition = 'opacity 0.8s ease';
       bannerImg.style.opacity = '1';
+      bannerImg.style.display = 'block';
+
+      var mode = (workData && workData.landscape_mode) || 'rotate_8s';
+      var pinnedId = workData && workData.landscape_pinned_id;
+
+      // SINGLE: show the author's pinned landscape (fallback to first if pin is stale)
+      if (mode === 'single') {
+        var pinned = landscapeRows.filter(function(l){ return l.id === pinnedId; })[0];
+        bannerImg.src = (pinned || landscapeRows[0]).image_url;
+        return;
+      }
+
+      // Only one approved -> nothing to rotate
+      if (urls.length === 1) { bannerImg.src = urls[0]; return; }
+
+      // Deterministic time-based rotations: every visitor sees the same image
+      // for a given clock slot, advancing on schedule. No background job needed.
+      if (mode === 'rotate_hour' || mode === 'rotate_day') {
+        var now = new Date();
+        var slot = (mode === 'rotate_hour')
+          ? Math.floor(now.getTime() / 3600000)                       // hours since epoch
+          : Math.floor(now.getTime() / 86400000);                     // days since epoch
+        bannerImg.src = urls[slot % urls.length];
+        // Re-evaluate at the next boundary so the page updates without reload.
+        var periodMs = (mode === 'rotate_hour') ? 3600000 : 86400000;
+        var msToNext = periodMs - (now.getTime() % periodMs);
+        landscapeTimer = setTimeout(function(){ loadLandscapes(workId, fallbackUrl); }, msToNext + 500);
+        return;
+      }
+
+      // DEFAULT rotate_8s: cross-fade cycle every 8 seconds
       var idx = Math.floor(Math.random() * urls.length);
       bannerImg.src = urls[idx];
-      bannerImg.style.display = 'block';
-      if (urls.length > 1) {
-        landscapeTimer = setInterval(function(){
-          idx = (idx + 1) % urls.length;
-          bannerImg.style.opacity = '0';
-          setTimeout(function(){ bannerImg.src = urls[idx]; bannerImg.style.opacity = '1'; }, 800);
-        }, 8000);
-      }
+      landscapeTimer = setInterval(function(){
+        idx = (idx + 1) % urls.length;
+        bannerImg.style.opacity = '0';
+        setTimeout(function(){ bannerImg.src = urls[idx]; bannerImg.style.opacity = '1'; }, 800);
+      }, 8000);
     }
 
     function openLandscapeModal() {
@@ -3636,6 +3705,110 @@
       document.getElementById('landscape-modal-backdrop').classList.add('show');
     }
     window.openLandscapeModal = openLandscapeModal;
+
+    // ── MANAGE LANDSCAPES (author only) ──────────────────────────
+    var landscapePickSelection = null;
+    function isWorkAuthor(){ return currentSession && workData && currentSession.user.id === workData.author_id; }
+
+    async function openLandscapeManage() {
+      if (!isWorkAuthor()) return;
+      var backdrop = document.getElementById('landscape-manage-backdrop');
+      // Pull the freshest approved landscapes for this work
+      var rows = [];
+      try {
+        var { data } = await db.from('story_landscapes')
+          .select('id,image_url,description').eq('work_id', workData.id).eq('status','approved')
+          .order('sort_order',{ascending:true}).order('created_at',{ascending:true});
+        rows = (data||[]).filter(function(l){ return l.image_url; });
+      } catch(e) {}
+      landscapeRows = rows;
+      var empty = document.getElementById('landscape-manage-empty');
+      var body  = document.getElementById('landscape-manage-body');
+      var saveBtn = document.getElementById('landscape-manage-save-btn');
+      if (!rows.length) {
+        empty.style.display = 'block'; body.style.display = 'none'; saveBtn.style.display = 'none';
+        backdrop.classList.add('show'); return;
+      }
+      empty.style.display = 'none'; body.style.display = 'block'; saveBtn.style.display = '';
+
+      var mode = (workData.landscape_mode) || 'rotate_8s';
+      landscapePickSelection = workData.landscape_pinned_id || (rows[0] && rows[0].id) || null;
+
+      // set the radio
+      var radios = document.getElementsByName('ls-mode');
+      for (var i=0;i<radios.length;i++){ radios[i].checked = (radios[i].value === mode); radios[i].onchange = onLandscapeModeChange; }
+
+      // build the pick grid
+      var grid = document.getElementById('landscape-pick-grid');
+      grid.innerHTML = rows.map(function(l){
+        var sel = (l.id === landscapePickSelection) ? ' selected' : '';
+        return '<div class="ls-pick-thumb'+sel+'" data-ls-id="'+l.id+'" onclick="selectLandscapePin('+JSON.stringify(l.id)+')"><img src="'+l.image_url+'" alt="landscape"/></div>';
+      }).join('');
+
+      document.getElementById('landscape-pick-wrap').style.display = (mode === 'single') ? 'block' : 'none';
+      backdrop.classList.add('show');
+    }
+    function closeLandscapeManage(){ document.getElementById('landscape-manage-backdrop').classList.remove('show'); }
+
+    function onLandscapeModeChange(){
+      var mode = getSelectedLandscapeMode();
+      document.getElementById('landscape-pick-wrap').style.display = (mode === 'single') ? 'block' : 'none';
+    }
+    function getSelectedLandscapeMode(){
+      var radios = document.getElementsByName('ls-mode');
+      for (var i=0;i<radios.length;i++){ if (radios[i].checked) return radios[i].value; }
+      return 'rotate_8s';
+    }
+    function selectLandscapePin(id){
+      landscapePickSelection = id;
+      var thumbs = document.querySelectorAll('#landscape-pick-grid .ls-pick-thumb');
+      thumbs.forEach(function(t){ t.classList.toggle('selected', t.dataset.lsId === id); });
+    }
+
+    async function saveLandscapeMode(){
+      if (!isWorkAuthor()) return;
+      var mode = getSelectedLandscapeMode();
+      var btn = document.getElementById('landscape-manage-save-btn');
+      if (mode === 'single' && !landscapePickSelection){ showToast('Pick a landscape to show.','ti-x'); return; }
+      btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Saving\u2026';
+      try {
+        var params = { p_work_id: workData.id, p_mode: mode };
+        if (mode === 'single') params.p_pinned_id = landscapePickSelection;
+        var { data, error } = await db.rpc('set_landscape_mode', params);
+        if (error || !data || !data.success){
+          var msg = (data && data.error) || (error && error.message) || 'Could not save';
+          showToast(msg === 'not_author' ? 'Only the author can manage landscapes.' : msg, 'ti-x');
+          btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Save'; return;
+        }
+        workData.landscape_mode = data.mode;
+        workData.landscape_pinned_id = data.pinned_id || null;
+        closeLandscapeManage();
+        showToast('Landscape display updated.','ti-check');
+        loadLandscapes(workData.id, (typeof heroFallbackUrl !== 'undefined' ? heroFallbackUrl : null));
+      } catch(e){ showToast('Error saving landscape settings.','ti-x'); }
+      btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Save';
+    }
+    window.openLandscapeManage = openLandscapeManage;
+
+    // Auto-inject the author-only "Manage landscapes" button onto the book card
+    // once the character cards have rendered. Mirrors the fan-art button wiring.
+    function injectManageLandscapeBtn(){
+      if (!isWorkAuthor()) return;
+      // Find the book card's action button cluster via the existing add-landscape btn,
+      // or the book card container. Insert only once.
+      if (document.getElementById('ct-manage-landscape-btn')) return;
+      var addBtn = document.querySelector('.ct-add-landscape-btn');
+      var host = addBtn ? addBtn.parentNode : null;
+      if (!host) return;
+      var btn = document.createElement('button');
+      btn.id = 'ct-manage-landscape-btn';
+      btn.className = 'ct-add-landscape-btn';
+      btn.style.marginTop = '6px';
+      btn.innerHTML = '<i class="ti ti-adjustments"></i> Manage landscapes';
+      btn.onclick = function(){ window.openLandscapeManage(); };
+      host.appendChild(btn);
+    }
+
     function closeLandscapeModal(){ document.getElementById('landscape-modal-backdrop').classList.remove('show'); }
 
     async function submitLandscape() {
