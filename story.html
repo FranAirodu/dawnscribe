@@ -564,7 +564,7 @@
           <!-- Left: Offering -->
           <div>
             <div id="offering-btn-wrap" style="display:none;">
-              <button class="btn-offering" id="offering-btn" onclick="submitOffering()">🔥 Offer</button>
+              <button class="btn-offering" id="offering-btn" onclick="submitOffering()">🔥 Ember Offer</button>
             </div>
             <div id="offering-tier-wrap"></div>
           </div>
@@ -1559,7 +1559,7 @@
     var myNamedLists = [];        // viewer's user_reading_lists rows (loaded once)
 
     // ── OFFERING STATE ───────────────────────────────────────────
-    var offeringState = { count: 0, tier: null, hasOffered: false, chaptersRead: 0 };
+    var offeringState = { count: 0, tier: null, offeredToday: false, nextOfferAt: null, chaptersRead: 0 };
 
     async function loadFollowState() {
       if (!currentSession) return;
@@ -1594,12 +1594,16 @@
       if (!currentSession) return;
       var isOwner = currentSession.user.id === workData.author_id;
       if (isOwner) return; // owners can't offer their own work
-      // Check if user has already offered
-      var { data: offerRow } = await db.from('work_offerings')
-        .select('id').eq('work_id', workData.id).eq('user_id', currentSession.user.id).maybeSingle();
-      offeringState.hasOffered = !!(offerRow);
+      // Check if user has offered within the last 24h (daily gate)
+      var { data: lastOffer } = await db.from('work_offerings')
+        .select('created_at').eq('work_id', workData.id).eq('user_id', currentSession.user.id)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (lastOffer && lastOffer.created_at) {
+        var next = new Date(lastOffer.created_at).getTime() + 24*60*60*1000;
+        if (next > Date.now()) { offeringState.offeredToday = true; offeringState.nextOfferAt = next; }
+      }
       // Reading history link (shown if user has any progress on this work)
-      if (myUid) {
+      if (currentSession) {
         var histBtn = document.getElementById('history-quick-link');
         if (histBtn) histBtn.style.display = 'inline-flex';
       }
@@ -1619,25 +1623,30 @@
           var msg = (data && data.error) || (error && error.message) || 'Could not offer';
           var friendly = {
             need_5_chapters: 'Read 5 chapters to offer to this story.',
-            insufficient_embers: 'You need at least 1 Ember to offer.',
-            already_offered: 'You\'ve already offered to this story.',
+            insufficient_embers: 'You need at least 1 Ember to make a daily offering.',
+            already_offered_today: 'You\'ve already made your Ember Offering today. Come back tomorrow!',
             not_authenticated: 'Please sign in first.'
           }[msg] || msg;
           showToast(friendly, 'ti-x');
-          if (btn) { btn.disabled = false; btn.innerHTML = '🔥 Offer'; }
+          if (msg === 'already_offered_today' && data && data.next_offer_at) {
+            offeringState.offeredToday = true;
+            offeringState.nextOfferAt = new Date(data.next_offer_at).getTime();
+          }
+          renderOfferingButton();
           return;
         }
-        offeringState.hasOffered = true;
+        offeringState.offeredToday = true;
+        offeringState.nextOfferAt = data.next_offer_at ? new Date(data.next_offer_at).getTime() : (Date.now() + 24*60*60*1000);
         offeringState.count = data.offering_count;
         offeringState.tier  = data.offering_tier;
         workData.offering_count = data.offering_count;
-        showToast('Offering made! 🔥', 'ti-flame');
+        showToast('Ember Offering made! 🔥', 'ti-flame');
         renderOfferingButton();
         renderOfferingTierBadge();
         refreshGoalProgress();
       } catch(e) {
         showToast('Error submitting offering.', 'ti-x');
-        if (btn) { btn.disabled = false; btn.innerHTML = '🔥 Offer'; }
+        renderOfferingButton();
       }
     }
 
@@ -1650,19 +1659,21 @@
       wrap.style.display = 'block';
       var btn = document.getElementById('offering-btn');
       if (!btn) return;
-      if (offeringState.hasOffered) {
+      if (offeringState.offeredToday) {
         btn.classList.add('offered');
         btn.disabled = true;
-        btn.innerHTML = '🔥 Offered (' + offeringState.count + ')';
-        btn.title = 'You\'ve already offered to this story';
+        btn.innerHTML = '🔥 Offered Today (' + offeringState.count + ')';
+        btn.title = 'You\'ve made your daily Ember Offering. Come back in 24 hours.';
       } else if (!canOffer) {
+        btn.classList.remove('offered');
         btn.disabled = true;
-        btn.title = 'Read ' + (5 - offeringState.chaptersRead) + ' more chapter(s) to unlock Offerings';
-        btn.innerHTML = '🔥 Offer <span style="font-size:11px;font-weight:400;opacity:0.7;">(' + offeringState.chaptersRead + '/5 ch)</span>';
+        btn.title = 'Read ' + (5 - offeringState.chaptersRead) + ' more chapter(s) to unlock Ember Offerings';
+        btn.innerHTML = '🔥 Ember Offer <span style="font-size:11px;font-weight:400;opacity:0.7;">(' + offeringState.chaptersRead + '/5 ch)</span>';
       } else {
+        btn.classList.remove('offered');
         btn.disabled = false;
-        btn.title = 'Spend 1 Ember to offer to this story';
-        btn.innerHTML = '🔥 Offer (' + offeringState.count + ')';
+        btn.title = 'Spend 1 Ember to make your daily offering to this story';
+        btn.innerHTML = '🔥 Ember Offer (' + offeringState.count + ')';
       }
     }
 
@@ -3614,7 +3625,6 @@
       }
     }
 
-    window.openLandscapeModal = function(){ return openLandscapeModal(); };
     function openLandscapeModal() {
       if(!currentSession){ window.location.href=dsAuthNext(); return; }
       if(!workData){ return; }
@@ -3625,6 +3635,7 @@
       document.getElementById('landscape-description').value='';
       document.getElementById('landscape-modal-backdrop').classList.add('show');
     }
+    window.openLandscapeModal = openLandscapeModal;
     function closeLandscapeModal(){ document.getElementById('landscape-modal-backdrop').classList.remove('show'); }
 
     async function submitLandscape() {
