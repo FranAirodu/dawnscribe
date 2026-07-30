@@ -2115,6 +2115,12 @@ window.CharacterTitles = (function() {
       if (window.dsCompleteMission) {
         try { await window.dsCompleteMission('suggest_character_song'); } catch(e) {}
       }
+      // Songwriter badge: cumulative count of song suggestions submitted.
+      // Server-side recount, identity-guarded; fire-and-forget so it never
+      // blocks the submit flow. (The DJ badge — accepted suggestions — is
+      // awarded automatically by a DB trigger on author approval, so it needs
+      // no client call here.)
+      try { await db().rpc('award_songwriter_badge', { p_user_id: userId }); } catch(e) {}
       // Notify the work author
       try {
         var _db2 = db();
