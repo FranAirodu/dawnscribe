@@ -26,6 +26,23 @@
   // layers must use this same box.
   var BODY_BOX = { x: 24, y: 78, w: 272, h: 384 };
 
+  // Female bodies render slightly shorter than male for believability.
+  // Tunable: 0.96 = 4% shorter. The box keeps the SAME bottom baseline
+  // (feet stay on the floor) and stays horizontally centered, because the
+  // body/cosmetic images use preserveAspectRatio="xMidYMax meet" (bottom-
+  // anchored). Cosmetics resolve through the SAME box, so clothing scales
+  // with the body automatically — never scale one without the other.
+  var FEMALE_BODY_SCALE = 0.96;
+
+  // Returns the render box for a given body type. Male uses BODY_BOX as-is;
+  // female gets a height-scaled box sharing BODY_BOX's bottom edge (y+h).
+  function bodyBoxFor(bodyType) {
+    if (bodyType !== 'female') return BODY_BOX;
+    var h = Math.round(BODY_BOX.h * FEMALE_BODY_SCALE);
+    var baseline = BODY_BOX.y + BODY_BOX.h;   // pin feet to same floor line
+    return { x: BODY_BOX.x, y: baseline - h, w: BODY_BOX.w, h: h };
+  }
+
   // Full-canvas box for background layers (drawn behind everything).
   var BG_BOX = { x: 0, y: 0, w: 320, h: 480 };
 
@@ -188,7 +205,7 @@
       var href = resolveAssetUrl(pickAssetPath(item, bodyType));
       if (!href) return; // no art for this body type yet — draw nothing
 
-      var box = (slot === 'background') ? BG_BOX : BODY_BOX;
+      var box = (slot === 'background') ? BG_BOX : bodyBoxFor(bodyType);
       // Backgrounds fill the canvas; body-aligned art preserves its
       // aspect ratio anchored to the same baseline as the body preset.
       var par = (slot === 'background') ? 'xMidYMid slice' : 'xMidYMax meet';
@@ -236,7 +253,8 @@
     if (preset) {
       var bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
       if (bodyPath) {
-        parts.push('<image href="' + BODY_ASSET_BASE + bodyPath + '" x="' + BODY_BOX.x + '" y="' + BODY_BOX.y + '" width="' + BODY_BOX.w + '" height="' + BODY_BOX.h + '" preserveAspectRatio="xMidYMax meet"/>');
+        var bBox = bodyBoxFor(avatarData.body_type);
+        parts.push('<image href="' + BODY_ASSET_BASE + bodyPath + '" x="' + bBox.x + '" y="' + bBox.y + '" width="' + bBox.w + '" height="' + bBox.h + '" preserveAspectRatio="xMidYMax meet"/>');
       }
     }
 
@@ -309,7 +327,8 @@
     if (preset) {
       var bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
       if (bodyPath) {
-        parts.push('<image href="' + BODY_ASSET_BASE + bodyPath + '" x="' + BODY_BOX.x + '" y="' + BODY_BOX.y + '" width="' + BODY_BOX.w + '" height="' + BODY_BOX.h + '" preserveAspectRatio="xMidYMax meet"/>');
+        var bBox = bodyBoxFor(avatarData.body_type);
+        parts.push('<image href="' + BODY_ASSET_BASE + bodyPath + '" x="' + bBox.x + '" y="' + bBox.y + '" width="' + bBox.w + '" height="' + bBox.h + '" preserveAspectRatio="xMidYMax meet"/>');
       }
     }
 

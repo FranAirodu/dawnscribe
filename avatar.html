@@ -312,7 +312,12 @@
 
   // Shared with all avatar-rendering pages — see avatarRender.js.
   function getPoseImagePath(preset, pose) { return DSAvatar.getPoseImagePath(preset, pose); }
-  function getBodyPreset(key) { return DSAvatar.getBodyPreset(bodyPresets, key); }
+  function getBodyPreset(key) { return DSAvatar.getBodyPreset(bodyPresets, key, (avatarData && avatarData.body_type) || 'male'); }
+  // Presets for the avatar's current body type only (male art vs female art).
+  function presetsForCurrentBody() {
+    var bt = (avatarData && avatarData.body_type) || 'male';
+    return bodyPresets.filter(function(p){ return (p.body_type || 'male') === bt; });
+  }
 
   const SLOT_ICONS = {
     hat: '__hat__', hair: 'ti-cut', eyes: 'ti-eye', lips: '__lips__', skin: 'ti-droplet',
@@ -837,7 +842,7 @@
   function renderSkinTones() {
     // Owned tones are selectable; locked tones are dimmed and roll-only.
     var lockedCount = 0;
-    var html = bodyPresets.map(function(p) {
+    var html = presetsForCurrentBody().map(function(p) {
       if (ownsSkinTone(p.id)) {
         var selectedClass = p.id === avatarData.skin_tone ? ' selected' : '';
         return flameSwatch(p.swatch_hex, p.label, 'swatch' + selectedClass, "setSkinTone('" + p.id + "')");
@@ -874,6 +879,107 @@
     renderPoseRow();
     renderPreview();
     updateSaveState();
+  }
+
+  // ── RENDER: GENDER / BODY TYPE TOGGLE ────────────────────────────
+  var BODY_UNLOCK_COST = 25;
+  var BODY_SWITCHING = false;
+
+  function ownsBodyType(bt) {
+    var u = (avatarData && avatarData.unlocked_body_types) || [];
+    return u.indexOf(bt) !== -1;
+  }
+
+  function renderGenderToggle() {
+    var wrap = document.getElementById('gender-toggle-wrap');
+    if (!wrap) return;
+    var cur = (avatarData && avatarData.body_type) || 'male';
+    var other = cur === 'male' ? 'female' : 'male';
+    var otherLabel = other.charAt(0).toUpperCase() + other.slice(1);
+
+    // Two pill buttons for the current body type; the locked one shows the
+    // one-time unlock cost, the owned one switches for free.
+    function pill(bt) {
+      var label = bt.charAt(0).toUpperCase() + bt.slice(1);
+      var isCur = bt === cur;
+      var owned = ownsBodyType(bt);
+      var base = 'flex:1;padding:10px 8px;border-radius:9px;font-size:12px;font-weight:700;font-family:Lato,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;border:1px solid var(--border);';
+      if (isCur) {
+        return '<button disabled style="' + base + 'background:rgba(45,212,191,0.12);color:var(--accent);border-color:var(--accent);cursor:default;">' +
+          '<i class="ti ti-' + (bt === 'female' ? 'venus' : 'mars') + '"></i>' + label + '</button>';
+      }
+      if (owned) {
+        return '<button style="' + base + 'background:var(--bg3);color:var(--text);" onclick="switchGender(\'' + bt + '\')">' +
+          '<i class="ti ti-' + (bt === 'female' ? 'venus' : 'mars') + '"></i>Switch to ' + label + '</button>';
+      }
+      // Locked — one-time Ember unlock.
+      var canAfford = emberBalance >= BODY_UNLOCK_COST;
+      return '<button ' + (canAfford ? '' : 'disabled ') + 'style="' + base + 'background:var(--bg3);color:var(--text2);' + (canAfford ? '' : 'opacity:.5;cursor:not-allowed;') + '" onclick="unlockBodyType(\'' + bt + '\')">' +
+        '<i class="ti ti-lock"></i>Unlock ' + label + ' <span style="display:inline-flex;align-items:center;gap:3px;color:var(--gold);"><i class="ti ti-flame"></i>' + BODY_UNLOCK_COST + '</span></button>';
+    }
+
+    wrap.innerHTML = '<div style="display:flex;gap:8px;">' + pill(cur) + pill(other) + '</div>' +
+      (ownsBodyType(other) ? '' :
+        '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;">Unlocking a second body is a one-time purchase. After that you can switch anytime for free. Items you\'ve rolled stay yours — they\'re just hidden while you\'re in the other body.</div>');
+  }
+
+  async function unlockBodyType(bt) {
+    if (BODY_SWITCHING) return;
+    if (ownsBodyType(bt)) { switchGender(bt); return; }
+    if (emberBalance < BODY_UNLOCK_COST) { showToast('Not enough Embers'); return; }
+    BODY_SWITCHING = true;
+    try {
+      var { data, error } = await db.rpc('unlock_body_type', { p_user_id: currentUid, p_body_type: bt });
+      if (error) { showToast('Unlock failed'); BODY_SWITCHING = false; return; }
+      if (data && (data.status === 'success' || data.status === 'already_unlocked')) {
+        if (!avatarData.unlocked_body_types) avatarData.unlocked_body_types = [];
+        if (avatarData.unlocked_body_types.indexOf(bt) === -1) avatarData.unlocked_body_types.push(bt);
+        if (typeof data.new_balance === 'number') {
+          emberBalance = data.new_balance;
+          var _eb = document.getElementById('ember-balance-amount');
+          if (_eb) _eb.textContent = emberBalance.toLocaleString();
+          var _ebd = document.getElementById('ember-balance-amount-dawn');
+          if (_ebd) _ebd.textContent = emberBalance.toLocaleString();
+        }
+        BODY_SWITCHING = false;
+        // Immediately switch into the freshly unlocked body.
+        switchGender(bt);
+      } else {
+        showToast(data && data.error === 'insufficient_embers' ? 'Not enough Embers' : 'Unlock failed');
+        BODY_SWITCHING = false;
+      }
+    } catch (e) {
+      showToast('Unlock failed'); BODY_SWITCHING = false;
+    }
+  }
+
+  async function switchGender(bt) {
+    if (BODY_SWITCHING) return;
+    if (!ownsBodyType(bt)) { unlockBodyType(bt); return; }
+    if (((avatarData && avatarData.body_type) || 'male') === bt) return;
+    BODY_SWITCHING = true;
+    try {
+      var { data, error } = await db.rpc('switch_body_type', { p_user_id: currentUid, p_body_type: bt });
+      if (error || !data || data.status !== 'success') { showToast('Switch failed'); BODY_SWITCHING = false; return; }
+      // Sync local state to what the RPC persisted (authoritative).
+      avatarData.body_type = data.body_type;
+      avatarData.skin_tone = data.skin_tone;
+      // Cleared slots were unequipped server-side; mirror that locally.
+      var cleared = data.cleared_slots || [];
+      cleared.forEach(function(slot){ if (avatarData.equipped) delete avatarData.equipped[slot]; });
+      // body_type / skin_tone / equipped are now saved; no unsaved-dirty needed.
+      renderGenderToggle();
+      renderSkinTones();
+      renderPoseRow();
+      renderSlotTabs();
+      renderPreview();
+      updateSaveState();
+      if (cleared.length) showToast('Switched — ' + cleared.length + ' item' + (cleared.length > 1 ? 's' : '') + ' hidden (no ' + bt + ' art yet)');
+      else showToast('Switched to ' + (bt.charAt(0).toUpperCase() + bt.slice(1)));
+    } catch (e) {
+      showToast('Switch failed');
+    }
+    BODY_SWITCHING = false;
   }
 
   // ── RENDER: SLOT TABS ─────────────────────────────────────────────
@@ -1506,6 +1612,8 @@
             '<div class="slot-tabs" id="slot-tabs"></div>' +
             '<div id="background-panel" style="display:none;margin-top:8px;"></div>' +
           '<div id="skin-panel" style="display:none;margin-top:8px;">' +
+              '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px;">Body</div>' +
+              '<div id="gender-toggle-wrap" style="margin-bottom:18px;"></div>' +
               '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px;">Skin Tone</div>' +
               '<div class="swatch-row" id="skin-tone-row"></div>' +
               '<div id="skin-roll-wrap" style="margin-top:16px;"></div>' +
@@ -1550,6 +1658,7 @@
         '</div>' +
       '</div>';
 
+    renderGenderToggle();
     renderSkinTones();
     renderPoseRow();
     renderSlotTabs();
