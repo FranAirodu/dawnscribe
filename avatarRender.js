@@ -26,21 +26,30 @@
   // layers must use this same box.
   var BODY_BOX = { x: 24, y: 78, w: 272, h: 384 };
 
-  // Female bodies render slightly shorter than male for believability.
-  // Tunable: 0.96 = 4% shorter. The box keeps the SAME bottom baseline
-  // (feet stay on the floor) and stays horizontally centered, because the
-  // body/cosmetic images use preserveAspectRatio="xMidYMax meet" (bottom-
-  // anchored). Cosmetics resolve through the SAME box, so clothing scales
-  // with the body automatically — never scale one without the other.
-  var FEMALE_BODY_SCALE = 0.96;
+  // Female body scale. 1.00 = renders identically to male.
+  //
+  // DIAGNOSTIC REVERT: set to 1.00 so male and female go through the exact
+  // same render box while isolating a head-alignment issue on female.
+  //
+  // IMPORTANT when re-enabling (<1.0): the images use preserveAspectRatio
+  // "...meet", which fits the image to the LIMITING dimension. With
+  // BODY_BOX 272x384 and 4000x4800 art, WIDTH is limiting
+  // (272/4000 = 0.068 < 384/4800 = 0.080), so scaling height ALONE does
+  // nothing to the rendered figure size — it only shifts the box's top
+  // edge down, which can desync layers. Scale BOTH w and h instead.
+  var FEMALE_BODY_SCALE = 1.00;
 
-  // Returns the render box for a given body type. Male uses BODY_BOX as-is;
-  // female gets a height-scaled box sharing BODY_BOX's bottom edge (y+h).
+  // Returns the render box for a given body type. At scale 1.0 both genders
+  // use BODY_BOX unchanged. Below 1.0, width AND height scale together (so
+  // the figure actually shrinks) while keeping BODY_BOX's bottom baseline
+  // and horizontal center, so the feet stay on the same floor line.
   function bodyBoxFor(bodyType) {
-    if (bodyType !== 'female') return BODY_BOX;
+    if (bodyType !== 'female' || FEMALE_BODY_SCALE === 1) return BODY_BOX;
+    var w = Math.round(BODY_BOX.w * FEMALE_BODY_SCALE);
     var h = Math.round(BODY_BOX.h * FEMALE_BODY_SCALE);
     var baseline = BODY_BOX.y + BODY_BOX.h;   // pin feet to same floor line
-    return { x: BODY_BOX.x, y: baseline - h, w: BODY_BOX.w, h: h };
+    var cx = BODY_BOX.x + BODY_BOX.w / 2;     // keep horizontally centered
+    return { x: Math.round(cx - w / 2), y: baseline - h, w: w, h: h };
   }
 
   // Full-canvas box for background layers (drawn behind everything).
