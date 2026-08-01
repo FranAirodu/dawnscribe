@@ -1635,8 +1635,22 @@
         var uid = currentSession.user.id;
         var exportData = { exported_at: new Date().toISOString(), account_email: currentSession.user.email };
 
-        var profileRes = await db.from('profiles').select('*').eq('id', uid).maybeSingle();
-        exportData.profile = profileRes.data || null;
+        // select('*') now fails: the private columns are not column-granted.
+        // Pull the public row, then merge the owner-only fields from the RPC so
+        // the data export stays complete for the person it belongs to.
+        var profileRes = await db.from('profiles').select('created_at,username,display_name,bio,role,location,gender,language,avatar_url,banner_url,id,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,twitter,kofi,homepage_section_order,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,lang_strict,pref_story_language,lang_original,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast,pronouns,quiet_mode,filtered_content_warnings,quiet_hours_enabled,quiet_hours_start,quiet_hours_end,default_comments_open,show_location,show_pronouns,show_gender,account_status,is_moderator,prestige_xp,prestige_tier,notif_echo,pinned_work_id,currently_writing,last_active_at,active_banner_scroll_id,autoplay,spoilers,stripe_connect_status,onboarding_done,email_enabled,email_digest,email_payouts,profile_section_order,welcome_grant_seen,deleted_at,timezone').eq('id', uid).maybeSingle();
+        var profileOut = profileRes.data || null;
+        try {
+          var privX = await db.rpc('get_my_private_profile');
+          var privRow = privX && privX.data
+            ? (Array.isArray(privX.data) ? privX.data[0] : privX.data)
+            : null;
+          if (profileOut && privRow) {
+            profileOut.date_of_birth   = privRow.date_of_birth;
+            profileOut.secondary_email = privRow.secondary_email;
+          }
+        } catch(e) { console.error('private profile export failed', e); }
+        exportData.profile = profileOut;
 
         var worksRes = await db.from('works').select('id,title,synopsis,type,status,language,is_published,is_fan_translation,translation_note,chapters_count,word_count,created_at').eq('author_id', uid);
         exportData.works = worksRes.data || [];
@@ -2054,9 +2068,24 @@
         document.getElementById('current-email-display').textContent = session.user.email || '(no email on file)';
 
         var res = await db.from('profiles')
-          .select('display_name,username,bio,location,gender,role,pronouns,date_of_birth,quiet_mode,filtered_content_warnings,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,pref_story_language,lang_original,lang_strict,secondary_email,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast,email_enabled,email_digest,email_payouts')
+          .select('display_name,username,bio,location,gender,role,pronouns,quiet_mode,filtered_content_warnings,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,pref_story_language,lang_original,lang_strict,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast,email_enabled,email_digest,email_payouts')
           .eq('id', session.user.id)
           .maybeSingle();
+
+        // date_of_birth and secondary_email are not column-readable by
+        // anon/authenticated (they'd leak to anyone via PostgREST). The owner
+        // reads them through this SECURITY DEFINER RPC, which is scoped to
+        // auth.uid() and takes no parameters.
+        try {
+          var privRes = await db.rpc('get_my_private_profile');
+          var priv = privRes && privRes.data
+            ? (Array.isArray(privRes.data) ? privRes.data[0] : privRes.data)
+            : null;
+          if (priv && res && res.data) {
+            res.data.date_of_birth   = priv.date_of_birth;
+            res.data.secondary_email = priv.secondary_email;
+          }
+        } catch(e) { console.error('private profile fetch failed', e); }
 
         if (res && !res.error && res.data) {
           if (res.data.settings_theme) settings.theme = res.data.settings_theme;
