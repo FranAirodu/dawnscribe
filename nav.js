@@ -468,15 +468,55 @@ function dsApplyAccent(hex) {
       return map;
     } catch(e){ return {}; }
   }
+  /* Single source of truth for the bell count: recount the live DOM.
+     Every unread notification renders exactly one .notif-item.unread, so
+     counting elements keeps the bell, the tab pips and the feeds in sync
+     no matter which path cleared them (mark-all, item click, or load). */
+  var DS_NOTIF_TABS = ['novels','artists','comments','activity'];
+  window.dsRecalcNotifBadge = function() {
+    var total = 0;
+    DS_NOTIF_TABS.forEach(function(tab){
+      var feed = document.getElementById('notif-feed-' + tab);
+      var n = feed ? feed.querySelectorAll('.notif-item.unread').length : 0;
+      total += n;
+      var btn = document.getElementById('notif-tab-' + tab);
+      if (btn) {
+        var ex = btn.querySelector('.notif-tab-badge');
+        if (ex) ex.remove();
+        if (n > 0) {
+          var b = document.createElement('span');
+          b.className = 'notif-tab-badge';
+          b.textContent = Math.min(n, 99);
+          btn.appendChild(b);
+        }
+      }
+    });
+    var badge = document.getElementById('ds-notif-badge');
+    if (badge) {
+      if (total > 0) { badge.textContent = Math.min(total, 99); badge.style.display = 'flex'; }
+      else { badge.style.display = 'none'; }
+    }
+    return total;
+  };
+
   window.dsMarkAllRead = function(tab) {
     var feed = document.getElementById('notif-feed-' + tab);
     if (!feed) return;
     var cleared = dsGetClearedIds(tab);
-    feed.querySelectorAll('.notif-item[data-id]').forEach(function(item){ cleared[item.dataset.id]=true; });
+    var serverIds = [];
+    feed.querySelectorAll('.notif-item[data-id]').forEach(function(item){
+      cleared[item.dataset.id]=true;
+      // Rows backed by the notifications table must also be flagged read
+      // server-side, or they return on the next load and the count creeps
+      // back up. Broadcast rows (user_id NULL) are deliberately excluded.
+      if (item.dataset.server === '1') serverIds.push(item.dataset.id);
+    });
     localStorage.setItem('ds_notif_cleared_' + tab, JSON.stringify(Object.keys(cleared)));
+    if (serverIds.length) {
+      try { db.from('notifications').update({is_read:true}).in('id', serverIds); } catch(e) {}
+    }
     feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-checks"></i> All caught up!</div>';
-    var tabBtn = document.getElementById('notif-tab-' + tab);
-    if(tabBtn){ var b=tabBtn.querySelector('.notif-tab-badge'); if(b) b.remove(); }
+    if (window.dsRecalcNotifBadge) window.dsRecalcNotifBadge();
   };
 
   /* ── SEARCH ──────────────────────────────────────────────────── */
@@ -702,11 +742,14 @@ function dsApplyAccent(hex) {
             var avH=p.avatar_url?'<img src="'+dsEsc(p.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>':dsEsc(name.charAt(0).toUpperCase());
             var el=document.createElement('div');
             el.className='notif-item unread'; el.style.cursor='pointer';
+            el.dataset.id=fl.id; el.dataset.server='1';
             el.innerHTML='<div class="notif-cover" style="overflow:hidden;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;">'+avH+'</div>'
               +'<div class="notif-body"><div class="notif-title">'+dsEsc(name)+'</div><div class="notif-text">Started following you</div>'
               +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(fl.created_at)+'</div></div><div class="notif-dot"></div>';
             el.onclick=function(){
               db.from('notifications').update({is_read:true}).eq('id',fl.id);
+              el.classList.remove('unread');
+              if (window.dsRecalcNotifBadge) window.dsRecalcNotifBadge();
               if(p.username) window.location.href='profile.html?u='+p.username;
             };
             artistFeed.appendChild(el);
@@ -866,6 +909,7 @@ function dsApplyAccent(hex) {
             map[n.id] = true;
             localStorage.setItem('ds_notif_cleared_activity', JSON.stringify(Object.keys(map)));
             item.classList.remove('unread');
+            if (window.dsRecalcNotifBadge) window.dsRecalcNotifBadge();
             // Shared broadcast row — clear locally only, never mark is_read globally
           };
           item.innerHTML =
@@ -900,6 +944,7 @@ function dsApplyAccent(hex) {
           var item = document.createElement('div');
           item.className = 'notif-item unread';
           item.dataset.id = n.id;
+          item.dataset.server = '1';
           var dest = n.chapter_id ? 'chapter.html?id='+n.chapter_id : (n.work_id ? 'story.html?id='+n.work_id : null);
           if(n.type==='collab_request') dest = 'collab-inbox.html';
           item.style.cursor = dest ? 'pointer' : 'default';
@@ -909,6 +954,7 @@ function dsApplyAccent(hex) {
             localStorage.setItem('ds_notif_cleared_activity', JSON.stringify(Object.keys(map)));
             item.classList.remove('unread');
             db.from('notifications').update({is_read:true}).eq('id',n.id);
+            if (window.dsRecalcNotifBadge) window.dsRecalcNotifBadge();
             if (dest) window.location.href = dest;
           };
           item.innerHTML =
@@ -927,14 +973,9 @@ function dsApplyAccent(hex) {
       if (activityFeed) activityFeed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">Could not load.</div>';
     }
 
-    var total=unreadN+unreadA+unreadC+unreadAct;
-    var badge=document.getElementById('ds-notif-badge');
-    if(badge){ if(total>0){badge.textContent=Math.min(total,99);badge.style.display='flex';}else{badge.style.display='none';} }
-    function setTabBadge(tabId,count){var btn=document.getElementById(tabId);if(!btn)return;var ex=btn.querySelector('.notif-tab-badge');if(ex)ex.remove();if(count>0){var b=document.createElement('span');b.className='notif-tab-badge';b.textContent=Math.min(count,99);btn.appendChild(b);}}
-    setTabBadge('notif-tab-novels',unreadN);
-    setTabBadge('notif-tab-artists',unreadA);
-    setTabBadge('notif-tab-comments',unreadC);
-    setTabBadge('notif-tab-activity',unreadAct);
+    // Feeds are fully rendered — derive the bell and tab counts from the DOM
+    // so first paint uses the exact same accounting as every later clear.
+    if (window.dsRecalcNotifBadge) window.dsRecalcNotifBadge();
   }
 
   /* ── AUTH INIT ───────────────────────────────────────────────── */

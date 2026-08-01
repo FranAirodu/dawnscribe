@@ -953,33 +953,36 @@
     }
   }
 
-  async function switchGender(bt) {
+  function switchGender(bt) {
     if (BODY_SWITCHING) return;
     if (!ownsBodyType(bt)) { unlockBodyType(bt); return; }
     if (((avatarData && avatarData.body_type) || 'male') === bt) return;
-    BODY_SWITCHING = true;
-    try {
-      var { data, error } = await db.rpc('switch_body_type', { p_user_id: currentUid, p_body_type: bt });
-      if (error || !data || data.status !== 'success') { showToast('Switch failed'); BODY_SWITCHING = false; return; }
-      // Sync local state to what the RPC persisted (authoritative).
-      avatarData.body_type = data.body_type;
-      avatarData.skin_tone = data.skin_tone;
-      // Cleared slots were unequipped server-side; mirror that locally.
-      var cleared = data.cleared_slots || [];
-      cleared.forEach(function(slot){ if (avatarData.equipped) delete avatarData.equipped[slot]; });
-      // body_type / skin_tone / equipped are now saved; no unsaved-dirty needed.
-      renderGenderToggle();
-      renderSkinTones();
-      renderPoseRow();
-      renderSlotTabs();
-      renderPreview();
-      updateSaveState();
-      if (cleared.length) showToast('Switched — ' + cleared.length + ' item' + (cleared.length > 1 ? 's' : '') + ' hidden (no ' + bt + ' art yet)');
-      else showToast('Switched to ' + (bt.charAt(0).toUpperCase() + bt.slice(1)));
-    } catch (e) {
-      showToast('Switch failed');
+
+    // Local preview only — nothing is persisted until the user clicks Save.
+    // Skin tone and every equipped accessory carry straight over; the switch
+    // just re-prefixes the tone id (male_porcelain -> female_porcelain) so it
+    // matches the new body's preset set. Items stay equipped even if the new
+    // body has no art for them yet — they'll simply render once art arrives.
+    avatarData.body_type = bt;
+
+    var reTone = bt + '_' + String(avatarData.skin_tone || '').replace(/^(male|female)_/, '');
+    // Every tone suffix exists for both bodies, so reTone is always valid; keep
+    // a guard anyway and fall back to the new body's default if it isn't.
+    var toneOk = presetsForCurrentBody().some(function(p){ return p.id === reTone; });
+    if (!toneOk) {
+      var def = presetsForCurrentBody().filter(function(p){ return p.is_default; })[0];
+      reTone = (def && def.id) || (bt + '_porcelain');
     }
-    BODY_SWITCHING = false;
+    avatarData.skin_tone = reTone;
+
+    dirty = true;
+    renderGenderToggle();
+    renderSkinTones();
+    renderPoseRow();
+    renderSlotTabs();
+    renderPreview();
+    updateSaveState();
+    showToast('Switched to ' + (bt.charAt(0).toUpperCase() + bt.slice(1)) + ' — click Save to keep it');
   }
 
   // ── RENDER: SLOT TABS ─────────────────────────────────────────────
@@ -1531,6 +1534,7 @@
 
     var payload = {
       user_id: currentUid,
+      body_type: avatarData.body_type || 'male',
       skin_tone: avatarData.skin_tone,
       pose: avatarData.pose || 'pose1',
       avatar_position: avatarData.avatar_position || 'center',
