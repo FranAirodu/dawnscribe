@@ -158,9 +158,13 @@
       pose1: { x: 91, y: 12, w: 137, h: 137 },
       pose2: { x: 85, y: 13, w: 132, h: 132 }
     },
+    // NOTE: the female sheets have their pose letters REVERSED relative to
+    // the male ones -- female pose1 is the _a file, male pose1 is the _b
+    // file (see avatar_body_presets.pose_paths). These crops are keyed to
+    // pose1/pose2 as the DB maps them, not to the _a/_b filenames.
     female: {
-      pose1: { x: 84, y: 44, w: 126, h: 126 },
-      pose2: { x: 98, y: 49, w: 123, h: 123 }
+      pose1: { x: 98, y: 49, w: 123, h: 123 },
+      pose2: { x: 84, y: 44, w: 126, h: 126 }
     }
   };
 
