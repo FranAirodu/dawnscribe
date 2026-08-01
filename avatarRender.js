@@ -125,19 +125,39 @@
   // avatar_body_presets.head_crops jsonb column, e.g.
   //   { "pose1": {"x":118,"y":84,"w":84,"h":84} }
   // Falls back to these defaults when the preset has no override.
+  //
+  // Male and female base art use DIFFERENT canvas sizes (male 3000x4000,
+  // female 4000x4800). Fitted into the same body box with "meet", the two
+  // land at different scales and the head sits at a different HEIGHT for
+  // each gender. So the crop that frames a male head does NOT frame a
+  // female head -- every body type needs its own crop. Keyed by body_type
+  // here so any future preset without an explicit head_crops override still
+  // frames correctly for its gender. Derived by pixel-measuring the head
+  // position of each base sheet and matching the male framing.
   var DEFAULT_HEAD_CROPS = {
-    pose1: { x: 118, y: 84, w: 84, h: 84 },
-    pose2: { x: 118, y: 84, w: 84, h: 84 }
+    male: {
+      pose1: { x: 115, y: 107, w: 85, h: 85 },
+      pose2: { x: 122, y: 110, w: 85, h: 85 }
+    },
+    female: {
+      pose1: { x: 119, y: 138, w: 78, h: 78 },
+      pose2: { x: 117, y: 137, w: 78, h: 78 }
+    }
   };
+
+  function defaultCropsFor(bodyType) {
+    return DEFAULT_HEAD_CROPS[bodyType] || DEFAULT_HEAD_CROPS.male;
+  }
 
   function getHeadCrop(preset, pose) {
     pose = pose || 'pose1';
+    var defs = defaultCropsFor(preset && preset.body_type);
     var fromDb = preset && preset.head_crops && (preset.head_crops[pose] || preset.head_crops.pose1);
-    var c = fromDb || DEFAULT_HEAD_CROPS[pose] || DEFAULT_HEAD_CROPS.pose1;
+    var c = fromDb || defs[pose] || defs.pose1;
     // Validate: all numeric, sane bounds
     if (!c || typeof c.x !== 'number' || typeof c.y !== 'number' ||
         typeof c.w !== 'number' || typeof c.h !== 'number' || c.w <= 0 || c.h <= 0) {
-      c = DEFAULT_HEAD_CROPS.pose1;
+      c = defs.pose1;
     }
     return c;
   }
