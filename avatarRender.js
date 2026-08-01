@@ -126,22 +126,25 @@
   //   { "pose1": {"x":118,"y":84,"w":84,"h":84} }
   // Falls back to these defaults when the preset has no override.
   //
-  // Male and female base art use DIFFERENT canvas sizes (male 3000x4000,
-  // female 4000x4800). Fitted into the same body box with "meet", the two
-  // land at different scales and the head sits at a different HEIGHT for
-  // each gender. So the crop that frames a male head does NOT frame a
-  // female head -- every body type needs its own crop. Keyed by body_type
-  // here so any future preset without an explicit head_crops override still
-  // frames correctly for its gender. Derived by pixel-measuring the head
-  // position of each base sheet and matching the male framing.
+  // All base art now shares ONE canvas (4000x4800) and one figure anchor:
+  // centerline X=2000, feet baseline Y=4560, male figure 3556px tall and
+  // female 3307px (93% of male). Because the female figure is shorter, her
+  // head sits LOWER in the frame, so each body type still needs its own
+  // crop -- keyed by body_type here so any future preset without an explicit
+  // head_crops override still frames correctly for its gender.
+  //
+  // Derived by pixel-measuring crown and shoulder line on the normalized
+  // sheets and projecting into the 320x480 render space. Both genders frame
+  // to the same proportions: ~21% headroom, chin line at ~76% of the crop.
+  // If the base art is ever re-cut, re-measure -- do not nudge by eye.
   var DEFAULT_HEAD_CROPS = {
     male: {
-      pose1: { x: 115, y: 107, w: 85, h: 85 },
-      pose2: { x: 122, y: 110, w: 85, h: 85 }
+      pose1: { x: 120, y: 187, w: 79, h: 79 },
+      pose2: { x: 120, y: 187, w: 79, h: 79 }
     },
     female: {
-      pose1: { x: 119, y: 138, w: 78, h: 78 },
-      pose2: { x: 117, y: 137, w: 78, h: 78 }
+      pose1: { x: 124, y: 205, w: 72, h: 72 },
+      pose2: { x: 124, y: 205, w: 72, h: 72 }
     }
   };
 
