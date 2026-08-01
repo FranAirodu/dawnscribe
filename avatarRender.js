@@ -24,7 +24,23 @@
   // Body render box inside the 320x480 viewBox. Leaves headroom for
   // hair/hats + side room for back items/backgrounds; future cosmetic
   // layers must use this same box.
-  var BODY_BOX = { x: 24, y: 78, w: 272, h: 384 };
+  //
+  // SIZED TO THE ART, NOT THE VIEWBOX. The base sheets are 4000x4800 with a
+  // locked anchor (figure centered on art X=2000, feet on art Y=4560, male
+  // figure 3556px tall). Because the images use preserveAspectRatio "meet",
+  // the box must share the art's 5:6 aspect or the figure letterboxes and
+  // shrinks. This box is deliberately LARGER than the 320x480 viewBox: the
+  // transparent margins of the sheet overflow and get clipped, which is
+  // what lets the figure itself fill the frame.
+  //
+  // Derived: scale = 420/3556 = 0.11811 (male figure renders 420 units tall
+  // in the 480-unit viewBox), w = 4000*s, h = 4800*s, positioned so the feet
+  // land on the floor line y=462 and the centerline on x=160. Leaves 42
+  // units of headroom above the crown for hair and hats.
+  //
+  // If the base art's canvas or anchor ever changes, recompute this box AND
+  // the head crops together -- they are derived from the same numbers.
+  var BODY_BOX = { x: -76.22, y: -76.58, w: 472.44, h: 566.93 };
 
   // Female body scale. 1.00 = renders identically to male.
   //
@@ -139,12 +155,12 @@
   // If the base art is ever re-cut, re-measure -- do not nudge by eye.
   var DEFAULT_HEAD_CROPS = {
     male: {
-      pose1: { x: 120, y: 187, w: 79, h: 79 },
-      pose2: { x: 117, y: 187, w: 76, h: 76 }
+      pose1: { x: 91, y: 12, w: 137, h: 137 },
+      pose2: { x: 85, y: 13, w: 132, h: 132 }
     },
     female: {
-      pose1: { x: 116, y: 205, w: 73, h: 73 },
-      pose2: { x: 124, y: 208, w: 71, h: 71 }
+      pose1: { x: 84, y: 44, w: 126, h: 126 },
+      pose2: { x: 98, y: 49, w: 123, h: 123 }
     }
   };
 
