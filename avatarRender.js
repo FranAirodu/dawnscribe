@@ -140,11 +140,11 @@
   var DEFAULT_HEAD_CROPS = {
     male: {
       pose1: { x: 120, y: 187, w: 79, h: 79 },
-      pose2: { x: 120, y: 187, w: 79, h: 79 }
+      pose2: { x: 117, y: 187, w: 76, h: 76 }
     },
     female: {
-      pose1: { x: 124, y: 205, w: 72, h: 72 },
-      pose2: { x: 124, y: 205, w: 72, h: 72 }
+      pose1: { x: 116, y: 205, w: 73, h: 73 },
+      pose2: { x: 124, y: 208, w: 71, h: 71 }
     }
   };
 
