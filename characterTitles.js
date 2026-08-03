@@ -2130,13 +2130,12 @@ window.CharacterTitles = (function() {
           var _meRes2 = await _db2.from('profiles').select('display_name,username').eq('id', userId).maybeSingle();
           var _me2 = _meRes2.data || {};
           var _myName2 = _me2.display_name || _me2.username || 'Someone';
-          await _db2.from('notifications').insert({
-            user_id: _w2.author_id,
-            type: 'opinion_submitted',
-            from_user_id: userId,
-            work_id: workId,
-            character_id: charId,
-            message: _myName2 + ' suggested a song for a character in \u201c' + (_w2.title || 'your story') + '\u201d'
+          await _db2.rpc('send_notification', {
+            p_user_id: _w2.author_id,
+            p_type: 'opinion_submitted',
+            p_work_id: workId,
+            p_character_id: charId,
+            p_message: _myName2 + ' suggested a song for a character in \u201c' + (_w2.title || 'your story') + '\u201d'
           });
         }
       } catch(e3) {}
@@ -2157,26 +2156,24 @@ window.CharacterTitles = (function() {
       var meRes = await _db.from('profiles').select('display_name,username').eq('id', fromUid).maybeSingle();
       var me = meRes.data || {};
       var myName = me.display_name || me.username || 'Someone';
-      await _db.from('notifications').insert({
-        user_id: w.author_id,
-        type: type,
-        from_user_id: fromUid,
-        work_id: workId,
-        character_id: charId || null,
-        message: buildMsg(myName, w.title || 'your story')
+      await _db.rpc('send_notification', {
+        p_user_id: w.author_id,
+        p_type: type,
+        p_work_id: workId,
+        p_character_id: charId || null,
+        p_message: buildMsg(myName, w.title || 'your story')
       });
     } catch (e) {}
   }
   async function ctNotifyUser(targetUid, myUid, workId, charId, type, message) {
     try {
       if (!targetUid || targetUid === myUid) return;
-      await db().from('notifications').insert({
-        user_id: targetUid,
-        type: type,
-        from_user_id: myUid || null,
-        work_id: workId || null,
-        character_id: charId || null,
-        message: message
+      await db().rpc('send_notification', {
+        p_user_id: targetUid,
+        p_type: type,
+        p_work_id: workId || null,
+        p_character_id: charId || null,
+        p_message: message
       });
     } catch (e) {}
   }
@@ -2407,14 +2404,13 @@ window.CharacterTitles = (function() {
             var _meRes = await _db.from('profiles').select('display_name,username').eq('id', userId).maybeSingle();
             var _me = _meRes.data || {};
             var _myName = _me.display_name || _me.username || 'Someone';
-            await _db.from('notifications').insert({
-              user_id: _w.author_id,
-              type: 'opinion_submitted',
-              from_user_id: userId,
-              work_id: workId,
-              chapter_id: chapterId || null,
-              character_id: charId,
-              message: _myName + ' shared a character opinion on \u201c' + (_w.title || 'your story') + '\u201d'
+            await _db.rpc('send_notification', {
+              p_user_id: _w.author_id,
+              p_type: 'opinion_submitted',
+              p_work_id: workId,
+              p_chapter_id: chapterId || null,
+              p_character_id: charId,
+              p_message: _myName + ' shared a character opinion on \u201c' + (_w.title || 'your story') + '\u201d'
             });
           }
         } catch(e2) {}
@@ -2485,12 +2481,12 @@ window.CharacterTitles = (function() {
         await updateOpinionStatus(o.id, 'approved', false);
         // Notify the submitter their opinion was approved
         try {
-          await db().from('notifications').insert({
-            user_id: o.user_id,
-            type: 'opinion_approved',
-            work_id: workId,
-            character_id: o.character_id,
-            message: 'Your character opinion on ' + charName + ' was approved by the author'
+          await db().rpc('send_notification', {
+            p_user_id: o.user_id,
+            p_type: 'opinion_approved',
+            p_work_id: workId,
+            p_character_id: o.character_id,
+            p_message: 'Your character opinion on ' + charName + ' was approved by the author'
           });
         } catch(e2) {}
         renderPendingOpinionsPanel(container, workId);
@@ -2510,12 +2506,12 @@ window.CharacterTitles = (function() {
         await updateOpinionStatus(o.id, 'approved', true);
         // Notify the submitter their opinion was featured
         try {
-          await db().from('notifications').insert({
-            user_id: o.user_id,
-            type: 'opinion_featured',
-            work_id: workId,
-            character_id: o.character_id,
-            message: 'Your character opinion on ' + charName + ' was featured on the character card! \u2b50'
+          await db().rpc('send_notification', {
+            p_user_id: o.user_id,
+            p_type: 'opinion_featured',
+            p_work_id: workId,
+            p_character_id: o.character_id,
+            p_message: 'Your character opinion on ' + charName + ' was featured on the character card! \u2b50'
           });
         } catch(e2) {}
         renderPendingOpinionsPanel(container, workId);

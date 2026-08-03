@@ -1081,15 +1081,18 @@
         var { data: users, error: usersErr } = await db.from('profiles').select('id');
         if (usersErr) throw usersErr;
         if (!users || !users.length) { showToast('No users found', 'ti-alert-triangle'); return; }
-        // Insert in batches of 100 to avoid payload limits
-        var rows = users.map(function(u){ return { user_id: u.id, type: 'admin_blast', message: msg }; });
-        var batchSize = 100, errors = 0;
-        for (var i = 0; i < rows.length; i += batchSize) {
-          var res = await db.from('notifications').insert(rows.slice(i, i + batchSize));
-          if (res.error) errors++;
+        // One server-side call: admin_send_notification fans out to every
+        // active user itself, so there are no client batches to half-fail.
+        var res = await db.rpc('admin_send_notification', {
+          p_type: 'admin_blast',
+          p_message: msg
+        });
+        if (res.error || !res.data || !res.data.success) {
+          var why = (res.data && res.data.error) || (res.error && res.error.message) || 'unknown';
+          showToast('Blast failed: ' + why, 'ti-alert-triangle');
+        } else {
+          showToast('Blast sent to ' + res.data.sent + ' users!', 'ti-bell-ringing');
         }
-        if (errors) { showToast('Sent with ' + errors + ' batch error(s)', 'ti-alert-triangle'); }
-        else { showToast('Blast sent to ' + users.length + ' users!', 'ti-bell-ringing'); }
         document.getElementById('blast-message').value = '';
         document.getElementById('blast-chars').textContent = '0/200';
         auditLog('Sent notification blast to ' + users.length + ' users: "' + msg.slice(0,40) + (msg.length>40?'…':'') + '"', 'ti-bell-ringing');
@@ -1351,10 +1354,10 @@
         card.querySelector('.pf-warn').addEventListener('click', async function() {
           if (!work.author_id) { showToast('No author found.', 'ti-x'); return; }
           if (!confirm('Send a warning notification to @' + authorName + ' for prestige farming?')) return;
-          await db.from('notifications').insert({
-            user_id: work.author_id,
-            type: 'admin_warning',
-            message: 'Warning: Your story "' + (work.title || 'Untitled') + '" has been flagged by multiple readers as not genuine writing. Posting placeholder or nonsense content to farm prestige medals violates community guidelines. Further violations may result in removal of your account.'
+          await db.rpc('admin_send_notification', {
+            p_type: 'admin_warning',
+            p_user_ids: [work.author_id],
+            p_message: 'Warning: Your story "' + (work.title || 'Untitled') + '" has been flagged by multiple readers as not genuine writing. Posting placeholder or nonsense content to farm prestige medals violates community guidelines. Further violations may result in removal of your account.'
           });
           for (var i = 0; i < reports.length; i++) {
             await db.from('reports').update({ status: 'resolved' }).eq('id', reports[i].id);
@@ -1369,10 +1372,10 @@
           if (!confirm('DELETE "' + (work.title || 'Untitled') + '" and warn the author? This cannot be undone.')) return;
           // Send warning notification
           if (work.author_id) {
-            await db.from('notifications').insert({
-              user_id: work.author_id,
-              type: 'admin_warning',
-              message: 'Your story "' + (work.title || 'Untitled') + '" has been removed by an admin for prestige farming — posting non-genuine content to accumulate word count medals. This is a violation of DawnScribe\'s community guidelines.'
+            await db.rpc('admin_send_notification', {
+              p_type: 'admin_warning',
+              p_user_ids: [work.author_id],
+              p_message: 'Your story "' + (work.title || 'Untitled') + '" has been removed by an admin for prestige farming — posting non-genuine content to accumulate word count medals. This is a violation of DawnScribe\'s community guidelines.'
             });
           }
           // Delete the work

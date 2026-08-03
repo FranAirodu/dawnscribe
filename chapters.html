@@ -2964,16 +2964,26 @@
         try {
           var { data: myProf } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
           var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
-          await db.from('notifications').insert({
-            user_id: authorId, type: 'fan_translation_linked', from_user_id: currentSession.user.id,
-            work_id: linkedId, related_id: workId,
-            message: myName + ' created a fan translation of your story "' + linkedTitle + '"'
+          await db.rpc('send_notification', {
+            p_user_id: authorId,
+            p_type: 'fan_translation_linked',
+            p_work_id: linkedId,
+            p_message: myName + ' created a fan translation of your story "' + linkedTitle + '"'
           });
         } catch(e) {}
       }
       showToast('Translation linked!', 'ti-check');
     } else if (isFriend && authorId) {
-      await db.from('notifications').insert({ user_id: authorId, type: 'story_link_request', from_user_id: currentSession.user.id, content: 'wants to link their story to yours as a collab', related_id: workId, is_read: false });
+      try {
+        var { data: myProfL } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
+        var myNameL = myProfL ? (myProfL.display_name || myProfL.username || 'Someone') : 'Someone';
+        await db.rpc('send_notification', {
+          p_user_id: authorId,
+          p_type: 'story_link_request',
+          p_work_id: workId,
+          p_message: myNameL + ' wants to link their story to yours as a collab'
+        });
+      } catch(e) {}
       showToast('Collab request sent — pending approval.', 'ti-clock');
     } else {
       showToast('Story linked!', 'ti-check');

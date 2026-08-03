@@ -1292,12 +1292,11 @@
           var { data: myProf } = await db.from('profiles')
             .select('display_name,username').eq('id', session.user.id).maybeSingle();
           var myName = myProf ? (myProf.display_name || myProf.username || 'Someone') : 'Someone';
-          try { await db.from('notifications').insert({
-            user_id: parentCmt.user_id,
-            type: 'artwork_reply',
-            from_user_id: session.user.id,
-            work_id: workId,
-            message: myName + ' replied to your comment on "' + (workData.title || 'Untitled') + '"'
+          try { await db.rpc('send_notification', {
+            p_user_id: parentCmt.user_id,
+            p_type: 'artwork_reply',
+            p_work_id: workId,
+            p_message: myName + ' replied to your comment on "' + (workData.title || 'Untitled') + '"'
           }); } catch(e){}
         }
       }
@@ -1437,12 +1436,11 @@
         var commenterName = myProfile ? (myProfile.display_name || myProfile.username || 'Someone') : 'Someone';
         var { data: ownerPref } = await db.from('profiles').select('notif_comment').eq('id', workData.author_id).maybeSingle();
         if (!ownerPref || ownerPref.notif_comment !== false) {
-        try { await db.from('notifications').insert({
-          user_id: workData.author_id,
-          type: 'artwork_comment',
-          from_user_id: session.user.id,
-          work_id: workId,
-          message: commenterName + ' commented on your artwork "' + (workData.title || 'Untitled') + '"'
+        try { await db.rpc('send_notification', {
+          p_user_id: workData.author_id,
+          p_type: 'artwork_comment',
+          p_work_id: workId,
+          p_message: commenterName + ' commented on your artwork "' + (workData.title || 'Untitled') + '"'
         }); } catch(e){}
         }
       }
@@ -1824,13 +1822,11 @@
         var requesterName = (session.user && session.user.user_metadata && session.user.user_metadata.display_name) || session.user.email || 'Someone';
         var notifMessage = requesterName + ' wants to commission "' + (typeLabels[type] || type) + '" — ' + desc.slice(0, 120) + (desc.length > 120 ? '…' : '') + (contact ? ' | Contact: ' + contact : '');
         if(artistId){
-          await db.from('notifications').insert({
-            user_id: artistId,
-            from_user_id: session.user.id,
-            type: 'commission_request',
-            message: notifMessage,
-            work_id: workId,
-            is_read: false
+          await db.rpc('send_notification', {
+            p_user_id: artistId,
+            p_type: 'commission_request',
+            p_message: notifMessage,
+            p_work_id: workId
           });
         }
         msg.textContent = 'Your request has been sent! The artist will get back to you.';
