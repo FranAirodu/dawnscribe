@@ -273,6 +273,15 @@
       return;
     }
     currentUser = session.user;
+
+    // 18+ gate. The DB enforces this too (RLS + trigger on scrolls); this
+    // just avoids showing a form that would be rejected on save.
+    var ageStatus = await window.DSAgeGate.status();
+    if (!ageStatus.is_adult) {
+      window.DSAgeGate.showWall({ title: 'You need to be 18 to sell banners' });
+      return;
+    }
+
     document.getElementById('main-content').style.display = 'block';
     try { await loadExisting(); } catch(e) { console.error('Load error:', e); }
   })();
@@ -435,6 +444,10 @@
   }
 
   async function submitForReview() {
+    // One-time age & liability agreement before anything goes up for sale.
+    var attested = await window.DSAgeGate.ensureAttestation();
+    if (!attested) return;
+
     var btn = document.getElementById('submit-btn');
     btn.disabled = true;
     btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Submitting…';
@@ -463,6 +476,7 @@
     await loadExisting();
   }
 </script>
+<script src="creatorAgeGate.js"></script>
 <script src="footer.js"></script>
 <script src="nav.js"></script>
 </body>
