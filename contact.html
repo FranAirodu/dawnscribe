@@ -23,6 +23,7 @@
   </script>
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DawnScribe — Contact</title>
+  <script src="accessibilityPrefs.js"></script>
   <meta property="og:site_name" content="DawnScribe" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="DawnScribe — Contact" />
@@ -177,7 +178,7 @@
 
       <div class="info-note">
         <strong>Response time</strong>
-        We aim to respond to all messages within 72 hours. Urgent matters — such as safety reports or DMCA notices — are prioritized and reviewed as quickly as possible. DawnScribe staff will never ask for your password in any response.
+        Safety reports, DMCA notices, and anything involving harm to a minor are prioritized above everything else and reviewed as fast as we possibly can. Everything else is worked through in the order it arrives. DawnScribe is a small operation, so we would rather not promise a turnaround we cannot always meet — but every message is read. Privacy and data requests are answered within 30 days, as set out in the Privacy Policy. DawnScribe staff will never ask for your password in any response.
       </div>
     </div>
 
@@ -189,14 +190,11 @@
       <div class="form-success" id="form-success">
         <div class="form-success-icon"><i class="ti ti-circle-check"></i></div>
         <h3>Message Sent!</h3>
-        <p>Thanks for reaching out. We'll get back to you at your email address within 72 hours. Urgent matters are reviewed as quickly as possible.</p>
+        <p>Thanks for reaching out — we'll reply to the email address you gave us. Safety and copyright matters are reviewed first; everything else is answered in the order it arrives.</p>
         <a href="index.html"><i class="ti ti-arrow-left"></i> Back to DawnScribe</a>
       </div>
 
       <form id="contact-form" novalidate>
-        <!-- Web3Forms config -->
-        <input type="hidden" name="form_title" value="DawnScribe Contact Form"/>
-        <input type="hidden" name="access_key" value="7c5348e7-291b-4149-be36-67172729ef34"/>
         <!-- Honeypot -->
         <input type="checkbox" name="botcheck" style="display:none;" aria-hidden="true" tabindex="-1"/>
 
@@ -218,7 +216,8 @@
             <option value="Safety Report">Safety Report</option>
             <option value="DMCA / Copyright">DMCA / Copyright</option>
             <option value="Technical Issue">Technical Issue</option>
-            <option value="Billing / Membership">Billing / Membership</option>
+            <option value="Billing / Quill Purchases">Billing / Quill Purchases</option>
+            <option value="Privacy / Data Request">Privacy / Data Request</option>
             <option value="Partnership Enquiry">Partnership Enquiry</option>
             <option value="General Question">General Question</option>
             <option value="Other">Other</option>
@@ -239,6 +238,13 @@
         </button>
 
         <div class="form-result" id="form-result"></div>
+
+        <p style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:16px;">
+          Your name, email address, subject, and message are stored on DawnScribe's own
+          servers and used only to answer you. See our
+          <a href="privacy.html" style="color:var(--accent);text-decoration:none;">Privacy Policy</a>.
+          Please don't include passwords or payment details in your message.
+        </p>
       </form>
     </div>
 
@@ -311,7 +317,8 @@
       'Safety Report': 'Please include: the username of the reported user and links to the content in question.',
       'Technical Issue': 'Please include: what happened, which page or feature was involved, and your browser/device if known.',
       'Account Issue': 'Please describe what happened with your account and when the issue started.',
-      'Billing / Membership': 'Please include your order reference or the email used at checkout if applicable.'
+      'Billing / Quill Purchases': 'Please include your order reference or the email used at checkout if applicable.',
+      'Privacy / Data Request': 'Tell us which right you want to exercise — a copy of your data, correction, deletion, or opting out. Use the email address on the account where possible so we can verify it is you.'
     };
 
     msgTextarea.addEventListener('input', function(){
@@ -385,10 +392,24 @@
       submitBtn.disabled = true;
 
       try {
-        var formData = new FormData(form);
-        var response = await fetch('https://api.web3forms.com/submit', {
+        // Attach the session token when signed in so the message is attributed
+        // to the account. Anonymous submissions are allowed.
+        var headers = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY };
+        try {
+          var { data: { session: sess } } = await db.auth.getSession();
+          if(sess && sess.access_token) headers['Authorization'] = 'Bearer ' + sess.access_token;
+        } catch(e) {}
+
+        var response = await fetch(SUPA_URL + '/functions/v1/contact-submit', {
           method: 'POST',
-          body: formData
+          headers: headers,
+          body: JSON.stringify({
+            name: nameVal,
+            email: emailVal,
+            subject: topicVal,
+            message: messageVal,
+            botcheck: document.querySelector('[name="botcheck"]').checked
+          })
         });
         var data = await response.json();
 

@@ -779,12 +779,20 @@
     <div style="background:var(--bg2);border:1px solid var(--red);border-radius:16px;padding:28px;max-width:420px;width:90%;">
       <div style="font-family:'Cinzel',serif;font-size:19px;font-weight:700;color:var(--red);margin-bottom:6px;display:flex;align-items:center;gap:8px;"><i class="ti ti-skull"></i> Delete Your Account</div>
       <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px;">
-        This immediately deactivates your account and removes everything that identifies you — your username, avatar, bio, and profile. Your comments, reviews, and reading history are erased.
+        This immediately deactivates your account and removes everything that identifies you — your username, avatar, bio, and profile are replaced with an anonymous placeholder, and you are signed out everywhere.
+        <br/><br/>
+        <strong style="color:var(--text);">Your comments, reviews, and reading history are not deleted.</strong> They stay on the platform under the anonymous placeholder, because conversations other people took part in would otherwise break. Contact us if you need something specific removed.
         <br/><br/>
         <strong style="color:var(--text);">You have 30 days to change your mind.</strong> Signing back in within that window offers to restore your profile. After 30 days the account cannot be recovered.
         <br/><br/>
         If you've earned payouts, royalties, or granted character licenses, we're legally required to retain those financial records, but they'll no longer be linked to any identifying information about you.
       </div>
+      <label for="delete-unpublish-works" style="display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--text2);line-height:1.55;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;cursor:pointer;">
+        <input type="checkbox" id="delete-unpublish-works" style="margin-top:2px;flex-shrink:0;"/>
+        <span>Also unpublish my novels, chapters, and artwork.<br/>
+          <span style="font-size:11.5px;color:var(--text3);">They stay withdrawn from public view and are restored automatically if you reactivate within 30 days.</span>
+        </span>
+      </label>
       <div style="font-size:13px;color:var(--text2);margin-bottom:8px;">
         Type <strong style="color:var(--text);" id="delete-confirm-username"></strong> below to confirm:
       </div>
@@ -1107,10 +1115,22 @@
       if (isNaN(dobDate.getTime()) || dobDate > new Date() || dobDate < oldest) {
         errEl.textContent = 'Please enter a valid date of birth.'; errEl.style.display = 'block'; return;
       }
-      myDOB = val;
+      // The guard_dob_change() trigger can refuse this (12-month rate limit, or
+      // an active listing / payout balance). supabase-js does NOT throw on a
+      // failed write -- it returns { error } -- so a try/catch here would never
+      // fire. Check the result and only commit myDOB once the DB has accepted it.
       if (currentSession) {
-        try { await db.from('profiles').update({ date_of_birth: val }).eq('id', currentSession.user.id); } catch(e) {}
+        var dobRes = await db.from('profiles')
+          .update({ date_of_birth: val })
+          .eq('id', currentSession.user.id);
+        if (dobRes.error) {
+          console.error('Date of birth update rejected:', dobRes.error);
+          errEl.textContent = dobRes.error.message || 'Your date of birth could not be updated. Please contact support.';
+          errEl.style.display = 'block';
+          return;
+        }
       }
+      myDOB = val;
       document.getElementById('age-verify-box').style.display = 'none';
       applyAgeGateUI();
       var age = myComputedAge();
@@ -1437,7 +1457,7 @@
               '<div><div style="font-size:13px;font-weight:700;color:var(--text);">'+escHtml(name)+'</div><div style="font-size:11px;color:var(--text2);">@'+escHtml(u.username||'unknown')+'</div></div></div>';
           }).join('');
           resultsEl.style.display = 'block';
-        } catch(e) {}
+        } catch(e) { console.error('User search failed:', e); resultsEl.style.display = 'none'; }
       }, 350);
     }
     async function blockUserFromSettings(id, username) {
@@ -1512,7 +1532,7 @@
               '<div><div style="font-size:13px;font-weight:700;color:var(--text);">'+escHtml(name)+'</div><div style="font-size:11px;color:var(--text2);">@'+escHtml(u.username||'unknown')+'</div></div></div>';
           }).join('');
           resultsEl.style.display = 'block';
-        } catch(e) {}
+        } catch(e) { console.error('User search failed:', e); resultsEl.style.display = 'none'; }
       }, 350);
     }
     async function muteUserFromSettings(id, username) {
@@ -1826,27 +1846,24 @@
       btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Sending…';
 
       try {
-        // 1. Save to the database so it shows up on the admin review page
-        await db.from('feedback').insert({
+        // Saved to the database, which is what the admin review page reads. A
+        // trigger on this table sends the notification email, so there is no
+        // third-party form service in this path any more.
+        // NOTE: .insert() resolves with { error } rather than throwing, so the
+        // outer catch alone would report success on a failed write.
+        var fbRes = await db.from('feedback').insert({
           user_id: currentSession.user.id,
           message: message,
           page_context: 'settings.html'
         });
-
-        // 2. Also email it via Web3Forms for an immediate notification
-        try {
-          await fetch('https://api.web3forms.com/submit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              access_key: '7c5348e7-291b-4149-be36-67172729ef34',
-              subject: 'DawnScribe Feedback',
-              from_name: myOriginalUsername || currentSession.user.email,
-              email: currentSession.user.email,
-              message: message
-            })
-          });
-        } catch(e) {}
+        if (fbRes.error) {
+          console.error('Feedback insert failed:', fbRes.error);
+          resultEl.style.color = 'var(--red)';
+          resultEl.innerHTML = '<i class="ti ti-alert-circle"></i> Your feedback could not be sent. Please try again.';
+          resultEl.style.display = 'block';
+          btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Send Feedback';
+          return;
+        }
 
         resultEl.style.color = 'var(--green)';
         resultEl.innerHTML = '<i class="ti ti-circle-check"></i> Thanks — your feedback has been sent.';
@@ -1867,12 +1884,15 @@
       showToast('Deleting account…', 'ti-loader');
 
       try {
-        // soft_delete_account anonymizes the profile immediately and reports a
-        // disposition: 'hard_eligible' (no financial records -> fully removable) or
-        // 'soft' (has payout/royalty/license records that must be retained for
-        // financial/legal reasons; the account is deactivated + anonymized but the
-        // underlying record is kept).
-        var res = await db.rpc('soft_delete_account', { p_user_id: currentSession.user.id });
+        // soft_delete_account anonymizes the profile, snapshots the original
+        // values for the 30-day reactivation window, and ends every session.
+        // It does NOT delete user content. p_unpublish_works optionally withdraws
+        // the account's published works; reactivation restores exactly those.
+        var unpublishEl = document.getElementById('delete-unpublish-works');
+        var res = await db.rpc('soft_delete_account', {
+          p_user_id: currentSession.user.id,
+          p_unpublish_works: !!(unpublishEl && unpublishEl.checked)
+        });
         if (res.error || !res.data || !res.data.success) {
           var errCode = (res.data && res.data.error) || (res.error && res.error.message) || 'unknown';
           console.error('Delete account error:', errCode, res.error);
@@ -1894,7 +1914,10 @@
          'ds_reading_progress','ds_audit_log','ds_sidebar_collapsed','ds_row_states'
         ].forEach(function(k){ localStorage.removeItem(k); });
 
-        alert('Your account has been deactivated and everything identifying you has been removed \u2014 your username, avatar, bio, and profile are gone, along with your comments, reviews, and reading history.\n\nIf you change your mind, sign in again within the next 30 days and we will offer to restore it. Thank you for being part of DawnScribe.');
+        var pulled = (res.data && res.data.works_unpublished) || 0;
+        alert('Your account has been deactivated and everything identifying you has been removed \u2014 your username, avatar, bio, and profile are now an anonymous placeholder.'
+          + (pulled ? '\n\n' + pulled + ' published work' + (pulled === 1 ? ' has' : 's have') + ' been withdrawn from public view.' : '')
+          + '\n\nIf you change your mind, sign in again within the next 30 days and we will offer to restore it. Thank you for being part of DawnScribe.');
         window.location.href = 'index.html';
 
       } catch(err) {
