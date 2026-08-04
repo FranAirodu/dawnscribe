@@ -1068,9 +1068,14 @@
     btn.classList.add('active-edit');
 
     // Load chapter content
-    var res = await db.from('chapters').select('*').eq('id', chapterId).maybeSingle();
+    // 'content' is no longer readable from the column — fetch it via the RPC.
+    var res = await db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections').eq('id', chapterId).maybeSingle();
     if (!res.data) { showToast('Could not load chapter', 'ti-alert-triangle'); return; }
     var ch = res.data;
+    try {
+      var _cRes = await db.rpc('get_chapter_content', { p_chapter_id: chapterId });
+      ch.content = (_cRes && _cRes.data) ? _cRes.data : '';
+    } catch(e) { ch.content = ''; }
 
     editingChapterId = chapterId;
     currentChapterStatus = ch.status || 'published';
@@ -2000,8 +2005,12 @@
   // ── DUPLICATE CHAPTER ─────────────────────────────────────────
   async function duplicateChapter() {
     if (!editingChapterId) return;
-    var { data: src } = await db.from('chapters').select('*').eq('id', editingChapterId).maybeSingle();
+    var { data: src } = await db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections').eq('id', editingChapterId).maybeSingle();
     if (!src) { showToast('Could not load chapter to duplicate.', 'ti-x'); return; }
+    try {
+      var _dRes = await db.rpc('get_chapter_content', { p_chapter_id: editingChapterId });
+      src.content = (_dRes && _dRes.data) ? _dRes.data : '';
+    } catch(e) { src.content = ''; }
     var nextNum = allChapters.length
       ? Math.max.apply(null, allChapters.map(function(c){ return c.chapter_number || 0; })) + 1
       : 1;
@@ -3283,7 +3292,7 @@
     document.getElementById('swr-confirm-btn').disabled = true;
     _swrMatches = [];
 
-    var { data: chapters, error } = await db.from('chapters').select('id,chapter_number,title,content').eq('work_id', workId).order('chapter_number', { ascending: true });
+    var { data: chapters, error } = await db.rpc('get_authored_chapters_content', { p_work_id: workId });
     if (error || !chapters) { statusEl.textContent = 'Error loading chapters.'; previewArea.innerHTML = ''; return; }
 
     var escaped = find.replace(/[\\^$.*+?()\[\]{}|]/g, '\\$&');

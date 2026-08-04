@@ -2617,15 +2617,22 @@
           if (typeof updateIntentUI === 'function') { try { updateIntentUI(); } catch(e) {} }
 
           // Load chapter 1 into the editor (edit in place; do NOT insert a new one).
-          var chRes = await db.from('chapters').select('id,title,content,chapter_number')
+          var chRes = await db.from('chapters').select('id,title,chapter_number')
             .eq('work_id', w.id).eq('chapter_number', 1).maybeSingle();
           if (chRes.data) {
             editChapterId = chRes.data.id;
             var chTitleEl = document.getElementById('chapter-title');
             if (chTitleEl) chTitleEl.value = chRes.data.title || '';
+            // Content comes from the RPC — the chapters.content column is not
+            // readable directly any more.
+            var _chBody = '';
+            try {
+              var _bRes = await db.rpc('get_chapter_content', { p_chapter_id: chRes.data.id });
+              _chBody = (_bRes && _bRes.data) ? _bRes.data : '';
+            } catch(e) { _chBody = ''; }
             // quill may still be initialising; retry briefly.
             var setBody = function(){
-              if (quill && quill.root) { quill.root.innerHTML = chRes.data.content || ''; }
+              if (quill && quill.root) { quill.root.innerHTML = _chBody; }
               else setTimeout(setBody, 120);
             };
             setBody();
@@ -2848,7 +2855,7 @@
             chapter_number: 1,
             word_count: wordCount,
             status: 'published'
-          }).select().single();
+          }).select('id,work_id,chapter_number,title,status').single();
           if (chapterResult.error) {
             console.error('Chapter insert error:', JSON.stringify(chapterResult.error));
             throw chapterResult.error;

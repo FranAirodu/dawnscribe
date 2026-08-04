@@ -156,8 +156,20 @@
 
     // ── First-page cache (per session, 2 min TTL) ──
     var CACHE_TTL_MS = 2 * 60 * 1000;
+    // Any filter that changes what comes back must be part of the key, or a
+    // settings change inside the TTL re-serves content the user just hid.
+    function filterSig() {
+      var f = myContentFilters;
+      return [
+        f.safe ? 1 : 0, f.gore ? 1 : 0, f.erotica ? 1 : 0,
+        myFilteredWarnings.slice().sort().join('~'),
+        myMutedIds.slice().sort().join('~'),
+        myLangPrefs.pref_language, myLangPrefs.lang_original ? 1 : 0, myLangPrefs.lang_strict ? 1 : 0
+      ].join(',');
+    }
     function cacheKey() {
-      return 'ds_browse_cache:' + section + '|' + viewMode + '|' + (completeOnly ? '1' : '0') + '|' + (myUid || 'anon');
+      return 'ds_browse_cache:' + section + '|' + viewMode + '|' + (completeOnly ? '1' : '0')
+        + '|' + (myUid || 'anon') + '|' + filterSig();
     }
     function cacheGet() {
       try {
@@ -170,7 +182,7 @@
     }
     function cacheSet(result) {
       try {
-        sessionStorage.setItem(cacheKey(), JSON.stringify({ t: Date.now(), v: { items: result.items, count: result.count, html: result.html, grid: result.grid } }));
+        sessionStorage.setItem(cacheKey(), JSON.stringify({ t: Date.now(), v: { items: result.items, count: result.count, html: result.html, grid: result.grid, ffFallback: !!result.ffFallback } }));
       } catch(e) {}
     }
 
@@ -193,7 +205,7 @@
     var myMutedIds = [];
     var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
 
-    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
     function timeAgo(s) {
       if (!s) return '';
       var d = Math.floor((Date.now() - new Date(s)) / 1000);
@@ -216,7 +228,7 @@
       'followed-art':      { title: 'New Art From Followed Artists', sub: 'New artwork from artists you follow.', icon: 'ti-palette' },
       'trending':          { title: 'Trending Now', sub: 'Novels and artwork gaining the most engagement over the past week.', icon: 'ti-flame' },
       'rising':            { title: 'Rising', sub: 'New novels and artwork picking up momentum fastest.', icon: 'ti-trending-up' },
-      'fan-favorite':      { title: 'Fan Favorites', sub: 'The most-followed novels on DawnScribe.', icon: 'ti-heart' }
+      'fan-favorite':      { title: 'Fan Favorites', sub: 'The novels picking up the most new followers this week.', icon: 'ti-heart' }
     };
     // Sections computed/ranked client-side; single ranked page, no pagination.
     var COMPUTED_SECTIONS = ['trending', 'rising', 'fan-favorite'];
@@ -229,6 +241,20 @@
       myFilteredWarnings.forEach(function(w){ q = q.not('content_warnings', 'cs', JSON.stringify([w])); });
       if (myMutedIds.length) q = q.not('author_id', 'in', '(' + myMutedIds.join(',') + ')');
       return q;
+    }
+    // Client-side equivalent of applyContentFilters, for rows that were fetched
+    // by a query which could not filter them (e.g. chapters joined to works).
+    function passesContentFilters(w) {
+      var allowGore = myContentFilters.gore && !myContentFilters.safe;
+      var allowErotica = myContentFilters.erotica && !myContentFilters.safe;
+      if (!allowGore && w.content_rating_gore === true) return false;
+      if (!allowErotica && w.content_rating_erotica === true) return false;
+      if (myFilteredWarnings.length && Array.isArray(w.content_warnings)) {
+        for (var i = 0; i < myFilteredWarnings.length; i++) {
+          if (w.content_warnings.indexOf(myFilteredWarnings[i]) !== -1) return false;
+        }
+      }
+      return true;
     }
     function applyLanguageFilters(q) {
       if (!myLangPrefs.lang_original) q = q.eq('is_fan_translation', false);
@@ -442,13 +468,18 @@
         var chWorkIds = Array.from(new Set(chData.map(function(c){ return c.work_id; })));
         var workMap = {};
         if (chWorkIds.length) {
-          var { data: works } = await db.from('works').select('id,title,cover_url,author_id').in('id', chWorkIds);
+          var { data: works } = await db.from('works')
+            .select('id,title,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings')
+            .in('id', chWorkIds);
           (works||[]).forEach(function(w){ workMap[w.id] = w; });
         }
         chData = chData.filter(function(c){
           var w = workMap[c.work_id];
-          if (!w) return true;
+          // Unresolvable parent means RLS hid the work — drop the chapter rather
+          // than render it as "by Unknown". Fail closed, not open.
+          if (!w) return false;
           if (myMutedIds.indexOf(w.author_id) !== -1) return false;
+          if (!passesContentFilters(w)) return false;
           try { if (window.dsBlock && dsBlock.either(w.author_id)) return false; } catch(e) {}
           return true;
         });
@@ -505,7 +536,7 @@
         var score = {}; allIds.forEach(function(id){ score[id] = 0; });
 
         var followsP = novelIds.length
-          ? db.from('work_follows').select('work_id,created_at').in('work_id', novelIds).gte('created_at', winISO)
+          ? db.rpc('get_work_follow_counts', { p_work_ids: novelIds, p_since: winISO })
           : Promise.resolve({ data: [] });
         var novChapsP = novelIds.length
           ? db.from('chapters').select('id,work_id').in('work_id', novelIds)
@@ -525,7 +556,7 @@
 
         if (isRising) {
           // Rising: flat +1 per signal, then divide by age in days (velocity).
-          (followsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
+          (followsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += (x.follows||0); });
           (sparksRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
           (artCommentsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
         } else {
@@ -533,7 +564,7 @@
           var sparkCounts = {};
           (sparksRes.data||[]).forEach(function(s){ sparkCounts[s.work_id] = (sparkCounts[s.work_id]||0) + 1; });
           Object.keys(sparkCounts).forEach(function(id){ if(score[id]!==undefined) score[id] += Math.min(10, sparkCounts[id]*2); });
-          (followsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 2; });
+          (followsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 2 * (x.follows||0); });
           (offeringsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
           (artCommentsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 2; });
         }
@@ -566,33 +597,69 @@
         };
       }
 
-      // ── Fan Favorites: novels ranked by follow count (mirrors homepage). ──
+      // ── Fan Favorites: novels gaining the most NEW followers in the last 7
+      //    days. Ranked on the follow window itself, not on a rating-ordered
+      //    pool, so the list actually rotates week to week. ──
       if (section === 'fan-favorite') {
+        var ffWinISO = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+        // Individual follow rows are private; counts come from the aggregate
+        // RPC, which needs the candidate work ids up front.
+        var ffPoolRes = await db.from('works').select('id')
+          .eq('type','novel').eq('is_published',true).limit(1000);
+        if (ffPoolRes.error) throw ffPoolRes.error;
+        var ffPoolIds = (ffPoolRes.data||[]).map(function(w){ return w.id; });
+
+        var ffCounts = {};
+        if (ffPoolIds.length) {
+          var ffWindowRes = await db.rpc('get_work_follow_counts', { p_work_ids: ffPoolIds, p_since: ffWinISO });
+          if (ffWindowRes.error) throw ffWindowRes.error;
+          (ffWindowRes.data||[]).forEach(function(x){ if (x.follows > 0) ffCounts[x.work_id] = x.follows; });
+        }
+        var ffWindowEmpty = Object.keys(ffCounts).length === 0;
+
+        // Quiet week: rather than show an empty section, surface a random
+        // selection of novels so there's always something to discover.
+        var ffTopIds = null;
+        if (!ffWindowEmpty) {
+          ffTopIds = Object.keys(ffCounts)
+            .sort(function(a,b){ return ffCounts[b] - ffCounts[a]; })
+            .slice(0, 200);
+          if (!ffTopIds.length) ffTopIds = null;
+        }
+
         var ffQ = db.from('works')
           .select('id,title,cover_url,rating,rating_count,synopsis,author_id,chapters_count,word_count,status,updated_at,created_at,content_rating_gore,content_rating_erotica,content_warnings,tags_main,is_fan_translation,language')
           .eq('type','novel').eq('is_published',true);
+        if (ffTopIds) ffQ = ffQ.in('id', ffTopIds); else ffQ = ffQ.limit(200);
         ffQ = applyContentFilters(ffQ); ffQ = applyLanguageFilters(ffQ);
         if (completeOnly) ffQ = ffQ.eq('status','completed');
-        ffQ = ffQ.order('rating',{ascending:false,nullsFirst:false}).limit(120);
         var ffRes = await ffQ;
         if (ffRes.error) throw ffRes.error;
-        var ffWorks = (ffRes.data||[]).filter(function(w){
+
+        var ffPool = (ffRes.data||[]).filter(function(w){
           try { if (window.dsBlock && dsBlock.either(w.author_id)) return false; } catch(e) {}
           return true;
         });
-        if (!ffWorks.length) return { items: [], count: 0, html: [], grid: 'results-grid' };
-        var ffIds = ffWorks.map(function(w){ return w.id; });
-        var ffFollowRes = await db.from('work_follows').select('work_id').in('work_id', ffIds);
-        var ffCounts = {}; (ffFollowRes.data||[]).forEach(function(x){ ffCounts[x.work_id] = (ffCounts[x.work_id]||0) + 1; });
-        var ffRanked = ffWorks.filter(function(w){ return (ffCounts[w.id]||0) > 0; })
-          .sort(function(a,b){ return (ffCounts[b.id]||0) - (ffCounts[a.id]||0); }).slice(0, 60);
-        if (!ffRanked.length) return { items: [], count: 0, html: [], grid: 'results-grid' };
+        var ffRanked;
+        if (ffTopIds) {
+          ffRanked = ffPool.sort(function(a,b){ return (ffCounts[b.id]||0) - (ffCounts[a.id]||0); }).slice(0, 60);
+        } else {
+          // Fisher-Yates, so a dead week shows a genuinely different set each load.
+          for (var _s = ffPool.length - 1; _s > 0; _s--) {
+            var _j = Math.floor(Math.random() * (_s + 1));
+            var _t = ffPool[_s]; ffPool[_s] = ffPool[_j]; ffPool[_j] = _t;
+          }
+          ffRanked = ffPool.slice(0, 60);
+        }
+        if (!ffRanked.length) return { items: [], count: 0, html: [], grid: 'results-grid', ffFallback: ffWindowEmpty };
+
         var ffProfileMap = await fetchProfiles(ffRanked.map(function(w){ return w.author_id; }));
         var useListFf = viewMode === 'list';
         return {
           items: ffRanked, count: ffRanked.length,
           html: ffRanked.map(function(w){ return useListFf ? renderNovelListRow(w, ffProfileMap) : renderNovelCard(w, ffProfileMap); }),
-          grid: useListFf ? 'list-view' : 'results-grid'
+          grid: useListFf ? 'list-view' : 'results-grid',
+          ffFallback: ffWindowEmpty
         };
       }
 
@@ -613,6 +680,15 @@
         if (reset && !fromCache) cacheSet(result);
         totalCount = result.count;
         offset += result.items.length;
+
+        if (section === 'fan-favorite') {
+          var subEl = document.getElementById('page-subtitle');
+          if (subEl) {
+            subEl.textContent = result.ffFallback
+              ? 'A quiet week for new follows — here are some novels to discover instead.'
+              : SECTION_META['fan-favorite'].sub;
+          }
+        }
 
         var container = document.getElementById('results-container');
         if (reset) {

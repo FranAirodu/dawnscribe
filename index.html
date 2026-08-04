@@ -2540,7 +2540,7 @@
           ? db.from('chapters').select('id,work_id').in('work_id', novelIds)
           : Promise.resolve({ data: [] });
         var followsP = novelIds.length
-          ? db.from('work_follows').select('work_id,created_at').in('work_id', novelIds).gte('created_at', sevenAgoISO)
+          ? db.rpc('get_work_follow_counts', { p_work_ids: novelIds, p_since: sevenAgoISO })
           : Promise.resolve({ data: [] });
         var offeringsP = novelIds.length
           ? db.from('work_offerings').select('work_id,created_at').in('work_id', novelIds).gte('created_at', sevenAgoISO)
@@ -2561,7 +2561,7 @@
         Object.keys(sparkCounts).forEach(function(id){ if(scores[id]!==undefined) scores[id] += Math.min(10, sparkCounts[id]*2); });
 
         // Novel follows +2 each.
-        (followsRes.data||[]).forEach(function(f){ if(scores[f.work_id]!==undefined) scores[f.work_id] += 2; });
+        (followsRes.data||[]).forEach(function(f){ if(scores[f.work_id]!==undefined) scores[f.work_id] += 2 * (f.follows||0); });
 
         // Novel offerings +1 each.
         (offeringsRes.data||[]).forEach(function(o){ if(scores[o.work_id]!==undefined) scores[o.work_id] += 1; });
@@ -2632,7 +2632,7 @@
         var eng = {}; allIds.forEach(function(id){ eng[id] = 0; });
 
         var followsP = novelIds.length
-          ? db.from('work_follows').select('work_id,created_at').in('work_id', novelIds).gte('created_at', thirtyAgoISO)
+          ? db.rpc('get_work_follow_counts', { p_work_ids: novelIds, p_since: thirtyAgoISO })
           : Promise.resolve({ data: [] });
         var novChapsP = novelIds.length
           ? db.from('chapters').select('id,work_id').in('work_id', novelIds)
@@ -2647,7 +2647,7 @@
         var [followsRes, novChapsRes, artCommentsRes, sparksRes] =
           await Promise.all([followsP, novChapsP, artCommentsP, sparksP]);
 
-        (followsRes.data||[]).forEach(function(f){ if(eng[f.work_id]!==undefined) eng[f.work_id] += 1; });
+        (followsRes.data||[]).forEach(function(f){ if(eng[f.work_id]!==undefined) eng[f.work_id] += (f.follows||0); });
         (sparksRes.data||[]).forEach(function(s){ if(eng[s.work_id]!==undefined) eng[s.work_id] += 1; });
         (artCommentsRes.data||[]).forEach(function(c){ if(eng[c.work_id]!==undefined) eng[c.work_id] += 1; });
 
@@ -2700,8 +2700,8 @@
         if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Nothing here yet.</div>'; return; }
         var workIds = works.map(function(w){ return w.id; });
-        var { data: follows } = await db.from('work_follows').select('work_id').in('work_id', workIds);
-        var followCounts = {}; (follows||[]).forEach(function(f){ followCounts[f.work_id] = (followCounts[f.work_id]||0) + 1; });
+        var { data: follows } = await db.rpc('get_work_follow_counts', { p_work_ids: workIds });
+        var followCounts = {}; (follows||[]).forEach(function(f){ followCounts[f.work_id] = f.follows || 0; });
         works.forEach(function(w){ w._followCount = followCounts[w.id] || 0; });
         var ranked = works.filter(function(w){ return w._followCount > 0; }).sort(function(a,b){ return b._followCount - a._followCount; }).slice(0, 20);
         if (!ranked.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Nothing here yet.</div>'; return; }

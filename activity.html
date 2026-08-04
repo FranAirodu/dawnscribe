@@ -232,18 +232,8 @@
 
 </div>
 
-<footer>
-  <div class="footer-logo">DawnScribe</div>
-  <p>A home for stories, art, and the people who love them.</p>
-  <div class="footer-links">
-    <a href="about.html">About</a>
-    <a href="terms.html">Terms of Service</a>
-    <a href="privacy.html">Privacy Policy</a>
-    <a href="guidelines.html">Community Guidelines</a>
-    <a href="contact.html">Contact</a>
-  </div>
-  <p style="margin-top:8px;">© 2026 DawnScribe. All rights reserved.</p>
-</footer>
+<!-- footer.js injects the shared footer here -->
+<footer></footer>
 
 <script src="blockUtils.js"></script>
 <script>
@@ -257,6 +247,13 @@
   var currentFilter = 'all';
   var collabWorkMap = {}, collabProfMap = {};
   var PAGE = 8;
+  var myUid = null;
+
+  // Hide anything authored by someone in a block relationship with me.
+  function isHidden(uid){
+    if(!uid) return false;
+    try { return !!(window.dsBlock && dsBlock.either(uid)); } catch(e) { return false; }
+  }
 
   // ── UTILS ──────────────────────────────────────────────────────────
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -269,6 +266,18 @@
     return Math.floor(d/86400)+'d ago';
   }
   function coverLetter(t){ return (t||'?').charAt(0).toUpperCase(); }
+  // Truncating raw text can cut a ||spoiler|| pair in half and leak it as plain
+  // text. Cut back to the last complete pair boundary instead.
+  function truncateSpoilerSafe(s,n){
+    if(s.length<=n) return s;
+    var cut=s.slice(0,n);
+    var marks=(cut.match(/\|\|/g)||[]).length;
+    if(marks%2===1){
+      var last=cut.lastIndexOf('||');
+      cut=cut.slice(0,last);
+    }
+    return cut;
+  }
   var COLORS=['cover-purple','cover-blue','cover-red','cover-green','cover-gold','cover-pink'];
   function coverColor(id){ var h=0; for(var i=0;i<(id||'').length;i++) h=(h*31+id.charCodeAt(i))&0xffff; return COLORS[h%COLORS.length]; }
 
@@ -320,11 +329,24 @@
       (profs||[]).forEach(function(p){collabProfMap[p.id]=p;});
     }
 
-    allCollabs = combined;
+    allCollabs = combined.filter(function(item){
+      var d=item.data;
+      if(item.type==='story'){
+        var artworkOwner=(collabWorkMap[d.artwork_id]||{}).author_id;
+        return !isHidden(d.author_id) && !isHidden(artworkOwner);
+      }
+      var novelOwner=(collabWorkMap[d.work_id]||{}).author_id;
+      return !isHidden(d.artist_id) && !isHidden(novelOwner);
+    });
+    if(!allCollabs.length){
+      grid.innerHTML='<div style="grid-column:1/-1;" class="empty-state"><i class="ti ti-users-off"></i><p>No active collabs yet.</p></div>';
+      document.getElementById('section-collab-count').textContent='0 active';
+      return;
+    }
     grid.innerHTML='';
     shownCollabs=0;
     renderMoreCollabs();
-    document.getElementById('section-collab-count').textContent=combined.length+' active';
+    document.getElementById('section-collab-count').textContent=allCollabs.length+(allCollabs.length>=40?'+ recent':' recent');
     } catch(e) { grid.innerHTML='<div style="grid-column:1/-1;" class="empty-state"><i class="ti ti-alert-circle"></i><p>Could not load collabs.</p></div>'; }
   }
 
@@ -342,9 +364,10 @@
         var authorName=author.display_name||author.username||'Author';
         var artistName=artist.display_name||artist.username||'Artist';
         card.style.borderColor='rgba(245,158,11,0.15)';
+        var storyCover=artwork.cover_url||novel.cover_url;
         card.innerHTML=
-          (novel.cover_url
-            ?'<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid rgba(245,158,11,0.3);"><img src="'+esc(novel.cover_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt=""/></div>'
+          (storyCover
+            ?'<div class="collab-cover" style="padding:0;overflow:hidden;border:1.5px solid rgba(245,158,11,0.3);"><img src="'+esc(storyCover)+'" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt=""/></div>'
             :'<div class="collab-cover" style="background:rgba(245,158,11,0.1);color:#f59e0b;">✍</div>')
           +'<div class="collab-body">'
             +'<div class="collab-type-label" style="color:#f59e0b;"><i class="ti ti-writing"></i> Collab Story</div>'
@@ -392,8 +415,8 @@
       db.from('chapter_comments').select('id,content,created_at,chapter_id,user_id,parent_id').order('created_at',{ascending:false}).limit(80),
       db.from('artwork_comments').select('id,content,created_at,work_id,user_id,parent_id').order('created_at',{ascending:false}).limit(80)
     ]);
-    var chapRows=(chapRes.data||[]).filter(function(r){return !r.parent_id;}).map(function(r){r._src='chapter';return r;});
-    var artRows=(artRes.data||[]).filter(function(r){return !r.parent_id;}).map(function(r){r._src='artwork';return r;});
+    var chapRows=(chapRes.data||[]).filter(function(r){return !r.parent_id && !isHidden(r.user_id);}).map(function(r){r._src='chapter';return r;});
+    var artRows=(artRes.data||[]).filter(function(r){return !r.parent_id && !isHidden(r.user_id);}).map(function(r){r._src='artwork';return r;});
 
     var chMap={},cwMap={};
     if(chapRows.length){
@@ -455,7 +478,7 @@
         '<div class="comment-thumb '+coverColor(cm.user_id||cm.id)+'">'+avH+'</div>'+
         '<div class="comment-body">'+
           '<div class="comment-on"><span class="comment-type '+workType+'">'+workType.charAt(0).toUpperCase()+workType.slice(1)+'</span> '+esc(workTitle)+'</div>'+
-          '<div class="comment-text">"'+dsSpoiler.render(esc((cm.content||'').slice(0,160)))+((cm.content&&cm.content.length>160)?'…':'')+'"</div>'+
+          '<div class="comment-text">"'+dsSpoiler.render(esc(truncateSpoilerSafe(cm.content||'',160)))+((cm.content&&cm.content.length>160)?'…':'')+'"</div>'+
           '<div class="comment-meta">'+
             '<a class="comment-user" href="profile.html?user='+esc(userHandle)+'">'+esc(userName)+'</a>'+
             '<span class="comment-time"><i class="ti ti-clock"></i> '+timeAgo(cm.created_at)+'</span>'+
@@ -475,8 +498,8 @@
       db.from('chapters').select('id,chapter_number,title,created_at,work_id,author_id').in('status',['published','one-shot']).order('created_at',{ascending:false}).limit(60),
       db.from('works').select('id,title,cover_url,author_id,created_at,type').eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(40)
     ]);
-    var chapters=chapRes.data||[];
-    var artworks=artRes.data||[];
+    var chapters=(chapRes.data||[]).filter(function(c){return !isHidden(c.author_id);});
+    var artworks=(artRes.data||[]).filter(function(a){return !isHidden(a.author_id);});
 
     var chapWorkIds=chapters.map(function(c){return c.work_id;}).filter(Boolean);
     var allAuthorIds=chapters.map(function(c){return c.author_id;}).concat(artworks.map(function(a){return a.author_id;})).filter(function(id,i,arr){return id&&arr.indexOf(id)===i;});
@@ -501,10 +524,10 @@
         chapter:ch.title?'Chapter '+ch.chapter_number+' — "'+ch.title+'"':'Chapter '+ch.chapter_number,
         author:prof.display_name||prof.username||'Unknown',
         authorHandle:prof.username||'',
-        workId:work.id||null, chapterId:ch.id,
+        workId:work.id||null, chapterId:ch.id, ownerId:work.author_id||null,
         cover:work.cover_url||null, created_at:ch.created_at, colorKey:ch.work_id
       };
-    }).filter(function(u){return u.workId;});
+    }).filter(function(u){return u.workId && !isHidden(u.ownerId);});
 
     var artUpdates=artworks.map(function(a){
       var prof=profsMap[a.author_id]||{};
@@ -528,7 +551,7 @@
       return;
     }
     renderMoreUpdates();
-    document.getElementById('updates-count').textContent=allUpdates.length+' new';
+    document.getElementById('updates-count').textContent=allUpdates.length+' recent';
     } catch(e) { document.getElementById('update-list').innerHTML='<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Could not load updates.</p></div>'; }
   }
 
@@ -574,20 +597,45 @@
 
   // ── REALTIME ──────────────────────────────────────────────────────
   // Re-fetch each section when relevant inserts happen
-  db.channel('activity-live')
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'chapter_comments'},function(){ loadComments(); })
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'artwork_comments'},function(){ loadComments(); })
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'chapters'},function(){ loadUpdates(); })
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'works'},function(){ loadUpdates(); })
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'artwork_collabs'},function(p){ if(p.new&&p.new.status==='approved') loadCollabs(); })
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'story_collabs'},function(p){ if(p.new&&p.new.status==='approved') loadCollabs(); })
-    .subscribe();
+  var _timers={};
+  function debounced(fn,key){
+    return function(){
+      clearTimeout(_timers[key]);
+      _timers[key]=setTimeout(fn,1200);
+    };
+  }
+  var reComments=debounced(loadComments,'comments');
+  var reUpdates=debounced(loadUpdates,'updates');
+  var reCollabs=debounced(loadCollabs,'collabs');
+
+  function startRealtime(){
+    db.channel('activity-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'chapter_comments'},function(){ reComments(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'artwork_comments'},function(){ reComments(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'chapters'},function(){ reUpdates(); })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'chapters'},function(){ reUpdates(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'works'},function(){ reUpdates(); })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'works'},function(){ reUpdates(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'artwork_collabs'},function(p){ if(p.new&&p.new.status==='approved') reCollabs(); })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'artwork_collabs'},function(p){ if(p.new&&p.new.status==='approved') reCollabs(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'story_collabs'},function(p){ if(p.new&&p.new.status==='approved') reCollabs(); })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'story_collabs'},function(p){ if(p.new&&p.new.status==='approved') reCollabs(); })
+      .subscribe();
+  }
 
   // ── INIT ──────────────────────────────────────────────────────────
-  window.addEventListener('DOMContentLoaded',function(){
+  window.addEventListener('DOMContentLoaded',async function(){
     var hash=window.location.hash.replace('#','');
     if(['collabs','comments','updates'].indexOf(hash)!==-1) switchTab(hash);
-    Promise.all([loadCollabs(),loadComments(),loadUpdates()]).catch(function(){});
+    // Block lists must be loaded BEFORE the first render, or blocked users'
+    // content flashes in and only disappears on the next refetch.
+    try {
+      var sessionRes=await db.auth.getSession();
+      var session=sessionRes&&sessionRes.data?sessionRes.data.session:null;
+      if(session){ myUid=session.user.id; await dsBlock.load(myUid); }
+    } catch(e) {}
+    await Promise.all([loadCollabs(),loadComments(),loadUpdates()]).catch(function(){});
+    startRealtime();
   });
 </script>
 
