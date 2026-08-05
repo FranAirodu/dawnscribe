@@ -375,12 +375,15 @@
     var uid = currentSession.user.id;
     // No FK joins — fetch conversations then profiles separately
     var res = await db.from('conversations')
-      .select('id, participant_a, participant_b, last_message, last_message_at')
+      .select('id, participant_a, participant_b, last_message, last_message_at, deleted_by_a, deleted_by_b')
       .or('participant_a.eq.'+uid+',participant_b.eq.'+uid)
       .order('last_message_at', { ascending: false, nullsFirst: false });
     if(res.error){ console.error('Load convos:', res.error); return; }
 
-    var convos = res.data || [];
+    // Soft-delete is per side: hide only the threads THIS user deleted.
+    var convos = (res.data || []).filter(function(c){
+      return c.participant_a === uid ? !c.deleted_by_a : !c.deleted_by_b;
+    });
 
     // Fetch other participants' profiles separately
     var otherIds = convos.map(function(c){
@@ -743,11 +746,14 @@
     var isParticipantA = convoRow && convoRow._raw_participant_a === myId;
     var deleteField = isParticipantA ? 'deleted_by_a' : 'deleted_by_b';
     // Soft-delete: mark the conversation as deleted for this user's side
-    var softRes = await db.from('conversations').update({ [deleteField]: true }).eq('id', idToDelete);
+    // Check this FIRST: it used to run last, so a failure here left every
+    // message soft-deleted while the thread stayed in the list.
+    var softRes = await db.from('conversations').update({ [deleteField]: true }).eq('id', idToDelete).select('id');
+    if(softRes.error){ showToast('Could not delete conversation: ' + softRes.error.message, 'ti-x'); return; }
+    if(!softRes.data || !softRes.data.length){ showToast('Could not delete conversation.', 'ti-x'); return; }
     // Soft-delete messages: sent by me and received by me
     await db.from('messages').update({ deleted_by_sender: true }).eq('conversation_id', idToDelete).eq('sender_id', myId);
     await db.from('messages').update({ deleted_by_recipient: true }).eq('conversation_id', idToDelete).neq('sender_id', myId);
-    if(softRes.error){ showToast('Could not delete conversation: ' + softRes.error.message, 'ti-x'); return; }
     conversations = conversations.filter(function(c){ return c.id !== idToDelete; });
     activeConvoId = null; activeOtherUser = null;
     document.getElementById('active-convo').style.display = 'none';

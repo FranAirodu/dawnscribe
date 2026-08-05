@@ -2306,7 +2306,24 @@ async function handleFriendBtn() {
         var path = s.user.id + '/banner.' + ext;
         await db.storage.from('banners').upload(path, file, { upsert: true });
         var url = db.storage.from('banners').getPublicUrl(path).data.publicUrl;
-        await db.from('profiles').upsert({ id: s.user.id, banner_url: url, active_banner_scroll_id: null }, { onConflict: 'id' });
+        // Write the uploaded banner. active_banner_scroll_id is NOT written here —
+        // that column has no client grant (equipping a paid banner Scroll for free
+        // was possible while it did). Clearing it goes through equip_banner_scroll(null),
+        // the same DEFINER RPC marketplace.html uses to equip.
+        var bUp = await db.from('profiles')
+          .update({ banner_url: url })
+          .eq('id', s.user.id)
+          .select('id');
+        if (bUp.error || !bUp.data || !bUp.data.length) {
+          console.error('Banner save failed:', bUp.error);
+          showToast('Could not save your banner. Please try again.', 'ti-alert-triangle');
+          return;
+        }
+        // Drop any equipped banner Scroll so the credit chip and the DB agree.
+        var clr = await db.rpc('equip_banner_scroll', { p_scroll_id: null });
+        if (clr.error || (clr.data && clr.data.ok === false)) {
+          console.error('Clearing banner Scroll failed:', clr.error || clr.data);
+        }
         var chip = document.getElementById('banner-credit-chip');
         if (chip) chip.style.display = 'none';
         showToast('Banner updated!', 'ti-photo');

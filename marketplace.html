@@ -856,11 +856,13 @@
     btn.disabled = true;
     btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Applying…';
     try {
-      const { error } = await db.from('profiles').upsert(
-        { id: currentUser.id, banner_url: bannerUrl, active_banner_scroll_id: scrollId },
-        { onConflict: 'id' }
-      );
+      // Ownership-checked RPC: the direct profiles write it replaced never
+      // verified a scroll_unlocks row, so a paid banner could be equipped
+      // without buying it. The RPC re-reads banner_url from the scroll too, so
+      // the client can't substitute a different image.
+      const { data: rpc, error } = await db.rpc('equip_banner_scroll', { p_scroll_id: scrollId });
       if (error) throw error;
+      if (!rpc?.ok) throw new Error(rpc?.error || 'Could not apply banner');
       btn.innerHTML = '<i class="ti ti-check"></i> Applied to your profile!';
       showToast('Banner applied! Visit your profile to see it.', 'ti-photo');
     } catch(e) {

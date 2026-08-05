@@ -15,6 +15,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- blockUtils must load before the inline script: init() calls dsBlock.load()
+       synchronously on parse, and both the gallery grid and the comment list
+       filter through dsBlock.either(). -->
+  <script src="blockUtils.js"></script>
   <style>
     :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--gold:#f59e0b;--green:#34d399;}
     html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;}
@@ -339,18 +343,30 @@
         return;
       }
 
+      // Block list — must resolve before any artist or commenter is rendered.
+      // Never fatal: a failed blocks fetch degrades to showing everything rather
+      // than showing nothing.
+      if (currentSession && window.dsBlock) {
+        try { await dsBlock.load(currentSession.user.id); } catch (e) {}
+      }
+
       // Load work metadata
       var wRes = await db.from('works').select('id,title,author_id').eq('id', workId).maybeSingle();
       if (wRes.error) {
         document.getElementById('gallery-grid').innerHTML = '<div class="empty-state" style="column-span:all;"><i class="ti ti-plug-x"></i><p>Could not load story. Please try again.</p></div>';
         return;
       }
+      // A null row here is not "no error" — the work is deleted, unpublished, or
+      // hidden by the age/visibility policy. Previously the page carried on with an
+      // unset title and a dead back-link, then said "No fan art yet."
       workData = wRes.data || null;
-      if (workData) {
-        document.getElementById('page-title').innerHTML = 'Fan Art — <span>' + esc(workData.title) + '</span>';
-        document.getElementById('back-to-story').href = 'story.html?id=' + workId;
-        document.getElementById('hero-sub').textContent = 'All fan art submitted for this story.';
+      if (!workData) {
+        document.getElementById('gallery-grid').innerHTML = '<div class="empty-state" style="column-span:all;"><i class="ti ti-book-off"></i><p>This story isn\'t available.</p></div>';
+        return;
       }
+      document.getElementById('page-title').innerHTML = 'Fan Art — <span>' + esc(workData.title) + '</span>';
+      document.getElementById('back-to-story').href = 'story.html?id=' + workId;
+      document.getElementById('hero-sub').textContent = 'All fan art submitted for this story.';
 
       // Load approved collabs + likes_count
       var cRes = await db.from('story_collabs')
@@ -363,6 +379,11 @@
         return;
       }
       allCollabs = cRes.data || [];
+
+      // Hide submissions from users either side of a block, matching artwork.html.
+      if (window.dsBlock) {
+        allCollabs = allCollabs.filter(function(c){ return !dsBlock.either(c.artist_id); });
+      }
 
       if (!allCollabs.length) {
         document.getElementById('gallery-grid').innerHTML = '<div class="empty-state" style="column-span:all;"><i class="ti ti-photo-off"></i><p>No fan art yet.</p></div>';
@@ -495,21 +516,32 @@
       var icon = document.getElementById('modal-like-icon');
       if (icon) { icon.classList.remove('heart-pop'); void icon.offsetWidth; icon.classList.add('heart-pop'); }
 
-      // Persist
+      // Persist.
+      // supabase-js RESOLVES with {error} rather than throwing, so the old
+      // try/catch revert was dead code and a failed like silently stayed lit.
+      // A .delete() matching zero rows also resolves successfully, so the unlike
+      // path needs .select() and must treat [] as failure.
+      var failed = false;
       try {
         if (wasLiked) {
-          await db.from('story_collab_likes')
+          var dRes = await db.from('story_collab_likes')
             .delete()
             .eq('collab_id', activeId)
-            .eq('user_id', currentSession.user.id);
+            .eq('user_id', currentSession.user.id)
+            .select('collab_id');
+          failed = !!dRes.error || !dRes.data || !dRes.data.length;
         } else {
-          await db.from('story_collab_likes')
-            .insert({ collab_id: activeId, user_id: currentSession.user.id });
+          var iRes = await db.from('story_collab_likes')
+            .insert({ collab_id: activeId, user_id: currentSession.user.id })
+            .select('collab_id');
+          failed = !!iRes.error || !iRes.data || !iRes.data.length;
         }
-        // Re-render card in grid to reflect updated count/state
-        renderGrid();
       } catch(e) {
-        // Revert on error
+        failed = true;
+      }
+
+      if (failed) {
+        // Revert the optimistic update — the server did not record this.
         if (wasLiked) {
           myLikes[activeId] = true;
           c.likes_count = (c.likes_count || 0) + 1;
@@ -519,6 +551,17 @@
         }
         updateLikeUI(activeId);
       }
+
+      // likes_count is maintained by trg_sync_collab_likes, so re-read the
+      // authoritative value instead of trusting the optimistic arithmetic.
+      var fresh = await db.from('story_collabs').select('likes_count').eq('id', activeId).maybeSingle();
+      if (!fresh.error && fresh.data) {
+        c.likes_count = fresh.data.likes_count || 0;
+        updateLikeUI(activeId);
+      }
+
+      // Re-render card in grid to reflect updated count/state
+      renderGrid();
     }
 
     function closeDetail() {
@@ -539,7 +582,18 @@
         .eq('collab_id', collabId)
         .is('parent_id', null)
         .order('created_at', {ascending: true});
+      // An error here is NOT an empty thread. `cRes.data || []` used to render
+      // "No comments yet — be the first!" on a failed fetch.
+      if (cRes.error) {
+        el.innerHTML = '<div style="font-size:12px;color:var(--text3);text-align:center;padding:12px;">Could not load comments — please try again.</div>';
+        return;
+      }
       var comments = cRes.data || [];
+
+      // Drop comments from users either side of a block, matching artwork.html.
+      if (window.dsBlock) {
+        comments = comments.filter(function(cm){ return !dsBlock.either(cm.user_id); });
+      }
 
       if (!comments.length) {
         el.innerHTML = '<div style="font-size:12px;color:var(--text3);text-align:center;padding:12px;">No comments yet — be the first!</div>';
