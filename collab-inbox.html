@@ -143,9 +143,45 @@
     if(!confirm('Remove this declined submission from your inbox?')) return;
     // tableKey 'story' = artwork_collabs row; tableKey 'fanart' = story_collabs row
     var tbl = tableKey === 'story' ? 'artwork_collabs' : (tableKey === 'landscape' ? 'story_landscapes' : 'story_collabs');
-    var { error } = await db.from(tbl).delete().eq('id', collabId);
-    if(error){ showToast('Failed to delete: ' + error.message, 'ti-x'); return; }
+    // A .delete() matching no rows resolves SUCCESSFULLY with an empty array, so
+    // the row used to fade out and then reappear on reload. .select() + treating
+    // [] as failure makes that honest. (artwork_collabs previously had no DELETE
+    // policy covering the artwork owner clearing a declined row at all — fixed in
+    // migration artwork_collabs_recipient_can_clear_declined.)
+    var delRes = await db.from(tbl).delete().eq('id', collabId).select('id');
+    if(delRes.error){ showToast('Failed to delete: ' + delRes.error.message, 'ti-x'); return; }
+    if(!delRes.data || !delRes.data.length){
+      showToast('Could not remove that submission — please reload and try again.', 'ti-x');
+      return;
+    }
     if(rowEl){ rowEl.style.transition='opacity 0.3s,transform 0.3s'; rowEl.style.opacity='0'; rowEl.style.transform='translateX(-12px)'; setTimeout(function(){ rowEl.remove(); },300); }
+  }
+
+  // Accept or decline a banner collab. All authority lives in the
+  // respond_banner_collab RPC (identity-guarded, and the only writer of
+  // novelist_approved) — this just calls it and reports honestly.
+  async function respondBannerCollab(scrollId, accept, btnEl){
+    if(!accept && !confirm('Decline this banner collab? The artist can still sell it on its own.')) return;
+    var row = btnEl ? btnEl.closest('.collab-row') : null;
+    var btns = row ? row.querySelectorAll('button') : [];
+    for(var i=0;i<btns.length;i++){ btns[i].disabled = true; }
+
+    var res = await db.rpc('respond_banner_collab', { p_scroll_id: scrollId, p_accept: !!accept });
+    var err = res.error;
+    if(!err && res.data && res.data.ok === false) err = { message: res.data.error || 'Not permitted' };
+    if(err){
+      showToast('Could not answer: ' + err.message, 'ti-x');
+      for(var j=0;j<btns.length;j++){ btns[j].disabled = false; }
+      return;
+    }
+
+    showToast(accept ? 'Banner collab accepted \u2014 the artist can submit it now.' : 'Banner collab declined.', accept ? 'ti-check' : 'ti-x');
+    if(row){
+      row.style.transition = 'opacity 0.3s,transform 0.3s';
+      row.style.opacity = '0';
+      row.style.transform = 'translateX(-12px)';
+      setTimeout(function(){ row.remove(); }, 300);
+    }
   }
 
   function makeToggle(bodyEl, label){
@@ -171,21 +207,29 @@
     try {
 
     // ── FIND USER'S ARTWORKS (receive story submissions)
-    var { data: myArtworks } = await db.from('works')
+    // These fetches discarded .error, so a failed request rendered the
+    // "You haven't published any artworks or novels yet" empty state to authors who
+    // in fact have works. supabase-js resolves with {error} instead of throwing, so
+    // the page's existing catch/error state was unreachable — throwing wires it up.
+    var artRes = await db.from('works')
       .select('id, title, cover_url')
       .eq('author_id', uid)
       .eq('type', 'artwork')
       .eq('is_published', true);
+    if(artRes.error) throw artRes.error;
+    var myArtworks = artRes.data;
     var myArtworkIds = (myArtworks||[]).map(function(a){ return a.id; });
     var artworkMap = {};
     (myArtworks||[]).forEach(function(a){ artworkMap[a.id] = a; });
 
     // ── FIND USER'S NOVELS (receive fan-art submissions)
-    var { data: myNovels } = await db.from('works')
+    var novRes = await db.from('works')
       .select('id, title, cover_url')
       .eq('author_id', uid)
       .eq('type', 'novel')
       .eq('is_published', true);
+    if(novRes.error) throw novRes.error;
+    var myNovels = novRes.data;
     var myNovelIds = (myNovels||[]).map(function(n){ return n.id; });
     var novelMap = {};
     (myNovels||[]).forEach(function(n){ novelMap[n.id] = n; });
@@ -205,11 +249,12 @@
     // Table: artwork_collabs — author submits their novel to be illustrated by your artwork
     var storyRequests = [];
     if(myArtworkIds.length){
-      var { data: sr } = await db.from('artwork_collabs')
+      var srRes = await db.from('artwork_collabs')
         .select('id, artwork_id, work_id, author_id, status, novel_title, novel_cover_url, created_at')
         .in('artwork_id', myArtworkIds)
         .order('created_at', { ascending: false });
-      storyRequests = sr || [];
+      if(srRes.error) throw srRes.error;
+      storyRequests = srRes.data || [];
     }
 
     // Author profiles for story requests
@@ -224,26 +269,45 @@
     // Table: story_collabs — artist submits fan-art for your novel
     var artRequests = [];
     if(myNovelIds.length){
-      var { data: ar } = await db.from('story_collabs')
+      var arRes = await db.from('story_collabs')
         .select('id, work_id, artist_id, image_url, description, status, created_at')
         .in('work_id', myNovelIds)
         .order('created_at', { ascending: false });
-      artRequests = ar || [];
+      if(arRes.error) throw arRes.error;
+      artRequests = arRes.data || [];
     }
 
     // ── LANDSCAPE SUBMISSIONS ON YOUR NOVELS
     // Table: story_landscapes — artist submits a scenic background for your novel
     var landscapeRequests = [];
     if(myNovelIds.length){
-      var { data: lr } = await db.from('story_landscapes')
+      var lrRes = await db.from('story_landscapes')
         .select('id, work_id, artist_id, image_url, description, status, created_at')
         .in('work_id', myNovelIds)
         .order('created_at', { ascending: false });
-      landscapeRequests = lr || [];
+      if(lrRes.error) throw lrRes.error;
+      landscapeRequests = lrRes.data || [];
+    }
+
+    // ── BANNER COLLAB OFFERS ON YOUR NOVELS
+    // Table: scrolls (type='banner'). An artist offered a profile banner to be sold
+    // alongside one of your novels. Visible to you via the
+    // "invited novelist can view the collab scroll" policy; you answer through the
+    // respond_banner_collab RPC, never by writing the row.
+    var bannerOffers = [];
+    if(myNovelIds.length){
+      var boRes = await db.from('scrolls')
+        .select('id, name, description, banner_url, banner_emoji, quill_price, novel_id, artist_id, collab_novelist_accepted, created_at')
+        .eq('type', 'banner')
+        .eq('collab_novelist_accepted', false)
+        .in('novel_id', myNovelIds)
+        .order('created_at', { ascending: false });
+      if(boRes.error) throw boRes.error;
+      bannerOffers = boRes.data || [];
     }
 
     // Artist profiles for artwork requests
-    var artistIds = [...new Set(artRequests.concat(landscapeRequests).map(function(r){ return r.artist_id; }).filter(Boolean))];
+    var artistIds = [...new Set(artRequests.concat(landscapeRequests).concat(bannerOffers).map(function(r){ return r.artist_id; }).filter(Boolean))];
     var artistMap = {};
     if(artistIds.length){
       var { data: artists } = await db.from('profiles').select('id, username, display_name').in('id', artistIds);
@@ -449,6 +513,56 @@
       s3b.appendChild(s3bheader);
       s3b.appendChild(s3bbody);
       content.appendChild(s3b);
+    }
+
+    // ── SECTION 5: Banner collab offers on your novels
+    if(myNovelIds.length){
+      var s5 = document.createElement('div');
+      s5.className = 'section';
+      s5.innerHTML =
+        '<div class="section-header">'
+          + '<div class="section-icon teal"><i class="ti ti-photo"></i></div>'
+          + '<div class="section-title">Banner Collabs \u2014 Awaiting You</div>'
+          + '<div class="section-count' + (bannerOffers.length ? '' : ' zero') + '">' + bannerOffers.length + ' pending</div>'
+        + '</div>';
+      var s5body = document.createElement('div');
+      if(!bannerOffers.length){
+        s5body.innerHTML = '<div class="empty"><i class="ti ti-photo"></i><p>No banner collab offers.</p></div>';
+      } else {
+        bannerOffers.forEach(function(row){
+          var novel = novelMap[row.novel_id] || {};
+          var artist = artistMap[row.artist_id] || {};
+          var artistName = artist.display_name || artist.username || 'Artist';
+          var stale = isStale(row.created_at);
+          var div = document.createElement('div');
+          div.className = 'collab-row pending' + (stale ? ' stale' : '');
+          var sid = JSON.stringify(row.id);
+          var price = parseInt(row.quill_price, 10) || 0;
+          // 30% of the sale price, matching purchase_scroll: platform takes
+          // round(20%) first, the author receives 3/8 of what remains.
+          var platform = Math.round(price * 0.20);
+          var pool = price - platform;
+          var yours = pool - Math.round(pool * (5.0 / 8.0));
+          div.innerHTML =
+            '<div class="collab-cover">'
+              + (row.banner_url ? '<img src="' + esc(row.banner_url) + '" alt=""/>' : '<i class="ti ti-photo"></i>')
+            + '</div>'
+            + '<div class="collab-info">'
+              + '<div class="collab-title">' + esc(row.name || 'Untitled banner') + '</div>'
+              + '<div class="collab-meta">by <em>' + esc(artistName) + '</em> for your novel <em>' + esc(novel.title || 'Untitled') + '</em></div>'
+              + '<div class="collab-meta" style="margin-top:3px;">' + price + ' Quills \u00b7 you would earn <strong>' + yours + ' Quills</strong> per sale (30%)</div>'
+              + '<div class="collab-meta" style="margin-top:3px;">' + esc(timeAgo(row.created_at)) + (stale ? ' &nbsp;<span class="stale-chip">\u23f3 Awaiting your answer</span>' : '') + '</div>'
+            + '</div>'
+            + '<div class="collab-actions">'
+              + '<a class="btn-view" href="story.html?id=' + esc(row.novel_id) + '" title="View your novel"><i class="ti ti-book"></i> Novel</a>'
+              + '<button class="btn-review" onclick="respondBannerCollab(' + sid + ',true,this)"><i class="ti ti-check"></i> Accept</button>'
+              + '<button class="btn-delete" onclick="respondBannerCollab(' + sid + ',false,this)"><i class="ti ti-x"></i> Decline</button>'
+            + '</div>';
+          s5body.appendChild(div);
+        });
+      }
+      s5.appendChild(s5body);
+      content.appendChild(s5);
     }
 
     // ── SECTION 4: Book landscapes on your novels (pending/reviewed split)

@@ -577,6 +577,9 @@
     else if(n.type==='collab_request'){ iconColor='#f59e0b'; icon='ti-git-merge'; title='\uD83E\uDD1D Collab Request'; subtitle=esc(n.message||''); }
     else if(n.type==='commission_request'){ iconColor='#2dd4bf'; icon='ti-brush'; title='\uD83C\uDFA8 Commission Request'; subtitle=esc(n.message||''); }
     else if(n.type==='rally_answered'){ iconColor='#2dd4bf'; icon='ti-megaphone'; title='\uD83D\uDCE3 Rally Answered!'; subtitle=esc(n.message||'A new chapter is out!'); }
+    else if(n.type==='banner_collab_request'){ iconColor='#2dd4bf'; icon='ti-photo'; title='\uD83D\uDDBC\uFE0F Banner Collab Offer'; subtitle=esc(n.message||''); }
+    else if(n.type==='banner_collab_accepted'){ iconColor='#22c55e'; icon='ti-photo-check'; title='\uD83D\uDDBC\uFE0F Banner Collab Accepted'; subtitle=esc(n.message||''); }
+    else if(n.type==='banner_collab_declined'){ iconColor='var(--text3)'; icon='ti-photo-off'; title='\uD83D\uDDBC\uFE0F Banner Collab Declined'; subtitle=esc(n.message||''); }
     else { iconColor='var(--text3)'; icon='ti-bell'; title=esc(n.type||'Notification'); subtitle=esc(n.message||''); }
 
     // Commission request: show artwork thumbnail instead of generic icon
@@ -587,17 +590,61 @@
       coverSlotHtml = '<div class="notif-cover" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:22px;color:'+iconColor+';"><i class="ti '+icon+'"></i></div>';
     }
 
+    // Banner collab offers are answerable straight from the card — the author
+    // shouldn't have to go hunting for the inbox to say yes.
+    var inlineActionsHtml = '';
+    if(n.type==='banner_collab_request' && n.scroll_id){
+      inlineActionsHtml =
+        '<div class="bcollab-actions" style="display:flex;gap:7px;margin-top:9px;">'+
+          '<button class="bcollab-accept" style="background:var(--accent);border:none;border-radius:8px;padding:6px 13px;color:#08221f;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-check"></i> Accept</button>'+
+          '<button class="bcollab-decline" style="background:transparent;border:1px solid var(--border);border-radius:8px;padding:6px 13px;color:var(--text2);font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-x"></i> Decline</button>'+
+        '</div>';
+    }
+
     card.innerHTML =
       coverSlotHtml+
       '<div class="notif-body">'+
         '<div class="notif-card-title" style="color:'+iconColor+';">'+title+'</div>'+
         '<div class="notif-card-text">'+subtitle+'</div>'+
         '<div class="notif-card-time"><i class="ti ti-clock"></i> '+timeAgo(n.created_at)+'</div>'+
+        inlineActionsHtml+
       '</div>'+
       (isUnread?'<div class="notif-unread-dot"></div>':'')+
       '<button class="notif-dismiss" title="Dismiss">&#x2715;</button>';
     card.querySelector('.notif-dismiss').addEventListener('click', function(e){ e.stopPropagation(); window.dismissCard(card,'social',card.dataset.id,true); });
+
+    if(inlineActionsHtml){
+      // stopPropagation on both: the card itself navigates on click.
+      var accBtn = card.querySelector('.bcollab-accept');
+      var decBtn = card.querySelector('.bcollab-decline');
+      accBtn.addEventListener('click', function(e){ e.stopPropagation(); answerBannerCollab(card, n.scroll_id, true); });
+      decBtn.addEventListener('click', function(e){ e.stopPropagation(); answerBannerCollab(card, n.scroll_id, false); });
+    }
+
     return card;
+  }
+
+  // Answer a banner collab offer without leaving the notifications page.
+  // respond_banner_collab is identity-guarded and is the only writer of
+  // novelist_approved, so there is nothing to validate here beyond reporting.
+  async function answerBannerCollab(card, scrollId, accept){
+    if(!accept && !confirm('Decline this banner collab? The artist can still sell it on its own.')) return;
+    var wrap = card.querySelector('.bcollab-actions');
+    var btns = wrap ? wrap.querySelectorAll('button') : [];
+    for(var i=0;i<btns.length;i++){ btns[i].disabled = true; }
+
+    var res = await db.rpc('respond_banner_collab', { p_scroll_id: scrollId, p_accept: !!accept });
+    var err = res.error;
+    if(!err && res.data && res.data.ok === false) err = { message: res.data.error || 'Not permitted' };
+    if(err){
+      if(wrap) wrap.innerHTML = '<span style="font-size:11px;color:var(--red);">'+esc(err.message)+'</span>';
+      return;
+    }
+
+    if(wrap){
+      wrap.innerHTML = '<span style="font-size:11px;color:'+(accept?'#22c55e':'var(--text3)')+';font-weight:700;">'+
+        (accept ? '\u2713 Accepted \u2014 the artist can submit it now.' : 'Declined.')+'</span>';
+    }
   }
 
   // ── RENDER BATCH ─────────────────────────────────────────────────
@@ -1063,7 +1110,7 @@
           });
         }
       }
-      var actRes=await db.from('notifications').select('id,type,message,work_id,chapter_id,created_at,is_read').eq('user_id',uid).in('type',['song_approved','song_rejected','fan_translation_linked','collab_request','commission_request','opinion_approved','opinion_featured','quote_approved','quote_rejected','question_answered','question_declined','rally_answered']).order('created_at',{ascending:false}).limit(50);
+      var actRes=await db.from('notifications').select('id,type,message,work_id,chapter_id,scroll_id,created_at,is_read').eq('user_id',uid).in('type',['song_approved','song_rejected','fan_translation_linked','collab_request','commission_request','opinion_approved','opinion_featured','quote_approved','quote_rejected','question_answered','question_declined','rally_answered','banner_collab_request','banner_collab_accepted','banner_collab_declined']).order('created_at',{ascending:false}).limit(50);
       var actRows = actRes.data||[];
       // Fetch artwork thumbnails for commission_request items
       var commissionWorkIds=[...new Set(actRows.filter(function(r){return r.type==='commission_request'&&r.work_id;}).map(function(r){return r.work_id;}))];

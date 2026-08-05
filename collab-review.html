@@ -501,6 +501,28 @@
     }
 
     // ── APPROVE
+    // A .update() that matches no rows resolves SUCCESSFULLY with an empty array —
+    // no error. RLS filters rows the caller may not touch, so an unauthorised
+    // reviewer (notably the ARTIST opening the review page for their OWN pending
+    // submission, which the SELECT policy permits) previously sailed through the
+    // whole success path: confirmation toast, DM claiming approval, badge awards
+    // and redirect, while nothing was written. Every status write goes through
+    // this helper, which treats zero rows as failure.
+    // The .eq('status','pending') also stops a re-review from re-firing the DM
+    // and the badge recompute on an already-decided request.
+    async function writeCollabStatus(table, id, newStatus){
+      var res = await db.from(table)
+        .update({ status: newStatus })
+        .eq('id', id)
+        .eq('status', 'pending')
+        .select('id');
+      if (res.error) return { ok: false, message: res.error.message };
+      if (!res.data || !res.data.length) {
+        return { ok: false, message: 'This request is no longer pending, or you do not have permission to review it.' };
+      }
+      return { ok: true };
+    }
+
     async function confirmApprove(){
       var btn = document.getElementById('approve-btn');
       var denyBtn = document.getElementById('deny-btn');
@@ -538,8 +560,8 @@
           btn.disabled=false; if(denyBtn) denyBtn.disabled=false;
           btn.innerHTML='<i class="ti ti-check"></i> Approve'; return;
         }
-        var { error } = await db.from('story_collabs').update({ status: 'approved' }).eq('id', collabId);
-        if(error){ showToast('Failed to approve: ' + error.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
+        var faRes = await writeCollabStatus('story_collabs', collabId, 'approved');
+        if(!faRes.ok){ showToast('Failed to approve: ' + faRes.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
         if(collabData.artist_id && collabData.artist_id !== session.user.id){
           var { data: myProf2 } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
           var myName2 = myProf2 ? (myProf2.display_name || myProf2.username || 'Someone') : 'Someone';
@@ -553,20 +575,25 @@
           } catch(e){}
         }
         // ── BADGE AWARDS: fan art approved ─────────────────────────
+        // supabase-js resolves with {error} rather than throwing, so the old
+        // try/catch never fired and the destructured error was dropped. The
+        // approval itself already succeeded, so a badge failure must not block
+        // the flow — log it instead of swallowing it silently.
         try {
-          var { data: fanBadges } = await db.rpc('award_fanart_approved_badges', {
+          var fanBadgeRes = await db.rpc('award_fanart_approved_badges', {
             p_artist_id: collabData.artist_id,
             p_author_id: session.user.id
           });
-          showBadgeToasts(fanBadges);
-        } catch(e) {}
+          if (fanBadgeRes.error) console.error('Fan art badge award failed:', fanBadgeRes.error);
+          else showBadgeToasts(fanBadgeRes.data);
+        } catch(e) { console.error('Fan art badge award threw:', e); }
         showToast('Fan art approved!', 'ti-check');
         setTimeout(function(){ window.location.href = 'story.html?id=' + novelData.id; }, 1500);
         return;
       }
 
-      var { error } = await db.from('artwork_collabs').update({ status: 'approved' }).eq('id', collabId);
-      if(error){ showToast('Failed to approve: ' + error.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
+      var acRes = await writeCollabStatus('artwork_collabs', collabId, 'approved');
+      if(!acRes.ok){ showToast('Failed to approve: ' + acRes.message, 'ti-alert-circle'); btn.disabled=false; if(denyBtn) denyBtn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Approve'; return; }
       // Publishing the collab novel goes through a SECURITY DEFINER RPC. The old
       // direct UPDATE relied on an RLS policy that (lacking WITH CHECK) allowed the
       // artwork owner to modify any column on the work, not just is_published.
@@ -588,13 +615,15 @@
         } catch(e){}
       }
       // ── BADGE AWARDS: artwork collab approved ──────────────────
+      // Same as above: {error} is resolved, not thrown. Non-fatal, but logged.
       try {
-        var { data: collabBadges } = await db.rpc('award_artwork_collab_approved_badges', {
+        var collabBadgeRes = await db.rpc('award_artwork_collab_approved_badges', {
           p_artist_id: session.user.id,           // artwork owner who approved
           p_author_id: collabData.author_id        // story author whose work was accepted
         });
-        showBadgeToasts(collabBadges);
-      } catch(e) {}
+        if (collabBadgeRes.error) console.error('Collab badge award failed:', collabBadgeRes.error);
+        else showBadgeToasts(collabBadgeRes.data);
+      } catch(e) { console.error('Collab badge award threw:', e); }
       showToast('Story approved and published!', 'ti-check');
       setTimeout(function(){ window.location.href = 'artwork.html?id=' + artworkData.id; }, 1500);
     }
@@ -667,8 +696,8 @@
         return;
       }
 
-      var { error } = isFanArtFlow ? await db.from('story_collabs').update({ status: 'rejected' }).eq('id', collabId) : await db.from('artwork_collabs').update({ status: 'rejected' }).eq('id', collabId);
-      if(error){ showToast('Failed: ' + error.message, 'ti-alert-circle'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Send & Deny'; return; }
+      var denyRes = await writeCollabStatus(isFanArtFlow ? 'story_collabs' : 'artwork_collabs', collabId, 'rejected');
+      if(!denyRes.ok){ showToast('Failed: ' + denyRes.message, 'ti-alert-circle'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Send & Deny'; return; }
 
       // Send reason as DM to author
       var denyTarget = isFanArtFlow ? collabData.artist_id : collabData.author_id;
