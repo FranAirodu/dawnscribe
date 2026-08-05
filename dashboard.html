@@ -196,6 +196,12 @@
         .order('created_at', { ascending: false })).catch(function(){ return {}; }),
       Promise.resolve(db.from('work_coauthors').select('work_id').eq('user_id', uid)).catch(function(){ return {}; })
     ]);
+    if(ownRes.error){
+      console.error('loadPicker:', ownRes.error);
+      showState('ti-plug-x', 'Connection hiccup',
+        'Could not load your stories. <a href="javascript:location.reload()">Try again</a>.');
+      return;
+    }
     var works = ownRes.data || [];
     var coIds = (coRes.data || []).map(function(r){ return r.work_id; })
       .filter(function(id){ return !works.some(function(w){ return w.id === id; }); });
@@ -502,17 +508,15 @@
   }
 
   // ── AUTHOR GOALS ─────────────────────────────────────────────
+  // These are the only three the DB accepts (chapter_goals goal_type CHECK) and
+  // the only three goal_progress() knows how to measure. The picker used to
+  // offer six more that create_chapter_goal rejects outright.
   var GOAL_TYPES = {
-    sparks:        { label: 'Dawn Sparks',       icon: 'ti-flame' },
-    embers:        { label: 'Embers received',   icon: 'ti-campfire' },
-    scribe_flames: { label: "Scribe's Flames",   icon: 'ti-bookmark' },
-    infernal_dawns:{ label: 'Infernal Dawns',    icon: 'ti-sun' },
-    celestial_flames:{ label: 'Celestial Flames',icon: 'ti-star' },
-    reviews:       { label: 'Reviews',           icon: 'ti-message-star' },
-    followers:     { label: 'Followers',         icon: 'ti-users' },
-    readers:       { label: 'Readers',           icon: 'ti-book-open' },
-    comments:      { label: 'Comments',          icon: 'ti-message-circle' }
+    sparks:    { label: 'Dawn Sparks', icon: 'ti-flame' },
+    rallies:   { label: 'Rallies',     icon: 'ti-users' },
+    offerings: { label: 'Offerings',   icon: 'ti-gift' }
   };
+  var GOAL_TARGET_MIN = 5, GOAL_TARGET_MAX = 1000;
 
   async function loadGoals(activeGoal){
     var body = document.getElementById('goals-body');
@@ -529,11 +533,12 @@
     }
 
     var typeMeta = GOAL_TYPES[g.goal_type] || { label: g.goal_type, icon: 'ti-target' };
-    var current  = getCurrentMetric(g.goal_type);
-    var progress = Math.max(0, current - (g.baseline || 0));
-    var needed   = Math.max(1, g.target - (g.baseline || 0));
+    // progress is computed server-side by goal_progress() — the same function
+    // check_goal_reached uses — so the bar can never disagree with the award.
+    var progress = Math.max(0, Number(g.progress || 0));
+    var needed   = Math.max(1, Number(g.target || 0));
     var pct      = Math.min(100, Math.round((progress / needed) * 100));
-    var reached  = g.reached_at != null || pct >= 100;
+    var reached  = g.reached_at != null || g.status === 'reached';
 
     var html = '<div class="goal-card">';
 
@@ -548,7 +553,7 @@
     + '</div>';
 
     html += '<div class="goal-bar-wrap"><div class="goal-bar-fill" style="width:' + pct + '%;' + (reached ? 'background:var(--green);' : '') + '"></div></div>';
-    html += '<div class="goal-pct">Progress: <b>' + fmt(current) + ' / ' + fmt(g.target) + '</b> (' + pct + '%)</div>';
+    html += '<div class="goal-pct">Progress: <b>' + fmt(progress) + ' / ' + fmt(g.target) + '</b> (' + pct + '%)</div>';
 
     html += '<div class="goal-actions">';
     if(reached){
@@ -568,22 +573,6 @@
     return html;
   }
 
-  // Returns the current value for the given metric from already-loaded payload
-  function getCurrentMetric(type){
-    if(!window._dashPayload) return 0;
-    var ov = window._dashPayload.overview || {};
-    if(type === 'sparks')          return Number(ov.sparks_total || 0);
-    if(type === 'embers')          return 0; // not tracked per-story
-    if(type === 'scribe_flames')   return Number(ov.scribe_flames || 0);
-    if(type === 'infernal_dawns')  return Number(ov.infernal_dawns || 0);
-    if(type === 'celestial_flames')return Number(ov.celestial_flames || 0);
-    if(type === 'reviews')         return Number(ov.rating_count || 0);
-    if(type === 'followers')       return Number(ov.followers || 0);
-    if(type === 'readers')         return Number(ov.readers || 0);
-    if(type === 'comments')        return Number(ov.comments || 0);
-    return 0;
-  }
-
   function openGoalForm(existingGoalId){
     var body = document.getElementById('goals-body');
     if(!body) return;
@@ -595,7 +584,8 @@
       + '<div><label>Goal Type</label>'
         + '<select id="gf-type">' + typeOptions + '</select></div>'
       + '<div><label>Target Number</label>'
-        + '<input type="number" id="gf-target" min="1" placeholder="e.g. 500"/></div>'
+        + '<input type="number" id="gf-target" min="' + GOAL_TARGET_MIN + '" max="' + GOAL_TARGET_MAX + '" placeholder="e.g. 500"/>'
+        + '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Between ' + GOAL_TARGET_MIN + ' and ' + GOAL_TARGET_MAX + '. Goals run for 7 days.</div></div>'
       + '<div><label>Your Promise (pledge)</label>'
         + '<textarea id="gf-pledge" placeholder="e.g. When we hit 500 Sparks I will post a bonus chapter!"></textarea></div>'
       + '<div class="goal-actions">'
@@ -605,35 +595,44 @@
     + '</div>';
   }
 
+  // chapter_goals has no write policies: every direct insert/update from this
+  // page was silently refused by RLS. The correct paths are the existing
+  // ownership-checked RPCs, which also compute baseline server-side, enforce
+  // one active goal per work, and set the 7-day expiry.
+  var GOAL_ERRORS = {
+    not_authenticated:   'Your session expired. Please sign in again.',
+    not_owner:           'Only the author of a published story can set a goal.',
+    invalid_input:       'Pick a goal type and a target between ' + GOAL_TARGET_MIN + ' and ' + GOAL_TARGET_MAX + '.',
+    goal_already_active: 'This story already has an active goal. Abandon it first.',
+    not_found:           'That goal is no longer available. Refreshing.'
+  };
+  function goalErrorText(code){ return GOAL_ERRORS[code] || 'Something went wrong. Please try again.'; }
+
   async function saveGoal(existingGoalId){
     var type   = document.getElementById('gf-type').value;
     var target = parseInt(document.getElementById('gf-target').value, 10);
     var pledge = (document.getElementById('gf-pledge').value || '').trim();
 
-    if(!type || !target || target < 1){
-      alert('Please choose a goal type and a target number greater than 0.');
+    if(!type || !target || target < GOAL_TARGET_MIN || target > GOAL_TARGET_MAX){
+      alert('Please choose a goal type and a target between ' + GOAL_TARGET_MIN + ' and ' + GOAL_TARGET_MAX + '.');
       return;
     }
 
-    var baseline = getCurrentMetric(type);
-
     try {
+      // "Move the Goalpost": cancel the reached goal first so the new one is
+      // not rejected as goal_already_active.
       if(existingGoalId){
-        // Mark old goal fulfilled, insert new one
-        await db.from('chapter_goals').update({ status: 'fulfilled', fulfilled_at: new Date().toISOString() })
-          .eq('id', existingGoalId).eq('author_id', session.user.id);
+        var canRes = await db.rpc('cancel_chapter_goal', { p_goal_id: existingGoalId });
+        if(canRes.error) throw canRes.error;
       }
-      var { error } = await db.from('chapter_goals').insert({
-        work_id: workId,
-        author_id: session.user.id,
-        goal_type: type,
-        target: target,
-        baseline: baseline,
-        pledge: pledge || null,
-        status: 'active',
-        is_visible: true
+      var { data, error } = await db.rpc('create_chapter_goal', {
+        p_work_id:   workId,
+        p_goal_type: type,
+        p_target:    target,
+        p_pledge:    pledge || null
       });
       if(error) throw error;
+      if(!data || data.success !== true){ alert(goalErrorText(data && data.error)); return; }
       await reloadGoalSection();
     } catch(e){
       alert('Could not save goal. Please try again.');
@@ -642,8 +641,9 @@
 
   async function toggleVisibility(goalId, visible){
     try {
-      await db.from('chapter_goals').update({ is_visible: visible })
-        .eq('id', goalId).eq('author_id', session.user.id);
+      var { data, error } = await db.rpc('set_goal_visibility', { p_goal_id: goalId, p_visible: !!visible });
+      if(error) throw error;
+      if(!data || data.success !== true){ alert(goalErrorText(data && data.error)); }
       await reloadGoalSection();
     } catch(e) { alert('Could not update visibility.'); }
   }
@@ -651,20 +651,24 @@
   async function abandonGoal(goalId){
     if(!confirm('Abandon this goal? It will be removed from your story page.')) return;
     try {
-      await db.from('chapter_goals').update({ status: 'abandoned' })
-        .eq('id', goalId).eq('author_id', session.user.id);
+      var { data, error } = await db.rpc('cancel_chapter_goal', { p_goal_id: goalId });
+      if(error) throw error;
+      if(!data || data.success !== true){ alert(goalErrorText(data && data.error)); }
       await reloadGoalSection();
     } catch(e) { alert('Could not abandon goal.'); }
   }
 
   async function reloadGoalSection(){
+    // Re-read through get_work_dashboard so the goal carries server-computed
+    // progress; a direct table select would come back without it.
     try {
-      var { data } = await db.from('chapter_goals')
-        .select('id,goal_type,target,baseline,pledge,status,is_visible,created_at,reached_at')
-        .eq('work_id', workId).eq('status','active')
-        .order('created_at', { ascending: false }).limit(1).maybeSingle();
-      var body = document.getElementById('goals-body');
-      if(body) body.innerHTML = renderGoal(data);
+      var { data, error } = await db.rpc('get_work_dashboard', { p_work_id: workId });
+      if(error) throw error;
+      if(data){
+        window._dashPayload = data;
+        var body = document.getElementById('goals-body');
+        if(body) body.innerHTML = renderGoal(data.active_goal || null);
+      }
     } catch(e) {}
   }
 

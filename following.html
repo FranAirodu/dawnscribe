@@ -509,11 +509,15 @@
       var p = dsPeople[followingId] || {};
       var name = p.display_name || p.username || 'this user';
       try {
+        // .select(): a delete matching no rows returns success with an empty
+        // array, so without this the card disappears and the follow survives.
         var delRes = await db.from('follows')
           .delete()
           .eq('follower_id', currentSession.user.id)
-          .eq('following_id', followingId);
+          .eq('following_id', followingId)
+          .select('follower_id');
         if (delRes.error) { showToast('Error: ' + delRes.error.message, 'ti-x'); return; }
+        if (!delRes.data || !delRes.data.length) { showToast('Could not unfollow ' + name, 'ti-x'); return; }
         // Dual-role people appear on both tabs — remove the card from every
         // grid it lives in and keep both counts/empty states in sync
         PEOPLE_GRIDS.forEach(function(g) {
@@ -559,7 +563,12 @@
         document.getElementById(loadingId).style.display = 'none';
         document.getElementById(emptyId).style.display = 'none';
 
-        if (followRes.error || !followRes.data || !followRes.data.length) {
+        if (followRes.error) {
+          console.error('loadPeople follows:', followRes.error);
+          showToast('Could not load who you follow. Please refresh.', 'ti-alert-triangle');
+          return;
+        }
+        if (!followRes.data || !followRes.data.length) {
           document.getElementById(emptyId).style.display = 'block';
           document.getElementById(countId).textContent = '0';
           return;
@@ -572,7 +581,12 @@
           .select('id, username, display_name, avatar_url, role')
           .in('id', ids);
 
-        if (profileRes.error || !profileRes.data) {
+        if (profileRes.error) {
+          console.error('loadPeople profiles:', profileRes.error);
+          showToast('Could not load who you follow. Please refresh.', 'ti-alert-triangle');
+          return;
+        }
+        if (!profileRes.data) {
           document.getElementById(emptyId).style.display = 'block';
           document.getElementById(countId).textContent = '0';
           return;
@@ -626,7 +640,12 @@
         document.getElementById('titles-loading').style.display = 'none';
         document.getElementById('titles-empty').style.display = 'none';
 
-        if (followRes.error || !followRes.data || !followRes.data.length) {
+        if (followRes.error) {
+          console.error('loadTitles follows:', followRes.error);
+          showToast('Could not load your followed titles. Please refresh.', 'ti-alert-triangle');
+          return;
+        }
+        if (!followRes.data || !followRes.data.length) {
           document.getElementById('titles-empty').style.display = 'block';
           document.getElementById('titles-count').textContent = '0';
           return;
@@ -640,7 +659,12 @@
           .in('id', workIds)
           .eq('is_published', true);
 
-        if (worksRes.error || !worksRes.data || !worksRes.data.length) {
+        if (worksRes.error) {
+          console.error('loadTitles works:', worksRes.error);
+          showToast('Could not load your followed titles. Please refresh.', 'ti-alert-triangle');
+          return;
+        }
+        if (!worksRes.data || !worksRes.data.length) {
           document.getElementById('titles-empty').style.display = 'block';
           document.getElementById('titles-count').textContent = '0';
           return;
@@ -745,8 +769,9 @@
       var w = dsWorks[workId] || {};
       var title = w.title || 'this title';
       try {
-        var result = await db.from('work_follows').delete().eq('user_id', currentSession.user.id).eq('work_id', workId);
+        var result = await db.from('work_follows').delete().eq('user_id', currentSession.user.id).eq('work_id', workId).select('work_id');
         if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); return; }
+        if (!result.data || !result.data.length) { showToast('Could not unfollow \u201c' + title + '\u201d', 'ti-x'); return; }
         var card = document.getElementById('titles-card-' + workId);
         if (card) {
           card.style.opacity = '0';

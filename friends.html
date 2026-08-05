@@ -508,8 +508,12 @@
   // ── ACTIONS ───────────────────────────────────────────────────
   async function acceptRequest(id, rowEl){
     rowEl.style.opacity = '0.5';
-    var { error } = await db.from('friendships').update({ status: 'accepted' }).eq('id', id).eq('recipient_id', uid);
+    // .select(): without it a refused update still reports success, the row
+    // moves to Friends, and award_connector_badges is called on a request that
+    // was never accepted.
+    var { data: accRows, error } = await db.from('friendships').update({ status: 'accepted' }).eq('id', id).eq('recipient_id', uid).select('id');
     if(error){ rowEl.style.opacity = '1'; showToast('Failed: ' + error.message, 'ti-alert-circle'); return; }
+    if(!accRows || !accRows.length){ rowEl.style.opacity = '1'; showToast('Could not accept that request.', 'ti-alert-circle'); return; }
     showToast('Friend request accepted!', 'ti-check');
     // Credit the Connector badge for BOTH parties (server-side, recompute-from-truth).
     try { await db.rpc('award_connector_badges', { p_friendship_id: id }); } catch(e) {}
@@ -559,16 +563,18 @@
     });
     setTimeout(async function(){
       if(undone) return;
-      var { error } = await db.from('friendships').delete().eq('id', id).eq('recipient_id', uid);
+      var { data: decRows, error } = await db.from('friendships').delete().eq('id', id).eq('recipient_id', uid).select('id');
       if(error){ rowEl.style.display = ''; showToast('Failed: ' + error.message, 'ti-alert-circle'); return; }
+      if(!decRows || !decRows.length){ rowEl.style.display = ''; showToast('Could not decline that request.', 'ti-alert-circle'); return; }
       dropRow(rowEl, 's-incoming', '<i class="ti ti-user-check"></i><p>No pending friend requests.</p>');
     }, 4000);
   }
 
   async function cancelRequest(id, rowEl){
     rowEl.style.opacity = '0.5';
-    var { error } = await db.from('friendships').delete().eq('id', id).eq('requester_id', uid);
+    var { data: canRows, error } = await db.from('friendships').delete().eq('id', id).eq('requester_id', uid).select('id');
     if(error){ rowEl.style.opacity = '1'; showToast('Failed: ' + error.message, 'ti-alert-circle'); return; }
+    if(!canRows || !canRows.length){ rowEl.style.opacity = '1'; showToast('Could not cancel that request.', 'ti-alert-circle'); return; }
     showToast('Request cancelled.', 'ti-x');
     dropRow(rowEl, 's-sent', null);
   }
@@ -605,9 +611,11 @@
     });
     setTimeout(async function(){
       if(undone) return;
-      var { error } = await db.from('friendships').delete().eq('id', id)
-        .or('requester_id.eq.' + uid + ',recipient_id.eq.' + uid);
+      var { data: remRows, error } = await db.from('friendships').delete().eq('id', id)
+        .or('requester_id.eq.' + uid + ',recipient_id.eq.' + uid)
+        .select('id');
       if(error){ rowEl.style.display = ''; showToast('Failed: ' + error.message, 'ti-alert-circle'); return; }
+      if(!remRows || !remRows.length){ rowEl.style.display = ''; showToast('Could not remove that friend.', 'ti-alert-circle'); return; }
       dropRow(rowEl, 's-friends', '<i class="ti ti-users"></i><p>No friends yet.<br>Visit someone\'s profile and send them a friend request!</p>');
       allFriendshipRows = allFriendshipRows.filter(function(r){ return r.id !== id; });
     }, 4000);

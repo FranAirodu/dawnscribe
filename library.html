@@ -221,6 +221,16 @@
       return true;
     }
 
+    function showLibraryLoadError(msg) {
+      var host = document.getElementById('library-content') || document.body;
+      host.innerHTML = '<div class="empty-state">' +
+        '<i class="ti ti-alert-triangle"></i>' +
+        '<h2>Couldn\'t load your library</h2>' +
+        '<p>' + escHtml(msg || 'Something went wrong.') + '</p>' +
+        '<p><a class="lib-btn" href="library.html">Try again</a></p>' +
+        '</div>';
+    }
+
     // ── LOAD EVERYTHING ─────────────────────────────────────────
     async function loadLibrary() {
       var uid = currentSession.user.id;
@@ -248,8 +258,16 @@
           .select('id,name,description,is_public,created_at')
           .eq('user_id', uid).order('created_at', { ascending: false })).catch(function(){ return {}; })
       ]);
+      // A failed fetch must not look like an empty shelf. The .catch() wrappers
+      // above swallow rejections, so check .error explicitly and bail loudly.
+      if (entRes.error || (!entRes.data && !entRes.error)) {
+        console.error('loadLibrary entries:', entRes.error);
+        showLibraryLoadError(entRes.error && entRes.error.message);
+        return;
+      }
       allEntries = entRes.data || [];
       myLists = listRes.data || [];
+      if (listRes.error) console.error('loadLibrary lists:', listRes.error);
 
       // Fetch works + authors + progress for every referenced work
       worksMap = {};
@@ -502,6 +520,14 @@
       btn.innerHTML = '<i class="ti ti-loader-2"></i>';
       var { error } = await db.from('reading_list_entries')
         .insert({ user_id: currentSession.user.id, work_id: workId, status: 'plan_to_read' });
+      if (error && error.code === '23505') {
+        // UNIQUE (user_id, work_id): it is already on the shelf.
+        btn.disabled = true;
+        btn.innerHTML = '<i class="ti ti-check"></i> In library';
+        showToast('Already in your library.', 'ti-bookmark');
+        loadLibrary();
+        return;
+      }
       if (error) {
         btn.disabled = false;
         btn.innerHTML = '<i class="ti ti-bookmark"></i> Plan to Read';
@@ -519,9 +545,11 @@
       entry.status = newStatus;
       entry.updated_at = new Date().toISOString();
       updateCounts(); renderTab();
-      var { error } = await db.from('reading_list_entries')
-        .update({ status: newStatus, updated_at: entry.updated_at }).eq('id', entryId);
-      if (error) {
+      // .select(): an update matching no rows (RLS refusal, expired session,
+      // row already gone) returns success with an empty array, not an error.
+      var { data: updRows, error } = await db.from('reading_list_entries')
+        .update({ status: newStatus, updated_at: entry.updated_at }).eq('id', entryId).select('id');
+      if (error || !updRows || !updRows.length) {
         entry.status = old;
         updateCounts(); renderTab();
         showToast('Could not update status.', 'ti-x');
@@ -536,9 +564,9 @@
       var old = entry.list_id;
       entry.list_id = listId;
       renderTab();
-      var { error } = await db.from('reading_list_entries')
-        .update({ list_id: listId, updated_at: new Date().toISOString() }).eq('id', entryId);
-      if (error) {
+      var { data: movRows, error } = await db.from('reading_list_entries')
+        .update({ list_id: listId, updated_at: new Date().toISOString() }).eq('id', entryId).select('id');
+      if (error || !movRows || !movRows.length) {
         entry.list_id = old;
         renderTab();
         showToast('Could not move to list.', 'ti-x');
@@ -558,8 +586,8 @@
       if (!confirm('Remove this story from your library?')) return;
       var removed = allEntries.splice(idx, 1)[0];
       updateCounts(); renderTab();
-      var { error } = await db.from('reading_list_entries').delete().eq('id', entryId);
-      if (error) {
+      var { data: delRows, error } = await db.from('reading_list_entries').delete().eq('id', entryId).select('id');
+      if (error || !delRows || !delRows.length) {
         allEntries.splice(idx, 0, removed);
         updateCounts(); renderTab();
         showToast('Could not remove.', 'ti-x');
@@ -601,8 +629,8 @@
 
     async function deleteList(listId) {
       if (!confirm('Delete this list? Stories in it stay in your library — they just leave the list.')) return;
-      var { error } = await db.from('user_reading_lists').delete().eq('id', listId);
-      if (error) { showToast('Could not delete list.', 'ti-x'); return; }
+      var { data: delListRows, error } = await db.from('user_reading_lists').delete().eq('id', listId).select('id');
+      if (error || !delListRows || !delListRows.length) { showToast('Could not delete list.', 'ti-x'); return; }
       myLists = myLists.filter(function(l){ return l.id !== listId; });
       // Detach local entries; DB side is handled by FK (set null or cascade)
       allEntries.forEach(function(e){ if (e.list_id === listId) e.list_id = null; });

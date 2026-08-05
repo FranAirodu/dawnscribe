@@ -254,7 +254,9 @@
     var activeWorkChapterCount = 0;
     var quill = null;
 
-    function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    // Escapes quotes as well as angle brackets: this is interpolated into
+    // double-quoted attributes (src, data-title, title), not just text nodes.
+    function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
     function formatDate(s){ if(!s) return '—'; return new Date(s).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); }
 
     function showToast(msg, icon){
@@ -416,6 +418,19 @@
       if (e.target === this && !this.classList.contains('fullscreen')) closeOverlay();
     });
 
+    // word_count is computed by a BEFORE INSERT trigger from content, so it is
+    // deliberately not sent.
+    function insertChapterRow(chapterNumber, title, content) {
+      return db.from('chapters').insert({
+        work_id: activeWorkId,
+        author_id: currentSession.user.id,
+        title: title,
+        content: content,
+        chapter_number: chapterNumber,
+        status: 'published'
+      });
+    }
+
     async function saveChapter() {
       var title = document.getElementById('chapter-title-input').value.trim();
       var content = quill ? quill.root.innerHTML : '';
@@ -428,21 +443,35 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Publishing…';
 
-      var wordCount = text.split(/\s+/).filter(Boolean).length;
-      var chapterNumber = activeWorkChapterCount + 1;
+      // chapter_number comes from the server: a client-side count races with a
+      // second tab, and (work_id, chapter_number) is now unique. word_count is
+      // computed by a trigger from content, so it is not sent.
+      var chapterNumber;
+      var numRes = await db.rpc('next_chapter_number', { p_work_id: activeWorkId });
+      if (numRes.error || !numRes.data) {
+        showToast('Could not determine the chapter number. Try again.', 'ti-x');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-check"></i> Publish Chapter';
+        return;
+      }
+      chapterNumber = numRes.data;
 
-      var result = await db.from('chapters').insert({
-        work_id: activeWorkId,
-        author_id: currentSession.user.id,
-        title: title,
-        content: content,
-        chapter_number: chapterNumber,
-        word_count: wordCount,
-        status: 'published'
-      });
+      // (work_id, chapter_number) is unique. A second tab publishing between
+      // next_chapter_number() and this insert yields 23505 — re-ask for the
+      // number and retry once rather than showing the raw Postgres error.
+      var result = await insertChapterRow(chapterNumber, title, content);
+      if (result.error && result.error.code === '23505') {
+        var retryNum = await db.rpc('next_chapter_number', { p_work_id: activeWorkId });
+        if (!retryNum.error && retryNum.data) {
+          chapterNumber = retryNum.data;
+          result = await insertChapterRow(chapterNumber, title, content);
+        }
+      }
 
       if (result.error) {
-        showToast('Error: ' + result.error.message, 'ti-x');
+        showToast(result.error.code === '23505'
+          ? 'That chapter number was just taken. Try publishing again.'
+          : 'Error: ' + result.error.message, 'ti-x');
         btn.disabled = false;
         btn.innerHTML = '<i class="ti ti-check"></i> Publish Chapter';
         return;
@@ -470,15 +499,7 @@
       // Store pending delete workId
       backdrop.dataset.pendingId = workId;
       backdrop.dataset.pendingTitle = title;
-      return; // actual deletion handled by modal confirm button
-
-      // Delete chapters first
-      await db.from('chapters').delete().eq('work_id', workId);
-      await db.from('work_coauthors').delete().eq('work_id', workId);
-      await db.from('works').delete().eq('id', workId);
-
-      showToast('Story deleted', 'ti-trash');
-      loadWorks();
+      // Actual deletion happens in the modal's confirm handler.
     }
 
     // ── LOAD WORKS ───────────────────────────────────────────────
@@ -488,6 +509,21 @@
         .eq('author_id', currentSession.user.id)
         .in('type', ['novel', 'artwork'])
         .order('created_at', { ascending: false });
+
+      // A failed query must not look like an empty shelf. Bail loudly instead
+      // of rendering the "No works yet" empty state over a transient error.
+      if (worksResult.error) {
+        console.error('loadWorks:', worksResult.error);
+        document.getElementById('works-list').innerHTML =
+          '<div class="empty-state">' +
+          '<i class="ti ti-alert-triangle"></i>' +
+          '<h2>Couldn\'t load your works</h2>' +
+          '<p>' + escHtml(worksResult.error.message || 'Something went wrong.') + '</p>' +
+          '<p><a class="work-btn" href="creator.html">Try again</a></p>' +
+          '</div>';
+        document.getElementById('works-count').textContent = '';
+        return;
+      }
 
       cwAllWorks = worksResult.data || [];
       var works = cwAllWorks;
@@ -574,20 +610,22 @@
         this.innerHTML = '<i class="ti ti-loader-2"></i> Deleting…';
         this.disabled = true;
         backdrop.classList.remove('show');
+        // One ownership-checked, atomic call. The old client-side cascade had
+        // steps that silently deleted nothing (a column that doesn't exist, and
+        // rows RLS correctly refuses to let an author delete).
         try {
-          await db.from('chapter_comments').delete().eq('work_id', workId);
-          await db.from('reviews').delete().eq('work_id', workId);
-          await db.from('reading_progress').delete().eq('work_id', workId);
-          await db.from('work_follows').delete().eq('work_id', workId);
-          await db.from('work_tag_suggestions').delete().eq('work_id', workId);
-          await db.from('work_coauthors').delete().eq('work_id', workId);
-          await db.from('chapters').delete().eq('work_id', workId);
-          await db.from('works').delete().eq('id', workId);
+          var res = await db.rpc('delete_work', { p_work_id: workId });
+          if (res.error) throw res.error;
+          if (!res.data || res.data.success !== true) {
+            throw new Error((res.data && res.data.error) || 'Unknown error');
+          }
           showToast('Story deleted.', 'ti-trash');
           setTimeout(function(){ loadWorks(); }, 800);
         } catch(err) {
           console.error(err);
           showToast('Delete failed: '+(err.message||'Unknown error'), 'ti-x');
+          this.disabled = false;
+          this.innerHTML = 'Delete';
         }
       });
     })();
