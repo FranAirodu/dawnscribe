@@ -878,7 +878,7 @@ function dsApplyAccent(hex) {
       var { data: actRows } = await db.from('notifications')
         .select('id,type,message,work_id,chapter_id,created_at')
         .eq('user_id', uid)
-        .in('type', ['song_approved','song_rejected','fan_translation_linked','opinion_submitted','opinion_approved','opinion_featured','quote_submitted','quote_approved','quote_rejected','question_submitted','question_answered','question_declined','collab_request','echo','poll_closing'])
+        .in('type', ['song_approved','song_rejected','fan_translation_linked','opinion_submitted','opinion_approved','opinion_featured','quote_submitted','quote_approved','quote_rejected','question_submitted','question_answered','question_declined','collab_request','showcase_collab_request','showcase_collab_accepted','showcase_collab_declined','echo','poll_closing'])
         .order('created_at', { ascending: false })
         .limit(12);
       var clearedAct = dsGetClearedIds('activity');
@@ -938,6 +938,9 @@ function dsApplyAccent(hex) {
           else if(n.type==='question_answered'){ iconColor='#2dd4bf'; icon='ti-message-check';    title='💬 Question Answered'; }
           else if(n.type==='question_declined'){ iconColor='var(--text3)'; icon='ti-x';           title='❓ Question Declined'; }
           else if(n.type==='collab_request')   { iconColor='#f59e0b'; icon='ti-git-merge';         title='🤝 Collab Request'; }
+          else if(n.type==='showcase_collab_request'){ iconColor='#f59e0b'; icon='ti-photo';        title='🎨 Fan Art Awaiting You'; }
+          else if(n.type==='showcase_collab_accepted'){ iconColor='#22c55e'; icon='ti-photo-check'; title='🎨 Fan Art Approved'; }
+          else if(n.type==='showcase_collab_declined'){ iconColor='var(--text3)'; icon='ti-photo-off'; title='🎨 Fan Art Collab Declined'; }
           else if(n.type==='echo')             { iconColor='#f97316'; icon='ti-flame';             title='🔥 Echo on Chapter'; }
           else if(n.type==='poll_closing')     { iconColor='#f59e0b'; icon='ti-clock-exclamation'; title='📊 Poll Closing Soon'; }
           else                                 { iconColor='var(--text3)'; icon='ti-bell';         title=dsEsc(n.type||'Notification'); }
@@ -947,6 +950,8 @@ function dsApplyAccent(hex) {
           item.dataset.server = '1';
           var dest = n.chapter_id ? 'chapter.html?id='+n.chapter_id : (n.work_id ? 'story.html?id='+n.work_id : null);
           if(n.type==='collab_request') dest = 'collab-inbox.html';
+          if(n.type==='showcase_collab_request') dest = 'collab-inbox.html';
+          if(n.type==='showcase_collab_accepted'||n.type==='showcase_collab_declined') dest = n.work_id ? 'artwork.html?id='+n.work_id : null;
           item.style.cursor = dest ? 'pointer' : 'default';
           item.onclick = function() {
             var map = dsGetClearedIds('activity');

@@ -556,7 +556,9 @@
       if(!String(n.id).startsWith('poll-')){ try{ db.from('notifications').update({is_read:true}).eq('id',n.id).then(function(){}); }catch(eU){} }
       if(n.type==='new_follower'&&n._username){ window.location.href='profile.html?u='+n._username; return; }
       if(n.type==='collab_request'){ window.location.href='collab-inbox.html'; return; }
+      if(n.type==='showcase_collab_request'){ window.location.href='collab-inbox.html'; return; }
       if(n.type==='commission_request'){ if(n.work_id) window.location.href='artwork.html?id='+n.work_id; return; }
+      if(n.type==='showcase_collab_accepted'||n.type==='showcase_collab_declined'){ if(n.work_id) window.location.href='artwork.html?id='+n.work_id; return; }
       if(n.type==='rally_answered'&&n.chapter_id){ window.location.href='chapter.html?id='+n.chapter_id; return; }
       if(n.work_id) window.location.href='story.html?id='+n.work_id;
     });
@@ -580,6 +582,12 @@
     else if(n.type==='banner_collab_request'){ iconColor='#2dd4bf'; icon='ti-photo'; title='\uD83D\uDDBC\uFE0F Banner Collab Offer'; subtitle=esc(n.message||''); }
     else if(n.type==='banner_collab_accepted'){ iconColor='#22c55e'; icon='ti-photo-check'; title='\uD83D\uDDBC\uFE0F Banner Collab Accepted'; subtitle=esc(n.message||''); }
     else if(n.type==='banner_collab_declined'){ iconColor='var(--text3)'; icon='ti-photo-off'; title='\uD83D\uDDBC\uFE0F Banner Collab Declined'; subtitle=esc(n.message||''); }
+    else if(n.type==='scroll_collab_request'){ iconColor='#2dd4bf'; icon='ti-sparkles'; title='\uD83D\uDCDC Scroll Collab Invite'; subtitle=esc(n.message||''); }
+    else if(n.type==='scroll_collab_accepted'){ iconColor='#22c55e'; icon='ti-circle-check'; title='\uD83D\uDCDC Scroll Collab Accepted'; subtitle=esc(n.message||''); }
+    else if(n.type==='scroll_collab_declined'){ iconColor='var(--text3)'; icon='ti-circle-x'; title='\uD83D\uDCDC Scroll Collab Declined'; subtitle=esc(n.message||''); }
+    else if(n.type==='showcase_collab_request'){ iconColor='#f59e0b'; icon='ti-photo'; title='\uD83C\uDFA8 Fan Art Awaiting You'; subtitle=esc(n.message||''); }
+    else if(n.type==='showcase_collab_accepted'){ iconColor='#22c55e'; icon='ti-photo-check'; title='\uD83C\uDFA8 Fan Art Approved'; subtitle=esc(n.message||''); }
+    else if(n.type==='showcase_collab_declined'){ iconColor='var(--text3)'; icon='ti-photo-off'; title='\uD83C\uDFA8 Fan Art Collab Declined'; subtitle=esc(n.message||''); }
     else { iconColor='var(--text3)'; icon='ti-bell'; title=esc(n.type||'Notification'); subtitle=esc(n.message||''); }
 
     // Commission request: show artwork thumbnail instead of generic icon
@@ -593,10 +601,17 @@
     // Banner collab offers are answerable straight from the card — the author
     // shouldn't have to go hunting for the inbox to say yes.
     var inlineActionsHtml = '';
-    if(n.type==='banner_collab_request' && n.scroll_id){
+    var _collabRpc = n.type==='banner_collab_request' ? 'respond_banner_collab'
+                    : n.type==='scroll_collab_request' ? 'respond_scroll_collab'
+                    : n.type==='showcase_collab_request' ? 'respond_showcase_collab' : null;
+    // Showcase collabs are anchored on the artwork works-row, not a scroll.
+    var _collabIsShowcase = _collabRpc === 'respond_showcase_collab';
+    var _collabId    = _collabIsShowcase ? n.work_id : n.scroll_id;
+    var _collabParam = _collabIsShowcase ? 'p_artwork_id' : 'p_scroll_id';
+    if(_collabRpc && _collabId){
       inlineActionsHtml =
         '<div class="bcollab-actions" style="display:flex;gap:7px;margin-top:9px;">'+
-          '<button class="bcollab-accept" style="background:var(--accent);border:none;border-radius:8px;padding:6px 13px;color:#08221f;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-check"></i> Accept</button>'+
+          '<button class="bcollab-accept" style="background:var(--accent);border:none;border-radius:8px;padding:6px 13px;color:#08221f;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-check"></i> '+(_collabIsShowcase?'Approve':'Accept')+'</button>'+
           '<button class="bcollab-decline" style="background:transparent;border:1px solid var(--border);border-radius:8px;padding:6px 13px;color:var(--text2);font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-x"></i> Decline</button>'+
         '</div>';
     }
@@ -617,23 +632,32 @@
       // stopPropagation on both: the card itself navigates on click.
       var accBtn = card.querySelector('.bcollab-accept');
       var decBtn = card.querySelector('.bcollab-decline');
-      accBtn.addEventListener('click', function(e){ e.stopPropagation(); answerBannerCollab(card, n.scroll_id, true); });
-      decBtn.addEventListener('click', function(e){ e.stopPropagation(); answerBannerCollab(card, n.scroll_id, false); });
+      accBtn.addEventListener('click', function(e){ e.stopPropagation(); answerCollab(card, _collabId, true, _collabRpc, _collabParam); });
+      decBtn.addEventListener('click', function(e){ e.stopPropagation(); answerCollab(card, _collabId, false, _collabRpc, _collabParam); });
     }
 
     return card;
   }
 
-  // Answer a banner collab offer without leaving the notifications page.
-  // respond_banner_collab is identity-guarded and is the only writer of
-  // novelist_approved, so there is nothing to validate here beyond reporting.
-  async function answerBannerCollab(card, scrollId, accept){
-    if(!accept && !confirm('Decline this banner collab? The artist can still sell it on its own.')) return;
+  // Answer a banner or Scroll collab offer without leaving the notifications
+  // page. Both RPCs are identity-guarded and are the only writers of the
+  // approval columns, so there is nothing to validate here beyond reporting.
+  async function answerCollab(card, targetId, accept, rpcName, paramName){
+    var isBanner    = rpcName === 'respond_banner_collab';
+    var isShowcase  = rpcName === 'respond_showcase_collab';
+    var confirmMsg  = isShowcase
+      ? 'Decline this collab link? The artwork will be published on its own, without a link to your novel.'
+      : 'Decline this ' + (isBanner ? 'banner' : 'Scroll') + ' collab? The artist can still sell it on its own.';
+    if(!accept && !confirm(confirmMsg)) return;
     var wrap = card.querySelector('.bcollab-actions');
     var btns = wrap ? wrap.querySelectorAll('button') : [];
     for(var i=0;i<btns.length;i++){ btns[i].disabled = true; }
 
-    var res = await db.rpc('respond_banner_collab', { p_scroll_id: scrollId, p_accept: !!accept });
+    var rpcArgs = { p_accept: !!accept };
+    rpcArgs[paramName || 'p_scroll_id'] = targetId;
+    var res = await Promise.resolve(
+      db.rpc(rpcName, rpcArgs)
+    ).catch(function(e){ return { error: e }; });
     var err = res.error;
     if(!err && res.data && res.data.ok === false) err = { message: res.data.error || 'Not permitted' };
     if(err){
@@ -643,7 +667,9 @@
 
     if(wrap){
       wrap.innerHTML = '<span style="font-size:11px;color:'+(accept?'#22c55e':'var(--text3)')+';font-weight:700;">'+
-        (accept ? '\u2713 Accepted \u2014 the artist can submit it now.' : 'Declined.')+'</span>';
+        (accept
+          ? (isShowcase ? '\u2713 Approved \u2014 the fan art is live now.' : '\u2713 Accepted \u2014 the artist can submit it now.')
+          : (isShowcase ? 'Declined \u2014 published without the link.' : 'Declined.'))+'</span>';
     }
   }
 
@@ -1110,7 +1136,7 @@
           });
         }
       }
-      var actRes=await db.from('notifications').select('id,type,message,work_id,chapter_id,scroll_id,created_at,is_read').eq('user_id',uid).in('type',['song_approved','song_rejected','fan_translation_linked','collab_request','commission_request','opinion_approved','opinion_featured','quote_approved','quote_rejected','question_answered','question_declined','rally_answered','banner_collab_request','banner_collab_accepted','banner_collab_declined']).order('created_at',{ascending:false}).limit(50);
+      var actRes=await db.from('notifications').select('id,type,message,work_id,chapter_id,scroll_id,created_at,is_read').eq('user_id',uid).in('type',['song_approved','song_rejected','fan_translation_linked','collab_request','commission_request','opinion_approved','opinion_featured','quote_approved','quote_rejected','question_answered','question_declined','rally_answered','banner_collab_request','banner_collab_accepted','banner_collab_declined','scroll_collab_request','scroll_collab_accepted','scroll_collab_declined','showcase_collab_request','showcase_collab_accepted','showcase_collab_declined']).order('created_at',{ascending:false}).limit(50);
       var actRows = actRes.data||[];
       // Fetch artwork thumbnails for commission_request items
       var commissionWorkIds=[...new Set(actRows.filter(function(r){return r.type==='commission_request'&&r.work_id;}).map(function(r){return r.work_id;}))];

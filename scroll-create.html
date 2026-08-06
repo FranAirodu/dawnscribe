@@ -702,6 +702,7 @@
 
     onTypeChange();
     if (s.novel_id) { await loadUserNovels(s.novel_id); }
+    _collabAccepted = !!s.collab_novelist_accepted;
     if (s.type === 'collab' && s.collab_novelist_id) {
       document.getElementById('sc-novelist-id').value = s.collab_novelist_id;
       _selectedNovelistId = s.collab_novelist_id;
@@ -768,6 +769,7 @@
 
   // ── NOVELIST SEARCH (for collab scroll) ──────────────────────
   var _novelistSearchTimer = null;
+  var _collabAccepted = false;
   var _selectedNovelistId = null;
 
   function searchNovelist(val){
@@ -884,9 +886,12 @@
       has_side_story: type === 'banner' ? false : storyEnabled,
       creator_id: currentUser.id,
       artist_id: currentUser.id,
-      collab_novelist_id: type === 'collab' ? (novelistId || null) : null,
       is_active: false
     };
+    // collab_novelist_id is set only by invite_scroll_collab (below) — the
+    // column grant is revoked so the novelist cannot be attached without
+    // being notified and given a chance to accept.
+
     if (!currentScrollId) payload.status = 'draft';
 
     var res;
@@ -899,6 +904,21 @@
       if (err2) { showToast('Could not create scroll: ' + err2.message, true); return; }
       currentScrollId = created.id;
     }
+
+    if (type === 'collab' && novelistId) {
+      var invRes = await Promise.resolve(
+        db.rpc('invite_scroll_collab', { p_scroll_id: currentScrollId, p_novelist_id: novelistId })
+      ).catch(function(e){ return { error: e }; });
+      if (invRes.error) {
+        showToast('Saved, but could not invite the novelist: ' + invRes.error.message, true);
+      } else if (invRes.data && invRes.data.ok === false) {
+        showToast('Saved, but could not invite the novelist: ' + invRes.data.error, true);
+      } else if (invRes.data && !invRes.data.unchanged) {
+        _collabAccepted = false;
+        showToast('Invite sent to your novelist partner');
+      }
+    }
+
     updateItemRequirements();
     goToStep(1);
   }
@@ -1130,7 +1150,10 @@
         {ok: regular.length >= minRegular, label: regular.length + ' / ' + minRegular + ' regular items added'},
         {ok: gachaCount === 1, label: 'Exactly 1 gacha teaser item'},
       ];
-      if (type === 'collab') checks.push({ok: !!document.getElementById('sc-novelist-id').value, label: 'Novelist partner selected'});
+      if (type === 'collab') {
+        checks.push({ok: !!document.getElementById('sc-novelist-id').value, label: 'Novelist partner selected'});
+        checks.push({ok: _collabAccepted, label: _collabAccepted ? 'Novelist accepted the collab' : 'Waiting on your novelist partner to accept'});
+      }
       if (isComplete) checks.push({ok: completionCount === 1, label: '1 completion reward item'});
     }
 

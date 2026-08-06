@@ -38,6 +38,7 @@
   <meta name="twitter:image" id="tw-image" content=""/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="spoilerUtils.js"></script>
+  <script src="blockUtils.js"></script>
   <script src="translateHint.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
@@ -3101,6 +3102,10 @@
       var sessionRes = await db.auth.getSession();
       currentSession = sessionRes && sessionRes.data ? sessionRes.data.session : null;
 
+      // Block filtering here is client-side via dsBlock (not RLS), matching
+      // artwork.html as the reference implementation.
+      if (currentSession) { try { await dsBlock.load(currentSession.user.id); } catch(eB) {} }
+
       // Sync reading progress from Supabase (same as chapter.html) so the
       // review/offering gates work on new devices or after cleared storage
       if (currentSession) {
@@ -3548,7 +3553,9 @@
       var collabQuery = db.from('story_collabs').select('id,image_url,artist_id,created_at,description,inspiration,status').eq('work_id',workData.id).order('created_at',{ascending:false});
       if (!isOwner) collabQuery = collabQuery.eq('status','approved');
       var { data: collabs } = await collabQuery;
-      collabs = collabs || []; collabsData = collabs;
+      collabs = collabs || [];
+      collabs = collabs.filter(function(c){ return !dsBlock.either(c.artist_id); });
+      collabsData = collabs;
       if(!collabs.length) return;
       var artistIds = [...new Set(collabs.map(function(c){ return c.artist_id; }))];
       var artistMap = {};
@@ -3620,7 +3627,7 @@
       var el=document.getElementById('collab-detail-comments');
       el.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div>';
       var { data: comments } = await db.from('collab_comments').select('id,content,created_at,user_id').eq('collab_id',collabId).order('created_at',{ascending:true});
-      comments=comments||[];
+      comments=(comments||[]).filter(function(cm){ return !dsBlock.either(cm.user_id); });
       if(!comments.length){ el.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:12px;">No comments yet. Be the first!</div>'; return; }
       var uIds=[...new Set(comments.map(function(c){ return c.user_id; }))]; var pMap={};
       if(uIds.length){ var { data: ps }=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',uIds); (ps||[]).forEach(function(p){ pMap[p.id]=p; }); }
