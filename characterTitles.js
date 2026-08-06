@@ -825,7 +825,7 @@ window.CharacterTitles = (function() {
       var moodHex = moodWinner ? (CT_MOODS.find(function(m){ return m.name === moodWinner; }) || {}).hex : null;
 
       var belovedHtml = (_maxMonthVotes > 0 && (fc.month_votes||0) === _maxMonthVotes)
-        ? '<div class="ct-beloved-ribbon" title="Most fan votes this month"><i class="ti ti-heart-filled"></i> Most Beloved</div>' : '';
+        ? '<div class="ct-beloved-ribbon" title="Most fan votes this month"><i class="ti ti-hearts"></i> Most Beloved</div>' : '';
 
       var imprData = EXP.impr[char.id] || { first:{}, now:{}, myFirst:null, myNow:null };
       function _topSent(obj){ var w=null,mx=0; Object.keys(obj).forEach(function(s){ if(obj[s]>mx){mx=obj[s];w=s;} }); return w; }
@@ -953,7 +953,7 @@ window.CharacterTitles = (function() {
         var vid = ytId(featuredSong.youtube_url);
         var songBg = aura ? 'background:' + aura + '12;border-color:' + aura + '40;' : '';
         featuredHtml = '<a href="' + esc(featuredSong.youtube_url) + '" target="_blank" rel="noopener" class="ct-featured-song" style="' + songBg + '">' +
-          '<div class="ct-featured-song-thumb"><img src="https://img.youtube.com/vi/' + esc(vid) + '/default.jpg" alt=""/><div class="ct-featured-song-play"><i class="ti ti-player-play-filled"></i></div></div>' +
+          '<div class="ct-featured-song-thumb"><img src="https://img.youtube.com/vi/' + esc(vid) + '/default.jpg" alt=""/><div class="ct-featured-song-play"><i class="ti ti-player-play"></i></div></div>' +
           '<div class="ct-featured-song-info"><div class="ct-featured-song-title">' + esc(featuredSong.song_title) + '</div>' +
           '<div class="ct-featured-song-artist">' + esc(featuredSong.artist_name || '') + '</div>' +
           '<div class="ct-featured-song-credit" style="' + (aura ? 'color:'+aura+';' : '') + '">♪ suggested by ' + esc(sugName) + '</div></div>' +
@@ -1276,7 +1276,7 @@ window.CharacterTitles = (function() {
             '</div>' +
             '<div class="ct-exp-scroll">' +
               (charAnsweredQs.length ? charAnsweredQs.map(function(q){
-                var pinBtn = isOwner ? '<button class="ct-q-pin-btn' + (q.is_pinned ? ' active' : '') + '" data-q-id="' + esc(q.id) + '" title="' + (q.is_pinned ? 'Unpin' : 'Pin to top') + '"><i class="ti ti-pin' + (q.is_pinned ? '-filled' : '') + '"></i></button>' : (q.is_pinned ? '<i class="ti ti-pin-filled" style="color:#fbbf24;font-size:11px;"></i>' : '');
+                var pinBtn = isOwner ? '<button class="ct-q-pin-btn' + (q.is_pinned ? ' active' : '') + '" data-q-id="' + esc(q.id) + '" title="' + (q.is_pinned ? 'Unpin' : 'Pin to top') + '"><i class="ti ti-pin' + (q.is_pinned ? '-filled' : '') + '"></i></button>' : (q.is_pinned ? '<i class="ti ti-pin" style="color:#fbbf24;font-size:11px;"></i>' : '');
                 return '<div class="ct-q-row' + (q.is_pinned ? ' pinned' : '') + '"><div class="ct-q-question"><i class="ti ti-help-circle" style="font-size:11px;"></i> ' + esc(q.question) + ' ' + pinBtn + '</div><div class="ct-q-answer" data-q-answer-html="' + esc(q.id) + '"></div></div>';
               }).join('') : '<div class="ct-exp-empty">No answered questions yet' + (currentUserSession && !isOwner ? ' \u2014 ask the first!' : '.') + '</div>') +
               (isOwner ? '<div data-pending-qs-slot="' + esc(char.id) + '"></div>' : '') +

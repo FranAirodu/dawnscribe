@@ -170,7 +170,6 @@
       <div class="modal-title"><i class="ti ti-playlist"></i> Create a New List</div>
       <input class="form-input" type="text" id="nl-name" placeholder="List name (e.g. Comfort Reads)" maxlength="60"/>
       <input class="form-input" type="text" id="nl-desc" placeholder="Description (optional)" maxlength="200"/>
-      <label class="modal-check"><input type="checkbox" id="nl-public"/> Make this list public on my profile</label>
       <div class="modal-btns">
         <button class="modal-btn" onclick="closeNewListModal()">Cancel</button>
         <button class="modal-btn primary" onclick="createList()"><i class="ti ti-plus"></i> Create</button>
@@ -255,7 +254,7 @@
           .select('id,work_id,status,list_id,updated_at,created_at')
           .eq('user_id', uid).order('updated_at', { ascending: false })).catch(function(){ return {}; }),
         Promise.resolve(db.from('user_reading_lists')
-          .select('id,name,description,is_public,created_at')
+          .select('id,name,description,created_at')
           .eq('user_id', uid).order('created_at', { ascending: false })).catch(function(){ return {}; })
       ]);
       // A failed fetch must not look like an empty shelf. The .catch() wrappers
@@ -440,9 +439,8 @@
         var block = document.createElement('div');
         block.className = 'named-list-block';
         var lid = JSON.stringify(lst.id);
-        var badge = lst.is_public
-          ? '<span class="list-badge"><i class="ti ti-world" style="font-size:10px;"></i> Public</span>'
-          : '<span class="list-badge private"><i class="ti ti-lock" style="font-size:10px;"></i> Private</span>';
+        // Reading lists are private, always. No public read path exists.
+        var badge = '<span class="list-badge private"><i class="ti ti-lock" style="font-size:10px;"></i> Private</span>';
         var entries = visibleEntries().filter(function(e){ return e.list_id === lst.id; });
         block.innerHTML =
           '<div class="list-head">'
@@ -484,9 +482,8 @@
       try {
         if (!popularCache) {
           var { data } = await db.from('works')
-            .select('id,title,cover_url,spark_count_week,rating')
+            .select('id,title,cover_url,spark_count_week,rating,author_id,content_rating_gore,content_rating_erotica')
             .eq('type','novel').eq('is_published', true)
-            .neq('content_rating_erotica', true)
             .order('spark_count_week', { ascending: false })
             .order('rating', { ascending: false, nullsFirst: false })
             .limit(12);
@@ -494,7 +491,15 @@
         }
         var inLib = {};
         allEntries.forEach(function(e){ inLib[e.work_id] = true; });
-        var picks = popularCache.filter(function(w){ return !inLib[w.id]; }).slice(0, 6);
+        var picks = popularCache.filter(function(w){
+          if (inLib[w.id]) return false;
+          if (w.author_id && dsBlock.either(w.author_id)) return false;
+          // Honor the viewer's own gore/erotica prefs, same as the shelf.
+          // Filtered at pick time, not cache time, so a settings change
+          // self-corrects without a cache bust.
+          if (!passesContentFilter(w)) return false;
+          return true;
+        }).slice(0, 6);
         if (!picks.length) return;
         var colors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa'];
         var cards = picks.map(function(w, i){
@@ -600,7 +605,6 @@
     function openNewListModal() {
       document.getElementById('nl-name').value = '';
       document.getElementById('nl-desc').value = '';
-      document.getElementById('nl-public').checked = false;
       document.getElementById('new-list-modal').classList.add('open');
       setTimeout(function(){ document.getElementById('nl-name').focus(); }, 50);
     }
@@ -615,9 +619,8 @@
       var name = (document.getElementById('nl-name').value || '').trim();
       if (!name) { document.getElementById('nl-name').focus(); return; }
       var desc = (document.getElementById('nl-desc').value || '').trim();
-      var isPublic = document.getElementById('nl-public').checked;
       var { data, error } = await db.from('user_reading_lists')
-        .insert({ user_id: currentSession.user.id, name: name, description: desc || null, is_public: isPublic })
+        .insert({ user_id: currentSession.user.id, name: name, description: desc || null })
         .select().single();
       if (error) { showToast('Could not create list.', 'ti-x'); return; }
       myLists.unshift(data);
@@ -652,6 +655,10 @@
         return;
       }
       currentSession = session;
+      // Block lists must be resolved before any render pass. Own shelf entries
+      // are never filtered (they are the viewer's own choices) — this is for
+      // the popular-suggestions strip, which pulls works site-wide.
+      try { await dsBlock.load(session.user.id); } catch (e) {}
       document.getElementById('library-content').style.display = 'block';
       loadLibrary();
     })();
