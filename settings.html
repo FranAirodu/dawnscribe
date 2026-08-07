@@ -2053,7 +2053,12 @@
         };
         profileUpdate.tag_prefs = tagPrefs;
 
-        var result = await db.from('profiles').upsert(profileUpdate, { onConflict: 'id' });
+        // UPDATE, not upsert: Postgres requires SELECT privilege on every column
+        // named in an ON CONFLICT DO UPDATE, and the private settings columns are
+        // deliberately no longer SELECT-granted. The profile row always exists
+        // (created at signup), so there is nothing to insert.
+        delete profileUpdate.id;
+        var result = await db.from('profiles').update(profileUpdate).eq('id', currentSession.user.id);
         if (result.error) {
           if (result.error.message && result.error.message.indexOf('profiles_username_unique_idx') !== -1) {
             showToast('That username is already taken.', 'ti-x');

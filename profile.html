@@ -1665,7 +1665,7 @@
       try {
         var s = (await db.auth.getSession()).data.session;
         if (!s) { showToast('Not logged in', 'ti-alert-triangle'); return; }
-        var result = await db.from('profiles').upsert({ id: s.user.id, pinned_work_id: workId || null }, { onConflict: 'id' });
+        var result = await db.from('profiles').update({ pinned_work_id: workId || null }).eq('id', s.user.id);
         if (result.error) { showToast('Failed to pin: ' + result.error.message, 'ti-alert-triangle'); return; }
         // Update all pin button labels
         document.querySelectorAll('[id^="pin-label-"]').forEach(function(el) {
@@ -2402,7 +2402,7 @@ async function handleFriendBtn() {
       showToast('Bio saved!');
       try {
         var s = (await db.auth.getSession()).data.session;
-        if (s) { await db.from('profiles').upsert({ id: s.user.id, bio: val }, { onConflict: 'id' }); }
+        if (s) { await db.from('profiles').update({ bio: val }).eq('id', s.user.id); }
       } catch(err) { console.error(err); }
     }
 
@@ -2569,7 +2569,10 @@ async function handleFriendBtn() {
           if (language !== undefined) profileUpdate.language = language || null;
           profileUpdate.twitter = twitter || null;
           profileUpdate.kofi = kofi || null;
-          var result = await db.from('profiles').upsert(profileUpdate, { onConflict: 'id' });
+          // UPDATE, not upsert: gender/location are no longer SELECT-granted, and
+          // ON CONFLICT DO UPDATE requires SELECT on every column it sets.
+          delete profileUpdate.id;
+          var result = await db.from('profiles').update(profileUpdate).eq('id', s.user.id);
           if (result.error) { console.error('Supabase save error:', result.error); showToast('Save failed: ' + result.error.message, 'ti-alert-triangle'); }
         }
       } catch(err) { console.error(err); }
