@@ -677,7 +677,7 @@
           <i class="ti ti-chevron-down card-chevron"></i>
         </div>
         <div class="card-body">
-        <div class="card-desc">Search for other DawnScribe users to add as co-authors.</div>
+        <div class="card-desc">Search for other DawnScribe users to invite as co-authors. They'll get an invite and are only credited once they accept.</div>
         <div class="coauthors-list" id="coauthors-list"></div>
         <div class="coauthor-search-row">
           <input class="field-input" type="text" id="coauthor-search" placeholder="Search by username…" onkeydown="if(event.key==='Enter')searchCoauthors()"/>
@@ -1383,6 +1383,20 @@
       if (!/^(https?:\/\/|\/)/i.test(u)) return '';
       return escHtml(u);
     }
+    // ── OWN PRIVATE PROFILE FIELDS ─────────────────────────────────────────
+    // These `profiles` columns are no longer column-granted: readable there, they
+    // exposed every user's notification prefs, content filters, timezone, payout
+    // status and hidden gender/location to anyone via PostgREST, and could be used
+    // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+    // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    async function dsMyPrivate() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
     function escHtml(str) {
       return String(str==null?'':str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
@@ -1628,7 +1642,7 @@
     var myDefaultCommentsOpen = true;
     async function applyDefaultRatingPrefs() {
       try {
-        var { data } = await db.from('profiles').select('default_rating_gore,default_rating_erotica,default_comments_open').eq('id', currentSession.user.id).maybeSingle();
+        var { data } = await dsMyPrivate();
         if (!data) return;
         ratings.gore = !!data.default_rating_gore;
         ratings.erotica = !!data.default_rating_erotica;
@@ -2230,12 +2244,12 @@
         var row = document.createElement('div'); row.className = 'coauthor-result';
         row.innerHTML = '<div class="coauthor-avatar">' + (safeImgUrl(user.avatar_url) ? '<img src="'+safeImgUrl(user.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
           '<div class="coauthor-name">@' + escHtml(user.username) + '</div>' +
-          '<button class="coauthor-add-btn' + (already?' coauthor-added':'')+'">' + (already ? '✓ Added' : '+ Add') + '</button>';
+          '<button class="coauthor-add-btn' + (already?' coauthor-added':'')+'">' + (already ? '✓ Will invite' : '+ Invite') + '</button>';
         if (!already) {
           row.querySelector('button').addEventListener('click', function() {
             coauthors.push(user);
             renderCoauthors();
-            row.querySelector('button').textContent = '✓ Added';
+            row.querySelector('button').textContent = '✓ Will invite';
             row.querySelector('button').classList.add('coauthor-added');
           });
         }
@@ -2249,7 +2263,7 @@
       coauthors.forEach(function(u) {
         var tag = document.createElement('div'); tag.className = 'coauthor-tag';
         tag.innerHTML = '<div class="coauthor-avatar" style="width:28px;height:28px;font-size:12px;">' + (safeImgUrl(u.avatar_url) ? '<img src="'+safeImgUrl(u.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
-          '<div class="coauthor-tag-name">@' + escHtml(u.username) + '</div>' +
+          '<div class="coauthor-tag-name">@' + escHtml(u.username) + '<span style="color:var(--text2);font-weight:400;font-size:11px;margin-left:6px;">invite pending</span></div>' +
           '<button class="coauthor-remove" title="Remove"><i class="ti ti-x"></i></button>';
         tag.querySelector('button').addEventListener('click', function() {
           coauthors = coauthors.filter(function(c){ return c.id !== u.id; });
@@ -2837,9 +2851,29 @@
 
         // Insert co-authors
         if (coauthors.length) {
-          var coRows = coauthors.map(function(c){ return { work_id: workId, user_id: c.id }; });
+          // Invites only — the row lands accepted=false and confers nothing until
+          // the invitee answers in collab-inbox via respond_coauthor_invite.
+          var coRows = coauthors.map(function(c){ return { work_id: workId, user_id: c.id, invited_by: userId }; });
           var coResult = await db.from('work_coauthors').insert(coRows);
-          if (coResult.error) console.error('Coauthors insert error:', JSON.stringify(coResult.error));
+          if (coResult.error) {
+            console.error('Coauthor invite error:', JSON.stringify(coResult.error));
+          } else {
+            try {
+              var { data: myProfC } = await db.from('profiles').select('display_name,username').eq('id', userId).maybeSingle();
+              var myNameC = myProfC ? (myProfC.display_name || myProfC.username || 'Someone') : 'Someone';
+              var workTitleC = document.getElementById('field-title').value.trim() || 'their work';
+              for (var ci = 0; ci < coauthors.length; ci++) {
+                try {
+                  await db.rpc('send_notification', {
+                    p_user_id: coauthors[ci].id,
+                    p_type: 'coauthor_invite',
+                    p_work_id: workId,
+                    p_message: myNameC + ' invited you to co-author "' + workTitleC + '"'
+                  });
+                } catch(e) {}
+              }
+            } catch(e) {}
+          }
         }
 
         if (!isArtworkMode) {

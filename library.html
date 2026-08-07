@@ -231,14 +231,26 @@
     }
 
     // ── LOAD EVERYTHING ─────────────────────────────────────────
+    // ── OWN PRIVATE PROFILE FIELDS ─────────────────────────────────────────
+    // These `profiles` columns are no longer column-granted: readable there, they
+    // exposed every user's notification prefs, content filters, timezone, payout
+    // status and hidden gender/location to anyone via PostgREST, and could be used
+    // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+    // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    async function dsMyPrivate() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
     async function loadLibrary() {
       var uid = currentSession.user.id;
 
       // Viewer content filters (null/true = filter ON; only explicit false disables)
       try {
-        var { data: prof } = await db.from('profiles')
-          .select('settings_filter_safe,settings_filter_gore,settings_filter_erotica')
-          .eq('id', uid).maybeSingle();
+        var { data: prof } = await dsMyPrivate();
         if (prof) {
           contentFilters.safe    = prof.settings_filter_safe === true;
           // settings_filter_gore/erotica: true = SHOW (allow). contentFilters.gore

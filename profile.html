@@ -843,6 +843,21 @@
   </footer>
 
   <script>
+    // ── OWN PRIVATE PROFILE FIELDS ─────────────────────────────────────────
+    // These `profiles` columns are no longer column-granted: readable there they
+    // exposed every user's notification prefs, content filters, timezone, payout
+    // status and hidden gender/location to anyone via PostgREST, and could be used
+    // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+    // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    async function dsMyPrivate() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
+
     var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
     var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
     var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -857,7 +872,7 @@
         var s = await db.auth.getSession();
         var uid = s && s.data && s.data.session ? s.data.session.user.id : null;
         if (!uid) return;
-        var { data: cfRow } = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,settings_filter_safe').eq('id', uid).maybeSingle();
+        var { data: cfRow } = await dsMyPrivate();
         if (cfRow) {
           myContentFilters.gore = cfRow.settings_filter_gore !== false;
           myContentFilters.erotica = cfRow.settings_filter_erotica !== false;
@@ -986,7 +1001,8 @@
         var resolvedUsername = viewingUser;
         if (viewingUser) {
           // Viewing someone else's profile by username
-          var res = await db.from('profiles').select('created_at,username,display_name,bio,role,location,gender,language,avatar_url,banner_url,id,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,twitter,kofi,homepage_section_order,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,lang_strict,pref_story_language,lang_original,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast,pronouns,quiet_mode,filtered_content_warnings,quiet_hours_enabled,quiet_hours_start,quiet_hours_end,default_comments_open,show_location,show_pronouns,show_gender,account_status,is_moderator,prestige_xp,prestige_tier,notif_echo,pinned_work_id,currently_writing,last_active_at,active_banner_scroll_id,autoplay,spoilers,stripe_connect_status,onboarding_done,email_enabled,email_digest,email_payouts,profile_section_order,welcome_grant_seen,deleted_at,timezone').eq('username', viewingUser).maybeSingle();
+          var res = await db.rpc('get_public_profile', { p_username: viewingUser });
+          if (res && !res.error) { res = { error: null, data: (res.data && res.data.length) ? res.data[0] : null }; }
           if (res && !res.error && res.data) {
             profileData = res.data;
             resolvedUsername = profileData.username;
@@ -1006,17 +1022,29 @@
           }
         } else if (viewingId) {
           // Fallback: lookup by UUID (for users with no username set)
-          var res = await db.from('profiles').select('created_at,username,display_name,bio,role,location,gender,language,avatar_url,banner_url,id,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,twitter,kofi,homepage_section_order,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,lang_strict,pref_story_language,lang_original,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast,pronouns,quiet_mode,filtered_content_warnings,quiet_hours_enabled,quiet_hours_start,quiet_hours_end,default_comments_open,show_location,show_pronouns,show_gender,account_status,is_moderator,prestige_xp,prestige_tier,notif_echo,pinned_work_id,currently_writing,last_active_at,active_banner_scroll_id,autoplay,spoilers,stripe_connect_status,onboarding_done,email_enabled,email_digest,email_payouts,profile_section_order,welcome_grant_seen,deleted_at,timezone').eq('id', viewingId).maybeSingle();
+          var res = await db.rpc('get_public_profile', { p_id: viewingId });
+          if (res && !res.error) { res = { error: null, data: (res.data && res.data.length) ? res.data[0] : null }; }
           if (res && !res.error && res.data) {
             profileData = res.data;
             resolvedUsername = profileData.username || viewingId;
           }
         } else if (session) {
           // No ?user= param — load own profile
-          var res = await db.from('profiles').select('created_at,username,display_name,bio,role,location,gender,language,avatar_url,banner_url,id,settings_theme,settings_filter_safe,settings_filter_gore,settings_filter_erotica,twitter,kofi,homepage_section_order,privacy_readinglist,privacy_activity,privacy_dm,notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,lang_strict,pref_story_language,lang_original,reading_prefs,tag_prefs,default_rating_gore,default_rating_erotica,pref_reduced_motion,pref_high_contrast,pronouns,quiet_mode,filtered_content_warnings,quiet_hours_enabled,quiet_hours_start,quiet_hours_end,default_comments_open,show_location,show_pronouns,show_gender,account_status,is_moderator,prestige_xp,prestige_tier,notif_echo,pinned_work_id,currently_writing,last_active_at,active_banner_scroll_id,autoplay,spoilers,stripe_connect_status,onboarding_done,email_enabled,email_digest,email_payouts,profile_section_order,welcome_grant_seen,deleted_at,timezone').eq('id', session.user.id).maybeSingle();
+          var res = await db.from('profiles').select('created_at,username,display_name,bio,role,language,avatar_url,banner_url,id,twitter,kofi,privacy_readinglist,privacy_activity,privacy_dm,show_location,show_pronouns,show_gender,account_status,is_moderator,prestige_xp,prestige_tier,pinned_work_id,currently_writing,last_active_at,active_banner_scroll_id,profile_section_order,deleted_at').eq('id', session.user.id).maybeSingle();
           if (res && !res.error && res.data) {
             profileData = res.data;
             resolvedUsername = res.data.username || null;
+            // Own row: merge the owner-only fields (gender/location/pronouns and
+            // the settings columns) from the DEFINER RPC, since those columns are
+            // no longer column-granted on `profiles`.
+            try {
+              var ownPriv = await dsMyPrivate();
+              if (ownPriv && ownPriv.data) {
+                Object.keys(ownPriv.data).forEach(function(k){
+                  if (ownPriv.data[k] !== undefined) profileData[k] = ownPriv.data[k];
+                });
+              }
+            } catch(e) {}
           }
         }
         var isOwnerNow = !!(session && profileData && session.user.id === profileData.id);
@@ -2118,8 +2146,9 @@ async function toggleFollow() {
       } catch(e) {}
       // Notify the followed user, respecting their notification preference
       try {
-        var wantsNotif = !window._viewedProfileData || window._viewedProfileData.notif_follow !== false;
-        if (wantsNotif) {
+        // send_notification checks the recipient's notif_follow preference itself,
+        // so we no longer need (or receive) their notification settings here.
+        {
           var { data: myProf2 } = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
           var myName2 = myProf2 ? (myProf2.display_name || myProf2.username || 'Someone') : 'Someone';
           await db.rpc('send_notification', { p_user_id: currentProfileId, p_type: 'new_follower', p_message: myName2 + ' started following you' });

@@ -214,6 +214,20 @@
 
     const coverColors = ['#2dd4bf','#f59e0b','#a78bfa','#f87171','#34d399','#60a5fa','#fb923c'];
     function coverColor(id) { return coverColors[Math.abs(id || 0) % coverColors.length]; }
+    // ── OWN PRIVATE PROFILE FIELDS ─────────────────────────────────────────
+    // These `profiles` columns are no longer column-granted: readable there, they
+    // exposed every user's notification prefs, content filters, timezone, payout
+    // status and hidden gender/location to anyone via PostgREST, and could be used
+    // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+    // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    async function dsMyPrivate() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
     function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
     function ratingStarsHtml(rating, count) {
       var r = parseFloat(rating) || 0;
@@ -350,6 +364,15 @@
     }
     // Escape a value for PostgREST ilike patterns (%, _ are wildcards)
     function ilikeEsc(s){ return s.replace(/[%_]/g, '\\$&').replace(/"/g, ''); }
+    // Escape a value for use INSIDE a PostgREST .or() expression. Unlike .ilike(),
+    // whose value is sent as its own parameter, an .or() string is parsed as filter
+    // syntax — so a raw comma, paren or dot in user input adds filters to the query.
+    // A search for `zzz,date_of_birth.eq.1990-07-05` became a working oracle against
+    // columns the page never selects. Strip the syntax characters and wrap in double
+    // quotes, inside which PostgREST treats commas and parens as literal text.
+    function orIlikeVal(s){
+      return '"%' + String(s || '').replace(/[",()\\%_.]/g, '') + '%"';
+    }
     function applyAdvancedFilters(q, isNovel){
       adv.inc.forEach(function(t){ q = q.ilike('tags_all', '%"' + ilikeEsc(t) + '"%'); });
       adv.exc.forEach(function(t){ q = q.not('tags_all', 'ilike', '%"' + ilikeEsc(t) + '"%'); });
@@ -431,7 +454,7 @@
       if (!q) return { data: [], count: 0 };
       return await db.from('profiles')
         .select('id, username, display_name, avatar_url, role, bio', { count: 'exact' })
-        .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
+        .or('username.ilike.' + orIlikeVal(q) + ',display_name.ilike.' + orIlikeVal(q))
         .or('role.ilike.%Writer%,role.ilike.%Reader%,role.ilike.%Artist%')
         .order('username')
         .range(offset, offset + PAGE_SIZE - 1);
@@ -454,7 +477,7 @@
       if (!q) return { data: [], count: 0 };
       return await db.from('profiles')
         .select('id, username, display_name, avatar_url, role, bio', { count: 'exact' })
-        .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
+        .or('username.ilike.' + orIlikeVal(q) + ',display_name.ilike.' + orIlikeVal(q))
         .ilike('role', '%Artist%')
         .order('username')
         .range(offset, offset + PAGE_SIZE - 1);
@@ -750,7 +773,7 @@
         var bs = await window.db.auth.getSession();
         if(bs&&bs.data&&bs.data.session) {
           await dsBlock.load(bs.data.session.user.id);
-          var { data: prefRow } = await db.from('profiles').select('settings_filter_safe,settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict,filtered_content_warnings').eq('id', bs.data.session.user.id).maybeSingle();
+          var { data: prefRow } = await dsMyPrivate();
           if (prefRow) {
             if (prefRow.settings_filter_safe !== null && prefRow.settings_filter_safe !== undefined) myContentFilters.safe = !!prefRow.settings_filter_safe;
             myContentFilters.gore = prefRow.settings_filter_gore;

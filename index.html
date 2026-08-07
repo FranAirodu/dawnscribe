@@ -1214,6 +1214,20 @@
 
 
     /* ── HELPERS ────────────────────────────────────────────────── */
+    // ── OWN PRIVATE PROFILE FIELDS ─────────────────────────────────────────
+    // These `profiles` columns are no longer column-granted: readable there, they
+    // exposed every user's notification prefs, content filters, timezone, payout
+    // status and hidden gender/location to anyone via PostgREST, and could be used
+    // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+    // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    async function dsMyPrivate() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
     function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     // Strip characters that corrupt PostgREST filter syntax (commas/parens
     // break .or() lists, % and \ break ilike patterns). RLS keeps this safe
@@ -2130,7 +2144,7 @@
       var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
       if (uid) {
         try {
-          var { data: cfRow } = await db.from('profiles').select('settings_filter_safe,settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict').eq('id', uid).maybeSingle();
+          var { data: cfRow } = await dsMyPrivate();
           if (cfRow) {
             if (cfRow.settings_filter_safe !== null && cfRow.settings_filter_safe !== undefined) myContentFilters.safe = !!cfRow.settings_filter_safe;
             // settings_filter_gore/erotica: true = SHOW (allow), matching settings.html
@@ -2158,7 +2172,7 @@
           var [scMineRes, acRowsRes, coRowsRes] = await Promise.all([
             db.from('story_collabs').select('work_id').eq('artist_id', uid).eq('status','approved'),
             db.from('artwork_collabs').select('artwork_id,work_id').eq('status','approved'),
-            db.from('work_coauthors').select('work_id').eq('user_id', uid)
+            db.from('work_coauthors').select('work_id').eq('user_id', uid).eq('accepted', true)
           ]);
           // Story collabs: viewer is the artist on an approved piece → exempt the novel
           (scMineRes.data||[]).forEach(function(r){ if(r.work_id) myCollabExemptIds.add(r.work_id); });
@@ -2250,7 +2264,7 @@
       var myFilteredWarnings = [];
       if (uid) {
         try {
-          var { data: warnRow } = await db.from('profiles').select('filtered_content_warnings').eq('id', uid).maybeSingle();
+          var { data: warnRow } = await dsMyPrivate();
           if (warnRow && Array.isArray(warnRow.filtered_content_warnings)) myFilteredWarnings = warnRow.filtered_content_warnings;
         } catch(e) {}
       }
@@ -3959,7 +3973,7 @@ function dsLoadLayoutFromCache() {
 
       // 2. Confirm against the DB and correct cache if stale
       try {
-        var { data } = await db.from('profiles').select('homepage_section_order').eq('id', uid).maybeSingle();
+        var { data } = await dsMyPrivate();
         if (data && data.homepage_section_order) {
           var storeS = dsNormalizeStore(data.homepage_section_order);
           dsModeLayouts = { all:storeS.all, novels:storeS.novels, art:storeS.art };
@@ -4467,7 +4481,7 @@ function dsLoadLayoutFromCache() {
           Promise.resolve(db.from('user_quills').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
           Promise.resolve(db.from('user_avatars').select('accent_color').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
           Promise.resolve(db.from('profiles').select('role').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
-          Promise.resolve(db.from('profiles').select('avatar_url,display_name,username,id,account_status,timezone').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
+          Promise.resolve(db.from('profiles').select('avatar_url,display_name,username,id,account_status').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
           Promise.resolve(db.from('admins').select('id').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
           Promise.resolve(db.from('user_streaks').select('last_checkin').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; })
         ]);
@@ -4535,11 +4549,12 @@ function dsLoadLayoutFromCache() {
         // without this the homepage — the most-visited page — never populates it.
         // Only writes when the browser zone differs from what's saved, so a stable
         // user writes zero times after the first load. Fire-and-forget; never throws.
-        (function dsCaptureTimezone(){
+        (async function dsCaptureTimezone(){
           try {
             var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
             if (!tz) return;
-            var saved = (profileRes && profileRes.data) ? profileRes.data.timezone : null;
+            var privTz = await dsMyPrivate();
+            var saved = (privTz && privTz.data) ? privTz.data.timezone : null;
             if (tz === saved) return; // unchanged — skip the write entirely
             db.rpc('set_my_timezone', { p_tz: tz }).then(function(){}, function(){});
           } catch(e) { /* timezone capture is never worth an error */ }
@@ -5196,7 +5211,7 @@ function dsLoadLayoutFromCache() {
       if (snoozed && (Date.now() - snoozed) < 24 * 60 * 60 * 1000) return;
       // Bug 3: wrap in try/catch so a failed profile lookup never throws
       Promise.resolve(
-        db.from('profiles').select('display_name,username,date_of_birth,onboarding_done,welcome_grant_seen').eq('id', uid).maybeSingle()
+        db.from('profiles').select('display_name,username').eq('id', uid).maybeSingle()
       ).then(function(res) {
         if (!res || !res.data) return;
         var p = res.data;

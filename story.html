@@ -965,6 +965,20 @@
     var synopsisExpanded = false;
 
     // ── HELPERS ──────────────────────────────────────────────────
+    // ── OWN PRIVATE PROFILE FIELDS ─────────────────────────────────────────
+    // These `profiles` columns are no longer column-granted: readable there, they
+    // exposed every user's notification prefs, content filters, timezone, payout
+    // status and hidden gender/location to anyone via PostgREST, and could be used
+    // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+    // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    async function dsMyPrivate() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
     function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
     // ── LINKED TRANSLATIONS ─────────────────────────────────────────
@@ -3041,9 +3055,7 @@
       var allowGore = false, allowErotica = false;
       if (currentSession) {
         try {
-          var { data: pref } = await db.from('profiles')
-            .select('settings_filter_safe,settings_filter_gore,settings_filter_erotica')
-            .eq('id', currentSession.user.id).maybeSingle();
+          var { data: pref } = await dsMyPrivate();
           if (pref) {
             // Platform convention: safe mode is ON by default (null = on, only explicit false = off)
             var safe = pref.settings_filter_safe !== false;
@@ -3133,7 +3145,7 @@
       dsTranslateHint.show(document.querySelector('.story-main'), workData.language);
       loadLinkedTranslations();
       var authorIds = [workData.author_id];
-      var coResult = await db.from('work_coauthors').select('user_id').eq('work_id', workId);
+      var coResult = await db.from('work_coauthors').select('user_id').eq('work_id', workId).eq('accepted', true);
       if (coResult.data) coResult.data.forEach(function(c){ authorIds.push(c.user_id); });
       var authorsResult = await db.from('profiles').select('id,username,display_name,avatar_url,banner_url').in('id', authorIds);
       var authors = authorsResult.data || [];

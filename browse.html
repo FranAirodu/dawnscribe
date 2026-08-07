@@ -203,6 +203,20 @@
     }
     var myFilteredWarnings = [];
     var myMutedIds = [];
+    // ── OWN PRIVATE PROFILE FIELDS ─────────────────────────────────────────
+    // These `profiles` columns are no longer column-granted: readable there, they
+    // exposed every user's notification prefs, content filters, timezone, payout
+    // status and hidden gender/location to anyone via PostgREST, and could be used
+    // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+    // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    async function dsMyPrivate() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
     var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
 
     function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -765,7 +779,7 @@
         if (session) {
           myUid = session.user.id;
           await dsBlock.load(myUid);
-          var { data: prefRow } = await db.from('profiles').select('settings_filter_safe,settings_filter_gore,settings_filter_erotica,pref_story_language,lang_original,lang_strict,filtered_content_warnings').eq('id', myUid).maybeSingle();
+          var { data: prefRow } = await dsMyPrivate();
           if (prefRow) {
             if (prefRow.settings_filter_safe !== null && prefRow.settings_filter_safe !== undefined) myContentFilters.safe = !!prefRow.settings_filter_safe;
             myContentFilters.gore = prefRow.settings_filter_gore !== false;

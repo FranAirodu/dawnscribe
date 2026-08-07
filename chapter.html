@@ -773,6 +773,20 @@
     document.addEventListener('click', function(){ setTimeout(dsEnhanceA11y, 0); }, true);
     document.addEventListener('DOMContentLoaded', dsEnhanceA11y);
 
+    // ── OWN PRIVATE PROFILE FIELDS ─────────────────────────────────────────
+    // These `profiles` columns are no longer column-granted: readable there, they
+    // exposed every user's notification prefs, content filters, timezone, payout
+    // status and hidden gender/location to anyone via PostgREST, and could be used
+    // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+    // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    async function dsMyPrivate() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
     function escHtml(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
     // Only render http(s) or root-relative image URLs, then escape. avatar_url
     // and portrait_url are user-writable columns.
@@ -1848,8 +1862,8 @@
     async function notifyUser(userId, type, message) {
       if (!currentSession || currentSession.user.id === userId) return; // never notify self
       try {
-        var { data: pref } = await db.from('profiles').select('notif_comment').eq('id', userId).maybeSingle();
-        if (pref && pref.notif_comment === false) return;
+        // send_notification enforces the recipient's notif_comment preference
+        // server-side, so we no longer read (or can read) another user's prefs.
         if (!_cachedMyProfile) {
           var { data: me } = await db.from('profiles').select('display_name,username').eq('id', currentSession.user.id).maybeSingle();
           _cachedMyProfile = me || {};
@@ -3436,7 +3450,7 @@
       var myContentPerms = { gore: !!currentSession, erotica: !!currentSession };
       if (currentSession) {
         try {
-          var { data: rpRow } = await db.from('profiles').select('reading_prefs,settings_filter_gore,settings_filter_erotica,display_name,username').eq('id', currentSession.user.id).maybeSingle();
+          var { data: rpRow } = await dsMyPrivate();
           if (rpRow) _cachedMyProfile = { display_name: rpRow.display_name, username: rpRow.username };
           if (rpRow && rpRow.reading_prefs) {
             // Merge DB prefs with local overrides — local wins for width and font_override

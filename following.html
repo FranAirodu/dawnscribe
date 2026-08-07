@@ -290,6 +290,17 @@
 
   <script src="blockUtils.js"></script>
   <script>
+    async function dsMyPrivate() {
+      // See note in nav.js: these profiles columns are no longer column-granted;
+      // the owner reads them through this SECURITY DEFINER RPC (scoped to auth.uid()).
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
+
     var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
     var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
     var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -813,7 +824,12 @@
         currentSession = session;
         var cfRow = null;
         try {
-          var cfRowRes = await db.from('profiles').select('settings_filter_gore,settings_filter_erotica,settings_filter_safe,display_name,username').eq('id', session.user.id).maybeSingle();
+          var cfRowRes = await dsMyPrivate();
+          var cfNameRes = await db.from('profiles').select('display_name,username').eq('id', session.user.id).maybeSingle();
+          if (cfRowRes && cfRowRes.data && cfNameRes && cfNameRes.data) {
+            cfRowRes.data.display_name = cfNameRes.data.display_name;
+            cfRowRes.data.username = cfNameRes.data.username;
+          }
           cfRow = cfRowRes.data;
           if (cfRow) {
             // null/true = filtering ON (platform convention); safe mode is opt-in

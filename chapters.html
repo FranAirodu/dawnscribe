@@ -818,6 +818,20 @@
     });
   }
 
+    // ── OWN PRIVATE PROFILE FIELDS ─────────────────────────────────────────
+    // These `profiles` columns are no longer column-granted: readable there, they
+    // exposed every user's notification prefs, content filters, timezone, payout
+    // status and hidden gender/location to anyone via PostgREST, and could be used
+    // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+    // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    async function dsMyPrivate() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        if (r && r.error) return { data: null, error: r.error };
+        var rows = r ? r.data : null;
+        return { data: (rows && rows.length) ? rows[0] : null, error: null };
+      } catch (e) { return { data: null, error: e }; }
+    }
   function showToast(msg, icon) {
     var t = document.getElementById('toast');
     document.getElementById('toast-msg').textContent = msg || 'Saved!';
@@ -1213,7 +1227,7 @@
     workData = res.data;
 
     try {
-      var { data: prefRow } = await db.from('profiles').select('default_comments_open').eq('id', currentSession.user.id).maybeSingle();
+      var { data: prefRow } = await dsMyPrivate();
       myDefaultCommentsOpen = prefRow && prefRow.default_comments_open !== false;
     } catch(e) { myDefaultCommentsOpen = true; }
 

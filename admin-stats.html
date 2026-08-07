@@ -1046,7 +1046,11 @@
       document.getElementById('user-detail-content').innerHTML = '<div class="loading-note"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading…</div>';
 
       var [profRes, worksRes, followsRes] = await Promise.all([
-        window.db.from('profiles').select('id,username,display_name,bio,avatar_url,account_status,is_moderator,created_at,location,pronouns,prestige_xp,prestige_tier').eq('id', uid).single(),
+        window.db.rpc('get_public_profile', { p_id: uid }).then(function(r){
+          // Returns location/pronouns unmasked to admins, and honours each user's
+          // show_* toggles for everyone else. Shaped like a .single() result.
+          return { data: (r && r.data && r.data.length) ? r.data[0] : null, error: r ? r.error : null };
+        }),
         window.db.from('works').select('id', { count: 'exact', head: true }).eq('author_id', uid),
         window.db.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', uid)
       ]);

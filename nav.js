@@ -38,6 +38,21 @@ if (!window.dsSpoiler) {
 
 // Checks whether "right now" falls inside the user's Quiet Hours window,
 // handling overnight ranges (e.g. 22:00 -> 08:00) correctly.
+// ── OWN PRIVATE PROFILE FIELDS ───────────────────────────────────────────────
+// These `profiles` columns are no longer column-granted: readable there, they
+// exposed every user's notification prefs, content filters, timezone, payout
+// status and hidden gender/location to anyone via PostgREST, and could be used
+// as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
+// scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+async function dsMyPrivate() {
+  try {
+    var r = await db.rpc('get_my_private_profile');
+    if (r && r.error) return { data: null, error: r.error };
+    var rows = r ? r.data : null;
+    return { data: (rows && rows.length) ? rows[0] : null, error: null };
+  } catch (e) { return { data: null, error: e }; }
+}
+
 function dsIsWithinQuietHours(prefRow) {
   if (!prefRow || prefRow.quiet_hours_enabled !== true) return false;
   var start = prefRow.quiet_hours_start || '22:00';
@@ -610,7 +625,7 @@ function dsApplyAccent(hex) {
     var badge = document.getElementById('dm-badge');
     if(!btn||!badge) return;
     try {
-      var { data: dmPrefRow } = await db.from('profiles').select('notif_message,quiet_mode,quiet_hours_enabled,quiet_hours_start,quiet_hours_end').eq('id', uid).maybeSingle();
+      var { data: dmPrefRow } = await dsMyPrivate();
       if (dmPrefRow && (dmPrefRow.notif_message === false || dsIsQuiet(dmPrefRow))) { badge.style.display='none'; btn.classList.remove('has-unread'); return; }
     } catch(e) {}
     var unreadRes = await (async function(){
@@ -629,7 +644,7 @@ function dsApplyAccent(hex) {
     // Load this user's own notification preferences once, used to gate each feed below
     var myPrefs = { notif_follow: true, notif_chapter: true, notif_comment: true, notif_message: true, notif_announce: false };
     try {
-      var { data: prefRow } = await db.from('profiles').select('notif_follow,notif_chapter,notif_comment,notif_message,notif_announce,quiet_mode,quiet_hours_enabled,quiet_hours_start,quiet_hours_end').eq('id', uid).maybeSingle();
+      var { data: prefRow } = await dsMyPrivate();
       if (prefRow) {
         if (prefRow.notif_follow   !== null && prefRow.notif_follow   !== undefined) myPrefs.notif_follow   = prefRow.notif_follow;
         if (prefRow.notif_chapter  !== null && prefRow.notif_chapter  !== undefined) myPrefs.notif_chapter  = prefRow.notif_chapter;
@@ -1050,7 +1065,7 @@ function dsApplyAccent(hex) {
       if(username){ dsSetOwnWorkLinks(username); }
 
       // Always fetch profile by uid — metadata may be missing/stale
-      var res = await db.from('profiles').select('avatar_url,display_name,username,id,account_status,timezone').eq('id',session.user.id).maybeSingle();
+      var res = await db.from('profiles').select('avatar_url,display_name,username,id,account_status').eq('id',session.user.id).maybeSingle();
 
       // ── BAN CHECK ────────────────────────────────────────────────
       // This is the authoritative site-wide enforcement of the banned state.
@@ -1089,11 +1104,12 @@ function dsApplyAccent(hex) {
       // The set_my_timezone RPC re-validates against pg_timezone_names and has
       // its own IS DISTINCT FROM no-write guard, so a bad or unchanged value is
       // a safe no-op even if this client gate is bypassed.
-      (function dsCaptureTimezone(){
+      (async function dsCaptureTimezone(){
         try {
           var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
           if (!tz) return;
-          var saved = (res && res.data) ? res.data.timezone : null;
+          var privTz = await dsMyPrivate();
+          var saved = (privTz && privTz.data) ? privTz.data.timezone : null;
           if (tz === saved) return; // unchanged — skip the write entirely
           db.rpc('set_my_timezone', { p_tz: tz }).then(function(){}, function(){});
         } catch(e) { /* timezone capture is never worth an error */ }
