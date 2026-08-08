@@ -455,6 +455,19 @@
       </div>
     </div>
 
+    <!-- ── TITLE SUGGESTIONS ─────────────────────────────────────── -->
+    <div class="section" id="sec-title-suggestions" data-tab="tools">
+      <div class="section-title"><i class="ti ti-bulb"></i> Character Title Suggestions</div>
+      <div class="section-sub">Readers suggesting new titles for the shared character-title catalog. Approving adds the title to the catalog site-wide and awards the suggester the Titleholder badge.</div>
+      <div style="display:flex;gap:6px;margin-bottom:16px;">
+        <button class="report-filter-btn active" data-tstatus="pending" onclick="setTitleFilter(this,'pending')">Pending</button>
+        <button class="report-filter-btn" data-tstatus="approved" onclick="setTitleFilter(this,'approved')">Approved</button>
+        <button class="report-filter-btn" data-tstatus="denied" onclick="setTitleFilter(this,'denied')">Denied</button>
+        <button class="report-filter-btn" data-tstatus="all" onclick="setTitleFilter(this,'all')">All</button>
+      </div>
+      <div id="title-suggestions-list"><div class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...</div></div>
+    </div>
+
     <!-- ── NOTIFICATION BLAST ────────────────────────────────────── -->
     <div class="section" id="sec-notif-blast" data-tab="tools">
       <div class="section-title"><i class="ti ti-bell-ringing"></i> Notification Blast</div>
@@ -1262,6 +1275,116 @@
       }
     }
 
+    // ── CHARACTER TITLE SUGGESTIONS ───────────────────────────────
+    // Suggestions are for the SHARED catalog (character_titles) that every
+    // character on the site draws from -- they carry no work_id/character_id,
+    // which is why review is admin-only rather than author-facing.
+    var titleFilter = 'pending';
+    var TITLE_CATEGORIES = ['personality','role','dawnscribe','relationship','negative','fan_reaction'];
+
+    function setTitleFilter(btn, status) {
+      titleFilter = status;
+      document.querySelectorAll('#sec-title-suggestions .report-filter-btn').forEach(function(b) {
+        b.classList.toggle('active', b === btn);
+      });
+      loadTitleSuggestions();
+    }
+
+    async function loadTitleSuggestions() {
+      var el = document.getElementById('title-suggestions-list');
+      if (!el) return;
+      var q = db.from('suggested_character_titles').select('*').order('created_at', { ascending: false }).limit(100);
+      if (titleFilter !== 'all') q = q.eq('status', titleFilter);
+      var result = await q;
+      if (result.error) {
+        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-circle-off"></i>Could not load title suggestions.</div>';
+        return;
+      }
+      var rows = result.data || [];
+      if (!rows.length) {
+        el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-mood-happy"></i>No ' +
+          (titleFilter === 'all' ? '' : escHtml(titleFilter) + ' ') + 'title suggestions.</div>';
+        return;
+      }
+
+      // Suggester names. The admin ALL policy covers reading these rows; profiles
+      // is fetched separately because there is no FK join exposed here.
+      var userIds = Array.from(new Set(rows.map(function(r){ return r.suggested_by; }).filter(Boolean)));
+      var profMap = {};
+      if (userIds.length) {
+        var pr = await db.from('profiles').select('id,username,display_name').in('id', userIds);
+        (pr.data || []).forEach(function(p){ profMap[p.id] = p; });
+      }
+
+      el.innerHTML = '';
+      rows.forEach(function(row) {
+        var prof = profMap[row.suggested_by] || {};
+        var who = prof.display_name || prof.username || 'Unknown user';
+        var pending = row.status === 'pending';
+        var card = document.createElement('div');
+        card.className = 'report-card' + (pending ? '' : ' resolved');
+
+        var catOptions = TITLE_CATEGORIES.map(function(c) {
+          return '<option value="' + c + '"' + (c === row.category ? ' selected' : '') + '>' + c + '</option>';
+        }).join('');
+
+        card.innerHTML =
+          '<div class="report-header">' +
+            '<span class="report-type">' + escHtml(row.category || 'uncategorised') + '</span>' +
+            (pending ? '' : '<span style="font-size:11px;color:var(--text3);">' + escHtml(row.status) + '</span>') +
+          '</div>' +
+          '<div class="report-body" style="font-size:16px;font-weight:700;">' + escHtml(row.title || '') + '</div>' +
+          (row.reason ? '<div class="report-body" style="font-size:13px;color:var(--text2);">' + escHtml(row.reason) + '</div>' : '') +
+          '<div class="report-meta">From @' + escHtml(who) + ' · ' + formatDateTime(row.created_at) + '</div>' +
+          (pending ?
+          '<div class="report-actions" style="align-items:center;gap:8px;">' +
+            '<select class="form-select ts-cat" style="max-width:170px;padding:7px 10px;font-size:12px;">' + catOptions + '</select>' +
+            '<button class="report-btn dismiss ts-approve"><i class="ti ti-check"></i> Approve &amp; add to catalog</button>' +
+            '<button class="report-btn ts-deny"><i class="ti ti-x"></i> Deny</button>' +
+          '</div>' : '');
+
+        if (pending) {
+          var review = async function(approve) {
+            var btns = card.querySelectorAll('.report-btn');
+            btns.forEach(function(b){ b.disabled = true; });
+            var cat = (card.querySelector('.ts-cat') || {}).value || row.category;
+            // Server-side: validates admin, refuses self-review and double-review,
+            // rejects catalog duplicates, and inserts into character_titles
+            // atomically with the status flip (which fires the Titleholder badge).
+            var rpc = await db.rpc('admin_review_title_suggestion', {
+              p_suggestion_id: row.id,
+              p_approve: approve,
+              p_category: cat
+            });
+            if (rpc.error) {
+              showToast('Error: ' + rpc.error.message, 'ti-alert-triangle');
+              btns.forEach(function(b){ b.disabled = false; });
+              return;
+            }
+            var res = rpc.data || {};
+            if (!res.ok) {
+              showToast(res.error || 'Could not review suggestion', 'ti-alert-triangle');
+              // A duplicate/self-review still resolves or leaves the row alone,
+              // so refresh rather than assuming the list is unchanged.
+              loadTitleSuggestions();
+              return;
+            }
+            if (res.action === 'approved') {
+              showToast('Added \u201c' + res.title + '\u201d to the title catalog', 'ti-check');
+              auditLog('Approved character title \u201c' + res.title + '\u201d (' + res.category + ') into the catalog', 'ti-bulb');
+            } else {
+              showToast('Suggestion denied', 'ti-x');
+              auditLog('Denied character title suggestion \u201c' + res.title + '\u201d', 'ti-x');
+            }
+            loadTitleSuggestions();
+          };
+          card.querySelector('.ts-approve').addEventListener('click', function(){ review(true); });
+          card.querySelector('.ts-deny').addEventListener('click', function(){ review(false); });
+        }
+        el.appendChild(card);
+      });
+    }
+
     // ── INIT ──────────────────────────────────────────────────────
     (async function init() {
       // Get session for audit log attribution
@@ -1281,6 +1404,7 @@
       loadFeedback(0);
       loadPrestigeFarmingReports();
       loadTags();
+      loadTitleSuggestions();
       renderAuditLog();
     })();
 
