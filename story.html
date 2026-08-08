@@ -3413,21 +3413,35 @@
       });
     }
 
+    // Re-read the trigger-maintained count; falls back to the optimistic value
+    // if the read fails so the UI never shows a blank.
+    async function recTrueCount(recId, fallback) {
+      try {
+        var r = await db.from('recommendations').select('vote_count').eq('id',recId).maybeSingle();
+        if(r && r.data && typeof r.data.vote_count === 'number') return r.data.vote_count;
+      } catch(e) {}
+      return fallback;
+    }
+
     async function toggleRecVote(recId, btn) {
       if(!currentSession) return;
       var voted = btn.classList.contains('voted');
       var countEl = btn.parentElement.querySelector('.rec-vote-count');
+      // vote_count is derived from recommendation_votes by a DB trigger and is
+      // not client-writable. Write the vote, then read the true count back —
+      // the old code wrote the cached column directly, which silently updated
+      // 0 rows for everyone except the work's author.
       if(voted) {
-        await db.from('recommendation_votes').delete().eq('recommendation_id',recId).eq('user_id',currentSession.user.id);
+        var delRes = await db.from('recommendation_votes').delete().eq('recommendation_id',recId).eq('user_id',currentSession.user.id);
+        if(delRes.error) return;
         btn.classList.remove('voted'); recVotedIds.delete(recId);
-        var nc = Math.max(0,parseInt(countEl.textContent)-1); countEl.textContent = nc;
-        await db.from('recommendations').update({vote_count:nc}).eq('id',recId);
+        countEl.textContent = await recTrueCount(recId, Math.max(0,parseInt(countEl.textContent)-1));
       } else {
         var { error } = await db.from('recommendation_votes').insert({recommendation_id:recId,user_id:currentSession.user.id});
         if(error) return;
         btn.classList.add('voted'); recVotedIds.add(recId);
-        var nc = parseInt(countEl.textContent)+1; countEl.textContent = nc;
-        await db.from('recommendations').update({vote_count:nc}).eq('id',recId);
+        var nc = await recTrueCount(recId, parseInt(countEl.textContent)+1);
+        countEl.textContent = nc;
         if(nc >= 3) await notifyAuthorRec(recId, nc);
       }
     }
@@ -3477,15 +3491,16 @@
       var { data: existing } = await db.from('recommendations').select('id,vote_count').eq('work_id',workData.id).eq('suggested_work_id',work.id).maybeSingle();
       if(existing) {
         if(!recVotedIds.has(existing.id)) {
-          await Promise.resolve(db.from('recommendation_votes').insert({recommendation_id:existing.id,user_id:currentSession.user.id})).catch(function(){});
-          var nc = existing.vote_count+1;
-          await db.from('recommendations').update({vote_count:nc}).eq('id',existing.id);
-          if(nc>=3) await notifyAuthorRec(existing.id,nc);
+          var vres = await db.from('recommendation_votes').insert({recommendation_id:existing.id,user_id:currentSession.user.id});
+          if(!vres.error) {
+            var nc = await recTrueCount(existing.id, existing.vote_count+1);
+            if(nc>=3) await notifyAuthorRec(existing.id,nc);
+          }
           loadRecommendations();
         }
         showToast('"'+work.title+'" already suggested — vote counted!','ti-check'); return;
       }
-      var { data: newRec, error } = await db.from('recommendations').insert({work_id:workData.id,suggested_work_id:work.id,suggested_by:currentSession.user.id,status:'pending',vote_count:1}).select().single();
+      var { data: newRec, error } = await db.from('recommendations').insert({work_id:workData.id,suggested_work_id:work.id,suggested_by:currentSession.user.id,status:'pending'}).select().single();
       if(error) { showToast('Could not submit recommendation.','ti-x'); return; }
       await Promise.resolve(db.from('recommendation_votes').insert({recommendation_id:newRec.id,user_id:currentSession.user.id})).catch(function(){});
       showToast('Recommendation submitted! The author will review it.','ti-check');

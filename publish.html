@@ -2340,18 +2340,23 @@
       if (!row) return;
       var uname = row.profile ? ('@' + row.profile.username) : 'this user';
       var msg = row.accepted
-        ? 'Remove ' + uname + ' as a co-author? They will lose credit on this work.'
+        ? 'Remove ' + uname + ' as a co-author? They will lose credit on this work, lose any co-author badge progress it earned, and be notified.'
         : 'Cancel the pending invite to ' + uname + '?';
       if (!confirm(msg)) return;
       try {
-        var del = await db.from('work_coauthors').delete().eq('id', rowId).select('id');
-        if (del.error || !del.data || !del.data.length) { showToast('Could not remove that co-author', 'ti-alert-triangle'); return; }
+        // remove_coauthor is DEFINER: it deletes the row, recounts the badge for
+        // both parties (revoking the tier if it is no longer earned) and, for an
+        // accepted co-author, notifies them. Cancelling an unanswered invite is
+        // silent. Doing this client-side would let anyone forge the notice.
+        var rr = await db.rpc('remove_coauthor', { p_work_id: editWorkId, p_user_id: row.user_id });
+        if (rr.error || !rr.data || rr.data.success !== true) {
+          console.error('Co-author remove error:', JSON.stringify(rr.error || rr.data));
+          showToast('Could not remove that co-author', 'ti-alert-triangle');
+          return;
+        }
         existingCoauthors = existingCoauthors.filter(function(c){ return c.id !== rowId; });
         renderCoauthors();
-        // Badge counts are a full recount of accepted rows, so refresh after
-        // removing someone who had already accepted.
-        if (row.accepted) { try { await db.rpc('award_coauthor_badges', { p_work_id: editWorkId }); } catch(e) {} }
-        showToast(row.accepted ? 'Co-author removed' : 'Invite cancelled', 'ti-check');
+        showToast(row.accepted ? 'Co-author removed — they have been notified' : 'Invite cancelled', 'ti-check');
       } catch(e) {
         console.error('Co-author remove failed:', e);
         showToast('Could not remove that co-author', 'ti-alert-triangle');

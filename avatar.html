@@ -1533,35 +1533,56 @@
     if (btn) btn.disabled = true;
     setStatus('Saving...');
 
-    var payload = {
-      user_id: currentUid,
-      body_type: avatarData.body_type || 'male',
-      skin_tone: avatarData.skin_tone,
-      pose: avatarData.pose || 'pose1',
-      avatar_position: avatarData.avatar_position || 'center',
-      mirrored: !!avatarData.mirrored,
-      equipped: avatarData.equipped,
-      unlocked_skin_tones: (function(){
-        var u = avatarData.unlocked_skin_tones || [];
-        if (avatarData.skin_tone && u.indexOf(avatarData.skin_tone) === -1) u = u.concat([avatarData.skin_tone]);
-        return u;
-      })(),
-      unlocked_colors: avatarData.unlocked_colors || {},
-      unlocked_accents: avatarData.unlocked_accents || [],
-      accent_color: avatarData.accent_color || null,
-      updated_at: new Date().toISOString()
-    };
+    // Appearance is saved through save_avatar_appearance(), a SECURITY DEFINER
+    // RPC. The client has no INSERT/UPDATE grant on user_avatars: entitlement
+    // columns (unlocked_skin_tones / _colors / _accents / _poses / _display /
+    // _body_types) are written only by the Ember-charging unlock RPCs, and the
+    // RPC re-validates every choice below against what the account actually
+    // owns. Anything not owned is silently dropped and reported back.
+    var { data: saved, error } = await db.rpc('save_avatar_appearance', {
+      p_body_type: avatarData.body_type || 'male',
+      p_skin_tone: avatarData.skin_tone,
+      p_pose: avatarData.pose || 'pose1',
+      p_avatar_position: avatarData.avatar_position || 'center',
+      p_mirrored: !!avatarData.mirrored,
+      p_equipped: avatarData.equipped || {},
+      p_accent_hex: (avatarData.accent_color && avatarData.accent_color.hex) || '#2dd4bf'
+    });
 
-    var { error } = await db.from('user_avatars').upsert(payload, { onConflict: 'user_id' });
-
-    if (error) {
-      setStatus('Could not save: ' + error.message);
+    if (error || !saved || saved.status !== 'success') {
+      setStatus('Could not save: ' + ((error && error.message) || 'please try again.'));
       if (btn) btn.disabled = false;
       return;
     }
 
+    // Adopt the server's authoritative view so the editor never shows a
+    // selection the account doesn't actually own.
+    avatarData.body_type = saved.body_type;
+    avatarData.skin_tone = saved.skin_tone;
+    avatarData.pose = saved.pose;
+    avatarData.avatar_position = saved.avatar_position;
+    avatarData.mirrored = !!saved.mirrored;
+    avatarData.equipped = saved.equipped || {};
+    avatarData.accent_color = { hex: saved.accent_hex };
+    if (avatarData.skin_tone) {
+      if (!avatarData.unlocked_skin_tones) avatarData.unlocked_skin_tones = [];
+      if (avatarData.unlocked_skin_tones.indexOf(avatarData.skin_tone) === -1) {
+        avatarData.unlocked_skin_tones.push(avatarData.skin_tone);
+      }
+    }
+
     dirty = false;
     setStatus('Saved!');
+
+    // Server dropped a selection the account doesn't own — resync the editor.
+    if (saved.dropped && saved.dropped.length && !isFirstVisit) {
+      try {
+        renderSkinTones(); renderPoseRow();
+        renderSlotTabs(); renderItemGrid(); renderColorPickers();
+        renderPreview(); renderAccentSection();
+        if (avatarData.accent_color && avatarData.accent_color.hex) applyAccentCSS(avatarData.accent_color.hex, false);
+      } catch(e) {}
+    }
 
     // Publish the avatar's face as the sitewide profile picture.
     // Every surface that shows profiles.avatar_url (nav, comments,
