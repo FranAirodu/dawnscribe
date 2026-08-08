@@ -473,6 +473,57 @@
             </span>
           </label>
         </div>
+        <!-- EDIT MODE ONLY: Loyalty Cosmetic. Shown once the novel is marked
+             Completed and has 50+ published chapters. Submitting goes straight
+             to admin review via submit_loyalty_cosmetic(); the normal Save
+             Changes path never touches it. -->
+        <div id="loyalty-card" style="display:none;background:var(--bg2);border:1px solid var(--border);border-left:3px solid #f472b6;border-radius:10px;padding:18px;margin-bottom:22px;">
+          <div style="font-size:14px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:7px;margin-bottom:5px;">
+            <i class="ti ti-heart" style="color:#f472b6;"></i> Loyalty Cosmetic
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:14px;" id="loyalty-desc">
+            Your novel is finished and long enough to offer one. Readers who finish every chapter earn this cosmetic — it can't be bought. One per novel, reviewed by the DawnScribe team before it goes live.
+          </div>
+          <div id="loyalty-status" style="display:none;font-size:12px;line-height:1.6;margin-bottom:14px;padding:10px 12px;border-radius:8px;"></div>
+          <div id="loyalty-form">
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label" for="loyalty-name">Cosmetic name <span class="required">*</span></label>
+                <input class="field-input" id="loyalty-name" maxlength="80" placeholder="e.g. Cloak of the Last Chapter"/>
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="loyalty-slot">Slot <span class="required">*</span></label>
+                <select class="field-select" id="loyalty-slot">
+                  <option value="hat">Hat</option>
+                  <option value="hair">Hair</option>
+                  <option value="face">Face</option>
+                  <option value="outfit">Outfit</option>
+                  <option value="shirt">Shirt</option>
+                  <option value="jacket">Jacket</option>
+                  <option value="gloves">Gloves</option>
+                  <option value="pants">Pants</option>
+                  <option value="shoes">Shoes</option>
+                  <option value="back">Back</option>
+                  <option value="neck">Neck</option>
+                  <option value="accessory">Accessory</option>
+                  <option value="companion">Companion</option>
+                  <option value="effect">Effect</option>
+                  <option value="background">Background</option>
+                </select>
+              </div>
+            </div>
+            <div class="field-group" style="margin-bottom:12px;">
+              <label class="field-label" for="loyalty-image">Image URL <span class="required">*</span></label>
+              <input class="field-input" id="loyalty-image" placeholder="https://…"/>
+            </div>
+            <div class="field-group" style="margin-bottom:14px;">
+              <label class="field-label" for="loyalty-descr">Description</label>
+              <textarea class="field-input" id="loyalty-descr" rows="2" maxlength="300" placeholder="What is it, and what does finishing your novel mean?"></textarea>
+            </div>
+            <button type="button" class="coauthor-add-btn" id="loyalty-submit" style="padding:9px 18px;font-size:13px;"><i class="ti ti-send"></i> Submit for review</button>
+            <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.6;">Sent as soon as you press Submit — you don't need to save. If it's rejected you'll get the reason and can fix it and resubmit.</div>
+          </div>
+        </div>
         <div class="field-row" id="field-row-status-language" style="">
           <div class="field-group">
             <label class="field-label" for="field-status">Status <span class="required">*</span></label>
@@ -2278,6 +2329,105 @@
       });
     }
 
+    // ── EDIT MODE: Loyalty Cosmetic ────────────────────────────────
+    // Gated on the novel being Completed with 50+ published chapters. The
+    // server re-checks both in submit_loyalty_cosmetic(), so this is only about
+    // not showing the author a form they can't use.
+    var LOYALTY_MIN_CHAPTERS = 50;
+    var loyaltyRow = null;
+
+    async function loadLoyaltyCosmetic(w) {
+      var card = document.getElementById('loyalty-card');
+      if (!card || !isEditMode || !editWorkId) return;
+      if (w.status !== 'completed' || w.is_one_shot) return;
+
+      var cr = await db.from('chapters')
+        .select('id', { count: 'exact', head: true })
+        .eq('work_id', editWorkId)
+        .in('status', ['published', 'one-shot']);
+      var chapters = cr.count || 0;
+      if (chapters < LOYALTY_MIN_CHAPTERS) return;
+
+      card.style.display = 'block';
+
+      var lr = await db.from('loyalty_cosmetics')
+        .select('id,name,description,image_url,slot,status,rejection_reason')
+        .eq('work_id', editWorkId).maybeSingle();
+      loyaltyRow = (lr && lr.data) || null;
+
+      renderLoyaltyState();
+      var btn = document.getElementById('loyalty-submit');
+      if (btn && !btn.dataset.wired) {
+        btn.dataset.wired = '1';
+        btn.addEventListener('click', submitLoyaltyCosmetic);
+      }
+    }
+
+    function renderLoyaltyState() {
+      var box = document.getElementById('loyalty-status');
+      var form = document.getElementById('loyalty-form');
+      if (!box || !form) return;
+
+      if (!loyaltyRow) { box.style.display = 'none'; form.style.display = 'block'; return; }
+
+      document.getElementById('loyalty-name').value = loyaltyRow.name || '';
+      document.getElementById('loyalty-image').value = loyaltyRow.image_url || '';
+      document.getElementById('loyalty-descr').value = loyaltyRow.description || '';
+      var slotSel = document.getElementById('loyalty-slot');
+      if (slotSel && loyaltyRow.slot) slotSel.value = loyaltyRow.slot;
+
+      box.style.display = 'block';
+      if (loyaltyRow.status === 'approved') {
+        box.style.background = 'rgba(52,211,153,0.08)';
+        box.style.color = 'var(--green)';
+        box.innerHTML = '<b>Approved and live.</b> Readers who finish every chapter now earn this. Approved cosmetics are locked and can no longer be edited.';
+        form.style.display = 'none';
+      } else if (loyaltyRow.status === 'rejected') {
+        box.style.background = 'rgba(248,113,113,0.08)';
+        box.style.color = 'var(--red)';
+        box.innerHTML = '<b>Needs changes:</b> ' + escHtml(loyaltyRow.rejection_reason || 'no reason given') + '<br/>Fix it below and submit again.';
+        form.style.display = 'block';
+      } else {
+        box.style.background = 'rgba(245,158,11,0.08)';
+        box.style.color = 'var(--gold)';
+        box.innerHTML = '<b>Awaiting review.</b> You can still change it and resubmit while it waits.';
+        form.style.display = 'block';
+      }
+    }
+
+    async function submitLoyaltyCosmetic() {
+      var btn = document.getElementById('loyalty-submit');
+      var name = (document.getElementById('loyalty-name').value || '').trim();
+      var image = (document.getElementById('loyalty-image').value || '').trim();
+      var slot = document.getElementById('loyalty-slot').value;
+      var descr = (document.getElementById('loyalty-descr').value || '').trim();
+
+      if (!name) { showToast('Give the cosmetic a name', 'ti-alert-triangle'); return; }
+      if (!image) { showToast('Add an image URL', 'ti-alert-triangle'); return; }
+
+      btn.disabled = true;
+      var res = await db.rpc('submit_loyalty_cosmetic', {
+        p_work_id: editWorkId, p_name: name, p_description: descr || null,
+        p_image_url: image, p_slot: slot
+      });
+      btn.disabled = false;
+
+      if (res.error || !res.data || res.data.status !== 'success') {
+        var code = (res.data && res.data.error) || (res.error && res.error.message) || 'unknown';
+        var msg = code === 'work_not_completed' ? 'Mark the novel Completed and save first.'
+          : code === 'needs_50_chapters' ? 'Needs at least ' + LOYALTY_MIN_CHAPTERS + ' published chapters (you have ' + (res.data && res.data.chapters) + ').'
+          : code === 'already_approved' ? 'This one is already approved and locked.'
+          : code === 'not_your_work' ? 'You can only do this on your own novel.'
+          : 'Could not submit: ' + code;
+        showToast(msg, 'ti-alert-triangle');
+        return;
+      }
+
+      loyaltyRow = { id: res.data.id, name: name, description: descr, image_url: image, slot: slot, status: 'pending_review', rejection_reason: null };
+      renderLoyaltyState();
+      showToast('Sent for review!', 'ti-heart');
+    }
+
     // ── EDIT MODE: live co-author management ───────────────────────
     // Loads the work's existing work_coauthors rows (accepted + pending) so an
     // author can invite someone after publishing and see who has not answered.
@@ -2806,6 +2956,7 @@
         var coDesc = document.getElementById('coauthor-desc');
         if (coDesc) { coDesc.textContent = 'Invite other DawnScribe users to co-author this work. They are only credited once they accept. Invites are sent as soon as you press Invite — you do not need to save.'; }
         try { await loadExistingCoauthors(); } catch(e) {}
+        if (!isArt) { try { await loadLoyaltyCosmetic(w); } catch(e) { console.warn('Loyalty load failed:', e); } }
 
         updatePreview();
         updateChecklist();

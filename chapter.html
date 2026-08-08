@@ -281,6 +281,14 @@
     .comment-block-btn:hover{color:var(--red,#f87171);}
     .comment-delete-btn{background:transparent;border:none;color:var(--text2);font-size:12px;cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.2s;display:inline-flex;align-items:center;gap:3px;margin-top:6px;margin-left:auto;}
     .comment-delete-btn:hover{color:var(--red);}
+    .comment-edit-btn{background:transparent;border:none;color:var(--text2);font-size:12px;cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.2s;display:inline-flex;align-items:center;gap:3px;margin-top:6px;}
+    .comment-edit-btn:hover{color:var(--accent);}
+    .cmt-edited{font-size:10px;color:var(--text3);font-style:italic;margin-left:5px;}
+    .cmt-edit-ta{width:100%;background:var(--bg3);border:1px solid var(--accent);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;resize:vertical;box-sizing:border-box;}
+    .cmt-edit-actions{display:flex;gap:6px;margin-top:6px;}
+    .cmt-edit-save,.cmt-edit-cancel{border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;background:transparent;border:1px solid;}
+    .cmt-edit-save{color:var(--accent);border-color:var(--accent);}
+    .cmt-edit-cancel{color:var(--text2);border-color:var(--border);}
     .comment-actions{display:flex;align-items:center;gap:4px;margin-top:4px;}
     .replies-list{margin-top:8px;padding-left:16px;border-left:2px solid var(--border);display:flex;flex-direction:column;gap:8px;}
     .reply-card{background:var(--bg3);border-radius:8px;padding:10px 12px;}
@@ -1926,7 +1934,7 @@
 
       // Fetch top-level + replies
       var result = await db.from('paragraph_comments')
-        .select('id, content, created_at, user_id, paragraph_index, parent_id, upvotes, downvotes, gif_url, image_url')
+        .select('id, content, created_at, edited_at, user_id, paragraph_index, parent_id, upvotes, downvotes, gif_url, image_url')
         .eq('chapter_id', chapterData.id)
         .eq('paragraph_index', idx)
         .order('created_at', { ascending: true });
@@ -2024,6 +2032,7 @@
       var name = escHtml(p.display_name || p.username || 'User');
       var avatarHtml = p.avatar_url ? '<img src="'+safeImgUrl(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>';
       var canDelete = currentSession && (currentSession.user.id === c.user_id || isOwner);
+      var canEdit = currentSession && currentSession.user.id === c.user_id;
       var myVote = paraVoteCache[c.id] || null;
       var ups = c.upvotes || 0;
       var downs = c.downvotes || 0;
@@ -2037,7 +2046,7 @@
         '<div class="para-cmt-header">' +
           '<div class="comment-avatar" style="width:26px;height:26px;font-size:12px;">' + avatarHtml + '</div>' +
           '<div class="para-cmt-name"><a href="profile.html?user=' + escHtml(p.username||'') + '">' + name + '</a></div>' +
-          '<div class="para-cmt-time">' + timeAgo(c.created_at) + '</div>' +
+          '<div class="para-cmt-time">' + timeAgo(c.created_at) + editedMarker(c) + '</div>' +
         '</div>' +
         '<div class="para-cmt-body">' + dsSpoiler.render(escHtml(c.content)) + '</div>' +
         (c.gif_url ? '<img class="para-cmt-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '') +
@@ -2046,6 +2055,7 @@
           '<button class="para-vote-btn upvote-btn' + (myVote==='up'?' voted-up':'') + '" data-id="'+c.id+'" data-dir="up"><i class="ti ti-thumb-up"></i> <span class="up-count">'+ups+'</span></button>' +
           '<button class="para-vote-btn downvote-btn' + (myVote==='down'?' voted-down':'') + '" data-id="'+c.id+'" data-dir="down"><i class="ti ti-thumb-down"></i> <span class="dn-count">'+downs+'</span></button>' +
           (currentSession ? '<button class="para-reply-btn" data-id="'+c.id+'" data-name="'+name+'"><i class="ti ti-corner-down-right"></i> Reply</button>' : '') +
+          (canEdit ? '<button class="comment-edit-btn"><i class="ti ti-pencil"></i> Edit</button>' : '') +
           (canDelete ? '<button class="para-cmt-del" data-id="'+c.id+'"><i class="ti ti-trash"></i></button>' : '') +
         '</div>';
 
@@ -2085,6 +2095,7 @@
       if (delBtn) {
         delBtn.addEventListener('click', function(){ deleteParaComment(c.id, card); });
       }
+      if (canEdit) { wireCommentEdit(card, c, 'paragraph_comments', '.para-cmt-body'); }
 
       return card;
     }
@@ -2094,6 +2105,7 @@
       var name = escHtml(p.display_name || p.username || 'User');
       var avatarHtml = p.avatar_url ? '<img src="'+safeImgUrl(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>';
       var canDelete = currentSession && (currentSession.user.id === r.user_id || isOwner);
+      var canEditReply = currentSession && currentSession.user.id === r.user_id;
       var myVote = paraVoteCache[r.id] || null;
       var ups = r.upvotes || 0;
       var card = document.createElement('div');
@@ -2104,16 +2116,18 @@
         '<div class="para-cmt-header">' +
           '<div class="comment-avatar" style="width:22px;height:22px;font-size:10px;">' + avatarHtml + '</div>' +
           '<div class="para-cmt-name"><a href="profile.html?user='+escHtml(p.username||'')+'">' + name + '</a></div>' +
-          '<div class="para-cmt-time">' + timeAgo(r.created_at) + '</div>' +
+          '<div class="para-cmt-time">' + timeAgo(r.created_at) + editedMarker(r) + '</div>' +
         '</div>' +
         '<div class="para-cmt-body">' + dsSpoiler.render(escHtml(r.content)) + '</div>' +
         '<div class="para-cmt-actions">' +
           '<button class="para-vote-btn upvote-btn'+(myVote==='up'?' voted-up':'')+'" data-id="'+r.id+'" data-dir="up"><i class="ti ti-thumb-up"></i> <span class="up-count">'+ups+'</span></button>' +
+          (canEditReply ? '<button class="comment-edit-btn"><i class="ti ti-pencil"></i> Edit</button>' : '') +
           (canDelete ? '<button class="para-cmt-del" data-id="'+r.id+'"><i class="ti ti-trash"></i></button>' : '') +
         '</div>';
       card.querySelector('.upvote-btn').addEventListener('click', function(e){ e.stopPropagation(); handleParaVote(r.id, 'up', card); });
       var delBtn = card.querySelector('.para-cmt-del');
       if (delBtn) delBtn.addEventListener('click', function(){ deleteParaComment(r.id, card); });
+      if (canEditReply) { wireCommentEdit(card, r, 'paragraph_comments', '.para-cmt-body'); }
       return card;
     }
 
@@ -2420,12 +2434,81 @@
       });
     }
 
+    // ── COMMENT EDITING ────────────────────────────────────────────
+    // Own comments only. UPDATE is column-scoped to content on both tables and
+    // edited_at is stamped by a DB trigger, so the "edited" marker can't be
+    // suppressed and counters/attribution aren't writable from here.
+    function editedMarker(c) {
+      return c.edited_at ? '<span class="cmt-edited">\u00b7 edited</span>' : '';
+    }
+
+    // table: 'chapter_comments' | 'paragraph_comments'
+    // bodySel: the class of the rendered body div inside the card
+    function wireCommentEdit(card, c, table, bodySel) {
+      var btn = card.querySelector(':scope > .comment-actions > .comment-edit-btn')
+             || card.querySelector(':scope > .para-cmt-actions > .comment-edit-btn');
+      if (!btn) return;
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var body = card.querySelector(':scope > ' + bodySel);
+        if (!body || card.querySelector(':scope > .cmt-edit-wrap')) return;
+
+        var original = c.content || '';
+        body.style.display = 'none';
+        var wrap = document.createElement('div');
+        wrap.className = 'cmt-edit-wrap';
+        wrap.innerHTML =
+          '<textarea class="cmt-edit-ta" rows="3" maxlength="' + (table === 'chapter_comments' ? 1000 : 500) + '"></textarea>' +
+          '<div class="cmt-edit-actions">' +
+            '<button class="cmt-edit-save"><i class="ti ti-check"></i> Save</button>' +
+            '<button class="cmt-edit-cancel">Cancel</button>' +
+          '</div>';
+        body.parentNode.insertBefore(wrap, body.nextSibling);
+        var ta = wrap.querySelector('.cmt-edit-ta');
+        ta.value = original;
+        ta.focus();
+
+        function close() { wrap.remove(); body.style.display = ''; }
+        wrap.querySelector('.cmt-edit-cancel').addEventListener('click', function(ev){ ev.stopPropagation(); close(); });
+
+        wrap.querySelector('.cmt-edit-save').addEventListener('click', async function(ev) {
+          ev.stopPropagation();
+          var next = ta.value.trim();
+          if (!next) { showToast('A comment can\u2019t be empty.', 'ti-alert-circle'); return; }
+          if (next === original) { close(); return; }
+          var saveBtn = wrap.querySelector('.cmt-edit-save');
+          saveBtn.disabled = true;
+
+          // supabase-js does not throw on a failed write — check .error and
+          // confirm a row actually came back.
+          var res = await db.from(table).update({ content: next }).eq('id', c.id).select('id, content, edited_at');
+          if (res.error || !res.data || !res.data.length) {
+            saveBtn.disabled = false;
+            showToast('Could not save that edit.', 'ti-alert-triangle');
+            return;
+          }
+
+          c.content = res.data[0].content;
+          c.edited_at = res.data[0].edited_at;
+          body.innerHTML = dsSpoiler.render(escHtml(c.content));
+          var timeEl = card.querySelector(':scope > .comment-header > .comment-time')
+                    || card.querySelector(':scope > .para-cmt-header > .para-cmt-time');
+          if (timeEl && !timeEl.querySelector('.cmt-edited')) {
+            timeEl.insertAdjacentHTML('beforeend', '<span class="cmt-edited">\u00b7 edited</span>');
+          }
+          close();
+          showToast('Comment updated.', 'ti-check');
+        });
+      });
+    }
+
     // ── CHAPTER COMMENTS (THREADED) ────────────────────────────────
     function buildChapterCommentCard(c, profileMap, isOwner, isReply){
       var p = profileMap[c.user_id] || {};
       var name = escHtml(p.display_name || p.username || 'User');
       var avatarHtml = p.avatar_url ? '<img src="'+safeImgUrl(p.avatar_url)+'" alt=""/>' : '<i class="ti ti-user"></i>';
       var canDelete = currentSession && (currentSession.user.id === c.user_id || isOwner);
+      var canEdit = currentSession && currentSession.user.id === c.user_id;
       var card = document.createElement('div');
       card.className = isReply ? 'reply-card' : 'comment-card';
       card.dataset.commentId = c.id;
@@ -2434,13 +2517,14 @@
         '<div class="comment-header">'
           + '<div class="comment-avatar" style="'+(isReply?'width:24px;height:24px;font-size:11px;':'')+'">' + avatarHtml + '</div>'
           + '<div class="comment-name">' + name + '</div>'
-          + '<div class="comment-time">' + timeAgo(c.created_at) + '</div>'
+          + '<div class="comment-time">' + timeAgo(c.created_at) + editedMarker(c) + '</div>'
         + '</div>'
         + '<div class="comment-body">' + dsSpoiler.render(escHtml(c.content)) + '</div>'
         + (c.gif_url ? '<img class="comment-gif" src="'+escHtml(c.gif_url)+'" alt="gif"/>' : '')
           + (c.image_url ? '<img class="comment-gif" src="'+escHtml(c.image_url)+'" alt="image"/>' : '')
         + '<div class="comment-actions">'
           + (currentSession ? '<button class="comment-reply-btn"><i class="ti ti-corner-down-right"></i> Reply</button>' : '')
+          + (canEdit ? '<button class="comment-edit-btn"><i class="ti ti-pencil"></i> Edit</button>' : '')
           + (canDelete ? '<button class="comment-delete-btn"><i class="ti ti-trash"></i></button>' : '')
           + (currentSession && currentSession.user.id !== c.user_id ? '<button class="comment-block-btn"><i class="ti ti-ban"></i></button>' : '')
         + '</div>';
@@ -2455,6 +2539,7 @@
           deleteChapterComment(c.id, card);
         });
       }
+      if(canEdit){ wireCommentEdit(card, c, 'chapter_comments', '.comment-body'); }
       if(currentSession && currentSession.user.id !== c.user_id){
         card.querySelector('.comment-block-btn').addEventListener('click', async function(){
           var blockBtn = card.querySelector('.comment-block-btn');
@@ -2594,7 +2679,7 @@
     async function loadChapterComments() {
       // Fetch all comments for this chapter (top-level + replies)
       var result = await db.from('chapter_comments')
-        .select('id, content, created_at, user_id, parent_id, gif_url, image_url, upvotes, downvotes')
+        .select('id, content, created_at, edited_at, user_id, parent_id, gif_url, image_url, upvotes, downvotes')
         .eq('chapter_id', chapterData.id)
         .order('created_at', { ascending: true })
         .limit(200);
@@ -2931,13 +3016,16 @@
         var myVote = spMyVotes[c.id] || null;
         var votedClass = myVote === 'up' ? 'color:var(--accent);' : 'color:var(--text2);';
         var thumbBtn = '<button class="sp-thumb-btn" data-id="'+escHtml(c.id)+'" data-type="'+escHtml(c._type)+'" style="display:inline-flex;align-items:center;gap:4px;background:none;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:Lato,sans-serif;padding:3px 0;margin-top:6px;transition:color 0.15s;'+votedClass+'"><i class="ti ti-thumb-up" style="font-size:13px;"></i><span class="sp-up-count">'+ups+'</span></button>';
-        return '<div id="sp-comment-'+escHtml(c.id)+'" style="padding:10px 16px;border-bottom:1px solid var(--border);">' +
+        var editBtn = (currentSession && currentSession.user.id === c.user_id)
+          ? '<button class="sp-edit-btn" data-id="'+escHtml(c.id)+'" data-type="'+escHtml(c._type)+'" style="background:none;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:Lato,sans-serif;padding:3px 0;margin-top:6px;margin-left:12px;color:var(--text2);"><i class="ti ti-pencil" style="font-size:13px;"></i> Edit</button>'
+          : '';
+        return '<div id="sp-comment-'+escHtml(c.id)+'" style="padding:10px 16px;border-bottom:1px solid var(--border);" data-sp-id="'+escHtml(c.id)+'">' +
           paraLabel +
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' + av + '<span style="font-size:12px;font-weight:700;color:var(--text);">'+name+'</span><span style="font-size:11px;color:var(--text2);margin-left:auto;">'+timeAgo(c.created_at)+'</span></div>' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' + av + '<span style="font-size:12px;font-weight:700;color:var(--text);">'+name+'</span><span style="font-size:11px;color:var(--text2);margin-left:auto;">'+timeAgo(c.created_at)+(c.edited_at?'<span class="cmt-edited">\u00b7 edited</span>':'')+'</span></div>' +
           '<div style="font-size:13px;color:var(--text2);line-height:1.5;">'+dsSpoiler.render(escHtml(c.content||''))+'</div>' +
           (c.gif_url ? '<img src="'+escHtml(c.gif_url)+'" style="max-width:100%;border-radius:7px;margin-top:6px;display:block;" alt="gif"/>' : '') +
           (c.image_url ? '<img src="'+escHtml(c.image_url)+'" style="max-width:100%;border-radius:7px;margin-top:6px;display:block;" alt="image"/>' : '') +
-          thumbBtn +
+          thumbBtn + editBtn +
           '</div>';
       }
       var sectionDivider = function(label, icon) {
@@ -3033,6 +3121,13 @@
           handleSpThumbVote(btn.dataset.id, btn.dataset.type, btn);
         });
       });
+      // Inline edit for your own comments in the side panel.
+      contentDiv.querySelectorAll('.sp-edit-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          spEditComment(btn.dataset.id, btn.dataset.type, btn);
+        });
+      });
     }
 
     window.spSetCommentSort = function(mode) {
@@ -3040,6 +3135,61 @@
       try { localStorage.setItem('ds_comment_sort', mode); } catch(e) {}
       spRenderComments();
     };
+
+    function spEditComment(commentId, commentType, btnEl) {
+      var comment = spComments.find(function(c){ return c.id === commentId; });
+      if (!comment) return;
+      var row = document.querySelector('[data-sp-id="' + commentId + '"]');
+      if (!row || row.querySelector('.cmt-edit-wrap')) return;
+
+      // The body is the third child div in renderComment's markup; find it by
+      // walking rather than assuming an index.
+      var body = null;
+      row.querySelectorAll(':scope > div').forEach(function(d){
+        if (!body && d.style.fontSize === '13px') body = d;
+      });
+      if (!body) return;
+
+      var table = commentType === 'para' ? 'paragraph_comments' : 'chapter_comments';
+      var original = comment.content || '';
+      body.style.display = 'none';
+
+      var wrap = document.createElement('div');
+      wrap.className = 'cmt-edit-wrap';
+      wrap.innerHTML =
+        '<textarea class="cmt-edit-ta" rows="3" maxlength="' + (table === 'chapter_comments' ? 1000 : 500) + '"></textarea>' +
+        '<div class="cmt-edit-actions">' +
+          '<button class="cmt-edit-save"><i class="ti ti-check"></i> Save</button>' +
+          '<button class="cmt-edit-cancel">Cancel</button>' +
+        '</div>';
+      body.parentNode.insertBefore(wrap, body.nextSibling);
+      var ta = wrap.querySelector('.cmt-edit-ta');
+      ta.value = original;
+      ta.focus();
+
+      function close() { wrap.remove(); body.style.display = ''; }
+      wrap.querySelector('.cmt-edit-cancel').addEventListener('click', function(e){ e.stopPropagation(); close(); });
+
+      wrap.querySelector('.cmt-edit-save').addEventListener('click', async function(e) {
+        e.stopPropagation();
+        var next = ta.value.trim();
+        if (!next) { showToast('A comment can\u2019t be empty.', 'ti-alert-circle'); return; }
+        if (next === original) { close(); return; }
+        var saveBtn = wrap.querySelector('.cmt-edit-save');
+        saveBtn.disabled = true;
+        var res = await db.from(table).update({ content: next }).eq('id', commentId).select('id, content, edited_at');
+        if (res.error || !res.data || !res.data.length) {
+          saveBtn.disabled = false;
+          showToast('Could not save that edit.', 'ti-alert-triangle');
+          return;
+        }
+        comment.content = res.data[0].content;
+        comment.edited_at = res.data[0].edited_at;
+        close();
+        spRenderComments();
+        showToast('Comment updated.', 'ti-check');
+      });
+    }
 
     async function handleSpThumbVote(commentId, commentType, btnEl) {
       if (!currentSession) { showToast('Sign in to vote', 'ti-lock'); return; }
@@ -3052,20 +3202,20 @@
 
       var prev = spMyVotes[commentId] || null;
       var table = commentType === 'para' ? 'paragraph_comment_votes' : 'chapter_comment_votes';
-      var cmtTable = commentType === 'para' ? 'paragraph_comments' : 'chapter_comments';
 
       var newUps = comment.upvotes || 0;
       if (prev === 'up') {
         // Toggle off
         await db.from(table).delete().eq('comment_id', commentId).eq('user_id', currentSession.user.id);
         newUps = Math.max(0, newUps - 1);
-        await db.from(cmtTable).update({ upvotes: newUps }).eq('id', commentId);
+        // Counters are derived: a DEFINER trigger on the vote table recomputes
+        // upvotes/downvotes. Writing them from here is not permitted and never
+        // worked — the optimistic number below matches what the trigger stores.
         delete spMyVotes[commentId];
       } else {
         // New upvote (if they had a downvote, remove it first — downvotes not shown here but kept consistent)
         await db.from(table).upsert({ comment_id: commentId, user_id: currentSession.user.id, vote_type: 'up' }, { onConflict: 'comment_id,user_id' });
         if (prev !== 'up') newUps = newUps + 1;
-        await db.from(cmtTable).update({ upvotes: newUps }).eq('id', commentId);
         spMyVotes[commentId] = 'up';
       }
       comment.upvotes = newUps;
@@ -3322,11 +3472,11 @@
         if (body) body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text2);font-size:13px;"><i class="ti ti-loader-2" style="font-size:22px;display:block;margin-bottom:8px;animation:spin 1s linear infinite;"></i>Loading comments…</div>';
       }
       var { data: cc } = await db.from('chapter_comments')
-        .select('id,content,created_at,user_id,gif_url,image_url,upvotes,downvotes')
+        .select('id,content,created_at,edited_at,user_id,gif_url,image_url,upvotes,downvotes')
         .eq('chapter_id', chapterData.id).is('parent_id', null)
         .order('created_at',{ascending:false}).limit(50);
       var { data: pc } = await db.from('paragraph_comments')
-        .select('id,content,created_at,user_id,paragraph_index,gif_url,image_url,upvotes,downvotes')
+        .select('id,content,created_at,edited_at,user_id,paragraph_index,gif_url,image_url,upvotes,downvotes')
         .eq('chapter_id', chapterData.id).is('parent_id', null)
         .order('created_at',{ascending:false}).limit(50);
       // Para comments sorted by paragraph_index ASC (top of chapter first),
