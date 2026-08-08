@@ -656,7 +656,11 @@ window.CharacterTitles = (function() {
         Promise.resolve(db().from('story_collabs').select('id,character_id,image_url,description').eq('work_id', workId).eq('status','approved').not('character_id','is',null)).catch(function(){return {data:[]};}),
         Promise.resolve(db().from('character_questions').select('id,character_id,user_id,question,answer,status,is_pinned,created_at').in('character_id', charIds)).catch(function(){return {data:[]};})
       ]);
-      EXP.dyn = (expRes[0].data || []).filter(function(d){ return d.status === 'active' || isOwner; });
+      // Active is public. The author sees everything (to approve/reject);
+      // a suggester sees their own pending row so they know it's awaiting the author.
+      EXP.dyn = (expRes[0].data || []).filter(function(d){
+        return d.status === 'active' || isOwner || (_uid && d.created_by === _uid);
+      });
       (expRes[1].data || []).forEach(function(r){
         var e = EXP.impr[r.character_id] || (EXP.impr[r.character_id] = { first:{}, now:{}, myFirst:null, myNow:null });
         e[r.phase][r.sentiment] = (e[r.phase][r.sentiment] || 0) + 1;
@@ -836,6 +840,10 @@ window.CharacterTitles = (function() {
 
       var charDyns = EXP.dyn.filter(function(d){ return (d.character_a === char.id || d.character_b === char.id) && d.status === 'active'; })
         .sort(function(a,b){ return (EXP.dynVotes[b.id]||0) - (EXP.dynVotes[a.id]||0); });
+      // Dynamics wait on the author before they go public.
+      var charDynsForChar = EXP.dyn.filter(function(d){ return d.character_a === char.id || d.character_b === char.id; });
+      var charPendDyns = charDynsForChar.filter(function(d){ return d.status === 'pending'; });
+      var myPendDyns = charPendDyns.filter(function(d){ return _uid && d.created_by === _uid; });
       var topDyn = charDyns[0];
       var dynChipHtml = topDyn
         ? '<div class="ct-dyn-chip"><i class="ti ti-arrows-left-right"></i> ' + esc(topDyn.label) + ' \u00b7 ' + esc(EXP.charNames[topDyn.character_a === char.id ? topDyn.character_b : topDyn.character_a] || '?') + '</div>'
@@ -1174,6 +1182,15 @@ window.CharacterTitles = (function() {
                 var hideBtn = isOwner ? '<button class="ct-dyn-hide-btn" data-dyn-id="' + esc(d.id) + '" title="Hide this dynamic"><i class="ti ti-eye-off"></i></button>' : '';
                 return '<div class="ct-dyn-row"><div class="ct-dyn-row-label"><strong>' + esc(d.label) + '</strong> with ' + esc(other) + '</div>' + voteBtn + hideBtn + '</div>';
               }).join('') : '<div class="ct-exp-empty">No dynamics yet \u2014 propose one below!</div>') +
+              (isOwner ? '<div data-pending-dyns-slot="' + esc(char.id) + '"></div>' : '') +
+              ((!isOwner && myPendDyns.length) ?
+                '<div class="ct-exp-form-title" style="padding:8px 12px 4px;">Awaiting the author (' + myPendDyns.length + ')</div>' +
+                myPendDyns.map(function(d){
+                  var other = EXP.charNames[d.character_a === char.id ? d.character_b : d.character_a] || '?';
+                  return '<div class="ct-dyn-row" style="opacity:0.7;"><div class="ct-dyn-row-label"><strong>' + esc(d.label) + '</strong> with ' + esc(other) + '</div>' +
+                    '<button class="ct-dyn-hide-btn" data-dyn-withdraw="' + esc(d.id) + '" title="Withdraw this proposal"><i class="ti ti-x"></i></button></div>';
+                }).join('')
+              : '') +
               ((currentUserSession && !isOwner && chars.length > 1) ?
                 '<div class="ct-exp-form"><div class="ct-exp-form-title">Propose a dynamic</div>' +
                 '<select class="ct-exp-select" data-dyn-other><option value="">With whom?</option>' +
@@ -1678,6 +1695,51 @@ window.CharacterTitles = (function() {
         rerender();
       });
     });
+    card.querySelectorAll('[data-dyn-withdraw]').forEach(function(btn) {
+      btn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        btn.disabled = true;
+        var id = btn.getAttribute('data-dyn-withdraw');
+        await Promise.resolve(db().from('character_dynamic_votes').delete().eq('dynamic_id', id)).catch(function(){});
+        var del = await Promise.resolve(db().from('character_dynamics').delete().eq('id', id)).catch(function(err){ return { error: err }; });
+        if (del && del.error) { btn.disabled = false; ctToast('Could not withdraw that proposal.', 'ti-alert-circle'); return; }
+        ctToast('Proposal withdrawn.', 'ti-x');
+        rerender();
+      });
+    });
+
+    // Owner: pending dynamics panel
+    var pendDynSlot = card.querySelector('[data-pending-dyns-slot]');
+    // Recomputed from EXP: the render-scope list isn't visible in here.
+    var pendDyns = (EXP.dyn || []).filter(function(d){
+      return (d.character_a === char.id || d.character_b === char.id) && d.status === 'pending';
+    });
+    if (pendDynSlot && isOwner && pendDyns.length) {
+      pendDynSlot.innerHTML = '<div class="ct-exp-form-title" style="padding:8px 12px 4px;">Pending approval (' + pendDyns.length + ')</div>' +
+        pendDyns.map(function(d) {
+          var other = EXP.charNames[d.character_a === char.id ? d.character_b : d.character_a] || '?';
+          return '<div class="ct-dyn-row" data-pend-dyn="' + esc(d.id) + '">' +
+            '<div class="ct-dyn-row-label"><strong>' + esc(d.label) + '</strong> with ' + esc(other) + '</div>' +
+            '<button class="ct-exp-approve" data-dyna="' + esc(d.id) + '" data-dynu="' + esc(d.created_by || '') + '" title="Approve"><i class="ti ti-check"></i></button>' +
+            '<button class="ct-exp-reject" data-dynr="' + esc(d.id) + '" data-dynu="' + esc(d.created_by || '') + '" title="Decline"><i class="ti ti-x"></i></button>' +
+          '</div>';
+        }).join('');
+      pendDynSlot.querySelectorAll('[data-dyna]').forEach(function(b) {
+        b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
+          await Promise.resolve(db().from('character_dynamics').update({ status: 'active' }).eq('id', b.getAttribute('data-dyna'))).catch(function(){});
+          ctNotifyUser(b.getAttribute('data-dynu'), uid, workId, char.id, 'dynamic_approved', 'Your dynamic for ' + char.name + ' was approved by the author!');
+          rerender();
+        });
+      });
+      pendDynSlot.querySelectorAll('[data-dynr]').forEach(function(b) {
+        b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
+          await Promise.resolve(db().from('character_dynamics').update({ status: 'rejected' }).eq('id', b.getAttribute('data-dynr'))).catch(function(){});
+          ctNotifyUser(b.getAttribute('data-dynu'), uid, workId, char.id, 'dynamic_rejected', 'Your dynamic for ' + char.name + ' wasn\u2019t approved this time.');
+          rerender();
+        });
+      });
+    }
+
     var proposeBtn = card.querySelector('[data-dyn-propose]');
     if (proposeBtn) {
       proposeBtn.addEventListener('click', async function(e) {
@@ -1696,7 +1758,7 @@ window.CharacterTitles = (function() {
           await Promise.resolve(db().from('character_dynamic_votes').insert({ dynamic_id: res.data.id, user_id: uid })).catch(function(){});
           try { await db().rpc('award_shipper_badge', { p_user_id: uid, p_character_id: char.id }); } catch(e) {}
         }
-        ctToast('Dynamic proposed!', 'ti-arrows-left-right');
+        ctToast('Sent to the author for approval!', 'ti-arrows-left-right');
         rerender();
       });
     }
