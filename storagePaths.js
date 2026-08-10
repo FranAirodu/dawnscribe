@@ -39,8 +39,117 @@
     COMMENT_IMAGES: 'comment-images'
   };
 
+  /* ── Downscale policy, per bucket ──────────────────────────────────────
+     maxPx  = longest edge, in pixels. Never upscales; a smaller image is
+              left alone entirely.
+     quality = re-encode quality for lossy formats (JPEG/WebP).
+     null policy = this bucket is never touched.
+
+     Deliberate exclusions:
+       cosmetic-assets — avatar layers must line up pixel-for-pixel with the
+                         body base. Resampling them would misregister every
+                         composited avatar on the site. Never resized.
+     Deliberate conservatism:
+       collab-art      — this is artwork readers pay for and artists earn
+                         royalties on. 2400px preserves detail; it only
+                         catches genuinely oversized camera output.
+     ──────────────────────────────────────────────────────────────────── */
+  var RESIZE = {
+    'avatars':         { maxPx: 768,  quality: 0.88 },
+    'banners':         { maxPx: 1920, quality: 0.85 },
+    'covers':          { maxPx: 1600, quality: 0.85 },
+    'collab-art':      { maxPx: 2400, quality: 0.90 },
+    'comment-images':  { maxPx: 1280, quality: 0.82 },
+    'cosmetic-assets': null
+  };
+
+  // Formats we will re-encode. GIF is excluded on purpose: drawing a GIF to a
+  // canvas keeps only the first frame, so resizing one silently destroys the
+  // animation. SVG is excluded because it has no pixel dimensions to reduce.
+  var RESIZABLE_TYPES = { 'image/jpeg': true, 'image/png': true, 'image/webp': true };
+
   function isAbsolute(v) {
     return typeof v === 'string' && /^(https?:)?\/\//i.test(v);
+  }
+
+  function loadBitmap(blob) {
+    return new Promise(function (resolve, reject) {
+      if (global.createImageBitmap) {
+        global.createImageBitmap(blob).then(resolve, function () { fallback(); });
+      } else { fallback(); }
+
+      function fallback() {
+        var img = new Image();
+        var u = URL.createObjectURL(blob);
+        img.onload = function () { URL.revokeObjectURL(u); resolve(img); };
+        img.onerror = function () { URL.revokeObjectURL(u); reject(new Error('decode failed')); };
+        img.src = u;
+      }
+    });
+  }
+
+  /* Downscale an image blob if it exceeds the bucket's policy.
+
+     Guarantees, in order of importance:
+       1. The output MIME type always equals the input MIME type. Stored paths
+          carry the original file extension, so changing format would leave
+          .png files containing WebP data.
+       2. Never upscales.
+       3. Alpha is preserved (no PNG-to-JPEG conversion, canvas left
+          transparent rather than filled).
+       4. If anything fails, or the result is not actually smaller, the
+          original file is returned untouched. A resize must never be able to
+          block an upload.                                                   */
+  async function shrinkIfNeeded(bucket, file) {
+    try {
+      var policy = RESIZE[bucket];
+      if (!policy || !file) return file;
+
+      var type = file.type || '';
+      if (!RESIZABLE_TYPES[type]) return file;
+      if (typeof document === 'undefined' || !global.HTMLCanvasElement) return file;
+
+      var bmp = await loadBitmap(file);
+      var w = bmp.width, h = bmp.height;
+      if (!w || !h) return file;
+
+      var longest = Math.max(w, h);
+      if (longest <= policy.maxPx) {
+        if (bmp.close) bmp.close();
+        return file;                     // already small enough
+      }
+
+      var scale = policy.maxPx / longest;
+      var nw = Math.max(1, Math.round(w * scale));
+      var nh = Math.max(1, Math.round(h * scale));
+
+      var canvas = document.createElement('canvas');
+      canvas.width = nw; canvas.height = nh;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      ctx.imageSmoothingEnabled = true;
+      if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, 0, 0, nw, nh);
+      if (bmp.close) bmp.close();
+
+      var out = await new Promise(function (resolve) {
+        try { canvas.toBlob(resolve, type, policy.quality); }
+        catch (e) { resolve(null); }
+      });
+
+      // Re-encoding a flat-colour PNG can come out larger than the original.
+      if (!out || !out.size || out.size >= file.size) return file;
+
+      // Preserve the filename so callers that read file.name still work.
+      if (file.name && global.File) {
+        try {
+          return new File([out], file.name, { type: type, lastModified: Date.now() });
+        } catch (e) { /* fall through to the plain Blob */ }
+      }
+      return out;
+    } catch (e) {
+      return file;                        // any failure: upload the original
+    }
   }
 
   function trimSlashes(v) {
@@ -85,7 +194,16 @@
       if (UPLOAD_PROVIDER !== 'supabase') {
         return { error: { message: 'Uploads are not configured for provider "' + UPLOAD_PROVIDER + '".' } };
       }
-      var res = await db.storage.from(bucket).upload(trimSlashes(path), file, opts || {});
+      opts = opts || {};
+      var payload = opts.noResize ? file : await shrinkIfNeeded(bucket, file);
+
+      // contentType must follow the payload, not the original, or Supabase
+      // infers it from the path extension and can disagree with the bytes.
+      var sendOpts = {};
+      for (var k in opts) { if (k !== 'noResize') sendOpts[k] = opts[k]; }
+      if (!sendOpts.contentType && payload && payload.type) sendOpts.contentType = payload.type;
+
+      var res = await db.storage.from(bucket).upload(trimSlashes(path), payload, sendOpts);
       return { error: (res && res.error) || null };
     } catch (e) {
       return { error: e || { message: 'Upload failed.' } };
@@ -123,6 +241,8 @@
     urlFresh: urlFresh,
     upload: upload,
     remove: remove,
-    pathFromUrl: pathFromUrl
+    pathFromUrl: pathFromUrl,
+    shrinkIfNeeded: shrinkIfNeeded,
+    resizePolicy: function (bucket) { return RESIZE[bucket] || null; }
   };
 })(window);
