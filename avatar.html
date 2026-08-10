@@ -165,6 +165,11 @@
     .item-option-thumb { width: 40px; height: 40px; border-radius: 8px; background: var(--bg4); display: flex; align-items: center; justify-content: center; color: var(--text3); font-size: 18px; }
     .item-option.locked { cursor: pointer; opacity: 0.85; position: relative; }
     .item-option.locked:hover { border-color: rgba(245,158,11,0.5); }
+    /* Owned (Quills paid) but not yet Ember-unlocked. Distinguished from an
+       unpurchased tile so the two phases never look alike. */
+    .item-option.owned-locked { cursor: pointer; opacity: 0.92; position: relative; border-color: rgba(249,115,22,0.45); }
+    .item-option.owned-locked:hover { border-color: rgba(249,115,22,0.8); }
+    .item-option-price.ember { color: #f97316; }
     .item-option-price { display: flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; color: var(--gold); margin-top: 1px; }
     .item-option-price i { font-size: 11px; }
     .buy-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 600; align-items: center; justify-content: center; padding: 20px; }
@@ -250,12 +255,25 @@
 <div class="buy-modal-overlay" id="buy-modal-overlay">
   <div class="buy-modal">
     <h3 id="buy-modal-name">Item</h3>
-    <p>Unlock this item permanently for your avatar.</p>
+    <p>Buy this item permanently. Once it's yours, spend a few Embers to unlock it for your avatar.</p>
     <div class="buy-modal-price"><i class="ti ti-feather"></i> <span id="buy-modal-price-amount">0</span> Quills</div>
     <div style="font-size:11px;color:var(--text3);margin-bottom:14px;" id="buy-modal-balance-note">You have 0 Quills.</div>
     <div class="buy-modal-btns">
       <button class="buy-modal-btn cancel" onclick="closeBuyModal()">Cancel</button>
       <button class="buy-modal-btn confirm" id="buy-modal-confirm-btn" onclick="confirmPurchase()">Purchase</button>
+    </div>
+  </div>
+</div>
+
+<div class="buy-modal-overlay" id="unlock-modal-overlay">
+  <div class="buy-modal">
+    <h3 id="unlock-modal-name">Item</h3>
+    <p>This item is yours. Spend Embers to unlock it for your avatar.</p>
+    <div class="buy-modal-price" style="color:#f97316;"><i class="ti ti-flame"></i> <span id="unlock-modal-price-amount">0</span> Embers</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:14px;" id="unlock-modal-balance-note">You have 0 Embers.</div>
+    <div class="buy-modal-btns">
+      <button class="buy-modal-btn cancel" onclick="closeEmberUnlockModal()">Later</button>
+      <button class="buy-modal-btn confirm" id="unlock-modal-confirm-btn" onclick="confirmEmberUnlock()">Unlock</button>
     </div>
   </div>
 </div>
@@ -405,6 +423,7 @@
   var isFirstVisit = false;  // true when no user_avatars row existed at load — triggers the one-time skin picker
   var allItems = [];          // all cosmetic_items rows
   var unlockedItemIds = new Set();
+  var ownedItemIds = new Set();
   var activeSlot = 'shirt';
   var activeRegionId = null; // which fill_region of the active item is selected for Color Unlock
   var dirty = false;
@@ -427,10 +446,11 @@
     }
     currentUid = session.user.id;
 
-    var [avatarResult, itemsResult, unlockedResult, embersResult, quillsResult, paletteResult, accentPaletteResult, bodyPresetsResult] = await Promise.all([
+    var [avatarResult, itemsResult, unlockedResult, ownedResult, embersResult, quillsResult, paletteResult, accentPaletteResult, bodyPresetsResult] = await Promise.all([
       db.from('user_avatars').select('*').eq('user_id', currentUid).maybeSingle(),
       db.from('cosmetic_items').select('*').or('status.eq.approved,is_base_item.eq.true'),
       db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', currentUid),
+      db.from('cosmetic_item_owns').select('cosmetic_item_id').eq('user_id', currentUid),
       db.from('user_embers').select('balance').eq('user_id', currentUid).maybeSingle(),
       db.from('user_quills').select('balance').eq('user_id', currentUid).maybeSingle(),
       db.from('reroll_color_palette').select('hex,label'),
@@ -456,6 +476,10 @@
 
     allItems = itemsResult.data || [];
     unlockedItemIds = new Set((unlockedResult.data || []).map(function(u){ return u.cosmetic_item_id; }));
+    // Cosmetics are two-phase: bought with Quills (cosmetic_item_owns, pays the
+    // creator) then unlocked with Embers (user_unlocked_items, makes it usable).
+    // Anything in ownedItemIds but not unlockedItemIds is paid for but not yet wearable.
+    ownedItemIds = new Set((ownedResult.data || []).map(function(u){ return u.cosmetic_item_id; }));
 
     isFirstVisit = !avatarResult.data;
     if (avatarResult.data) {
@@ -509,11 +533,20 @@
     });
   }
 
-  // Marketplace items for this slot the user doesn't own yet — shown as
+  // Marketplace items for this slot the user hasn't bought yet — shown as
   // purchasable tiles rather than left out entirely.
   function getPurchasableItemsForSlot(slot) {
     return allItems.filter(function(it) {
-      return it.slot === slot && it.is_marketplace_item && it.quill_price != null && !it.is_base_item && !unlockedItemIds.has(it.id);
+      return it.slot === slot && it.is_marketplace_item && it.quill_price != null && !it.is_base_item
+        && !unlockedItemIds.has(it.id) && !ownedItemIds.has(it.id);
+    });
+  }
+
+  // Bought with Quills but still awaiting the Ember unlock. Not equippable yet.
+  function getOwnedLockedItemsForSlot(slot) {
+    return allItems.filter(function(it) {
+      return it.slot === slot && !it.is_base_item
+        && ownedItemIds.has(it.id) && !unlockedItemIds.has(it.id);
     });
   }
 
@@ -1051,6 +1084,7 @@
   function renderItemGrid() {
     var items = getItemsForSlot(activeSlot);
     var purchasable = getPurchasableItemsForSlot(activeSlot);
+    var ownedLocked = getOwnedLockedItemsForSlot(activeSlot);
     var equippedId = avatarData.equipped[activeSlot] ? avatarData.equipped[activeSlot].item_id : null;
     var icon = SLOT_ICONS[activeSlot] || 'ti-diamond';
 
@@ -1065,7 +1099,7 @@
       '</div>';
     }
 
-    if (items.length === 0 && purchasable.length === 0 && slotHasBaseItem === false) {
+    if (items.length === 0 && purchasable.length === 0 && ownedLocked.length === 0 && slotHasBaseItem === false) {
       html += '<div class="empty-note" style="grid-column:1/-1;">No items unlocked for this slot yet. Keep reading to earn rewards!</div>';
     } else {
       items.forEach(function(it) {
@@ -1077,6 +1111,19 @@
         html += '<div class="item-option' + selected + '" onclick="equipItem(&#39;' + esc(it.id) + '&#39;)">' +
           thumb +
           '<div class="item-option-name">' + esc(it.name) + '</div>' +
+        '</div>';
+      });
+      // Phase 2 first: items already paid for are closer to being wearable than
+      // items not yet bought, so they sort ahead of the purchasable tiles.
+      ownedLocked.forEach(function(it) {
+        var thumbColor = (it.fill_regions && it.fill_regions[0]) ? sanitizeHex(it.fill_regions[0].default_color) : null;
+        var thumb = thumbColor
+          ? '<div class="item-option-thumb" style="background:' + thumbColor + ';"></div>'
+          : '<div class="item-option-thumb"><i class="ti ' + icon + '"></i></div>';
+        html += '<div class="item-option owned-locked" onclick="openEmberUnlockModal(&#39;' + esc(it.id) + '&#39;)">' +
+          thumb +
+          '<div class="item-option-name">' + esc(it.name) + '</div>' +
+          '<div class="item-option-price ember"><i class="ti ti-flame"></i> ' + (it.ember_unlock_price != null ? it.ember_unlock_price : 0).toLocaleString() + '</div>' +
         '</div>';
       });
       purchasable.forEach(function(it) {
@@ -1722,6 +1769,69 @@
     document.getElementById('buy-modal-overlay').classList.remove('show');
   };
 
+  // ── PHASE 2: EMBER UNLOCK ────────────────────────────────────────
+  // Quills bought the item and paid its creator; Embers make it wearable.
+  var pendingUnlockItem = null;
+
+  window.openEmberUnlockModal = function(itemId) {
+    var item = allItems.find(function(it){ return it.id === itemId; });
+    if (!item) return;
+    pendingUnlockItem = item;
+    var cost = item.ember_unlock_price != null ? item.ember_unlock_price : 0;
+    document.getElementById('unlock-modal-name').textContent = item.name;
+    document.getElementById('unlock-modal-price-amount').textContent = cost.toLocaleString();
+    var confirmBtn = document.getElementById('unlock-modal-confirm-btn');
+    var insufficient = emberBalance < cost;
+    confirmBtn.disabled = insufficient;
+    confirmBtn.textContent = insufficient ? 'Not enough Embers' : 'Unlock';
+    document.getElementById('unlock-modal-balance-note').textContent =
+      'You have ' + emberBalance.toLocaleString() + ' Embers.';
+    document.getElementById('unlock-modal-overlay').classList.add('show');
+  };
+
+  window.closeEmberUnlockModal = function() {
+    pendingUnlockItem = null;
+    document.getElementById('unlock-modal-overlay').classList.remove('show');
+  };
+
+  window.confirmEmberUnlock = async function() {
+    if (!pendingUnlockItem || !currentUid) return;
+    var btn = document.getElementById('unlock-modal-confirm-btn');
+    btn.disabled = true;
+    btn.textContent = 'Unlocking...';
+    try {
+      var { data, error } = await db.rpc('unlock_marketplace_cosmetic', { p_user_id: currentUid, p_cosmetic_id: pendingUnlockItem.id });
+      if (error || !data || data.status !== 'success') {
+        var code = data && data.error;
+        var msg = code === 'insufficient_embers' ? 'Not enough Embers.'
+          : code === 'not_purchased' ? 'Buy this item with Quills first.'
+          : code === 'already_unlocked' ? 'You already unlocked this item.'
+          : 'Could not unlock this item.';
+        showToast(msg, 'ti-x');
+        btn.disabled = false;
+        btn.textContent = 'Unlock';
+        return;
+      }
+      emberBalance = data.new_balance;
+      unlockedItemIds.add(pendingUnlockItem.id);
+      ownedItemIds.delete(pendingUnlockItem.id);
+      notifyEmbersSpent(data.embers_spent || 0);
+      var eb = document.getElementById('ember-balance-amount');
+      if (eb) eb.textContent = emberBalance.toLocaleString();
+      var ebd = document.getElementById('ember-balance-amount-dawn');
+      if (ebd) ebd.textContent = emberBalance.toLocaleString();
+      closeEmberUnlockModal();
+      renderSlotTabs();
+      renderItemGrid();
+      showToast('Unlocked "' + data.name + '"! Equip it and hit Save Avatar.', 'ti-confetti');
+    } catch(err) {
+      console.error('Ember unlock error:', err);
+      showToast('Something went wrong', 'ti-alert-triangle');
+      btn.disabled = false;
+      btn.textContent = 'Unlock';
+    }
+  };
+
   window.confirmPurchase = async function() {
     if (!pendingBuyItem || !currentUid) return;
     var btn = document.getElementById('buy-modal-confirm-btn');
@@ -1739,12 +1849,16 @@
         return;
       }
       quillBalance = data.new_balance;
-      unlockedItemIds.add(pendingBuyItem.id);
+      // Phase 1 only — the item is owned, not yet wearable. It becomes wearable
+      // after the Ember unlock, so it goes into ownedItemIds, NOT unlockedItemIds.
+      ownedItemIds.add(pendingBuyItem.id);
       var quillCountEl = document.getElementById('ds-quill-count');
       if (quillCountEl) quillCountEl.textContent = quillBalance.toLocaleString();
-      showToast('Unlocked "' + data.name + '"!', 'ti-shopping-bag');
+      var boughtId = pendingBuyItem.id;
       closeBuyModal();
       renderItemGrid();
+      showToast('"' + data.name + '" is yours — unlock it with Embers to wear it.', 'ti-shopping-bag');
+      openEmberUnlockModal(boughtId);
     } catch(err) {
       console.error('Purchase error:', err);
       showToast('Something went wrong', 'ti-alert-triangle');

@@ -68,6 +68,126 @@
   // animation. SVG is excluded because it has no pixel dimensions to reduce.
   var RESIZABLE_TYPES = { 'image/jpeg': true, 'image/png': true, 'image/webp': true };
 
+  /* ── WebP conversion policy, per bucket ────────────────────────────────
+     WebP is typically 25-35% smaller than JPEG and far smaller than PNG for
+     photographic content. Egress, not storage, is the cost meter, so this is
+     the single highest-leverage saving available on the image pipeline.
+
+     IMPORTANT — why the stored path keeps its original extension:
+     All ten upload call sites build a path locally and then reuse that same
+     variable to persist the URL. Rewriting the extension inside upload()
+     would desync every one of them, so instead the bytes change and the
+     extension does not. This is safe because Content-Type, not the file
+     extension, determines how a browser decodes an image, and upload() below
+     always sets contentType from the payload. A '.png' object served as
+     image/webp renders correctly everywhere.
+
+     The one place this could matter is a future move to a provider that
+     serves by extension and ignores stored content types. upload() now
+     returns the canonical path (with the extension the bytes actually
+     deserve) as `path`, so call sites can be migrated to persist that and a
+     one-time rename migration can follow. Until then the mismatch is inert.
+
+     Excluded:
+       cosmetic-assets — never touched at all (see RESIZE above).
+       avatars         — head shots are generated PNGs composited by
+                         avatarRender.js and written with an explicit
+                         contentType; leave that pipeline byte-predictable.
+     ──────────────────────────────────────────────────────────────────── */
+  var CONVERT_TO_WEBP = {
+    'banners':         { quality: 0.85 },
+    'covers':          { quality: 0.85 },
+    'collab-art':      { quality: 0.92 },   // paid artwork: bias toward fidelity
+    'comment-images':  { quality: 0.82 },
+    'avatars':         null,
+    'cosmetic-assets': null
+  };
+
+  // Source formats worth converting. Already-WebP input is left alone: it would
+  // be a lossy round-trip for no gain.
+  var CONVERTIBLE_TYPES = { 'image/jpeg': true, 'image/png': true };
+
+  var _webpSupport = null;   // null = untested, true/false once known
+
+  /* Does this browser's canvas actually ENCODE WebP? Safari decodes WebP long
+     before it could encode it, so feature-detecting on decode would be wrong.
+     canvas.toBlob silently falls back to PNG when it cannot honour the type,
+     so the only reliable test is to encode and inspect what came back. */
+  async function canEncodeWebp() {
+    if (_webpSupport !== null) return _webpSupport;
+    try {
+      if (typeof document === 'undefined' || !global.HTMLCanvasElement) {
+        _webpSupport = false; return false;
+      }
+      var c = document.createElement('canvas');
+      c.width = 2; c.height = 2;
+      var b = await new Promise(function (resolve) {
+        try { c.toBlob(resolve, 'image/webp', 0.8); } catch (e) { resolve(null); }
+      });
+      _webpSupport = !!(b && b.type === 'image/webp');
+    } catch (e) {
+      _webpSupport = false;
+    }
+    return _webpSupport;
+  }
+
+  /* Swap a path's extension. Used only for the canonical path reported back to
+     the caller — the object is still written at the original path. */
+  function withExtension(path, ext) {
+    var p = String(path == null ? '' : path);
+    var slash = p.lastIndexOf('/');
+    var dot = p.lastIndexOf('.');
+    if (dot > slash && dot !== -1) return p.slice(0, dot) + '.' + ext;
+    return p + '.' + ext;
+  }
+
+  /* Re-encode to WebP if the bucket opts in and it is actually smaller.
+     Same failure contract as shrinkIfNeeded: any problem returns the input
+     untouched. Runs AFTER downscaling, so it re-encodes the already-reduced
+     pixels rather than the original. */
+  async function convertToWebpIfWorthwhile(bucket, file) {
+    try {
+      var policy = CONVERT_TO_WEBP[bucket];
+      if (!policy || !file) return file;
+
+      var type = file.type || '';
+      if (!CONVERTIBLE_TYPES[type]) return file;
+      if (!(await canEncodeWebp())) return file;
+
+      var bmp = await loadBitmap(file);
+      var w = bmp.width, h = bmp.height;
+      if (!w || !h) { if (bmp.close) bmp.close(); return file; }
+
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) { if (bmp.close) bmp.close(); return file; }
+      // Canvas is left transparent rather than filled, so PNG alpha survives
+      // the trip into WebP (which supports alpha).
+      ctx.drawImage(bmp, 0, 0);
+      if (bmp.close) bmp.close();
+
+      var out = await new Promise(function (resolve) {
+        try { canvas.toBlob(resolve, 'image/webp', policy.quality); }
+        catch (e) { resolve(null); }
+      });
+
+      // Guard against a silent PNG fallback, and against the conversion
+      // coming out bigger (common for small flat-colour source images).
+      if (!out || !out.size || out.type !== 'image/webp' || out.size >= file.size) return file;
+
+      if (file.name && global.File) {
+        try {
+          return new File([out], withExtension(file.name, 'webp'),
+                          { type: 'image/webp', lastModified: Date.now() });
+        } catch (e) { /* fall through to the plain Blob */ }
+      }
+      return out;
+    } catch (e) {
+      return file;
+    }
+  }
+
   function isAbsolute(v) {
     return typeof v === 'string' && /^(https?:)?\/\//i.test(v);
   }
@@ -197,14 +317,36 @@
       opts = opts || {};
       var payload = opts.noResize ? file : await shrinkIfNeeded(bucket, file);
 
+      // WebP conversion is skipped when the caller asserted an explicit
+      // contentType — that call site is declaring the exact format it wants
+      // written, and overriding it would be a surprise.
+      if (!opts.noConvert && !opts.contentType) {
+        payload = await convertToWebpIfWorthwhile(bucket, payload);
+      }
+
       // contentType must follow the payload, not the original, or Supabase
       // infers it from the path extension and can disagree with the bytes.
+      // This is also what makes the extension mismatch harmless: the object is
+      // served as image/webp regardless of the '.png' in its path.
       var sendOpts = {};
-      for (var k in opts) { if (k !== 'noResize') sendOpts[k] = opts[k]; }
+      for (var k in opts) { if (k !== 'noResize' && k !== 'noConvert') sendOpts[k] = opts[k]; }
       if (!sendOpts.contentType && payload && payload.type) sendOpts.contentType = payload.type;
 
-      var res = await db.storage.from(bucket).upload(trimSlashes(path), payload, sendOpts);
-      return { error: (res && res.error) || null };
+      var writePath = trimSlashes(path);
+      var res = await db.storage.from(bucket).upload(writePath, payload, sendOpts);
+
+      /* `path` is the path the object was actually written to — persist this.
+         `canonicalPath` is the path the bytes deserve by extension. They differ
+         only when a conversion happened; see the CONVERT_TO_WEBP note above.
+         Nothing reads canonicalPath yet; it exists so a later migration can. */
+      return {
+        error: (res && res.error) || null,
+        path: writePath,
+        canonicalPath: (payload && payload.type === 'image/webp')
+          ? withExtension(writePath, 'webp')
+          : writePath,
+        contentType: (payload && payload.type) || null
+      };
     } catch (e) {
       return { error: e || { message: 'Upload failed.' } };
     }
@@ -243,6 +385,10 @@
     remove: remove,
     pathFromUrl: pathFromUrl,
     shrinkIfNeeded: shrinkIfNeeded,
-    resizePolicy: function (bucket) { return RESIZE[bucket] || null; }
+    convertToWebpIfWorthwhile: convertToWebpIfWorthwhile,
+    canEncodeWebp: canEncodeWebp,
+    withExtension: withExtension,
+    resizePolicy: function (bucket) { return RESIZE[bucket] || null; },
+    convertPolicy: function (bucket) { return CONVERT_TO_WEBP[bucket] || null; }
   };
 })(window);
