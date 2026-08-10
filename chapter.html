@@ -944,27 +944,33 @@
       var polls = pollsResult.data || [];
       if (polls.length === 0) return;
 
-      var pollIds = polls.map(function(p){ return p.id; });
-      var votesResult = await db.from('chapter_poll_votes').select('poll_id,user_id,option_indices').in('poll_id', pollIds);
-      var allVotes = votesResult.data || [];
+      // Tallies come from get_chapter_poll_results(), which returns aggregate
+      // counts plus this caller's own vote. We used to select every raw
+      // chapter_poll_votes row (user_id included) and count them in the browser,
+      // which meant anyone could read exactly how each individual voted and
+      // show_votes_publicly was unenforceable. The RPC also withholds counts
+      // entirely when this viewer isn't entitled to see results.
+      var resultsRes = await db.rpc('get_chapter_poll_results', { p_chapter_id: chapterData.id });
+      var resultsMap = {};
+      (resultsRes && resultsRes.data ? resultsRes.data : []).forEach(function(r) {
+        resultsMap[r.poll_id] = r;
+      });
 
       chapterPolls = polls.map(function(p) {
-        var votesForPoll = allVotes.filter(function(v){ return v.poll_id === p.id; });
+        var r = resultsMap[p.id] || {};
+        var nOpts = (p.options || []).length;
+        // vote_counts is null when results are withheld; render as zeros so the
+        // bars/percentages stay at 0 rather than throwing.
         var voteCounts = (p.options || []).map(function(){ return 0; });
-        votesForPoll.forEach(function(v) {
-          (v.option_indices || []).forEach(function(idx) {
-            if (voteCounts[idx] !== undefined) voteCounts[idx]++;
-          });
-        });
-        var myVote = null;
-        if (currentSession) {
-          var mine = votesForPoll.find(function(v){ return v.user_id === currentSession.user.id; });
-          if (mine) myVote = mine.option_indices || [];
+        if (Array.isArray(r.vote_counts)) {
+          for (var i = 0; i < nOpts; i++) voteCounts[i] = r.vote_counts[i] || 0;
         }
+        var myVote = Array.isArray(r.my_vote) ? r.my_vote : null;
         return {
           poll: p,
           voteCounts: voteCounts,
-          totalVoters: votesForPoll.length,
+          totalVoters: r.total_voters || 0,
+          showResults: r.show_results === true,
           myVote: myVote,
           selected: myVote ? myVote.slice() : []
         };
@@ -976,7 +982,12 @@
     }
 
     // Should results (bars/percentages) be visible to this viewer?
+    // The server already decided this in get_chapter_poll_results() and withheld
+    // the counts if not -- so this is display bookkeeping, not the enforcement
+    // point. Same precedence retained as a fallback for any state built before
+    // the RPC has answered.
     function pollShowResults(state) {
+      if (typeof state.showResults === 'boolean') return state.showResults;
       var p = state.poll;
       if (p.show_votes_publicly) return true;
       if (state.myVote !== null) return true; // voters can always see results of polls they voted in
@@ -1108,29 +1119,30 @@
         return;
       }
 
-      // Update local vote counts optimistically
-      var prevVote = state.myVote || [];
-      prevVote.forEach(function(idx) {
-        if (state.voteCounts[idx] > 0) state.voteCounts[idx]--;
-      });
-      state.selected.forEach(function(idx) {
-        state.voteCounts[idx]++;
-      });
-      // totalVoters tracks unique voters (used for display consistency)
       var _wasNewVote = (state.myVote === null);
-      if (_wasNewVote) state.totalVoters++;
+      var _selected = state.selected.slice();
 
       showToast('Vote recorded!', 'ti-check');
 
       // ── VOTER BADGE ───────────────────────────────────────
       // Only award on a new vote (not on updates); _wasNewVote was captured above
-      state.myVote = state.selected.slice();
+      state.myVote = _selected;
 
       if (currentSession && _wasNewVote) {
         try {
           await db.rpc('award_poll_vote_badge', { p_user_id: currentSession.user.id });
         } catch(e) {} // non-critical
       }
+
+      // Re-read the authoritative tallies rather than adjusting them locally.
+      // The client can no longer see other people's votes, so it cannot derive
+      // counts on its own -- and the server enforces max_choices / allow_change /
+      // closes_at, so a local guess could disagree with what was actually stored.
+      try {
+        await loadChapterPolls();
+      } catch(e) {}
+      var refreshed = chapterPolls.find(function(s2){ return s2.poll.position === pos; });
+      if (refreshed) refreshed.selected = _selected;
       renderPoll(pos);
     }
 
