@@ -37,6 +37,7 @@
   <meta name="twitter:description" id="tw-description" content="Read on DawnScribe."/>
   <meta name="twitter:image" id="tw-image" content=""/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="storagePaths.js"></script>
   <script src="spoilerUtils.js"></script>
   <script src="blockUtils.js"></script>
   <script src="translateHint.js"></script>
@@ -3895,9 +3896,9 @@
       try {
         var ext=landscapeFileData.name.split('.').pop();
         var path=currentSession.user.id+'/landscape-'+workData.id+'-'+Date.now()+'.'+ext;
-        var { error: upErr }=await db.storage.from('collab-art').upload(path,landscapeFileData,{upsert:false});
+        var { error: upErr }=await DSStorage.upload(db, DSStorage.BUCKETS.COLLAB_ART, path, landscapeFileData, {upsert:false});
         if(upErr) throw upErr;
-        var { data: urlData }=db.storage.from('collab-art').getPublicUrl(path);
+        var urlData={publicUrl:DSStorage.url(db, DSStorage.BUCKETS.COLLAB_ART, path)};
         var { error: dbErr }=await db.from('story_landscapes').insert({work_id:workData.id,artist_id:currentSession.user.id,image_url:urlData.publicUrl,status:'pending',description:desc||null});
         if(dbErr) throw dbErr;
         if(workData.author_id && workData.author_id !== currentSession.user.id){
@@ -4064,7 +4065,7 @@
       var btn=document.getElementById('collab-del-confirm-btn'); btn.textContent='Deleting…'; btn.disabled=true;
       var { error }=await db.from('story_collabs').delete().eq('id',collabDeleteTarget.id);
       if(error){ showToast('Could not delete artwork.','ti-x'); btn.textContent='Yes, delete'; btn.disabled=false; return; }
-      try{ var path=collabDeleteTarget.imageUrl.split('/collab-art/')[1]; if(path) await db.storage.from('collab-art').remove([decodeURIComponent(path)]); } catch(e){}
+      try{ var path=DSStorage.pathFromUrl(DSStorage.BUCKETS.COLLAB_ART, collabDeleteTarget.imageUrl); if(path) await DSStorage.remove(db, DSStorage.BUCKETS.COLLAB_ART, path); } catch(e){}
       closeCollabDelModal(); showToast('Artwork removed.','ti-trash'); btn.textContent='Yes, delete'; btn.disabled=false; loadCollabs();
     }
 
@@ -4077,9 +4078,9 @@
       try {
         var ext=collabFileData.name.split('.').pop();
         var path=currentSession.user.id+'/'+workData.id+'-'+Date.now()+'.'+ext;
-        var { error: upErr }=await db.storage.from('collab-art').upload(path,collabFileData,{upsert:false});
+        var { error: upErr }=await DSStorage.upload(db, DSStorage.BUCKETS.COLLAB_ART, path, collabFileData, {upsert:false});
         if(upErr) throw upErr;
-        var { data: urlData }=db.storage.from('collab-art').getPublicUrl(path);
+        var urlData={publicUrl:DSStorage.url(db, DSStorage.BUCKETS.COLLAB_ART, path)};
         var { data: insertedCollab, error: dbErr }=await db.from('story_collabs').insert({work_id:workData.id,artist_id:currentSession.user.id,image_url:urlData.publicUrl,status:'pending',description:desc,inspiration:inspo||null,character_id:(document.getElementById('collab-character-select')&&document.getElementById('collab-character-select').value)||null}).select().single();
         if(dbErr) throw dbErr;
         // Notify the novel author

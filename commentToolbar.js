@@ -1,3 +1,54 @@
+/* ── DSStorage fallback ──────────────────────────────────────────────────
+   storagePaths.js is the real implementation and is loaded by the pages that
+   were updated in this pass. This module is also loaded by pages that have
+   not been updated yet (artwork.html, chapter.html, chapters.html), so it
+   installs a minimal pass-through if the real helper is absent. Behaviour is
+   identical to the pre-refactor inline SDK calls, so nothing changes on those
+   pages until storagePaths.js is added to them.
+   ──────────────────────────────────────────────────────────────────────── */
+if (!window.DSStorage) {
+  window.DSStorage = {
+    BUCKETS: {
+      AVATARS: 'avatars', BANNERS: 'banners', COVERS: 'covers',
+      COLLAB_ART: 'collab-art', COSMETIC_ASSETS: 'cosmetic-assets',
+      COMMENT_IMAGES: 'comment-images'
+    },
+    provider: function () { return 'supabase'; },
+    url: function (db, bucket, p) {
+      if (!p) return '';
+      if (/^(https?:)?\/\//i.test(p)) return p;
+      try { return db.storage.from(bucket).getPublicUrl(p).data.publicUrl || ''; }
+      catch (e) { return ''; }
+    },
+    urlFresh: function (db, bucket, p, stamp) {
+      var u = window.DSStorage.url(db, bucket, p);
+      if (!u) return '';
+      return u + (u.indexOf('?') === -1 ? '?' : '&') + 'v=' + (stamp == null ? Date.now() : stamp);
+    },
+    upload: async function (db, bucket, p, file, opts) {
+      try {
+        var r = await db.storage.from(bucket).upload(p, file, opts || {});
+        return { error: (r && r.error) || null };
+      } catch (e) { return { error: e || { message: 'Upload failed.' } }; }
+    },
+    remove: async function (db, bucket, paths) {
+      try {
+        var list = (Array.isArray(paths) ? paths : [paths]).filter(Boolean);
+        if (!list.length) return { error: null };
+        var r = await db.storage.from(bucket).remove(list);
+        return { error: (r && r.error) || null };
+      } catch (e) { return { error: e || { message: 'Delete failed.' } }; }
+    },
+    pathFromUrl: function (bucket, absUrl) {
+      if (!absUrl || typeof absUrl !== 'string') return '';
+      var m = '/' + bucket + '/', i = absUrl.indexOf(m);
+      if (i === -1) return '';
+      var tail = absUrl.slice(i + m.length).split('?')[0];
+      try { return decodeURIComponent(tail); } catch (e) { return tail; }
+    }
+  };
+}
+
 /**
  * commentToolbar.js
  * Shared module for DawnScribe comment forms.
@@ -406,9 +457,9 @@
       var ext = file.type === 'image/gif' ? 'gif' : 'jpg';
       var path = 'comments/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
       var contentType = file.type === 'image/gif' ? 'image/gif' : 'image/jpeg';
-      var { error } = await _db.storage.from(IMAGE_BUCKET).upload(path, uploadFile, { upsert: false, contentType: contentType });
+      var { error } = await DSStorage.upload(_db, IMAGE_BUCKET, path, uploadFile, { upsert: false, contentType: contentType });
       if (error) throw error;
-      var url = _db.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+      var url = DSStorage.url(_db, IMAGE_BUCKET, path);
       _pendingImage[context] = url;
       if (btn) btn.classList.add('has-attachment');
       refreshPreview(context);

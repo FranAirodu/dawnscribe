@@ -2,6 +2,57 @@
 // characterTitles.js — DawnScribe Character Titles System
 // ═══════════════════════════════════════════════════════════════
 
+/* ── DSStorage fallback ──────────────────────────────────────────────────
+   storagePaths.js is the real implementation and is loaded by the pages that
+   were updated in this pass. This module is also loaded by pages that have
+   not been updated yet (artwork.html, chapter.html, chapters.html), so it
+   installs a minimal pass-through if the real helper is absent. Behaviour is
+   identical to the pre-refactor inline SDK calls, so nothing changes on those
+   pages until storagePaths.js is added to them.
+   ──────────────────────────────────────────────────────────────────────── */
+if (!window.DSStorage) {
+  window.DSStorage = {
+    BUCKETS: {
+      AVATARS: 'avatars', BANNERS: 'banners', COVERS: 'covers',
+      COLLAB_ART: 'collab-art', COSMETIC_ASSETS: 'cosmetic-assets',
+      COMMENT_IMAGES: 'comment-images'
+    },
+    provider: function () { return 'supabase'; },
+    url: function (db, bucket, p) {
+      if (!p) return '';
+      if (/^(https?:)?\/\//i.test(p)) return p;
+      try { return db.storage.from(bucket).getPublicUrl(p).data.publicUrl || ''; }
+      catch (e) { return ''; }
+    },
+    urlFresh: function (db, bucket, p, stamp) {
+      var u = window.DSStorage.url(db, bucket, p);
+      if (!u) return '';
+      return u + (u.indexOf('?') === -1 ? '?' : '&') + 'v=' + (stamp == null ? Date.now() : stamp);
+    },
+    upload: async function (db, bucket, p, file, opts) {
+      try {
+        var r = await db.storage.from(bucket).upload(p, file, opts || {});
+        return { error: (r && r.error) || null };
+      } catch (e) { return { error: e || { message: 'Upload failed.' } }; }
+    },
+    remove: async function (db, bucket, paths) {
+      try {
+        var list = (Array.isArray(paths) ? paths : [paths]).filter(Boolean);
+        if (!list.length) return { error: null };
+        var r = await db.storage.from(bucket).remove(list);
+        return { error: (r && r.error) || null };
+      } catch (e) { return { error: e || { message: 'Delete failed.' } }; }
+    },
+    pathFromUrl: function (bucket, absUrl) {
+      if (!absUrl || typeof absUrl !== 'string') return '';
+      var m = '/' + bucket + '/', i = absUrl.indexOf(m);
+      if (i === -1) return '';
+      var tail = absUrl.slice(i + m.length).split('?')[0];
+      try { return decodeURIComponent(tail); } catch (e) { return tail; }
+    }
+  };
+}
+
 window.CharacterTitles = (function() {
 
   // ── CATEGORY META ─────────────────────────────────────────────
@@ -762,9 +813,9 @@ window.CharacterTitles = (function() {
 
         var ext = file.name.split('.').pop();
         var path = activeUploadCharId + '-portrait-' + Date.now() + '.' + ext;
-        var { error: upErr } = await db().storage.from('avatars').upload(path, file, { upsert: true });
+        var { error: upErr } = await DSStorage.upload(db(), DSStorage.BUCKETS.AVATARS, path, file, { upsert: true });
         if (upErr) { if(btn){btn.innerHTML='<i class="ti ti-pencil"></i> Edit';btn.disabled=false;} return; }
-        var { data: urlData } = db().storage.from('avatars').getPublicUrl(path);
+        var urlData = { publicUrl: DSStorage.url(db(), DSStorage.BUCKETS.AVATARS, path) };
         var url = urlData.publicUrl;
 
         await db().from('novel_characters').update({ portrait_url: url }).eq('id', activeUploadCharId);
