@@ -487,7 +487,7 @@ window.CharacterTitles = (function() {
     if (error) {
       if (fb) fb.innerHTML = '<span style="color:var(--red);">Error: ' + esc(error.message) + '</span>';
     } else {
-      if (fb) fb.innerHTML = '<span style="color:var(--green);"><i class="ti ti-check"></i> Submitted! You\'ll be notified by email after review.</span>';
+      if (fb) fb.innerHTML = '<span style="color:var(--green);"><i class="ti ti-check"></i> Submitted! You\'ll get a notification once it\'s reviewed.</span>';
       setTimeout(closeSuggestModal, 2200);
     }
   }

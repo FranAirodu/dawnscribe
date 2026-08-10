@@ -893,7 +893,7 @@ function dsApplyAccent(hex) {
       var { data: actRows } = await db.from('notifications')
         .select('id,type,message,work_id,chapter_id,created_at')
         .eq('user_id', uid)
-        .in('type', ['song_approved','song_rejected','fan_translation_linked','opinion_submitted','opinion_approved','opinion_featured','quote_submitted','quote_approved','quote_rejected','question_submitted','question_answered','question_declined','collab_request','showcase_collab_request','showcase_collab_accepted','showcase_collab_declined','echo','poll_closing'])
+        .in('type', ['song_approved','song_rejected','fan_translation_linked','opinion_submitted','opinion_approved','opinion_featured','quote_submitted','quote_approved','quote_rejected','question_submitted','question_answered','question_declined','collab_request','showcase_collab_request','showcase_collab_accepted','showcase_collab_declined','echo','poll_closing','title_approved','title_denied'])
         .order('created_at', { ascending: false })
         .limit(12);
       var clearedAct = dsGetClearedIds('activity');
@@ -958,6 +958,8 @@ function dsApplyAccent(hex) {
           else if(n.type==='showcase_collab_declined'){ iconColor='var(--text3)'; icon='ti-photo-off'; title='🎨 Fan Art Collab Declined'; }
           else if(n.type==='echo')             { iconColor='#f97316'; icon='ti-flame';             title='🔥 Echo on Chapter'; }
           else if(n.type==='poll_closing')     { iconColor='#f59e0b'; icon='ti-clock-exclamation'; title='📊 Poll Closing Soon'; }
+          else if(n.type==='title_approved')   { iconColor='#22c55e'; icon='ti-check';             title='🏷️ Title Approved'; }
+          else if(n.type==='title_denied')     { iconColor='var(--text3)'; icon='ti-x';            title='🏷️ Title Not Added'; }
           else                                 { iconColor='var(--text3)'; icon='ti-bell';         title=dsEsc(n.type||'Notification'); }
           var item = document.createElement('div');
           item.className = 'notif-item unread';
