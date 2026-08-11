@@ -9,13 +9,20 @@ window.dsBlock = (function () {
 
   async function load(uid) {
     _myUid = uid; _byMe.clear(); _byThem.clear();
+    // Only YOUR OWN blocks are readable. The "who blocked me" query was removed
+    // deliberately: handing the client that list let a blocked user enumerate
+    // exactly who blocked them, which is a retaliation risk.
+    //
+    // Hiding is now enforced in the database by RESTRICTIVE RLS policies, so
+    // content from anyone you're blocked with never reaches the browser at all.
+    // _byThem therefore stays empty; it is kept so isBlockingMe()/either()
+    // remain callable from the ~40 existing call sites without edits.
     var r1 = await window.db.from('blocks').select('blocked_id').eq('blocker_id', uid);
     if (r1.data) r1.data.forEach(function(r){ _byMe.add(r.blocked_id); });
-    var r2 = await window.db.from('blocks').select('blocker_id').eq('blocked_id', uid);
-    if (r2.data) r2.data.forEach(function(r){ _byThem.add(r.blocker_id); });
   }
 
   function blockedByMe()      { return _byMe; }
+  // Always empty by design -- see load(). The server hides these rows instead.
   function blockingMe()       { return _byThem; }
   function isBlockedByMe(uid) { return _byMe.has(uid); }
   function isBlockingMe(uid)  { return _byThem.has(uid); }
