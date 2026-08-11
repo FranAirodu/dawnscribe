@@ -255,6 +255,18 @@
     .user-dropdown-item.signout-btn { color: var(--red); }
     .user-dropdown-item.signout-btn i { color: var(--red); }
     .user-dropdown-item.signout-btn:hover { background: rgba(248,113,113,0.08); }
+    /* ── ADMIN PENDING BANNER (admins only; rendered by JS after admin_pending_counts) ── */
+    .adm-pending { display: none; background: rgba(245,158,11,0.09); border: 1px solid rgba(245,158,11,0.32); border-radius: 12px; padding: 11px 14px; margin-bottom: 10px; }
+    .adm-pending.urgent { background: rgba(248,113,113,0.09); border-color: rgba(248,113,113,0.38); }
+    .adm-pending-head { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; color: #f59e0b; letter-spacing: 0.3px; text-transform: uppercase; }
+    .adm-pending.urgent .adm-pending-head { color: #f87171; }
+    .adm-pending-items { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+    .adm-pending-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); text-decoration: none; background: rgba(255,255,255,0.05); border: 1px solid rgba(245,158,11,0.28); border-radius: 8px; padding: 4px 10px; }
+    a.adm-pending-item:hover { background: rgba(245,158,11,0.16); }
+    .adm-pending-item b { color: #f59e0b; font-weight: 800; }
+    .adm-pending-item.urgent { border-color: rgba(248,113,113,0.45); }
+    .adm-pending-item.urgent b { color: #f87171; }
+    .adm-pending-item.noui { opacity: 0.75; border-style: dashed; }
     .collab-pending-pill { margin-left: auto; background: #f59e0b; color: #0a0a0f; font-size: 10px; font-weight: 700; border-radius: 10px; padding: 1px 7px; letter-spacing: 0.5px; white-space: normal; max-width: 150px; line-height: 1.4; text-align: right; }
 
     /* ANNOUNCEMENT BANNER */
@@ -871,6 +883,8 @@
       <!-- avatar-sidebar moved here from fixed position -->
     </div>
     <div id="sub-header-right">
+      <!-- ADMIN PENDING QUEUE (admins only) -->
+      <div class="adm-pending" id="adm-pending"></div>
       <!-- ANNOUNCEMENT -->
       <div class="ann-banner info" id="ann-banner">
         <div class="ann-inner">
@@ -4665,6 +4679,56 @@ function dsLoadLayoutFromCache() {
           var signOutBtn = menu.querySelector('.signout-btn');
           menu.insertBefore(divider, signOutBtn);
           menu.insertBefore(adminLink, signOutBtn);
+
+          // ── ADMIN PENDING QUEUE ────────────────────────────────────
+          // Replaces the old "you have pending requests" email. One RPC
+          // (admin_pending_counts) returns every admin-actionable queue in a
+          // single round trip; it returns {} for non-admins so it can never
+          // leak counts. Rendered in the sub-header + as a pill on the
+          // Admin Panel dropdown link.
+          (async function dsAdminPending(){
+            try {
+              var apc = await db.rpc('admin_pending_counts');
+              var c = apc && apc.data ? apc.data : null;
+              if (!c) return;
+              var n = function(k){ return parseInt(c[k], 10) || 0; };
+              var urgent = n('contact_urgent') > 0 || n('reports') > 0 || n('payouts') > 0;
+              var items = [];
+              function add(count, singular, plural, href, cls) {
+                if (count <= 0) return;
+                var label = count + ' ' + (count === 1 ? singular : plural);
+                var inner = '<b>' + count + '</b> ' + esc(count === 1 ? singular : plural);
+                if (href) items.push('<a class="adm-pending-item' + (cls ? ' ' + cls : '') + '" href="' + href + '">' + inner + '</a>');
+                else items.push('<span class="adm-pending-item noui' + (cls ? ' ' + cls : '') + '" title="No review screen exists for this queue yet">' + inner + '</span>');
+                return label;
+              }
+              add(n('reports'),   'open report',        'open reports',        'WhiteRoomUnbreakable.html#reports', 'urgent');
+              add(n('contact'),   'contact message',    'contact messages',    'admin-contact.html', n('contact_urgent') > 0 ? 'urgent' : '');
+              add(n('titles'),    'title suggestion',   'title suggestions',   'WhiteRoomUnbreakable.html#titles');
+              add(n('feedback'),  'feedback item',      'feedback items',      'WhiteRoomUnbreakable.html#feedback');
+              add(n('scrolls'),   'scroll submission',  'scroll submissions',  'admin-rewards.html');
+              add(n('loyalty'),   'loyalty cosmetic',   'loyalty cosmetics',   'admin-loyalty.html');
+              add(n('cosmetics'), 'cosmetic submission','cosmetic submissions', 'admin-cosmetics.html');
+              add(n('payouts'),   'pending payout',     'pending payouts',      null, 'urgent');
+
+              if (!items.length) return;
+
+              var box = document.getElementById('adm-pending');
+              if (box) {
+                box.className = 'adm-pending' + (urgent ? ' urgent' : '');
+                box.innerHTML = '<div class="adm-pending-head"><i class="ti ti-shield"></i> '
+                  + (urgent ? 'Needs your attention' : 'Waiting on you') + '</div>'
+                  + '<div class="adm-pending-items">' + items.join('') + '</div>';
+                box.style.display = 'block';
+              }
+              var total = n('reports') + n('contact') + n('titles') + n('feedback')
+                        + n('scrolls') + n('loyalty') + n('cosmetics') + n('payouts');
+              if (total > 0) {
+                adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>'
+                  + '<span class="collab-pending-pill"' + (urgent ? ' style="background:#f87171;"' : '') + '>' + total + ' pending</span>';
+              }
+            } catch(e) { /* never break the homepage over an admin badge */ }
+          })();
         }
       } catch(err) { console.warn('User nav:', err); }
     })();
