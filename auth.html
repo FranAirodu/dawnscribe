@@ -605,19 +605,43 @@
       });
     });
 
+    // ── PASSWORD POLICY AVAILABILITY ──────────────────────────────
+    // Every password rule lives in passwordPolicy.js. If that file fails to
+    // load (bad deploy, 404, blocked request) window.DSPassword is undefined
+    // and the old code threw on every keystroke, killing the meter and making
+    // submit do nothing at all — the worst failure for a new user's first
+    // page. So FAIL CLOSED: no policy means no signup, with a visible reason.
+    //
+    // Deliberately NOT falling back to an inline copy of the rules: a second
+    // copy is exactly the drift that put a 6-char door next to an 8-char one.
+    function pwPolicyReady() {
+      return !!(window.DSPassword && typeof window.DSPassword.validate === 'function');
+    }
+
+    var POLICY_MISSING_MSG = 'Could not load the password checks (passwordPolicy.js). ' +
+      'Please refresh the page — if this keeps happening the site is misconfigured, so don\'t create an account until it is fixed.';
+
     // ── PASSWORD STRENGTH ─────────────────────────────────────────
     // Pure function so submit can RE-derive strength from the live value.
     // Relying on a cached var broke autofill, which does not always fire 'input'.
     // Delegates to passwordPolicy.js so signup and the reset form in
     // settings.html can never enforce different rules again.
     function computePasswordStrength(val) {
-      return window.DSPassword.strength(val);
+      return pwPolicyReady() ? window.DSPassword.strength(val) : 0;
     }
     var currentPasswordStrength = 0;
     function renderPasswordStrength() {
       var val = document.getElementById('signup-password').value;
       var fill = document.getElementById('strength-fill');
       var text = document.getElementById('strength-text');
+      // Without the policy module there is nothing to measure. Say so once,
+      // here, rather than throwing on every keystroke.
+      if (!pwPolicyReady()) {
+        fill.style.width = '0%';
+        text.textContent = 'Password checks unavailable';
+        text.style.color = '#f87171';
+        return;
+      }
       var common = window.DSPassword.isCommon(val);
       var checks = {
         'pw-check-length': val.length >= window.DSPassword.MIN_LENGTH,
@@ -775,6 +799,7 @@
       var unProblem = usernameProblem(username);
       if (unProblem) { showSignupError(unProblem); return; }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showSignupError('Please enter a valid email address.'); return; }
+      if (!pwPolicyReady()) { showSignupError(POLICY_MISSING_MSG); return; }
       var pwCheck = window.DSPassword.validate(password, confirm);
       if (!pwCheck.ok) { showSignupError(pwCheck.error); return; }
 
