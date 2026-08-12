@@ -461,7 +461,15 @@ if (!window.DSStorage) {
         uploadFile = await _resizeImage(file, 800, 800);
       }
       var ext = file.type === 'image/gif' ? 'gif' : 'jpg';
-      var path = 'comments/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
+      // Path MUST start with the uploader's uid. The comment-images storage
+      // policies scope by (storage.foldername(name))[1] = auth.uid(), so the old
+      // 'comments/...' prefix meant the DELETE policy could never match and users
+      // could never remove their own comment images. The INSERT policy is now
+      // scoped the same way, so this prefix is also required for upload.
+      var _sess = await _db.auth.getSession();
+      var _uid = _sess && _sess.data && _sess.data.session ? _sess.data.session.user.id : null;
+      if (!_uid) throw new Error('You need to be signed in to attach an image.');
+      var path = _uid + '/comments/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
       var contentType = file.type === 'image/gif' ? 'image/gif' : 'image/jpeg';
       var { error } = await DSStorage.upload(_db, IMAGE_BUCKET, path, uploadFile, { upsert: false, contentType: contentType });
       if (error) throw error;
