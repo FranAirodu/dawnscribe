@@ -20,6 +20,7 @@
   <title>Dawnscribe — Join or Sign In</title>
   <script src="accessibilityPrefs.js"></script>
   <script src="dobPicker.js"></script>
+  <script src="passwordPolicy.js"></script>
   <meta name="robots" content="noindex,nofollow" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
@@ -214,10 +215,12 @@
             <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
             <div class="strength-text" id="strength-text"></div>
             <ul class="pw-checklist" id="pw-checklist">
-              <li id="pw-check-length"><i aria-hidden="true" class="ti ti-circle"></i> At least 8 characters</li>
+              <li id="pw-check-length"><i aria-hidden="true" class="ti ti-circle"></i> At least 10 characters</li>
+              <li id="pw-check-long"><i aria-hidden="true" class="ti ti-circle"></i> 14+ characters (a passphrase counts on its own)</li>
               <li id="pw-check-upper"><i aria-hidden="true" class="ti ti-circle"></i> One uppercase letter</li>
               <li id="pw-check-number"><i aria-hidden="true" class="ti ti-circle"></i> One number</li>
               <li id="pw-check-symbol"><i aria-hidden="true" class="ti ti-circle"></i> One symbol</li>
+              <li id="pw-check-common"><i aria-hidden="true" class="ti ti-circle"></i> Not a known breached password</li>
             </ul>
           </div>
         </div>
@@ -605,31 +608,30 @@
     // ── PASSWORD STRENGTH ─────────────────────────────────────────
     // Pure function so submit can RE-derive strength from the live value.
     // Relying on a cached var broke autofill, which does not always fire 'input'.
+    // Delegates to passwordPolicy.js so signup and the reset form in
+    // settings.html can never enforce different rules again.
     function computePasswordStrength(val) {
-      var s = 0;
-      if (val.length >= 8) s++;
-      if (/[A-Z]/.test(val)) s++;
-      if (/[0-9]/.test(val)) s++;
-      if (/[^A-Za-z0-9]/.test(val)) s++;
-      return s;
+      return window.DSPassword.strength(val);
     }
     var currentPasswordStrength = 0;
     function renderPasswordStrength() {
       var val = document.getElementById('signup-password').value;
       var fill = document.getElementById('strength-fill');
       var text = document.getElementById('strength-text');
+      var common = window.DSPassword.isCommon(val);
       var checks = {
-        'pw-check-length': val.length >= 8,
+        'pw-check-length': val.length >= window.DSPassword.MIN_LENGTH,
+        'pw-check-long':   val.length >= 14,
         'pw-check-upper':  /[A-Z]/.test(val),
         'pw-check-number': /[0-9]/.test(val),
-        'pw-check-symbol': /[^A-Za-z0-9]/.test(val)
+        'pw-check-symbol': /[^A-Za-z0-9]/.test(val),
+        'pw-check-common': val.length > 0 && !common
       };
-      var strength = 0;
       Object.keys(checks).forEach(function(id) {
         var li = document.getElementById(id);
+        if (!li) return;
         var icon = li.querySelector('i');
         if (checks[id]) {
-          strength++;
           li.classList.add('met');
           icon.className = 'ti ti-circle-check';
         } else {
@@ -637,14 +639,12 @@
           icon.className = 'ti ti-circle';
         }
       });
+      // The checklist is advisory; the bar reflects the real score. A known
+      // breached password reads as Weak no matter how it is composed.
+      var strength = common ? 1 : window.DSPassword.strength(val);
+      if (!val) strength = 0;
       currentPasswordStrength = strength;
-      var levels = [
-        { width: '0%',   color: 'transparent', label: '' },
-        { width: '25%',  color: '#f87171',      label: 'Weak' },
-        { width: '50%',  color: '#f59e0b',      label: 'Fair' },
-        { width: '75%',  color: '#60a5fa',      label: 'Good' },
-        { width: '100%', color: '#34d399',      label: 'Strong' },
-      ];
+      var levels = window.DSPassword.LEVELS;
       fill.style.width = levels[strength].width;
       fill.style.background = levels[strength].color;
       text.textContent = levels[strength].label;
@@ -775,9 +775,8 @@
       var unProblem = usernameProblem(username);
       if (unProblem) { showSignupError(unProblem); return; }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showSignupError('Please enter a valid email address.'); return; }
-      if (password !== confirm) { showSignupError('Passwords do not match.'); return; }
-      if (password.length < 8) { showSignupError('Password must be at least 8 characters.'); return; }
-      if (computePasswordStrength(password) < 2) { showSignupError('Password is too weak. Add a number, uppercase letter, or symbol to reach at least "Fair" strength.'); return; }
+      var pwCheck = window.DSPassword.validate(password, confirm);
+      if (!pwCheck.ok) { showSignupError(pwCheck.error); return; }
 
       var dobError = document.getElementById('dob-error');
       dsSetHint(dobError, 'ti-alert-circle', 'Please enter a valid date of birth.', 'error');

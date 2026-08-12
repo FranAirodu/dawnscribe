@@ -7,6 +7,7 @@
   <script src="accessibilityPrefs.js"></script>
   <meta name="robots" content="noindex,nofollow" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="avatarRender.js"></script>
   <script>
     // Block all rendering until the admin check completes.
     document.documentElement.style.visibility = 'hidden';
@@ -96,6 +97,15 @@
     .reason:focus{outline:none;border-color:var(--red);}
     .reject-confirm{display:none;margin-top:8px;}
     .rejected-note{margin-top:9px;font-size:12px;color:var(--red);display:flex;gap:6px;align-items:flex-start;}
+    .preview{flex-shrink:0;width:200px;}
+    .preview-stage{width:200px;height:300px;border-radius:10px;background:var(--bg);border:1px solid var(--border);overflow:hidden;}
+    .preview-stage svg{width:100%;height:100%;display:block;}
+    .preview-ctrls{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;align-items:center;}
+    .pbtn{background:var(--bg4);border:1px solid var(--border);border-radius:7px;padding:3px 9px;font-size:11px;font-weight:700;color:var(--text3);cursor:pointer;font-family:'Lato',sans-serif;}
+    .pbtn.on{background:rgba(45,212,191,0.12);border-color:var(--accent);color:var(--accent);}
+    .tone{width:17px;height:17px;border-radius:50%;border:1px solid var(--border);cursor:pointer;padding:0;}
+    .tone.on{outline:2px solid var(--accent);outline-offset:1px;}
+    .preview-note{font-size:10.5px;color:var(--text3);margin-top:6px;line-height:1.45;}
     .empty{text-align:center;color:var(--text3);padding:34px 0;font-size:13.5px;}
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;max-width:90vw;}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
@@ -124,13 +134,13 @@
 
       <div class="notice">
         <i class="ti ti-info-circle"></i>
-        <div><strong>Approving accepts the design, not the listing.</strong> The avatar shop sells anything with a Quill price, and wearing an item renders from <code>asset_paths</code> — so an approved item only goes on sale once its final artwork is published. Until then it sits under <em>Awaiting artwork</em>, and you can put it on sale with <strong>List in shop</strong>.</div>
+        <div><strong>Approving puts the item on sale immediately.</strong> Check the fit on the body art first — use the body and skin-tone toggles under each preview, and flip between poses. If something sits wrong on one body type, send it back with a note rather than approving. You can still pull an approved item from the shop later.</div>
       </div>
 
       <div class="filters" id="filters">
         <button class="filter-btn active" data-f="pending"  onclick="setFilter(this,'pending')">Pending review <span class="cnt" id="c-pending"></span></button>
-        <button class="filter-btn"        data-f="noart"    onclick="setFilter(this,'noart')">Awaiting artwork <span class="cnt" id="c-noart"></span></button>
         <button class="filter-btn"        data-f="listed"   onclick="setFilter(this,'listed')">In shop <span class="cnt" id="c-listed"></span></button>
+        <button class="filter-btn"        data-f="pulled"   onclick="setFilter(this,'pulled')">Pulled from shop <span class="cnt" id="c-pulled"></span></button>
         <button class="filter-btn"        data-f="rejected" onclick="setFilter(this,'rejected')">Needs changes <span class="cnt" id="c-rejected"></span></button>
         <button class="filter-btn"        data-f="all"      onclick="setFilter(this,'all')">All <span class="cnt" id="c-all"></span></button>
       </div>
@@ -153,6 +163,8 @@
     var _all = [];
     var _profiles = {};
     var _filter = 'pending';
+    var _presets = [];          // avatar_body_presets rows, for the fit preview
+    var _previewState = {};     // itemId -> { body, tone, pose }
 
     function escHtml(s) {
       return String(s == null ? '' : s)
@@ -183,7 +195,9 @@
     }
     function isPending(it){ return it.status === 'pending_review'; }
     function isListed(it){ return it.status === 'approved' && it.is_marketplace_item === true; }
-    function isNoArt(it){ return it.status === 'approved' && it.is_marketplace_item !== true; }
+    // Approved but NOT listed now only happens when an admin deliberately
+    // pulled it from the shop — approval lists immediately.
+    function isPulled(it){ return it.status === 'approved' && it.is_marketplace_item !== true; }
 
     async function loadItems() {
       // Only artist submissions. Platform-owned items are excluded by the same
@@ -220,6 +234,14 @@
         return new Date(b.submitted_at || b.created_at) - new Date(a.submitted_at || a.created_at);
       });
 
+      // Body art for the fit preview. Public table, so a plain select is fine.
+      if (!_presets.length) {
+        var bp = await Promise.resolve(
+          window.db.from('avatar_body_presets').select('*').neq('is_active', false)
+        ).catch(function(){ return {}; });
+        _presets = bp.data || [];
+      }
+
       var ids = [];
       _all.forEach(function(it){ if (it.artist_id && ids.indexOf(it.artist_id) === -1) ids.push(it.artist_id); });
       if (ids.length) {
@@ -231,7 +253,7 @@
       }
 
       document.getElementById('c-pending').textContent  = '(' + _all.filter(isPending).length + ')';
-      document.getElementById('c-noart').textContent    = '(' + _all.filter(isNoArt).length + ')';
+      document.getElementById('c-pulled').textContent   = '(' + _all.filter(isPulled).length + ')';
       document.getElementById('c-listed').textContent   = '(' + _all.filter(isListed).length + ')';
       document.getElementById('c-rejected').textContent = '(' + _all.filter(function(i){ return i.status === 'rejected'; }).length + ')';
       document.getElementById('c-all').textContent      = '(' + _all.length + ')';
@@ -251,7 +273,7 @@
     function render() {
       var rows = _all.filter(function(it){
         if (_filter === 'pending')  return isPending(it);
-        if (_filter === 'noart')    return isNoArt(it);
+        if (_filter === 'pulled')   return isPulled(it);
         if (_filter === 'listed')   return isListed(it);
         if (_filter === 'rejected') return it.status === 'rejected';
         return true;
@@ -274,11 +296,23 @@
 
         var tags = '<span class="tag ' + (isPending(it) ? 'pending' : (isListed(it) ? 'listed' : (it.status === 'rejected' ? 'rejected' : 'approved'))) + '">' +
           escHtml(isListed(it) ? 'In shop' : (LABEL[it.status] || it.status)) + '</span>';
-        if (!art) tags += ' <span class="tag noart">No artwork</span>';
+        // asset_paths is the per-body-type layered art; image_url alone still
+        // renders (pickAssetPath falls back to it) but is not body-specific.
+        if (!art) tags += ' <span class="tag noart">Flat art (not per-body)</span>';
 
         var thumb = it.image_url
           ? '<img src="' + escHtml(it.image_url) + '" alt="" onerror="this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;<i class=\'ti ti-photo-off\'></i>&quot;;"/>'
           : '<i class="ti ti-photo-off"></i>';
+
+        // Fit preview: the submitted art layered onto the real body art via
+        // the same renderer avatar.html uses, so what you approve is what
+        // users will see.
+        var previewHtml =
+          '<div class="preview">' +
+            '<div class="preview-stage" id="pv-' + escHtml(it.id) + '"></div>' +
+            '<div class="preview-ctrls" id="pvc-' + escHtml(it.id) + '"></div>' +
+            '<div class="preview-note">Layered on the live body art. Check both bodies and poses.</div>' +
+          '</div>';
 
         var actions = '';
         if (isPending(it)) {
@@ -287,7 +321,7 @@
               '<span class="price-wrap">Price ' +
                 '<input class="price-in" type="number" id="p-' + escHtml(it.id) + '" value="' + (it.quill_price == null ? '' : escHtml(String(it.quill_price))) + '" min="' + PRICE_MIN + '" max="' + PRICE_MAX + '" step="10"/> Quills' +
               '</span>' +
-              '<button class="act green" onclick=\'reviewItem(' + escHtml(idArg) + ', true)\'><i class="ti ti-circle-check"></i> Approve</button>' +
+              '<button class="act green" onclick=\'reviewItem(' + escHtml(idArg) + ', true)\'><i class="ti ti-circle-check"></i> Approve &amp; put on sale</button>' +
               '<button class="act red" onclick=\'toggleReason(' + escHtml(idArg) + ')\'><i class="ti ti-circle-x"></i> Needs changes</button>' +
               (artist.username ? '<a class="act" href="profile.html?user=' + escHtml(artist.username) + '" target="_blank"><i class="ti ti-external-link"></i> Artist</a>' : '') +
             '</div>' +
@@ -300,12 +334,13 @@
             '<div class="actions">' +
               (isListed(it)
                 ? '<button class="act red" onclick=\'setListing(' + escHtml(idArg) + ', false)\'><i class="ti ti-eye-off"></i> Remove from shop</button>'
-                : '<button class="act green" onclick=\'setListing(' + escHtml(idArg) + ', true)\'' + (art ? '' : ' title="Publish the artwork first"') + '><i class="ti ti-shopping-cart"></i> List in shop</button>') +
+                : '<button class="act green" onclick=\'setListing(' + escHtml(idArg) + ', true)\'><i class="ti ti-shopping-cart"></i> Restore to shop</button>') +
               (artist.username ? '<a class="act" href="profile.html?user=' + escHtml(artist.username) + '" target="_blank"><i class="ti ti-external-link"></i> Artist</a>' : '') +
             '</div>';
         }
 
         return '<div class="item ' + cls + '" id="i-' + escHtml(it.id) + '">' +
+          previewHtml +
           '<div class="thumb">' + thumb + '</div>' +
           '<div class="body">' +
             '<div class="name-row">' + escHtml(it.name) + ' ' + tags + '</div>' +
@@ -323,6 +358,79 @@
           '</div>' +
         '</div>';
       }).join('');
+
+      rows.forEach(function(it){ renderPreview(it); });
+    }
+
+    function tonesFor(body) {
+      return _presets.filter(function(p){ return p.body_type === body; })
+        .sort(function(a,b){ return (a.sort_order||0) - (b.sort_order||0); });
+    }
+
+    // Draw one item's fit preview through DSAvatar. A synthetic avatarData is
+    // built with just this item equipped in its own slot, so renderSvg lays
+    // the submitted art over the body exactly as avatar.html would.
+    function renderPreview(it) {
+      var stage = document.getElementById('pv-' + it.id);
+      var ctrls = document.getElementById('pvc-' + it.id);
+      if (!stage || !window.DSAvatar) return;
+
+      if (!_presets.length) {
+        stage.innerHTML = '<div class="empty" style="padding:14px;font-size:11px;">No body art available for preview.</div>';
+        return;
+      }
+
+      var st = _previewState[it.id];
+      if (!st) {
+        var firstBody = tonesFor('male').length ? 'male' : 'female';
+        st = _previewState[it.id] = { body: firstBody, tone: null, pose: 'pose1' };
+      }
+      var tones = tonesFor(st.body);
+      if (!tones.length) { st.body = st.body === 'male' ? 'female' : 'male'; tones = tonesFor(st.body); }
+      if (!st.tone || !tones.some(function(t){ return t.id === st.tone; })) {
+        var def = tones.find(function(t){ return t.is_default; }) || tones[0];
+        st.tone = def ? def.id : null;
+      }
+
+      var avatarData = {
+        skin_tone: st.tone,
+        body_type: st.body,
+        pose: st.pose,
+        equipped: {},
+        avatar_position: 'center',
+        mirrored: false
+      };
+      avatarData.equipped[it.slot] = { item_id: it.id };
+
+      try {
+        stage.innerHTML = window.DSAvatar.renderSvg(avatarData, _presets, [it], { applyPosition: false });
+      } catch (e) {
+        stage.innerHTML = '<div class="empty" style="padding:14px;font-size:11px;">Preview failed: ' + escHtml(e.message || e) + '</div>';
+        return;
+      }
+
+      var idArg = JSON.stringify(it.id);
+      var bodies = ['male','female'].filter(function(b){ return tonesFor(b).length; });
+      ctrls.innerHTML =
+        bodies.map(function(b){
+          return '<button class="pbtn' + (st.body === b ? ' on' : '') + '" onclick=\'setPreview(' + escHtml(idArg) + ', "body", "' + b + '")\'>' +
+            (b === 'male' ? 'Male' : 'Female') + '</button>';
+        }).join('') +
+        '<button class="pbtn' + (st.pose === 'pose2' ? ' on' : '') + '" onclick=\'setPreview(' + escHtml(idArg) + ', "pose", "' + (st.pose === 'pose1' ? 'pose2' : 'pose1') + '")\'>Pose ' + (st.pose === 'pose1' ? '2' : '1') + '</button>' +
+        tones.map(function(t){
+          return '<button class="tone' + (st.tone === t.id ? ' on' : '') + '" title="' + escHtml(t.label) + '" ' +
+            'style="background:' + escHtml(t.swatch_hex || '#888') + ';" ' +
+            'onclick=\'setPreview(' + escHtml(idArg) + ', "tone", ' + JSON.stringify(t.id) + ')\'></button>';
+        }).join('');
+    }
+
+    function setPreview(id, key, val) {
+      var it = _all.find(function(x){ return x.id === id; });
+      if (!it) return;
+      _previewState[id] = _previewState[id] || { body:'male', tone:null, pose:'pose1' };
+      _previewState[id][key] = val;
+      if (key === 'body') _previewState[id].tone = null; // re-resolve default tone
+      renderPreview(it);
     }
 
     function toggleReason(id) {
@@ -368,8 +476,7 @@
       if (!out.ok) { showToast(out.error || 'Review failed', 'ti-x'); return; }
 
       if (!approve) showToast('Feedback sent to the artist.');
-      else if (out.listed) showToast('Approved and live in the avatar shop.');
-      else showToast('Approved. It will go on sale once the artwork is published.', 'ti-clock');
+      else showToast('Approved and on sale in the avatar shop.');
 
       loadItems();
     }
@@ -382,7 +489,7 @@
       if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); return; }
       var out = res.data || {};
       if (!out.ok) { showToast(out.error || 'Could not update the listing', 'ti-alert-triangle'); return; }
-      showToast(listed ? 'Now on sale in the avatar shop.' : 'Removed from the avatar shop.');
+      showToast(listed ? 'Restored to the avatar shop.' : 'Removed from the avatar shop.');
       loadItems();
     }
 

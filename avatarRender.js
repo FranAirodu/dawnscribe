@@ -42,17 +42,26 @@
   // the head crops together -- they are derived from the same numbers.
   var BODY_BOX = { x: -76.22, y: -76.58, w: 472.44, h: 566.93 };
 
-  // Female body scale. 1.00 = renders identically to male.
+  // Female body scale. 1.00 = renders through the same box as male.
   //
-  // DIAGNOSTIC REVERT: set to 1.00 so male and female go through the exact
-  // same render box while isolating a head-alignment issue on female.
+  // This sat at 1.00 as a "diagnostic revert" while a female head-alignment
+  // problem was being isolated. The root cause was structural: head crops
+  // are expressed in FINAL 320x480 render coordinates, but changing this
+  // scale moves the body inside that space — so any value below 1.00 slid
+  // the head out from under crops that had been measured at 1.00, and the
+  // headshot framing broke. Nothing in the code linked the two.
   //
-  // IMPORTANT when re-enabling (<1.0): the images use preserveAspectRatio
-  // "...meet", which fits the image to the LIMITING dimension. With
-  // BODY_BOX 272x384 and 4000x4800 art, WIDTH is limiting
-  // (272/4000 = 0.068 < 384/4800 = 0.080), so scaling height ALONE does
-  // nothing to the rendered figure size — it only shifts the box's top
-  // edge down, which can desync layers. Scale BOTH w and h instead.
+  // That link now exists: scaleCropForBody() puts head crops through the
+  // exact same transform as bodyBoxFor(), so crops track the body
+  // automatically and this value is safe to change. At 1.00 the transform
+  // is the identity, so current rendering is bit-for-bit unchanged.
+  //
+  // Two constraints still hold if you change it:
+  //  - The images use preserveAspectRatio "...meet", which fits to the
+  //    LIMITING dimension. WIDTH is limiting here, so scaling height ALONE
+  //    does nothing to the figure size and only desyncs layers. bodyBoxFor
+  //    scales BOTH w and h; keep it that way.
+  //  - Cosmetic art goes through the same box, so garments follow the body.
   var FEMALE_BODY_SCALE = 1.00;
 
   // Returns the render box for a given body type. At scale 1.0 both genders
@@ -66,6 +75,33 @@
     var baseline = BODY_BOX.y + BODY_BOX.h;   // pin feet to same floor line
     var cx = BODY_BOX.x + BODY_BOX.w / 2;     // keep horizontally centered
     return { x: Math.round(cx - w / 2), y: baseline - h, w: w, h: h };
+  }
+
+  /**
+   * Put a head crop through the SAME transform bodyBoxFor() applies to the
+   * body, so the crop keeps framing the same physical part of the figure
+   * when FEMALE_BODY_SCALE changes.
+   *
+   * bodyBoxFor scales the box about two fixed references: the feet baseline
+   * (BODY_BOX.y + BODY_BOX.h) and the horizontal centerline. A point at
+   * (px, py) in the unscaled render therefore maps to:
+   *     x' = cx       + (px - cx)       * s
+   *     y' = baseline - (baseline - py) * s
+   * Applying that to the crop's origin, and scaling its size by s, keeps the
+   * face framed identically. Returns the crop unchanged at s === 1, which is
+   * today's configuration.
+   */
+  function scaleCropForBody(crop, bodyType) {
+    var s = (bodyType === 'female') ? FEMALE_BODY_SCALE : 1;
+    if (!crop || s === 1) return crop;
+    var baseline = BODY_BOX.y + BODY_BOX.h;
+    var cx = BODY_BOX.x + BODY_BOX.w / 2;
+    return {
+      x: cx + (crop.x - cx) * s,
+      y: baseline - (baseline - crop.y) * s,
+      w: crop.w * s,
+      h: crop.h * s
+    };
   }
 
   // Full-canvas box for background layers (drawn behind everything).
@@ -182,7 +218,9 @@
         typeof c.w !== 'number' || typeof c.h !== 'number' || c.w <= 0 || c.h <= 0) {
       c = defs.pose1;
     }
-    return c;
+    // Crops are measured in unscaled render space; follow the body if the
+    // female figure is being scaled. Identity at FEMALE_BODY_SCALE === 1.
+    return scaleCropForBody(c, b_type(preset));
   }
 
   /**
@@ -537,6 +575,9 @@
     renderHeadshotSvg: renderHeadshotSvg,
     exportHeadshotPng: exportHeadshotPng,
     getHeadCrop: getHeadCrop,
+    scaleCropForBody: scaleCropForBody,
+    bodyBoxFor: bodyBoxFor,
+    FEMALE_BODY_SCALE: FEMALE_BODY_SCALE,
     resolveAssetUrl: resolveAssetUrl,
     pickAssetPath: pickAssetPath,
     renderItemLayers: renderItemLayers,

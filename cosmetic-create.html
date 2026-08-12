@@ -408,9 +408,8 @@
 
   async function loadExisting() {
     var { data: items } = await db.from('cosmetic_items')
-      .select('id,name,description,slot,image_url,quill_price,status,submitted_at,rejection_reason')
+      .select('id,name,description,slot,image_url,quill_price,status,submitted_at,rejection_reason,is_marketplace_item,asset_paths')
       .eq('artist_id', currentUser.id)
-      .eq('is_marketplace_item', true)
       .order('created_at', { ascending: false });
 
     if (!items || !items.length) {
@@ -422,7 +421,7 @@
     list.innerHTML = '';
     items.forEach(function(it) {
       var statusClass = { draft:'ds-draft', pending_review:'ds-pending', approved:'ds-approved', rejected:'ds-rejected' }[it.status] || 'ds-draft';
-      var statusLabel = { draft:'Draft', pending_review:'Pending Review', approved:'Live', rejected:'Needs Changes' }[it.status] || it.status;
+      var statusLabel = { draft:'Draft', pending_review:'Pending Review', approved:(it.is_marketplace_item === true ? 'Live' : 'Not on sale'), rejected:'Needs Changes' }[it.status] || it.status;
       var slotMeta = SLOT_META[it.slot] || SLOT_META.other;
       var row = document.createElement('div');
       row.className = 'draft-row';
@@ -487,7 +486,11 @@
     var cfg = {
       draft:          { cls:'draft',          icon:'ti-pencil',       title:'Draft',               body:'Fill in the details and submit when ready.' },
       pending_review: { cls:'pending_review',  icon:'ti-clock',        title:'Under Review',        body:'Being reviewed by the DawnScribe team. You\'ll be notified of the result.' },
-      approved:       { cls:'approved',        icon:'ti-circle-check', title:'Live in Marketplace', body:'Your cosmetic is approved and available for purchase.' },
+      // Approval puts an item on sale immediately, so 'approved but not
+      // listed' now only means an admin pulled it from the shop afterwards.
+      approved: (it.is_marketplace_item === true
+        ? { cls:'approved', icon:'ti-circle-check', title:'Live in Marketplace', body:'Your cosmetic is approved and available for purchase.' }
+        : { cls:'pending_review', icon:'ti-clock', title:'Approved \u2014 not currently on sale', body:'Your cosmetic was approved but is not listed in the shop right now. Contact us if you were not expecting this.' }),
       rejected:       { cls:'rejected',        icon:'ti-alert-circle', title:'Changes Needed',      body: it.rejection_reason ? 'Reason: ' + it.rejection_reason : 'Please address the feedback and resubmit.' }
     }[it.status] || { cls:'draft', icon:'ti-pencil', title:'Draft', body:'' };
     wrap.innerHTML = '<div class="status-banner ' + cfg.cls + '"><i class="ti ' + cfg.icon + '"></i><div><h4>' + cfg.title + '</h4><p>' + esc(cfg.body) + '</p></div></div>';
