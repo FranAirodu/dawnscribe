@@ -295,7 +295,13 @@ if (!window.DSStorage) {
           (gif.images.downsized && gif.images.downsized.url) ? gif.images.downsized.url : gif.images.fixed_width.url;
         var item = document.createElement('div');
         item.className = 'ct-gif-item';
-        item.innerHTML = '<img src="' + previewUrl + '" loading="lazy" alt="gif"/>';
+        // previewUrl comes from the third-party GIF API response, which is
+        // external input like any other -- scheme-allowlist and escape it.
+        var _safe = String(previewUrl == null ? '' : previewUrl).trim();
+        _safe = /^https?:\/\//i.test(_safe)
+          ? _safe.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          : '';
+        item.innerHTML = '<img src="' + _safe + '" loading="lazy" alt="gif"/>';
         item.addEventListener('click', function() {
           resultsEl.querySelectorAll('.ct-gif-item').forEach(function(el) { el.classList.remove('selected'); });
           item.classList.add('selected');

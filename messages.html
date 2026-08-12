@@ -294,7 +294,23 @@
   var activeTab = 'all';
 
   // ── HELPERS ────────────────────────────────────────────────
-  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  // Escapes BOTH angle brackets and quotes. The quotes matter: esc() is used
+  // inside double-quoted attributes (e.g. src="'+esc(url)+'"), and a profile's
+  // avatar_url is arbitrary user-controlled text -- the DB accepts anything, as
+  // there is no URL CHECK on that column. Without the quote escapes, an
+  // avatar_url of  x" onerror="alert(1)" data-x="  closed the src attribute and
+  // injected an event handler, giving stored XSS to anyone who opened a DM with
+  // that user. Escaping < > alone is NOT sufficient in attribute context.
+  // An .or() string is parsed as PostgREST filter syntax, not sent as a
+  // parameter, so commas/parens/dots in user input append extra filters.
+  function orIlikeVal(s){
+    return '"%' + String(s || '').replace(/[",()\\%_.]/g, '') + '%"';
+  }
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
   function showToast(msg, icon){
     var t = document.getElementById('toast');
     document.getElementById('toast-msg').textContent = msg;
@@ -331,7 +347,7 @@
     if(profile && profile.avatar_url){
       return '<div style="'+style+'"><img src="'+esc(profile.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/></div>';
     }
-    var init = profile ? (profile.display_name||profile.username||'?').charAt(0).toUpperCase() : '?';
+    var init = esc(profile ? (profile.display_name||profile.username||'?').charAt(0).toUpperCase() : '?');
     return '<div style="'+style+'">'+init+'</div>';
   }
 
@@ -694,7 +710,9 @@
     if(show && !ex){
       var el = document.createElement('div');
       el.id='typing-indicator'; el.className='typing-indicator';
-      var who = activeOtherUser ? (activeOtherUser.display_name||activeOtherUser.username||'They') : 'They';
+      // display_name is user-controlled and has no CHECK constraint (unlike
+      // username), so it must be escaped -- it was previously concatenated raw.
+      var who = esc(activeOtherUser ? (activeOtherUser.display_name||activeOtherUser.username||'They') : 'They');
       el.innerHTML='<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div><span style="margin-left:4px;font-size:11px;">'+who+' is typing…</span>';
       feed.appendChild(el); feed.scrollTop = feed.scrollHeight;
     } else if(!show && ex){ ex.remove(); }
@@ -785,7 +803,7 @@
     var resultsEl = document.getElementById('compose-user-results');
     if(!q || q.length < 2){ resultsEl.innerHTML=''; selectedNewUser=null; document.getElementById('compose-send').disabled=true; return; }
     hint.textContent = 'Searching…'; hint.className='modal-hint';
-    var res = await db.from('profiles').select('id,username,display_name,avatar_url').or('username.ilike.%'+q+'%,display_name.ilike.%'+q+'%').neq('id', currentSession.user.id).limit(5);
+    var res = await db.from('profiles').select('id,username,display_name,avatar_url').or('username.ilike.'+orIlikeVal(q)+',display_name.ilike.'+orIlikeVal(q)).neq('id', currentSession.user.id).limit(5);
     if(!res.data || !res.data.length){ hint.textContent='No users found.'; hint.className='modal-hint'; resultsEl.innerHTML=''; return; }
     hint.textContent=''; resultsEl.innerHTML='';
     res.data.forEach(function(u){

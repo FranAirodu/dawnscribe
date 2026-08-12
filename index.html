@@ -3510,6 +3510,18 @@
     async function srchQueryTitles(q) {
       var previewId = 'srch-preview-titles';
       q = srchSafe(q);
+    // Escape a value for use INSIDE a PostgREST .or() expression. Unlike .ilike(),
+    // whose value travels as its own parameter, an .or() string is PARSED as filter
+    // syntax -- so a raw comma, paren or dot in user input appends extra filters to
+    // the query. search.html hit this first (a query like
+    // `zzz,date_of_birth.eq.1990-07-05` became a working oracle against columns the
+    // page never selects); index.html keeps its OWN duplicate search implementation,
+    // so it needed the identical fix -- the usual nav.js/index.html drift, this time
+    // carrying a security hole. Strip the syntax characters and wrap in double quotes,
+    // inside which PostgREST treats commas and parens as literal text.
+    function orIlikeVal(s){
+      return '"%' + String(s || '').replace(/[",()\\%_.]/g, '') + '%"';
+    }
       if (!q) { srchClearPreview(previewId); return; }
       srchShowSpinner(previewId);
       try {
@@ -3560,7 +3572,7 @@
       try {
         var { data, error } = await db.from('profiles')
           .select('id, username, display_name, avatar_url, role')
-          .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
+          .or('username.ilike.' + orIlikeVal(q) + ',display_name.ilike.' + orIlikeVal(q))
           .limit(5);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No authors found.'); return; }
         // Filter out blocked users using the already-loaded block list
@@ -3641,7 +3653,7 @@
       try {
         var { data, error } = await db.from('profiles')
           .select('id, username, display_name, avatar_url, role')
-          .or('username.ilike.%' + q + '%,display_name.ilike.%' + q + '%')
+          .or('username.ilike.' + orIlikeVal(q) + ',display_name.ilike.' + orIlikeVal(q))
           .ilike('role', '%Artist%')
           .limit(5);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No artists found.'); return; }

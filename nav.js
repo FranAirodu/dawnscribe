@@ -409,7 +409,21 @@ function dsApplyAccent(hex) {
   }
 
   /* ── HELPERS ─────────────────────────────────────────────────── */
-  function dsEsc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  // Escapes single quotes too: several sinks below build attributes with single
+  // quotes (style='...', onclick='...'), where &quot; alone would not help.
+  function dsEsc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  // HTML-escaping does not neutralise a javascript: URL, so href/src values need
+  // a scheme allowlist as well. '' means "no usable URL".
+  function dsSafeUrl(u){
+    u = String(u == null ? '' : u).trim();
+    if (!/^(https?:\/\/|\/)/i.test(u)) return '';
+    return dsEsc(u);
+  }
+
+  // % and _ are ILIKE wildcards; escape them so a query of '%' does not match
+  // every row in the table.
+  function dsIlikeEsc(s){ return String(s||'').replace(/[%_\\]/g, '\\$&'); }
   function dsTimeAgo(s){
     if(!s) return '';
     var d=Math.floor((Date.now()-new Date(s))/1000);
@@ -567,13 +581,13 @@ function dsApplyAccent(hex) {
             if (type === 'titles') {
               res = await db.from('works').select('id,title,cover_url,author_id').eq('type','novel').eq('is_published',true).ilike('title','%'+q+'%').limit(4);
             } else if (type === 'authors') {
-              res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+q+'%').limit(4);
+              res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+dsIlikeEsc(q)+'%').limit(4);
             } else if (type === 'artwork') {
               res = await db.from('works').select('id,title,cover_url,author_id').eq('type','artwork').eq('is_published',true).ilike('title','%'+q+'%').limit(4);
             } else if (type === 'tags') {
               res = await db.from('works').select('id,title,cover_url,tags_main').eq('type','novel').eq('is_published',true).ilike('tags_all','%'+q+'%').limit(5);
             } else {
-              res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+q+'%').limit(4);
+              res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+dsIlikeEsc(q)+'%').limit(4);
             }
             var items = res.data || [];
             if (!items.length) { preview.innerHTML='<div style="padding:8px 10px;font-size:12px;color:var(--text3);">No results</div>'; return; }
@@ -607,7 +621,7 @@ function dsApplyAccent(hex) {
                 a.href = isWork ? (type==='titles'?'story.html?id=':'artwork.html?id=')+item.id : 'profile.html?user='+(item.username||'');
                 var coverHtml = (isWork && item.cover_url)
                   ? '<img src="'+dsEsc(item.cover_url)+'" style="width:100%;height:100%;object-fit:cover;"/>'
-                  : ((!isWork && item.avatar_url) ? '<img src="'+dsEsc(item.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : dsEsc((item.title||item.display_name||'?').charAt(0).toUpperCase()));
+                  : ((!isWork && item.avatar_url) ? '<img src="'+dsSafeUrl(item.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : dsEsc((item.title||item.display_name||'?').charAt(0).toUpperCase()));
                 a.innerHTML = '<div class="search-preview-cover '+dsCoverColor(item.id)+'">'+coverHtml+'</div>'
                   + '<div class="search-preview-info"><div class="search-preview-title">'+dsEsc(item.title||item.display_name||'Unknown')+'</div></div>';
                 preview.appendChild(a);
@@ -728,7 +742,9 @@ function dsApplyAccent(hex) {
         artistFeed.innerHTML='';
         frRows2.forEach(function(fr){
           var p=frPMap2[fr.requester_id]||{}; var name=p.display_name||p.username||'Someone';
-          var avH=p.avatar_url?'<img src="'+p.avatar_url+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>':name.charAt(0).toUpperCase();
+          // avatar_url was interpolated RAW here while every sibling site used
+          // dsEsc -- a single missed call is all an attribute break needs.
+          var avH=dsSafeUrl(p.avatar_url)?'<img src="'+dsSafeUrl(p.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>':dsEsc(name.charAt(0).toUpperCase());
           var el=document.createElement('div');
           el.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);margin-bottom:4px;';
           el.innerHTML='<div style="width:28px;height:28px;border-radius:50%;background:var(--bg4);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text2);">'+avH+'</div>'
@@ -754,7 +770,7 @@ function dsApplyAccent(hex) {
           var folPMap={};(folProfs||[]).forEach(function(p){folPMap[p.id]=p;});
           folRows.forEach(function(fl){
             var p=folPMap[fl.from_user_id]||{}; var name=p.display_name||p.username||'Someone';
-            var avH=p.avatar_url?'<img src="'+dsEsc(p.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>':dsEsc(name.charAt(0).toUpperCase());
+            var avH=p.avatar_url?'<img src="'+dsSafeUrl(p.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>':dsEsc(name.charAt(0).toUpperCase());
             var el=document.createElement('div');
             el.className='notif-item unread'; el.style.cursor='pointer';
             el.dataset.id=fl.id; el.dataset.server='1';
@@ -779,7 +795,7 @@ function dsApplyAccent(hex) {
         var prof=work.profiles; var name=prof?(prof.display_name||prof.username||'Unknown'):'Unknown';
         var avHtml = work.cover_url
           ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
-          : prof&&prof.avatar_url ? '<img src="'+dsEsc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
+          : prof&&prof.avatar_url ? '<img src="'+dsSafeUrl(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
         var coverClass = work.cover_url ? '' : dsCoverColor(work.author_id);
         var item=document.createElement('div'); item.className='notif-item unread'; item.dataset.id=work.id; item.style.cursor='pointer';
         item.onclick=function(){window.location.href='artwork.html?id='+work.id;};
@@ -871,7 +887,7 @@ function dsApplyAccent(hex) {
         };
         var avHtml2 = work && work.cover_url
           ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
-          : prof&&prof.avatar_url ? '<img src="'+dsEsc(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
+          : prof&&prof.avatar_url ? '<img src="'+dsSafeUrl(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
         var coverClass2 = work && work.cover_url ? '' : dsCoverColor(cm.user_id||cm.id);
         var cmTypeLabel = cm._type==='song' ? ' suggested a song for ' : cm._type==='opinion' ? ' shared a character opinion on ' : cm._type==='para' ? ' commented on a paragraph in ' : ' commented on ';
         var cmTypeColor = cm._type==='song' ? 'color:var(--gold);' : cm._type==='opinion' ? 'color:#ec4899;' : '';

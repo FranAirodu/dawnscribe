@@ -982,6 +982,14 @@
     }
     function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
+    // See profile.html: escaping alone does not neutralise a javascript: URL.
+    // Allow only http(s) / root-relative, then escape; '' means "no image".
+    function safeUrl(u) {
+      u = String(u == null ? '' : u).trim();
+      if (!/^(https?:\/\/|\/)/i.test(u)) return '';
+      return escHtml(u);
+    }
+
     // ── LINKED TRANSLATIONS ─────────────────────────────────────────
     async function loadLinkedTranslations() {
       var section = document.getElementById('translations-section');
@@ -3820,7 +3828,10 @@
       var grid = document.getElementById('landscape-pick-grid');
       grid.innerHTML = rows.map(function(l){
         var sel = (l.id === landscapePickSelection) ? ' selected' : '';
-        return '<div class="ls-pick-thumb'+sel+'" data-ls-id="'+l.id+'" onclick="selectLandscapePin('+JSON.stringify(l.id)+')"><img src="'+l.image_url+'" alt="landscape"/></div>';
+        // image_url was interpolated RAW into src -- a quote in the value closed
+        // the attribute and allowed an injected event handler. Author-controlled
+        // via novel_locations, so it is untrusted input like any other.
+        return '<div class="ls-pick-thumb'+sel+'" data-ls-id="'+escHtml(l.id)+'" onclick="selectLandscapePin('+JSON.stringify(l.id)+')"><img src="'+safeUrl(l.image_url)+'" alt="landscape"/></div>';
       }).join('');
 
       document.getElementById('landscape-pick-wrap').style.display = (mode === 'single') ? 'block' : 'none';

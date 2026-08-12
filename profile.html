@@ -1533,8 +1533,17 @@
                 return '<div class="song-pending-row" data-song-id="'+s.id+'" style="display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);">' +
                   (vid ? '<img src="https://img.youtube.com/vi/'+vid+'/default.jpg" style="width:60px;height:45px;border-radius:6px;object-fit:cover;flex-shrink:0;" />' : '') +
                   '<div style="flex:1;min-width:0;">' +
-                    '<div style="font-size:13px;font-weight:700;color:var(--text);"><a href="'+s.youtube_url+'" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">'+s.song_title+'</a></div>' +
-                    '<div style="font-size:11px;color:var(--text3);">'+s.artist_name+' · for '+cname+' · by '+pname+'</div>' +
+                    // Song suggestions are submitted by ANY user and rendered here in
+                    // the AUTHOR's approval queue, so every field is attacker-controlled
+                    // and aimed at the author. youtube_url went into href unvalidated
+                    // (javascript: would fire on click) and song_title/artist_name were
+                    // concatenated raw. safeUrl('') degrades to plain text, no link.
+                    '<div style="font-size:13px;font-weight:700;color:var(--text);">' +
+                      (safeUrl(s.youtube_url)
+                        ? '<a href="'+safeUrl(s.youtube_url)+'" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">'+escHtml(s.song_title)+'</a>'
+                        : escHtml(s.song_title)) +
+                    '</div>' +
+                    '<div style="font-size:11px;color:var(--text3);">'+escHtml(s.artist_name)+' · for '+escHtml(cname)+' · by '+escHtml(pname)+'</div>' +
                   '</div>' +
                   '<div style="display:flex;gap:8px;flex-shrink:0;">' +
                     '<button onclick="approveSong(&quot;'+s.id+'&quot;)" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);color:#22c55e;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:Lato,sans-serif;"><i class="ti ti-check"></i> Approve</button>' +
@@ -3162,6 +3171,16 @@ async function handleFriendBtn() {
     /* ── HELPERS ────────────────────────────────────────────────── */
     function escHtml(s) {
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // HTML-escaping is NOT sufficient for href/src: "javascript:alert(1)"
+    // contains no escapable character and still executes on click. Allow only
+    // http(s) and root-relative URLs, then escape. Returns '' for anything
+    // else, so callers should treat '' as "no link".
+    function safeUrl(u) {
+      u = String(u == null ? '' : u).trim();
+      if (!/^(https?:\/\/|\/)/i.test(u)) return '';
+      return escHtml(u);
     }
   
     // ── ARTWORK EDIT MODAL
