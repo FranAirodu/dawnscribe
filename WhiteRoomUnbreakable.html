@@ -1243,23 +1243,75 @@
         var prof = profMap[fb.user_id] || {};
         var authorName = prof.display_name || prof.username || 'Unknown user';
         var card = document.createElement('div');
-        card.className = 'report-card' + (fb.status === 'reviewed' ? ' resolved' : '');
+        card.className = 'report-card' + (fb.status !== 'new' ? ' resolved' : '');
+        // Feedback is queue-only by design: there is no notification email for
+        // it (same decision as contact messages). This section IS the inbox, so
+        // it needs to be actionable enough to clear -- hence note + spam, not
+        // just a single "seen" toggle.
+        var open = (fb.status === 'new');
+        var statusLabel = open ? '' :
+          (fb.status === 'spam' ? 'Spam' : 'Reviewed');
+
         card.innerHTML =
           '<div class="report-header">' +
             '<span class="report-type">' + escHtml(fb.page_context || 'feedback') + '</span>' +
-            (fb.status === 'reviewed' ? '<span style="font-size:11px;color:var(--text3);">Reviewed</span>' : '') +
+            (statusLabel ? '<span style="font-size:11px;color:var(--text3);">' + escHtml(statusLabel) + '</span>' : '') +
           '</div>' +
           '<div class="report-body">' + escHtml(fb.message || '') + '</div>' +
           '<div class="report-meta">From @' + escHtml(authorName) + ' · ' + formatDateTime(fb.created_at) + '</div>' +
-          (fb.status !== 'reviewed' ?
-          '<div class="report-actions">' +
-            '<button class="report-btn dismiss"><i class="ti ti-check"></i> Mark Reviewed</button>' +
-          '</div>' : '');
-        if (fb.status !== 'reviewed') {
-          card.querySelector('.dismiss').addEventListener('click', async function() {
-            await db.from('feedback').update({ status: 'reviewed' }).eq('id', fb.id);
-            showToast('Feedback marked reviewed');
-            loadFeedback(0);
+          (open
+            ? '<div class="report-actions" style="flex-wrap:wrap;align-items:center;gap:8px;">' +
+                '<input class="fb-note" placeholder="Internal note (optional, never shown to the user)" ' +
+                  'style="flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);' +
+                  'border-radius:8px;padding:6px 10px;color:var(--text);font-size:12.5px;font-family:Lato,sans-serif;" />' +
+                '<button class="report-btn dismiss"><i class="ti ti-check"></i> Mark Reviewed</button>' +
+                '<button class="report-btn fb-spam"><i class="ti ti-trash"></i> Spam</button>' +
+              '</div>'
+            : '<div class="report-meta" style="color:var(--green,#34d399);">' +
+                '<i class="ti ti-check"></i> ' + escHtml(statusLabel) +
+                (fb.reviewed_note ? ' — ' + escHtml(fb.reviewed_note) : '') +
+                (fb.reviewed_at ? ' · ' + formatDateTime(fb.reviewed_at) : '') +
+              '</div>' +
+              '<div class="report-actions">' +
+                '<button class="report-btn fb-reopen"><i class="ti ti-rotate"></i> Reopen</button>' +
+              '</div>');
+
+        // supabase-js does NOT throw on a failed write -- it returns { error }.
+        // The previous version awaited the update and reported success
+        // unconditionally, so an RLS or CHECK failure looked like it worked.
+        async function setFeedbackStatus(status, note) {
+          var patch = { status: status };
+          if (status === 'new') {
+            patch.reviewed_at = null;
+            patch.reviewed_note = null;
+          } else {
+            patch.reviewed_at = new Date().toISOString();
+            if (note) patch.reviewed_note = note;
+          }
+          var res = await Promise.resolve(
+            db.from('feedback').update(patch).eq('id', fb.id)
+          ).catch(function(e) { return { error: e }; });
+          if (res && res.error) {
+            showToast('Could not update: ' + res.error.message);
+            return;
+          }
+          showToast(status === 'new' ? 'Reopened'
+                  : (status === 'spam' ? 'Marked spam' : 'Feedback marked reviewed'));
+          loadFeedback(0);
+        }
+
+        if (open) {
+          card.querySelector('.dismiss').addEventListener('click', function() {
+            var n = card.querySelector('.fb-note');
+            setFeedbackStatus('reviewed', n ? n.value.trim() : '');
+          });
+          card.querySelector('.fb-spam').addEventListener('click', function() {
+            var n = card.querySelector('.fb-note');
+            setFeedbackStatus('spam', n ? n.value.trim() : '');
+          });
+        } else {
+          card.querySelector('.fb-reopen').addEventListener('click', function() {
+            setFeedbackStatus('new', '');
           });
         }
         el.appendChild(card);
