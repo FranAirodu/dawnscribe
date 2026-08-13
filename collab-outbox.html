@@ -130,6 +130,20 @@
   const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
 
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  // Build a JS string literal safe for an HTML on* attribute. JSON.stringify does
+  // the JS-level escaping; the entity encoding does the HTML-level. Without the
+  // second layer the raw double quotes terminate the attribute early — which
+  // silently broke every handler built this way.
+  function attrJson(v){
+    return JSON.stringify(v === undefined ? null : v)
+      .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function safeUrl(u){
+    u = String(u||'').trim();
+    return /^(https?:\/\/|\/)/i.test(u) ? u : '';
+  }
+
 
   function timeAgo(isoStr){
     if(!isoStr) return '';
@@ -395,8 +409,8 @@
     var byLine = art._artistUsername ? 'artwork by <em>' + esc(art._artistUsername) + '</em>' : '';
     var artLabel = 'For artwork: <em>' + esc(art.title || 'Untitled Artwork') + '</em>' + (byLine ? ' · ' + byLine : '');
     // BUG FIX: openWithdraw now passes tableKey 'story' so doWithdraw hits artwork_collabs
-    var withdrawId = JSON.stringify(row.id);
-    var workId = JSON.stringify(row.work_id || '');
+    var withdrawId = attrJson(row.id);
+    var workId = attrJson(row.work_id || '');
     div.innerHTML =
       coverHtml
       + '<div class="collab-info">'
@@ -435,7 +449,7 @@
     var novelLabel = 'For novel: <em>' + esc(novel.title || 'Untitled Novel') + '</em>' + (authorLine ? ' · ' + authorLine : '');
     // BUG FIX: openWithdraw passes tableKey 'fanart' so doWithdraw hits story_collabs
     // BUG FIX: withdraw button is now present for pending fan-art rows
-    var withdrawId = JSON.stringify(row.id);
+    var withdrawId = attrJson(row.id);
     div.innerHTML =
       coverHtml
       + '<div class="collab-info">'

@@ -129,7 +129,21 @@
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
   const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
 
-  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  // Build a JS string literal safe for an HTML on* attribute. JSON.stringify does
+  // the JS-level escaping; the entity encoding does the HTML-level. Without the
+  // second layer the raw double quotes terminate the attribute early — which
+  // silently broke every handler built this way.
+  function attrJson(v){
+    return JSON.stringify(v === undefined ? null : v)
+      .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function safeUrl(u){
+    u = String(u||'').trim();
+    return /^(https?:\/\/|\/)/i.test(u) ? u : '';
+  }
+
 
   var _toastTimer = null;
   function showToast(msg, icon){
@@ -400,7 +414,7 @@
       ? '<a class="btn-primary" href="' + esc(d.storyUrl) + '"><i class="ti ti-book-2"></i> Read Your Story</a>'
       : '<span class="btn-primary" style="opacity:0.4;cursor:default;pointer-events:none;"><i class="ti ti-book-2"></i> Story Unavailable</span>';
     var shareBtnHtml = d.storyUrl
-      ? '<button id="share-btn" class="btn-secondary" onclick="shareStory(\'' + esc(d.storyUrl) + '\',\'' + esc(d.novelTitle||'') + '\')"><i class="ti ti-share"></i> Share</button>'
+      ? '<button id="share-btn" class="btn-secondary" onclick="shareStory(' + attrJson(d.storyUrl) + ',' + attrJson(d.novelTitle||'') + ')"><i class="ti ti-share"></i> Share</button>'
       : '';
 
     page.innerHTML =
@@ -422,7 +436,7 @@
             // Novel cover
             + '<div class="bond-cover-wrap">'
               + '<div class="bond-cover">'
-                + (d.novelCover ? '<img src="' + esc(d.novelCover) + '" alt=""/>' : '<i class="ti ti-book"></i>')
+                + (safeUrl(d.novelCover) ? '<img src="' + esc(safeUrl(d.novelCover)) + '" alt=""/>' : '<i class="ti ti-book"></i>')
               + '</div>'
               + '<div class="bond-cover-label">Your Story</div>'
               + '<div class="bond-cover-title">' + esc(d.novelTitle) + '</div>'
@@ -438,7 +452,7 @@
             // Artwork cover
             + '<div class="bond-cover-wrap">'
               + '<div class="bond-cover artwork-cover">'
-                + (d.artworkCover ? '<img src="' + esc(d.artworkCover) + '" alt=""/>' : '<i class="ti ti-palette"></i>')
+                + (safeUrl(d.artworkCover) ? '<img src="' + esc(safeUrl(d.artworkCover)) + '" alt=""/>' : '<i class="ti ti-palette"></i>')
               + '</div>'
               + '<div class="bond-cover-label">Inspired by</div>'
               + '<div class="bond-cover-title">' + esc(d.artworkTitle) + '</div>'
@@ -501,7 +515,7 @@
 
             + '<div class="bond-cover-wrap">'
               + '<div class="bond-cover">'
-                + (d.artworkCover ? '<img src="' + esc(d.artworkCover) + '" alt=""/>' : '<i class="ti ti-photo"></i>')
+                + (safeUrl(d.artworkCover) ? '<img src="' + esc(safeUrl(d.artworkCover)) + '" alt=""/>' : '<i class="ti ti-photo"></i>')
               + '</div>'
               + '<div class="bond-cover-label">Your Art</div>'
               + '<div class="bond-cover-title">' + esc(d.artworkTitle) + '</div>'
@@ -515,7 +529,7 @@
 
             + '<div class="bond-cover-wrap">'
               + '<div class="bond-cover artwork-cover">'
-                + (d.novelCover ? '<img src="' + esc(d.novelCover) + '" alt=""/>' : '<i class="ti ti-book"></i>')
+                + (safeUrl(d.novelCover) ? '<img src="' + esc(safeUrl(d.novelCover)) + '" alt=""/>' : '<i class="ti ti-book"></i>')
               + '</div>'
               + '<div class="bond-cover-label">Inspired by</div>'
               + '<div class="bond-cover-title">' + esc(d.novelTitle) + '</div>'

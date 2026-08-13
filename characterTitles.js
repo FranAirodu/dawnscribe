@@ -66,7 +66,18 @@ window.CharacterTitles = (function() {
   ];
 
   // ── HELPERS ───────────────────────────────────────────────────
-  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  // Only http(s) and site-relative URLs may reach an href or src. A javascript:
+  // URL in an <a href> executes on click; esc() does not stop it.
+  function safeUrl(u){
+    u = String(u||'').trim();
+    return /^(https?:\/\/|\/)/i.test(u) ? u : '';
+  }
+  // Colour values reaching a style="" attribute must be a literal hex.
+  function safeHex(v){
+    v = String(v||'').trim();
+    return /^#[0-9a-fA-F]{6}$/.test(v) ? v : '';
+  }
   function db() { return window.db; }
 
   // ── LOAD ALL ACTIVE TITLES ────────────────────────────────────
@@ -190,9 +201,9 @@ window.CharacterTitles = (function() {
       card.id = 'ct-char-' + char.id;
 
       var imgHtml = char.chapter_image_url
-        ? '<img src="'+esc(char.chapter_image_url)+'" class="ct-char-img" alt=""/>'
+        ? '<img src="'+esc(safeUrl(char.chapter_image_url))+'" class="ct-char-img" alt=""/>'
         : char.portrait_url
-          ? '<img src="'+esc(char.portrait_url)+'" class="ct-char-img" alt=""/>'
+          ? '<img src="'+esc(safeUrl(char.portrait_url))+'" class="ct-char-img" alt=""/>'
           : '<div class="ct-char-img-placeholder"><i class="ti ti-user"></i></div>';
 
       card.innerHTML =
@@ -911,7 +922,7 @@ window.CharacterTitles = (function() {
       var fanArtHtml = charFanArt.length
         ? '<div class="ct-story-art-strip">' +
             charFanArt.slice(0,6).map(function(f){
-              return '<a href="' + esc(f.image_url) + '" target="_blank" rel="noopener" class="ct-story-art-thumb" title="' + esc(f.description||'Fan art') + '"><img src="' + esc(f.image_url) + '" alt="fan art"/></a>';
+              return '<a href="' + esc(safeUrl(f.image_url)) + '" target="_blank" rel="noopener" class="ct-story-art-thumb" title="' + esc(f.description||'Fan art') + '"><img src="' + esc(safeUrl(f.image_url)) + '" alt="fan art"/></a>';
             }).join('') +
             (charFanArt.length > 6 ? '<div class="ct-story-art-more">+' + (charFanArt.length - 6) + '</div>' : '') +
           '</div>'
@@ -941,7 +952,7 @@ window.CharacterTitles = (function() {
       if (moodHex) { card.classList.add('ct-mood-tinted'); card.style.setProperty('--ct-mood', moodHex); card.title = 'This month\u2019s mood: ' + moodWinner; }
 
       var imgHtml = char.portrait_url
-        ? '<img src="'+esc(char.portrait_url)+'" class="ct-story-portrait" data-char="'+esc(char.id)+'" alt="'+esc(char.name)+'"/>'
+        ? '<img src="'+esc(safeUrl(char.portrait_url))+'" class="ct-story-portrait" data-char="'+esc(char.id)+'" alt="'+esc(char.name)+'"/>'
         : '<div class="ct-story-portrait-placeholder" data-char="'+esc(char.id)+'"><i class="ti ' + (isBook ? 'ti-book-2' : 'ti-user') + '" style="font-size:28px;"></i></div>';
 
       var endedBadge = char.status === 'ended'
@@ -975,7 +986,7 @@ window.CharacterTitles = (function() {
           '<div class="ct-story-art-strip">' +
           charCollabs.slice(0,6).map(function(c){
             var cover = c.works && c.works.cover_url ? c.works.cover_url : '';
-            return cover ? '<a href="artwork.html?id='+esc(c.artwork_id)+'" class="ct-story-art-thumb"><img src="'+esc(cover)+'" alt="collab art"/></a>' : '';
+            return cover ? '<a href="artwork.html?id='+esc(c.artwork_id)+'" class="ct-story-art-thumb"><img src="'+esc(safeUrl(cover))+'" alt="collab art"/></a>' : '';
           }).join('') +
           (charCollabs.length > 6 ? '<div class="ct-story-art-more">+' + (charCollabs.length-6) + '</div>' : '') +
           '</div>';
@@ -1010,8 +1021,8 @@ window.CharacterTitles = (function() {
       if (featuredSong) {
         var sugName = usernames[featuredSong.user_id] || 'a reader';
         var vid = ytId(featuredSong.youtube_url);
-        var songBg = aura ? 'background:' + aura + '12;border-color:' + aura + '40;' : '';
-        featuredHtml = '<a href="' + esc(featuredSong.youtube_url) + '" target="_blank" rel="noopener" class="ct-featured-song" style="' + songBg + '">' +
+        var songBg = safeHex(aura) ? 'background:' + safeHex(aura) + '12;border-color:' + safeHex(aura) + '40;' : '';
+        featuredHtml = '<a href="' + esc(safeUrl(featuredSong.youtube_url)) + '" target="_blank" rel="noopener" class="ct-featured-song" style="' + songBg + '">' +
           '<div class="ct-featured-song-thumb"><img src="https://img.youtube.com/vi/' + esc(vid) + '/default.jpg" alt=""/><div class="ct-featured-song-play"><i class="ti ti-player-play"></i></div></div>' +
           '<div class="ct-featured-song-info"><div class="ct-featured-song-title">' + esc(featuredSong.song_title) + '</div>' +
           '<div class="ct-featured-song-artist">' + esc(featuredSong.artist_name || '') + '</div>' +
@@ -1035,7 +1046,7 @@ window.CharacterTitles = (function() {
             var deleteBtn = isOwner
               ? '<button class="ct-song-delete-btn" data-song-id="' + esc(s.id) + '" title="Delete song"><i class="ti ti-trash"></i></button>'
               : '';
-            return '<a href="' + esc(s.youtube_url) + '" target="_blank" rel="noopener" class="ct-song-row">' +
+            return '<a href="' + esc(safeUrl(s.youtube_url)) + '" target="_blank" rel="noopener" class="ct-song-row">' +
               '<img src="https://img.youtube.com/vi/' + esc(vid2) + '/default.jpg" class="ct-song-thumb" alt=""/>' +
               '<div class="ct-song-info"><div class="ct-song-title">' + esc(s.song_title) + '</div>' +
               '<div class="ct-song-meta">' + esc(s.artist_name || '') + (s.artist_name ? ' · ' : '') + 'by ' + esc(sugName2) + '</div>' +
@@ -1055,7 +1066,7 @@ window.CharacterTitles = (function() {
         ? '<div class="ct-cosmetic-gallery">' +
             charCosmetics.map(function(cm){
               return '<div class="ct-cosmetic-item">' +
-                '<img src="' + esc(cm.image_url) + '" alt="' + esc(cm.name) + '" class="ct-cosmetic-img"/>' +
+                '<img src="' + esc(safeUrl(cm.image_url)) + '" alt="' + esc(cm.name) + '" class="ct-cosmetic-img"/>' +
                 '<div class="ct-cosmetic-name">' + esc(cm.name) + '</div>' +
                 (cm.quill_price ? '<div class="ct-cosmetic-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + cm.quill_price + ' Quills</div>' : '') +
               '</div>';
@@ -1109,13 +1120,13 @@ window.CharacterTitles = (function() {
             return '<div class="ct-aura-swatch'+cls+'" style="background:'+p.hex+';" title="'+esc(p.name)+'" data-hex="'+esc(p.hex)+'" data-name="'+esc(p.name)+'"></div>';
           }).join('') +
           '</div>' +
-          '<div class="ct-aura-name-hint" data-aura-name-hint>' + (myAuraHex ? (AURA_PALETTE.find(function(p){return p.hex===myAuraHex;})||{name:myAuraHex}).name : '') + '</div>' +
+          '<div class="ct-aura-name-hint" data-aura-name-hint>' + (myAuraHex ? (AURA_PALETTE.find(function(p){return p.hex===myAuraHex;})||{name:esc(myAuraHex)}).name : '') + '</div>' +
           '<div class="ct-aura-accept-row">' +
             '<button class="ct-aura-accept-btn' + (alreadyVoted ? '' : '') + '" data-aura-accept style="' + (alreadyVoted ? 'display:none;' : 'display:none;') + '">' +
               '<i class="ti ti-check"></i> Accept' +
             '</button>' +
             (alreadyVoted
-              ? '<span style="font-size:11px;color:var(--text3);font-style:italic;">Your vote: <strong style="color:var(--text);">' + (AURA_PALETTE.find(function(p){return p.hex===myAuraHex;})||{name:myAuraHex}).name + '</strong></span>'
+              ? '<span style="font-size:11px;color:var(--text3);font-style:italic;">Your vote: <strong style="color:var(--text);">' + (AURA_PALETTE.find(function(p){return p.hex===myAuraHex;})||{name:esc(myAuraHex)}).name + '</strong></span>'
               : '') +
           '</div>' +
           (alreadyVoted ? buildAuraBreakdown(auraData.counts || {}, auraData.total) : '<div data-aura-breakdown-placeholder></div>');
@@ -1124,7 +1135,7 @@ window.CharacterTitles = (function() {
           '<div class="ct-aura-label"><i class="ti ti-droplet"></i> ' + (isBook ? 'Book\'s Aura' : 'Character\'s Aura') + '</div>' +
           '<div style="font-size:10px;color:var(--text3);padding:0 12px 8px;line-height:1.5;">Readers vote on the color that reflects this character\'s soul. The most popular choice tints their card.</div>' +
           (auraData.winner
-            ? '<div class="ct-aura-voted"><div class="ct-aura-voted-dot" style="background:'+auraData.winner+';"></div> Leading: ' + (AURA_PALETTE.find(function(p){return p.hex===auraData.winner;})||{name:auraData.winner}).name + ' · ' + auraData.total + ' vote' + (auraData.total!==1?'s':'') + '</div>'
+            ? '<div class="ct-aura-voted"><div class="ct-aura-voted-dot" style="background:'+safeHex(auraData.winner)+';"></div> Leading: ' + (AURA_PALETTE.find(function(p){return p.hex===auraData.winner;})||{name:esc(auraData.winner)}).name + ' · ' + auraData.total + ' vote' + (auraData.total!==1?'s':'') + '</div>'
             : '<div style="font-size:11px;color:var(--text3);padding:0 12px 8px;font-style:italic;">No votes yet</div>') +
           buildAuraBreakdown(auraData.counts || {}, auraData.total);
       }
@@ -2063,7 +2074,7 @@ window.CharacterTitles = (function() {
       row.innerHTML =
         '<img src="https://img.youtube.com/vi/' + esc(vid) + '/default.jpg" class="ct-song-thumb" alt=""/>' +
         '<div class="ct-song-info">' +
-          '<div class="ct-song-title"><a href="' + esc(s.youtube_url) + '" target="_blank" rel="noopener">' + esc(s.song_title) + '</a></div>' +
+          '<div class="ct-song-title"><a href="' + esc(safeUrl(s.youtube_url)) + '" target="_blank" rel="noopener">' + esc(s.song_title) + '</a></div>' +
           '<div class="ct-song-meta">' + esc(s.artist_name || '') + (s.artist_name ? ' · ' : '') + 'Suggested by ' + esc(name) + chapLabel + '</div>' +
         '</div>' +
         '<div class="ct-pending-song-actions">' +
