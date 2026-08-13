@@ -131,6 +131,8 @@
     .scroll-type-badge.type-official{color:#c084fc;border-color:rgba(192,132,252,0.3);background:rgba(192,132,252,0.07);}
     .scroll-type-badge.type-artist{color:var(--accent);border-color:rgba(45,212,191,0.3);background:rgba(45,212,191,0.07);}
     .scroll-type-badge.type-novel{color:var(--gold);border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.07);}
+    .scroll-type-badge.type-banner{color:#60a5fa;border-color:rgba(96,165,250,0.3);background:rgba(96,165,250,0.07);}
+    .scroll-type-badge.type-collab{color:#f472b6;border-color:rgba(244,114,182,0.3);background:rgba(244,114,182,0.07);}
     .scroll-author-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text3);}
     .scroll-author-chip img{width:16px;height:16px;border-radius:50%;object-fit:cover;background:var(--bg4);}
     .scroll-name{font-family:'Cinzel',serif;font-size:17px;font-weight:700;line-height:1.3;}
@@ -249,6 +251,8 @@
     .tag-purple{color:#c084fc;background:rgba(192,132,252,0.1);border:1px solid rgba(192,132,252,0.2);}
     .tag-teal{color:var(--accent);background:rgba(45,212,191,0.1);border:1px solid rgba(45,212,191,0.2);}
     .tag-gold{color:var(--gold);background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);}
+    .tag-blue{color:#60a5fa;background:rgba(96,165,250,0.1);border:1px solid rgba(96,165,250,0.2);}
+    .tag-pink{color:#f472b6;background:rgba(244,114,182,0.1);border:1px solid rgba(244,114,182,0.2);}
     .tag-red{color:var(--red);background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.2);}
     .divider{height:1px;background:var(--border);margin:4px 0;}
     a{color:inherit;text-decoration:none;}
@@ -268,6 +272,7 @@
   var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
   var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
   var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  window.db = db; // explicit: nav.js reads window.db (top-level var already does this, but every other page states it)
 </script>
 <script src="nav.js"></script>
 
@@ -300,6 +305,8 @@
     <button class="filter-btn" data-filter="official" onclick="setFilter('official')"><i class="ti ti-crown"></i> Official</button>
     <button class="filter-btn" data-filter="novel" onclick="setFilter('novel')"><i class="ti ti-book"></i> Novel</button>
     <button class="filter-btn" data-filter="artist" onclick="setFilter('artist')"><i class="ti ti-palette"></i> Artist</button>
+    <button class="filter-btn" data-filter="banner" onclick="setFilter('banner')"><i class="ti ti-photo"></i> Banner</button>
+    <button class="filter-btn" data-filter="collab" onclick="setFilter('collab')"><i class="ti ti-users"></i> Collab</button>
     <button class="filter-btn" data-filter="owned" onclick="setFilter('owned')"><i class="ti ti-check"></i> My Scrolls</button>
   </div>
 
@@ -399,9 +406,9 @@
 /* ================================================================
    DAWNSCRIBE MARKETPLACE
    Tables expected:
-     scrolls          – id, name, description, type ('official'|'novel'|'artist'),
-                        quill_price, banner_url, banner_emoji, novel_id,
-                        artist_id, is_featured, created_at
+     scrolls          – id, name, description, type ('official'|'novel'|'artist'
+                        |'banner'|'collab'), quill_price, banner_url,
+                        banner_emoji, novel_id, artist_id, is_featured, created_at
      scroll_items     – id, scroll_id, name, description, type
                         ('avatar'|'banner'|'background'|'coverart'),
                         ember_price, image_url, item_emoji
@@ -421,6 +428,29 @@
   let ownedItemIds = new Set();
   let activeFilter = 'all';
   let openScrollData = null;
+
+  // ── TYPE LABELS ───────────────────────────────────────────────
+  // scrolls_type_check permits official | novel | artist | banner | collab.
+  // Keep all five here; an unknown type falls back to a neutral "Community"
+  // label, never to "Official" — a user-created Scroll wearing the Official
+  // badge is the same impersonation problem the profiles.role CHECK closed.
+  // Declared above the init IIFE so there is no temporal-dead-zone dependency
+  // on how far the async init gets before the rest of the script evaluates.
+  const TYPE_CLASS = {
+    official: 'type-official', novel: 'type-novel', artist: 'type-artist',
+    banner: 'type-banner', collab: 'type-collab',
+  };
+  const TYPE_LABEL = {
+    official: '✦ Official', novel: '📖 Novel', artist: '🎨 Artist',
+    banner: '🖼 Banner', collab: '🤝 Collab',
+  };
+  const MODAL_TYPE = {
+    official: ['tag-purple', '✦ Official DawnScribe'],
+    novel:    ['tag-gold',   '📖 Novel Scroll'],
+    artist:   ['tag-teal',   '🎨 Artist Scroll'],
+    banner:   ['tag-blue',   '🖼 Banner Scroll'],
+    collab:   ['tag-pink',   '🤝 Collab Scroll'],
+  };
 
   // ── INIT ──────────────────────────────────────────────────────
   (async function init() {
@@ -502,7 +532,10 @@
       ownedItemIds = new Set((itemOwns || []).map(o => o.scroll_item_id));
     }
 
-    // Load scrolls with item counts
+    // Load scrolls with item counts.
+    // is_active is the right gate on its own: the scrolls INSERT/UPDATE policies
+    // forbid a creator from ever setting is_active, is_featured or any approval
+    // flag, so is_active = true can only have come from admin_review_scroll.
     const { data: scrolls, error } = await db.from('scrolls')
       .select('*, scroll_items(count)')
       .eq('is_active', true)
@@ -514,12 +547,24 @@
       return;
     }
 
-    // Artist Scrolls (Collaboration Items) require dual approval before they're
-    // purchasable — purchase_scroll blocks these server-side. We still show
-    // them in the grid (so readers can see what's coming) but flag them as
-    // pending so nobody is surprised when the unlock button won't work yet.
+    // Scrolls that need a second signature before they're purchasable —
+    // purchase_scroll blocks all of these server-side. We still show them in the
+    // grid (so readers can see what's coming) but flag them as pending so nobody
+    // is surprised when the unlock button won't work yet.
+    //
+    // Previously this only covered type='artist', so 'collab' and 'banner'
+    // Scrolls rendered with a live Unlock button and the server rejection fell
+    // through to the generic "Something went wrong" toast.
     scrolls.forEach(s => {
-      s.pending_approval = s.type === 'artist' && !(s.artist_approved && s.novelist_approved);
+      if (s.type === 'artist') {
+        s.pending_approval = !(s.artist_approved && (s.novel_id ? s.novelist_approved : true));
+      } else if (s.type === 'collab') {
+        s.pending_approval = !!s.collab_novelist_id && !s.collab_novelist_accepted;
+      } else if (s.type === 'banner') {
+        s.pending_approval = !!s.novel_id && !s.novelist_approved;
+      } else {
+        s.pending_approval = false;
+      }
     });
     const visible = scrolls;
 
@@ -574,9 +619,13 @@
   function renderScrollCard(s) {
     const owned = ownedScrollIds.has(s.id);
     const itemCount = s.scroll_items?.[0]?.count ?? 0;
-    const typeClass = { official: 'type-official', novel: 'type-novel', artist: 'type-artist' }[s.type] || 'type-official';
-    const typeLabel = { official: '✦ Official', novel: '📖 Novel', artist: '🎨 Artist' }[s.type] || 'Official';
-    const bannerStyle = s.banner_url ? `<img src="${esc(s.banner_url)}" alt="">` : `<div class="scroll-banner-placeholder">${esc(s.banner_emoji) || '📜'}</div>`;
+    // Unknown types must NOT fall back to the Official badge — a user-created
+    // banner/collab Scroll wearing "✦ Official" misrepresents who made it, the
+    // same impersonation problem the profiles.role CHECK closed.
+    const typeClass = TYPE_CLASS[s.type] || 'type-artist';
+    const typeLabel = TYPE_LABEL[s.type] || '📜 Community';
+    const bannerUrl = safeUrl(s.banner_url);
+    const bannerStyle = bannerUrl ? `<img src="${esc(bannerUrl)}" alt="">` : `<div class="scroll-banner-placeholder">${esc(s.banner_emoji) || '📜'}</div>`;
 
     return `
       <div class="scroll-card${owned ? ' owned' : ''}${s.is_featured ? ' featured' : ''}${s.pending_approval ? ' pending' : ''}" onclick="openScroll('${s.id}')">
@@ -620,15 +669,16 @@
     openScrollData = scroll;
 
     const owned = ownedScrollIds.has(scroll.id);
+    const scrollBannerUrl = safeUrl(scroll.banner_url);
 
     // Banner
     const banner = document.getElementById('modal-banner');
     const bannerIcon = document.getElementById('modal-banner-icon');
-    if (scroll.banner_url) {
+    if (scrollBannerUrl) {
       bannerIcon.style.display = 'none';
       let img = banner.querySelector('img.modal-bg-img');
       if (!img) { img = document.createElement('img'); img.className = 'modal-bg-img'; img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;'; banner.prepend(img); }
-      img.src = scroll.banner_url;
+      img.src = scrollBannerUrl;
     } else {
       bannerIcon.style.display = 'flex';
       bannerIcon.textContent = scroll.banner_emoji || '📜';
@@ -640,16 +690,16 @@
 
     // Type row
     const typeRow = document.getElementById('modal-type-row');
-    const typeLabels = { official: ['tag-purple','✦ Official DawnScribe'], novel: ['tag-gold','📖 Novel Scroll'], artist: ['tag-teal','🎨 Artist Scroll'] };
-    const [cls, lbl] = typeLabels[scroll.type] || typeLabels.official;
+    const [cls, lbl] = MODAL_TYPE[scroll.type] || ['tag-teal', '📜 Community Scroll'];
     typeRow.innerHTML = `<span class="tag ${cls}">${lbl}</span>${scroll.novel_title ? `<span class="tag tag-gold" style="margin-left:4px;"><i class="ti ti-book"></i> ${esc(scroll.novel_title)}</span>` : ''}`;
 
     // Artist strip
     const artistStrip = document.getElementById('modal-artist-strip');
-    if (scroll.type === 'artist' && scroll.artist_username) {
+    if (scroll.artist_username && scroll.type !== 'official') {
       artistStrip.style.display = 'flex';
       const av = document.getElementById('modal-artist-avatar');
-      av.innerHTML = scroll.artist_avatar_url ? `<img src="${esc(scroll.artist_avatar_url)}" alt="">` : esc((scroll.artist_display_name || scroll.artist_username || '?')[0].toUpperCase());
+      const avatarUrl = safeUrl(scroll.artist_avatar_url);
+      av.innerHTML = avatarUrl ? `<img src="${esc(avatarUrl)}" alt="">` : esc((scroll.artist_display_name || scroll.artist_username || '?')[0].toUpperCase());
       document.getElementById('modal-artist-name').textContent = scroll.artist_display_name || scroll.artist_username;
       document.getElementById('modal-artist-link').href = 'profile.html?u=' + encodeURIComponent(scroll.artist_username);
     } else {
@@ -664,7 +714,7 @@
     priceEl.textContent = (scroll.quill_price || 0).toLocaleString();
     const unlockNote = document.getElementById('modal-unlock-note');
     unlockNote.textContent = scroll.pending_approval
-      ? 'This Artist Scroll is awaiting approval from both the Artist and Novelist before it can be unlocked.'
+      ? 'This Scroll is awaiting sign-off from the other creator before it can be unlocked.'
       : 'Unlocking grants access to all items — buy each with Embers.';
     if (owned) {
       unlockBtn.className = 'modal-unlock-btn already-owned';
@@ -687,9 +737,17 @@
       unlockBtn.onclick = purchaseScroll;
     }
 
-    // "Use as My Banner" button — only for banner-type scrolls the user owns
+    // "Use as My Banner" button — only for banner-type scrolls the user owns.
+    //
+    // The banner URL is NO LONGER passed through the onclick. It used to be
+    // interpolated into a single-quoted JS string, and esc() did not escape
+    // single quotes, so a banner_url containing one broke out of the string and
+    // ran as script in the buyer's browser. The argument was dead weight anyway:
+    // equip_banner_scroll re-reads banner_url from the Scroll server-side and
+    // never trusted the client value. scrolls.banner_url now also carries the
+    // same CHECK as profiles.banner_url (no < > " ').
     let bannerActionRow = document.getElementById('modal-banner-action-row');
-    if (scroll.type === 'banner' && owned && currentUser && scroll.banner_url) {
+    if (scroll.type === 'banner' && owned && currentUser && scrollBannerUrl) {
       if (!bannerActionRow) {
         bannerActionRow = document.createElement('div');
         bannerActionRow.id = 'modal-banner-action-row';
@@ -697,7 +755,7 @@
         document.getElementById('modal-unlock-row').after(bannerActionRow);
       }
       bannerActionRow.style.display = 'block';
-      bannerActionRow.innerHTML = `<button class="modal-use-banner-btn" id="modal-use-banner-btn" onclick="applyBannerToProfile('${scroll.id}','${esc(scroll.banner_url)}',this)"><i class="ti ti-photo-check"></i> Use as My Banner</button>`;
+      bannerActionRow.innerHTML = `<button class="modal-use-banner-btn" id="modal-use-banner-btn" onclick="applyBannerToProfile('${scroll.id}',this)"><i class="ti ti-photo-check"></i> Use as My Banner</button>`;
     } else if (bannerActionRow) {
       bannerActionRow.style.display = 'none';
     }
@@ -726,18 +784,19 @@
     grid.innerHTML = items.map(item => {
       const owned = ownedItemIds.has(item.id);
       const locked = !scrollOwned;
+      const imgUrl = safeUrl(item.image_url);
       return `
         <div class="mitem${locked ? ' locked' : ''}">
           <div class="mitem-thumb">
-            ${item.image_url ? `<img src="${esc(item.image_url)}" alt="">` : `<span>${esc(item.item_emoji) || '🎁'}</span>`}
+            ${imgUrl ? `<img src="${esc(imgUrl)}" alt="">` : `<span>${esc(item.item_emoji) || '🎁'}</span>`}
             ${locked ? '<div class="mitem-lock-overlay"><i class="ti ti-lock"></i></div>' : ''}
           </div>
           <div class="mitem-body">
             <div class="mitem-name" title="${esc(item.name)}">${esc(item.name)}</div>
-            <div class="mitem-type"><i class="ti ${typeIcons[item.type] || 'ti-package'}"></i> ${typeLabels[item.type] || item.type}</div>
+            <div class="mitem-type"><i class="ti ${typeIcons[item.type] || 'ti-package'}"></i> ${esc(typeLabels[item.type] || item.type)}</div>
             <div class="mitem-cost">
               <div class="mitem-price"><i class="ti ti-flame"></i> ${(item.ember_price||0).toLocaleString()}</div>
-              <button class="mitem-buy-btn${owned ? ' owned' : ''}" 
+              <button class="mitem-buy-btn${owned ? ' owned' : ''}"
                 ${locked || owned ? 'disabled' : ''}
                 onclick="${locked || owned ? '' : `purchaseItem('${item.id}', ${item.ember_price||0}, this)`}">
                 ${owned ? '<i class="ti ti-check"></i> Owned' : locked ? '<i class="ti ti-lock"></i> Locked' : '<i class="ti ti-flame"></i> Claim'}
@@ -795,9 +854,14 @@
     } catch(e) {
       console.error(e);
       const msg = (e && e.message) || '';
+      // These strings must stay in step with purchase_scroll's error values.
       const friendly = msg === 'Already owned' ? 'You already own this Scroll.'
         : msg === 'Insufficient quills' ? 'Not enough Quills! Buy more below.'
         : msg === 'Scroll not yet approved by both creators' ? 'This Scroll isn\'t live yet — still pending creator approval.'
+        : msg === 'Collab Scroll not yet accepted by the novelist' ? 'This Scroll isn\'t live yet — the novelist hasn\'t accepted the collab.'
+        : msg === 'Not yet approved by the novel author' ? 'This Scroll isn\'t live yet — still pending the novel author\'s approval.'
+        : msg === 'Scroll not found' ? 'This Scroll is no longer available.'
+        : msg === 'Your account is suspended and cannot perform this action.' ? 'This account is suspended.'
         : 'Something went wrong. Please try again.';
       showToast(friendly, 'ti-alert-triangle', true);
       btn.disabled = false;
@@ -842,6 +906,7 @@
       const friendly = msg === 'Insufficient embers' ? 'Not enough Embers! Keep reading to earn more.'
         : msg === 'Already owned' ? 'You already own this item.'
         : msg === 'Scroll not unlocked' ? 'Unlock this Scroll first to claim its items.'
+        : msg === 'Your account is suspended and cannot perform this action.' ? 'This account is suspended.'
         : 'Purchase failed. Please try again.';
       showToast(friendly, 'ti-alert-triangle', true);
       if (msg === 'Insufficient embers') loadCurrencies(); // balance was stale — resync
@@ -851,7 +916,7 @@
   }
 
   // ── APPLY BANNER TO PROFILE ───────────────────────────────────
-  async function applyBannerToProfile(scrollId, bannerUrl, btn) {
+  async function applyBannerToProfile(scrollId, btn) {
     if (!currentUser) return;
     btn.disabled = true;
     btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Applying…';
@@ -859,7 +924,8 @@
       // Ownership-checked RPC: the direct profiles write it replaced never
       // verified a scroll_unlocks row, so a paid banner could be equipped
       // without buying it. The RPC re-reads banner_url from the scroll too, so
-      // the client can't substitute a different image.
+      // the client can't substitute a different image — which is why this call
+      // takes only the scroll id.
       const { data: rpc, error } = await db.rpc('equip_banner_scroll', { p_scroll_id: scrollId });
       if (error) throw error;
       if (!rpc?.ok) throw new Error(rpc?.error || 'Could not apply banner');
@@ -971,7 +1037,28 @@
   }
 
   // ── HELPERS ───────────────────────────────────────────────────
-  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  // Quote-aware. The single-quote escape is not optional: values land inside
+  // single-quoted JS string literals in onclick attributes, and a quote-blind
+  // esc() is exactly what made messages.html injectable in session 16.
+  function esc(s) {
+    return String(s||'')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  }
+
+  // Mirrors chapter.html's safeImgUrl / story.html's safeUrl: only http(s) and
+  // site-relative URLs survive, so javascript:, data: and vbscript: can never
+  // reach an src or href. Returns '' for anything else.
+  function safeUrl(u) {
+    const s = String(u || '').trim();
+    if (!s) return '';
+    if (/^https?:\/\//i.test(s)) return s;
+    if (/^\/(?!\/)/.test(s)) return s;
+    return '';
+  }
 </script>
 </body>
 </html>
