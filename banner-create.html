@@ -109,6 +109,7 @@
     .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
     .btn-secondary{background:var(--bg3);color:var(--text2);border:1px solid var(--border);border-radius:10px;padding:11px 20px;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all .2s;}
     .btn-secondary:hover{border-color:var(--accent);color:var(--accent);}
+    .btn-secondary:disabled{opacity:.5;cursor:not-allowed;}
     .btn-danger{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.3);border-radius:10px;padding:11px 20px;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all .2s;}
     .btn-danger:hover{background:rgba(248,113,113,.2);}
 
@@ -218,8 +219,7 @@
           <div class="field">
             <label>Quill Price <span class="req">*</span></label>
             <input type="number" id="f-price" placeholder="300" min="100" max="3000" value="300"/>
-            <div class="field-hint" style="font-size:11px;color:var(--text3);margin-top:5px;">100–3,000 Quills</div>
-            <div class="hint">Suggested: 200–600 Quills.</div>
+            <div class="hint">100–3,000 Quills. Suggested: 200–600.</div>
           </div>
           <div class="field">
             <label>Fallback Emoji</label>
@@ -231,7 +231,7 @@
         <div class="field">
           <label>Banner Image URL <span class="req">*</span></label>
           <input type="url" id="f-image" placeholder="https://…" oninput="updatePreview()"/>
-          <div class="hint">Paste a direct image link. Recommended 1400×400 px.</div>
+          <div class="hint">Paste a direct image link. Must start with https:// and contain no quotes or angle brackets. Recommended 1400×400 px.</div>
         </div>
       </div>
 
@@ -254,7 +254,7 @@
 
       <div id="action-area">
         <div class="btn-row">
-          <button class="btn-secondary" onclick="saveDraft()"><i class="ti ti-device-floppy"></i> Save Draft</button>
+          <button class="btn-secondary" id="save-btn" onclick="saveDraft()"><i class="ti ti-device-floppy"></i> Save Draft</button>
           <button class="btn-primary" id="submit-btn" onclick="submitForReview()"><i class="ti ti-send"></i> Submit for Review</button>
           <button class="btn-danger" id="delete-btn" onclick="deleteBanner()" style="display:none;"><i class="ti ti-trash"></i> Delete</button>
         </div>
@@ -284,11 +284,37 @@
   const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
   const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+  // Consistency, not a bug fix: this page was the only one omitting it. nav.js
+  // guards with `typeof db !== 'undefined'`, a BARE reference, which does resolve
+  // a top-level `const` from another script — so the nav worked here regardless.
+  // Set it anyway so every page presents db the same way, and so a future
+  // `window.db` consumer doesn't silently miss this one page.
+  window.db = db;
+
+  // Mirrors scrolls_creator_price_range (100–3000 for artist|banner|collab|novel).
+  const PRICE_MIN = 100, PRICE_MAX = 3000;
 
   var currentUser = null;
-  var currentId = null; // scroll id for the banner being edited
+  var currentId = null;     // scroll id for the banner being edited
+  var currentStatus = null; // status of the banner being edited
 
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  // Same URL shape the DB now enforces via scrolls_banner_url_safe. Checking it
+  // here means the creator gets a sentence instead of a raw 23514.
+  function urlLooksOk(u){
+    var s = String(u || '').trim();
+    return /^https?:\/\//i.test(s) && !/["'<>]/.test(s) && s.length <= 1000;
+  }
+
+  function friendlyDbError(err){
+    var m = (err && (err.message || err.details)) || '';
+    if (/scrolls_banner_url_safe/.test(m)) return 'That image URL isn’t accepted. It must start with https:// and contain no quotes or angle brackets.';
+    if (/scrolls_creator_price_range/.test(m)) return 'Quill price must be between ' + PRICE_MIN + ' and ' + PRICE_MAX.toLocaleString() + '.';
+    if (/row-level security/i.test(m)) return 'This banner can’t be saved right now — you must be 18+ to sell banners, and a banner can only be edited while it is a draft or needs changes.';
+    if (/suspended/i.test(m)) return 'This account is suspended.';
+    return m || 'Something went wrong.';
+  }
 
   function showToast(msg, err) {
     var t = document.getElementById('toast');
@@ -337,12 +363,14 @@
     var list = document.getElementById('draft-list');
     list.innerHTML = '';
     banners.forEach(function(b) {
-      var statusClass = { draft:'ds-draft', pending_review:'ds-pending', approved:'ds-approved', rejected:'ds-rejected' }[b.status] || 'ds-draft';
-      var statusLabel = { draft:'Draft', pending_review:'Pending Review', approved:'Live', rejected:'Needs Changes' }[b.status] || b.status;
+      var statusClass = { draft:'ds-draft', pending_review:'ds-pending', approved:'ds-approved', rejected:'ds-rejected', active:'ds-approved' }[b.status] || 'ds-draft';
+      // 'approved' is not the same as live: a Scroll only appears in the
+      // Marketplace once an admin also sets is_active. Say what is true.
+      var statusLabel = { draft:'Draft', pending_review:'Pending Review', approved:'Approved', rejected:'Needs Changes', active:'Live' }[b.status] || b.status;
       var row = document.createElement('div');
       row.className = 'draft-row';
       row.innerHTML =
-        '<div class="draft-row-thumb">' + (b.banner_url ? '<img src="' + esc(b.banner_url) + '" alt=""/>' : '') + '</div>' +
+        '<div class="draft-row-thumb">' + (urlLooksOk(b.banner_url) ? '<img src="' + esc(b.banner_url) + '" alt=""/>' : '') + '</div>' +
         '<div class="draft-row-info">' +
           '<div class="draft-row-name">' + esc(b.name || 'Untitled Banner') + '</div>' +
           '<div class="draft-row-meta">' + (b.quill_price || '—') + ' Quills · ' + (b.submitted_at ? 'Submitted ' + new Date(b.submitted_at).toLocaleDateString() : 'Not submitted') + '</div>' +
@@ -364,6 +392,7 @@
 
     if (banner) {
       currentId = banner.id;
+      currentStatus = banner.status || 'draft';
       document.getElementById('f-name').value = banner.name || '';
       document.getElementById('f-desc').value = banner.description || '';
       document.getElementById('f-price').value = banner.quill_price || 300;
@@ -376,18 +405,24 @@
 
       // Show delete only on drafts/rejected
       var del = document.getElementById('delete-btn');
-      del.style.display = (banner.status === 'draft' || banner.status === 'rejected') ? 'flex' : 'none';
+      del.style.display = isEditable() ? 'flex' : 'none';
 
-      // Lock fields if pending/approved
-      var locked = banner.status === 'pending_review' || banner.status === 'approved';
+      // Lock fields once it is out of the creator's hands. The scrolls UPDATE
+      // policy only matches status draft|rejected, so a save on a pending or
+      // approved banner would silently affect 0 rows — Save Draft is disabled
+      // here rather than left to report a success that never happened.
+      var locked = !isEditable();
       ['f-name','f-desc','f-price','f-emoji','f-image'].forEach(function(id){
         document.getElementById(id).disabled = locked;
       });
       document.getElementById('submit-btn').disabled = locked;
       document.getElementById('submit-btn').style.display = locked ? 'none' : 'flex';
+      document.getElementById('save-btn').disabled = locked;
+      document.getElementById('save-btn').style.display = locked ? 'none' : 'flex';
 
     } else {
       currentId = null;
+      currentStatus = 'draft';
       document.getElementById('f-name').value = '';
       document.getElementById('f-desc').value = '';
       document.getElementById('f-price').value = 300;
@@ -398,21 +433,29 @@
       document.getElementById('delete-btn').style.display = 'none';
       document.getElementById('submit-btn').disabled = false;
       document.getElementById('submit-btn').style.display = 'flex';
+      document.getElementById('save-btn').disabled = false;
+      document.getElementById('save-btn').style.display = 'flex';
       ['f-name','f-desc','f-price','f-emoji','f-image'].forEach(function(id){
         document.getElementById(id).disabled = false;
       });
     }
   }
 
+  // Mirrors the scrolls UPDATE / DELETE policies, which only match draft|rejected.
+  function isEditable(){
+    return currentStatus === 'draft' || currentStatus === 'rejected';
+  }
+
   function renderStatusBanner(b) {
     var wrap = document.getElementById('status-banner-wrap');
     var cfg = {
       draft:          { cls:'draft',          icon:'ti-pencil',       title:'Draft',                body:'Fill in the details and submit when ready.' },
-      pending_review: { cls:'pending_review',  icon:'ti-clock',        title:'Under Review',         body:'Being reviewed by the DawnScribe team. You\'ll be notified of the result.' },
-      approved:       { cls:'approved',        icon:'ti-circle-check', title:'Live in Marketplace',  body:'Your banner is approved and available for purchase.' },
+      pending_review: { cls:'pending_review',  icon:'ti-clock',        title:'Under Review',         body:'Being reviewed by the DawnScribe team. You\'ll be notified of the result. Editing is locked until a reviewer responds.' },
+      approved:       { cls:'approved',        icon:'ti-circle-check', title:'Approved',             body:'Approved by the team. It appears in the Marketplace once it is switched live.' },
+      active:         { cls:'approved',        icon:'ti-circle-check', title:'Live in Marketplace',  body:'Your banner is live and available for purchase.' },
       rejected:       { cls:'rejected',        icon:'ti-alert-circle', title:'Changes Needed',       body: b.rejection_reason ? 'Reason: ' + b.rejection_reason : 'Please address the feedback and resubmit.' }
     }[b.status] || { cls:'draft', icon:'ti-pencil', title:'Draft', body:'' };
-    wrap.innerHTML = '<div class="status-banner ' + cfg.cls + '"><i class="ti ' + cfg.icon + '"></i><div><h4>' + cfg.title + '</h4><p>' + esc(cfg.body) + '</p></div></div>';
+    wrap.innerHTML = '<div class="status-banner ' + cfg.cls + '"><i class="ti ' + cfg.icon + '"></i><div><h4>' + esc(cfg.title) + '</h4><p>' + esc(cfg.body) + '</p></div></div>';
   }
 
   function startNew() {
@@ -425,11 +468,14 @@
     var ph = document.getElementById('preview-placeholder');
     var name = (document.getElementById('f-name').value || '').trim() || 'Banner Name';
     var price = document.getElementById('f-price').value || '300';
-    if (url) {
+    // Only preview a URL the DB will actually accept, so the preview cannot
+    // imply a banner will save when it will not.
+    if (urlLooksOk(url)) {
       img.src = url;
       img.style.display = 'block';
       ph.style.display = 'none';
     } else {
+      img.removeAttribute('src');
       img.style.display = 'none';
       ph.style.display = 'flex';
     }
@@ -451,6 +497,12 @@
     var fields = Object.assign(getFields(), extraFields || {});
     if (!fields.name) { showToast('Please enter a name', true); return null; }
     if (!fields.banner_url) { showToast('Please provide an image URL', true); return null; }
+    if (!urlLooksOk(fields.banner_url)) {
+      showToast('Image URL must start with https:// and contain no quotes or angle brackets.', true); return null;
+    }
+    if (fields.quill_price < PRICE_MIN || fields.quill_price > PRICE_MAX) {
+      showToast('Quill price must be between ' + PRICE_MIN + ' and ' + PRICE_MAX.toLocaleString() + '.', true); return null;
+    }
 
     var payload = Object.assign({
       type: 'banner',
@@ -461,14 +513,23 @@
     }, fields);
 
     if (currentId) {
-      var { error } = await db.from('scrolls').update(payload).eq('id', currentId);
-      if (error) { showToast('Could not save: ' + error.message, true); return null; }
+      // .select() so we can tell an RLS no-match apart from a real write.
+      // A PostgREST UPDATE that matches 0 rows returns NO error — without this
+      // the page reported "Draft saved!" for a save that never happened.
+      var { data: updated, error } = await db.from('scrolls')
+        .update(payload).eq('id', currentId).select('id');
+      if (error) { showToast('Could not save: ' + friendlyDbError(error), true); return null; }
+      if (!updated || !updated.length) {
+        showToast('Nothing was saved — this banner can only be edited while it is a draft or needs changes.', true);
+        return null;
+      }
       return currentId;
     } else {
       payload.status = 'draft';
-      var { data, error } = await db.from('scrolls').insert(payload).select('id').single();
-      if (error) { showToast('Could not create: ' + error.message, true); return null; }
+      var { data, error: insErr } = await db.from('scrolls').insert(payload).select('id').single();
+      if (insErr) { showToast('Could not create: ' + friendlyDbError(insErr), true); return null; }
       currentId = data.id;
+      currentStatus = 'draft';
       return currentId;
     }
   }
@@ -491,11 +552,12 @@
 
     var { data, error } = await db.rpc('submit_scroll_for_review', { p_scroll_id: id });
     if (error || !data || !data.ok) {
-      showToast((data && data.error) || (error && error.message) || 'Submission failed', true);
+      showToast((data && data.error) || friendlyDbError(error) || 'Submission failed', true);
       btn.disabled = false;
       btn.innerHTML = '<i class="ti ti-send"></i> Submit for Review';
       return;
     }
+    currentStatus = 'pending_review';
     document.getElementById('action-area').style.display = 'none';
     document.getElementById('submitted-area').style.display = 'block';
     showToast('Submitted! We\'ll review within 3–5 days. 🎉');
@@ -504,10 +566,18 @@
   async function deleteBanner() {
     if (!currentId) return;
     if (!confirm('Delete this banner draft? This cannot be undone.')) return;
-    var { error } = await db.from('scrolls').delete().eq('id', currentId);
-    if (error) { showToast('Could not delete: ' + error.message, true); return; }
+    // Same 0-row problem as the update: the scrolls DELETE policy also requires
+    // no buyers and is_active = false, and a no-match DELETE returns no error.
+    var { data: removed, error } = await db.from('scrolls')
+      .delete().eq('id', currentId).select('id');
+    if (error) { showToast('Could not delete: ' + friendlyDbError(error), true); return; }
+    if (!removed || !removed.length) {
+      showToast('Nothing was deleted — a banner can only be removed while it is a draft with no buyers.', true);
+      return;
+    }
     showToast('Banner deleted.');
     currentId = null;
+    currentStatus = null;
     await loadExisting();
   }
 </script>

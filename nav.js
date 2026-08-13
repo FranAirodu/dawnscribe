@@ -579,13 +579,13 @@ function dsApplyAccent(hex) {
           try {
             var res;
             if (type === 'titles') {
-              res = await db.from('works').select('id,title,cover_url,author_id').eq('type','novel').eq('is_published',true).ilike('title','%'+q+'%').limit(4);
+              res = await db.from('works').select('id,title,cover_url,author_id').eq('type','novel').eq('is_published',true).ilike('title','%'+dsIlikeEsc(q)+'%').limit(4);
             } else if (type === 'authors') {
               res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+dsIlikeEsc(q)+'%').limit(4);
             } else if (type === 'artwork') {
-              res = await db.from('works').select('id,title,cover_url,author_id').eq('type','artwork').eq('is_published',true).ilike('title','%'+q+'%').limit(4);
+              res = await db.from('works').select('id,title,cover_url,author_id').eq('type','artwork').eq('is_published',true).ilike('title','%'+dsIlikeEsc(q)+'%').limit(4);
             } else if (type === 'tags') {
-              res = await db.from('works').select('id,title,cover_url,tags_main').eq('type','novel').eq('is_published',true).ilike('tags_all','%'+q+'%').limit(5);
+              res = await db.from('works').select('id,title,cover_url,tags_main').eq('type','novel').eq('is_published',true).ilike('tags_all','%'+dsIlikeEsc(q)+'%').limit(5);
             } else {
               res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+dsIlikeEsc(q)+'%').limit(4);
             }
@@ -1108,8 +1108,8 @@ function dsApplyAccent(hex) {
           var _uai1=document.getElementById('user-avatar-initial'); if(_uai1) _uai1.textContent = res.data.display_name.charAt(0).toUpperCase();
         }
         // Apply avatar image immediately — not gated on username
-        if(res.data.avatar_url && !window.__dsNavHeadshot){
-          avatarBtn.innerHTML = '<img src="'+res.data.avatar_url+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
+        if(dsSafeUrl(res.data.avatar_url) && !window.__dsNavHeadshot){
+          avatarBtn.innerHTML = '<img src="'+dsSafeUrl(res.data.avatar_url)+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
         }
       }
 
@@ -1179,18 +1179,23 @@ function dsApplyAccent(hex) {
         var uid2 = session.user.id;
         var pendingParts = [];
         try {
-          var myArtworks2 = await db.from('works').select('id').eq('author_id',uid2).eq('type','artwork');
-          var artIds2 = (myArtworks2.data||[]).map(function(w){return w.id;});
+          // One works fetch, split client-side. Was two round-trips (artwork, novel);
+          // songs now cover every owned work, matching the block this replaces below.
+          var myWorks2 = await db.from('works').select('id,type').eq('author_id',uid2);
+          var allRows2 = myWorks2.data||[];
+          var artIds2 = allRows2.filter(function(w){return w.type==='artwork';}).map(function(w){return w.id;});
+          var novIds2 = allRows2.filter(function(w){return w.type==='novel';}).map(function(w){return w.id;});
+          var allIds2 = allRows2.map(function(w){return w.id;});
           if(artIds2.length){
             var acRes2=await db.from('artwork_collabs').select('id').in('artwork_id',artIds2).eq('status','pending');
             var acCount2=(acRes2.data||[]).length; if(acCount2>0) pendingParts.push(acCount2+' story collab'+(acCount2>1?'s':''));
           }
-          var myNovels2 = await db.from('works').select('id').eq('author_id',uid2).eq('type','novel');
-          var novIds2 = (myNovels2.data||[]).map(function(w){return w.id;});
           if(novIds2.length){
             var scRes2=await db.from('story_collabs').select('id').in('work_id',novIds2).eq('status','pending');
             var scCount2=(scRes2.data||[]).length; if(scCount2>0) pendingParts.push(scCount2+' fan art'+(scCount2>1?'s':''));
-            var songRes2=await db.from('character_song_suggestions').select('id').in('work_id',novIds2).eq('status','pending');
+          }
+          if(allIds2.length){
+            var songRes2=await db.from('character_song_suggestions').select('id').in('work_id',allIds2).eq('status','pending');
             var songCount2=(songRes2.data||[]).length; if(songCount2>0) pendingParts.push(songCount2+' song suggestion'+(songCount2>1?'s':''));
           }
           var frRes2=await db.from('friendships').select('id').eq('recipient_id',uid2).eq('status','pending');
@@ -1215,43 +1220,14 @@ function dsApplyAccent(hex) {
             var _ddn2=document.getElementById('dd-display-name'); if(_ddn2) _ddn2.textContent = res.data.display_name;
             var _uai2=document.getElementById('user-avatar-initial'); if(_uai2) _uai2.textContent = res.data.display_name.charAt(0).toUpperCase();
           }
-          if(res.data.avatar_url && !window.__dsNavHeadshot){
-            avatarBtn.innerHTML = '<img src="'+res.data.avatar_url+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
+          if(dsSafeUrl(res.data.avatar_url) && !window.__dsNavHeadshot){
+            avatarBtn.innerHTML = '<img src="'+dsSafeUrl(res.data.avatar_url)+'" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>';
           }
+          // Pending-count block deleted — the sitewide IIFE above already ran the
+          // identical query set for this same user. res.data.id and session.user.id
+          // are the same row; this block only ever recomputed and repainted the
+          // same two pills. Saves 6 round-trips per page view for every logged-in user.
           var uid2 = res.data.id || session.user.id;
-          var pendingParts = [];
-          var myArtworks = await db.from('works').select('id').eq('author_id',uid2).eq('type','artwork');
-          var artIds = (myArtworks.data||[]).map(function(w){return w.id;});
-          if(artIds.length){
-            var acRes3=await db.from('artwork_collabs').select('id').in('artwork_id',artIds).eq('status','pending');
-            var acCount=(acRes3.data||[]).length; if(acCount>0) pendingParts.push(acCount+' story collab'+(acCount>1?'s':''));
-          }
-          var myNovels = await db.from('works').select('id').eq('author_id',uid2).eq('type','novel');
-          var novIds = (myNovels.data||[]).map(function(w){return w.id;});
-          if(novIds.length){
-            var scRes3=await db.from('story_collabs').select('id').in('work_id',novIds).eq('status','pending');
-            var scCount=(scRes3.data||[]).length; if(scCount>0) pendingParts.push(scCount+' fan art'+(scCount>1?'s':''));
-          }
-          var frRes3=await db.from('friendships').select('id').eq('recipient_id',uid2).eq('status','pending');
-          var frCount=(frRes3.data||[]).length; if(frCount>0) pendingParts.push(frCount+' friend request'+(frCount>1?'s':''));
-          // Song suggestions pending
-          var myWorkIds3=(await db.from('works').select('id').eq('author_id',uid2)).data||[];
-          var mwids3=myWorkIds3.map(function(w){return w.id;});
-          if(mwids3.length){
-            var songRes3=await db.from('character_song_suggestions').select('id').in('work_id',mwids3).eq('status','pending');
-            var songCount3=(songRes3.data||[]).length; if(songCount3>0) pendingParts.push(songCount3+' song suggestion'+(songCount3>1?'s':''));
-          }
-          // Collab pending → My Profile pill
-          var collabParts = pendingParts.filter(function(p){ return p.indexOf('friend') === -1; });
-          var friendParts = pendingParts.filter(function(p){ return p.indexOf('friend') !== -1; });
-          if(collabParts.length>0){
-            var pl=document.getElementById('dd-profile-link');
-            if(pl) pl.innerHTML='<i class="ti ti-user"></i> My Profile <span class="collab-pending-pill">'+collabParts.join(' · ')+'</span>';
-          }
-          if(friendParts.length>0){
-            var fl=document.getElementById('dd-friends-link');
-            if(fl) fl.innerHTML='<i class="ti ti-users"></i> Friends <span class="collab-pending-pill">'+friendParts.join(' · ')+'</span>';
-          }
           await dsLoadNotifications(uid2);
           await dsLoadDmBadge(uid2);
 
