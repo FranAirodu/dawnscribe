@@ -811,6 +811,27 @@
     </div>
   </div>
   <!-- Collab upload modal -->
+  <div class="collab-modal-backdrop" id="licence-modal-backdrop">
+    <div class="collab-modal">
+      <h3><i class="ti ti-id-badge-2" style="color:#f59e0b;"></i> <span id="licence-modal-title">Ask to Use a Character</span></h3>
+      <p id="licence-modal-blurb"></p>
+      <div>
+        <label class="collab-field-label">Character <span>(required)</span></label>
+        <select id="licence-character-select" class="collab-textarea" style="resize:none;height:auto;padding:8px;"></select>
+      </div>
+      <div>
+        <label class="collab-field-label">Your pitch <span>(optional — what you plan to make)</span></label>
+        <textarea id="licence-pitch" class="collab-textarea" rows="3" maxlength="1000"
+          placeholder="Describe the set you have in mind…"></textarea>
+      </div>
+      <div class="collab-modal-btns">
+        <button class="collab-cancel-btn" onclick="closeLicenceModal()">Cancel</button>
+        <button class="collab-submit-btn" id="licence-submit-btn" onclick="submitLicenceRequest()">
+          <i class="ti ti-send"></i> Send Request</button>
+      </div>
+    </div>
+  </div>
+
   <div class="collab-modal-backdrop" id="collab-modal-backdrop">
     <div class="collab-modal">
       <h3><i class="ti ti-palette" style="color:#f59e0b;"></i> Submit Fan Art</h3>
@@ -984,6 +1005,15 @@
 
     // See profile.html: escaping alone does not neutralise a javascript: URL.
     // Allow only http(s) / root-relative, then escape; '' means "no image".
+    // A JS string literal safe inside an on* attribute. JSON.stringify alone
+    // emits raw double quotes, which terminate the attribute early — the
+    // handler then truncates to a bare "fn(" and throws on click.
+    function attrJson(v) {
+      return JSON.stringify(v === undefined ? null : v)
+        .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
     function safeUrl(u) {
       u = String(u == null ? '' : u).trim();
       if (!/^(https?:\/\/|\/)/i.test(u)) return '';
@@ -1537,7 +1567,7 @@
           setReadingListStatus(opt.key);
         });
         item.addEventListener('mouseover', function() { if (rls !== opt.key) this.style.background = 'var(--bg3)'; });
-        item.addEventListener('mouseout',  function() { if (rls !== opt.key) this.style.background = ''; });
+        item.addEventListener('mouseout',  function() { if (rls !== opt.key) this.style.background = 'none'; });
         rlDropdown.appendChild(item);
       });
       if (rls) {
@@ -1546,7 +1576,7 @@
         removeItem.innerHTML = '<i class="ti ti-trash" style="font-size:14px;"></i>Remove from List';
         removeItem.addEventListener('click', function() { rlDropdown.style.display = 'none'; setReadingListStatus(null); });
         removeItem.addEventListener('mouseover', function() { this.style.background = 'var(--bg3)'; });
-        removeItem.addEventListener('mouseout',  function() { this.style.background = ''; });
+        removeItem.addEventListener('mouseout',  function() { this.style.background = 'none'; });
         rlDropdown.appendChild(removeItem);
       }
       // ── Named lists section ──
@@ -1565,7 +1595,7 @@
             setReadingListList(inList ? null : lst.id, lst.name);
           });
           li.addEventListener('mouseover', function() { if (!inList) this.style.background = 'var(--bg3)'; });
-          li.addEventListener('mouseout',  function() { if (!inList) this.style.background = ''; });
+          li.addEventListener('mouseout',  function() { if (!inList) this.style.background = 'none'; });
           rlDropdown.appendChild(li);
         });
       }
@@ -1575,7 +1605,7 @@
       libLink.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;font-size:12px;color:var(--accent);text-decoration:none;border-top:1px solid var(--border);font-weight:700;';
       libLink.innerHTML = '<i class="ti ti-books" style="font-size:14px;"></i>Open your Library \u2192';
       libLink.addEventListener('mouseover', function() { this.style.background = 'var(--bg3)'; });
-      libLink.addEventListener('mouseout',  function() { this.style.background = ''; });
+      libLink.addEventListener('mouseout',  function() { this.style.background = 'none'; });
       rlDropdown.appendChild(libLink);
 
       rlBtn.addEventListener('click', function(e) {
@@ -1599,30 +1629,77 @@
         if (_ptSec) _ptSec.style.display = '';
         renderPollsToggle();
       }
-      // Show polls toggle for owner
-      if (isOwnerAct) {
-        var _ptSec = document.getElementById('polls-toggle-section');
-        if (_ptSec) _ptSec.style.display = '';
-        renderPollsToggle();
-      }
-      if(currentSession && !isOwnerAct && workData.type !== 'artwork' && !storyIsCollabWork) {
+      // ── Collab menu ────────────────────────────────────────────────
+      // Fan art and banner offers now live under one Collab button. The two
+      // options keep their ORIGINAL, DIFFERENT eligibility rules: fan art on any
+      // non-artwork work, banner offers only on a published novel. The button
+      // itself appears if at least one option qualifies. request_banner_collab
+      // re-checks its conditions server-side regardless of what is shown here.
+      var canFanArt = currentSession && !isOwnerAct
+        && workData.type !== 'artwork' && !storyIsCollabWork;
+      var canBanner = currentSession && !isOwnerAct
+        && workData.type === 'novel' && workData.is_published && !storyIsCollabWork;
+
+      if (canFanArt || canBanner) {
+        var collabWrap = document.createElement('div');
+        collabWrap.style.cssText = 'position:relative;display:inline-flex;';
+
         var collabBtn = document.createElement('button');
         collabBtn.className = 'btn-collab';
-        collabBtn.innerHTML = '<i class="ti ti-palette"></i> Collab';
-        collabBtn.addEventListener('click', function(){ openCollabModal(); });
-        actionsEl.appendChild(collabBtn);
-      }
+        collabBtn.innerHTML = '<i class="ti ti-palette"></i> Collab <i class="ti ti-chevron-down" style="font-size:13px;"></i>';
 
-      // Banner collab offers only make sense on a published novel that someone
-      // else owns. request_banner_collab re-checks every one of these conditions
-      // server-side; this only decides whether to show the button.
-      if(currentSession && !isOwnerAct && workData.type === 'novel'
-         && workData.is_published && !storyIsCollabWork) {
-        var bcollabBtn = document.createElement('button');
-        bcollabBtn.className = 'btn-outline';
-        bcollabBtn.innerHTML = '<i class="ti ti-photo"></i> Banner Collab';
-        bcollabBtn.addEventListener('click', function(){ openBannerCollabModal(); });
-        actionsEl.appendChild(bcollabBtn);
+        var collabMenu = document.createElement('div');
+        collabMenu.style.cssText = 'display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px var(--shadow);min-width:230px;overflow:hidden;margin-top:4px;';
+
+        function addCollabOption(icon, label, blurb, handler) {
+          var item = document.createElement('button');
+          item.style.cssText = 'display:flex;align-items:flex-start;gap:9px;width:100%;padding:10px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text);text-align:left;font-family:inherit;';
+          item.innerHTML = '<i class="ti ' + icon + '" style="font-size:15px;margin-top:1px;"></i>'
+            + '<span><span style="font-weight:700;">' + label + '</span>'
+            + '<span style="display:block;font-size:11px;color:var(--text3);margin-top:2px;">' + blurb + '</span></span>';
+          item.addEventListener('click', function(){
+            collabMenu.style.display = 'none';
+            handler();
+          });
+          // NOTE: reset to 'none', never ''. An empty string deletes the inline
+          // background and the button falls back to the UA default (white).
+          item.addEventListener('mouseover', function(){ this.style.background = 'var(--bg3)'; });
+          item.addEventListener('mouseout',  function(){ this.style.background = 'none'; });
+          collabMenu.appendChild(item);
+        }
+
+        if (canFanArt) {
+          addCollabOption('ti-palette', 'Fan Art',
+            'Draw a scene or character from this story',
+            function(){ openCollabModal(); });
+        }
+        if (canBanner) {
+          addCollabOption('ti-photo', 'Profile Banner',
+            'Offer a banner that sells alongside this novel',
+            function(){ openBannerCollabModal(); });
+        }
+        // Licensed options: these ask the author for permission to use a
+        // character commercially, so they need a published novel like banners do.
+        if (canBanner) {
+          addCollabOption('ti-user-star', 'Collab Avatar',
+            'Ask to build an avatar set from a character — 50/30/20',
+            function(){ openLicenceModal('avatar'); });
+          addCollabOption('ti-cards', 'Collab Scroll',
+            'Ask to build a full themed set from a character — 50/30/20',
+            function(){ openLicenceModal('scroll'); });
+        }
+
+        collabBtn.addEventListener('click', function(e){
+          e.stopPropagation();
+          collabMenu.style.display = (collabMenu.style.display === 'none') ? 'block' : 'none';
+        });
+        document.addEventListener('click', function(e){
+          if (!collabWrap.contains(e.target)) collabMenu.style.display = 'none';
+        });
+
+        collabWrap.appendChild(collabBtn);
+        collabWrap.appendChild(collabMenu);
+        actionsEl.appendChild(collabWrap);
       }
 
       // Share button — native share sheet on mobile, copy link on desktop
@@ -1655,7 +1732,9 @@
     var myNamedLists = [];        // viewer's user_reading_lists rows (loaded once)
 
     // ── OFFERING STATE ───────────────────────────────────────────
-    var offeringState = { count: 0, tier: null, offeredToday: false, nextOfferAt: null, chaptersRead: 0 };
+    // count = this story's TOTAL offerings (shown). myCount = how many Embers THIS
+    // viewer has offered (revealed on hover).
+    var offeringState = { count: 0, myCount: 0, tier: null, offeredToday: false, nextOfferAt: null, chaptersRead: 0 };
 
     async function loadFollowState() {
       if (!currentSession) return;
@@ -1698,6 +1777,11 @@
         var next = new Date(lastOffer.created_at).getTime() + 24*60*60*1000;
         if (next > Date.now()) { offeringState.offeredToday = true; offeringState.nextOfferAt = next; }
       }
+      // The viewer's own lifetime offerings to this story, for the hover text.
+      var { count: myOfferCount } = await db.from('work_offerings')
+        .select('id', { count: 'exact', head: true })
+        .eq('work_id', workData.id).eq('user_id', currentSession.user.id);
+      offeringState.myCount = myOfferCount || 0;
       // Reading history link (shown if user has any progress on this work)
       if (currentSession) {
         var histBtn = document.getElementById('history-quick-link');
@@ -1734,6 +1818,7 @@
         offeringState.offeredToday = true;
         offeringState.nextOfferAt = data.next_offer_at ? new Date(data.next_offer_at).getTime() : (Date.now() + 24*60*60*1000);
         offeringState.count = data.offering_count;
+        offeringState.myCount = (offeringState.myCount || 0) + 1;
         offeringState.tier  = data.offering_tier;
         workData.offering_count = data.offering_count;
         showToast('Ember Offering made! 🔥', 'ti-flame');
@@ -1746,6 +1831,14 @@
       }
     }
 
+    // One place builds the hover text so the button and the tier chip agree.
+    function offeringHoverText() {
+      var mine = offeringState.myCount || 0;
+      if (!currentSession) return 'Total Ember Offerings from readers of this story';
+      if (!mine) return "You haven't offered any Embers to this story yet";
+      return 'You have offered ' + mine + ' Ember' + (mine !== 1 ? 's' : '') + ' to this story';
+    }
+
     function renderOfferingButton() {
       var wrap = document.getElementById('offering-btn-wrap');
       if (!wrap) return;
@@ -1755,21 +1848,25 @@
       wrap.style.display = 'block';
       var btn = document.getElementById('offering-btn');
       if (!btn) return;
+      // The number shown is always the story's TOTAL offerings; the hover text
+      // reports the viewer's own contribution. Mirrors the Spark button, which
+      // carries its state inline rather than in a second pill underneath.
+      var totalTxt = offeringState.count + ' offering' + (offeringState.count !== 1 ? 's' : '');
       if (offeringState.offeredToday) {
         btn.classList.add('offered');
         btn.disabled = true;
-        btn.innerHTML = '🔥 Offered Today (' + offeringState.count + ')';
-        btn.title = 'You\'ve made your daily Ember Offering. Come back in 24 hours.';
+        btn.innerHTML = '🔥 Offered today · ' + totalTxt;
+        btn.title = 'You\'ve made your daily Ember Offering — come back in 24 hours. ' + offeringHoverText() + '.';
       } else if (!canOffer) {
         btn.classList.remove('offered');
         btn.disabled = true;
-        btn.title = 'Read ' + (5 - offeringState.chaptersRead) + ' more chapter(s) to unlock Ember Offerings';
-        btn.innerHTML = '🔥 Ember Offer <span style="font-size:11px;font-weight:400;opacity:0.7;">(' + offeringState.chaptersRead + '/5 ch)</span>';
+        btn.title = 'Read ' + (5 - offeringState.chaptersRead) + ' more chapter(s) to unlock Ember Offerings. ' + offeringHoverText() + '.';
+        btn.innerHTML = '🔥 ' + totalTxt + ' <span style="font-size:11px;font-weight:400;opacity:0.7;">(' + offeringState.chaptersRead + '/5 ch)</span>';
       } else {
         btn.classList.remove('offered');
         btn.disabled = false;
-        btn.title = 'Spend 1 Ember to make your daily offering to this story';
-        btn.innerHTML = '🔥 Ember Offer (' + offeringState.count + ')';
+        btn.title = 'Spend 1 Ember to make your daily offering. ' + offeringHoverText() + '.';
+        btn.innerHTML = '🔥 Ember Offer · ' + totalTxt;
       }
     }
 
@@ -1777,17 +1874,28 @@
       var wrap = document.getElementById('offering-tier-wrap');
       if (!wrap) return;
       var tier = offeringState.tier;
-      if (!tier) {
-        wrap.innerHTML = '<div class="offering-tier-badge none" title="Total Embers offered: ' + offeringState.count + '">\ud83d\udd25 ' + offeringState.count + ' offering' + (offeringState.count !== 1 ? 's' : '') + '</div>';
-        return;
-      }
+      // No tier means the chip would only repeat the total already on the button,
+      // so it is dropped entirely — that duplicate pill was the eyesore.
+      if (!tier) { wrap.innerHTML = ''; return; }
       var labels = { ember_lit: '🕯️ Ember Lit', burning: '🔥 Burning', blazing: '⚗️ Blazing', inferno: '💎 Inferno' };
       var label = labels[tier] || tier;
-      wrap.innerHTML = '<div class="offering-tier-badge ' + tier + '" title="Total Embers offered: ' + offeringState.count + '">' + label + ' · ' + offeringState.count + ' offering' + (offeringState.count !== 1 ? 's' : '') + '</div>';
+      wrap.innerHTML = '<div class="offering-tier-badge ' + tier + '" title="' + escHtml(offeringHoverText()) + '">' + label + ' · ' + offeringState.count + ' offering' + (offeringState.count !== 1 ? 's' : '') + '</div>';
     }
 
     // ─ ─ SPARK OF DAWN / RALLIES / CELESTIAL FLAMES ───────
-    var engageState = { sparkWeek: 0, sparkTotal: 0, sparkedToday: false, flameCount: 0, myFlames: 0, flamedToday: false, freeSparks: 0, activeRallies: 0, iAmRallying: false, scribeFlameCount: 0, infernalDawnCount: 0, myScribeFlames: 0, myInfernalDawns: 0, votedScribeThisMonth: false, votedInfernalThisYear: false };
+    var engageState = { sparkWeek: 0, sparkTotal: 0, sparkedToday: false, flameCount: 0, myFlames: 0, flamedToday: false, freeSparks: 0, activeRallies: 0, iAmRallying: false, scribeFlameCount: 0, infernalDawnCount: 0, myScribeFlames: 0, myInfernalDawns: 0, votedScribeThisMonth: false, votedInfernalThisYear: false,
+      // Lifetime contributions from THIS viewer to THIS story. Distinct from the
+      // my* balances above, which are what they still have left to give.
+      myGivenSparks: 0, myGivenFlames: 0, myGivenRallies: 0, myGivenScribe: 0, myGivenInfernal: 0 };
+
+    // Shared hover text so every chip reports contributions the same way.
+    function givenHover(one, many, count, extra) {
+      var base;
+      if (!currentSession) base = 'Sign in to track your contributions to this story';
+      else if (!count)     base = "You haven't given any " + many + " to this story yet";
+      else base = 'You have given ' + count + ' ' + (count === 1 ? one : many) + ' to this story';
+      return extra ? extra + '. ' + base : base;
+    }
 
     async function loadEngagementState() {
       engageState.sparkWeek       = workData.spark_count_week || 0;
@@ -1842,6 +1950,22 @@
         var iv = await db.from('infernal_dawn_votes').select('id').eq('user_id', uid).eq('year', yr).maybeSingle();
         engageState.votedInfernalThisYear = !!(iv.data);
       } catch(e) {}
+      // Lifetime contributions to THIS story, counted server-side (head:true
+      // sends back only the number, no rows).
+      try {
+        var counts = await Promise.all([
+          db.from('dawn_sparks')         .select('id',{count:'exact',head:true}).eq('work_id',workData.id).eq('user_id',uid),
+          db.from('celestial_flame_gifts').select('id',{count:'exact',head:true}).eq('work_id',workData.id).eq('user_id',uid),
+          db.from('chapter_rallies')     .select('id',{count:'exact',head:true}).eq('work_id',workData.id).eq('user_id',uid),
+          db.from('scribe_flame_votes')  .select('id',{count:'exact',head:true}).eq('work_id',workData.id).eq('user_id',uid),
+          db.from('infernal_dawn_votes') .select('id',{count:'exact',head:true}).eq('work_id',workData.id).eq('user_id',uid)
+        ]);
+        engageState.myGivenSparks   = counts[0].count || 0;
+        engageState.myGivenFlames   = counts[1].count || 0;
+        engageState.myGivenRallies  = counts[2].count || 0;
+        engageState.myGivenScribe   = counts[3].count || 0;
+        engageState.myGivenInfernal = counts[4].count || 0;
+      } catch(e) {}
     }
 
     function renderEngagement() {
@@ -1851,19 +1975,19 @@
       var html = '';
       if (currentSession && !isOwner) {
         if (engageState.sparkedToday) {
-          html += '<button class="btn-spark" disabled title="You can spark this novel again tomorrow."><i class="ti ti-bolt"></i> Sparked today · ' + engageState.sparkWeek + ' this week</button>';
+          html += '<button class="btn-spark" disabled title="' + escHtml(givenHover('Spark of Dawn', 'Sparks of Dawn', engageState.myGivenSparks, 'You can spark this novel again tomorrow')) + '"><i class="ti ti-bolt"></i> Sparked today · ' + engageState.sparkWeek + ' this week</button>';
         } else {
           var costNote = engageState.freeSparks > 0 ? '(free ×' + engageState.freeSparks + ')' : '(2 🔥)';
-          html += '<button class="btn-spark" onclick="submitSpark()" title="Spark of Dawn — once per day per novel. Boosts this novel in the weekly Dawn Ranking."><i class="ti ti-bolt"></i> Spark of Dawn <span style="font-size:11px;font-weight:400;opacity:0.75;">' + costNote + '</span></button>';
+          html += '<button class="btn-spark" onclick="submitSpark()" title="' + escHtml(givenHover('Spark of Dawn', 'Sparks of Dawn', engageState.myGivenSparks, 'Once per day per novel — boosts this novel in the weekly Dawn Ranking')) + '"><i class="ti ti-bolt"></i> Spark of Dawn <span style="font-size:11px;font-weight:400;opacity:0.75;">' + costNote + '</span></button>';
         }
       } else if (engageState.sparkWeek > 0) {
         html += '<div class="rally-count-line"><i class="ti ti-bolt" style="color:#f0c040;"></i> ' + engageState.sparkWeek + ' Spark' + (engageState.sparkWeek !== 1 ? 's' : '') + ' of Dawn this week</div>';
       }
       if (currentSession && !isOwner) {
         if (engageState.iAmRallying) {
-          html += '<button class="btn-rally" disabled title="You\u2019re rallying! You\u2019ll be notified when a new chapter drops."><i class="ti ti-speakerphone"></i> Rallying (' + engageState.activeRallies + ')</button>';
+          html += '<button class="btn-rally" disabled title="' + escHtml(givenHover('Rally', 'Rallies', engageState.myGivenRallies, 'You\u2019re rallying — you\u2019ll be notified when a new chapter drops')) + '"><i class="ti ti-speakerphone"></i> Rallying (' + engageState.activeRallies + ')</button>';
         } else {
-          html += '<button class="btn-rally" onclick="submitRally()" title="Rally for a new chapter — 1 Ember. The author sees the demand and you\u2019re notified when they answer."><i class="ti ti-speakerphone"></i> Rally for a Chapter (' + engageState.activeRallies + ')</button>';
+          html += '<button class="btn-rally" onclick="submitRally()" title="' + escHtml(givenHover('Rally', 'Rallies', engageState.myGivenRallies, 'Rally for a new chapter — 1 Ember')) + '"><i class="ti ti-speakerphone"></i> Rally for a Chapter (' + engageState.activeRallies + ')</button>';
         }
       } else if (engageState.activeRallies > 0) {
         html += '<div class="rally-count-line"><i class="ti ti-speakerphone" style="color:#2dd4bf;"></i> ' + engageState.activeRallies + ' reader' + (engageState.activeRallies !== 1 ? 's are' : ' is') + ' rallying for a new chapter!</div>';
@@ -1875,19 +1999,19 @@
       var wrap = document.getElementById('flame-counter-wrap');
       if (!wrap) return;
       var isOwner = currentSession && currentSession.user.id === workData.author_id;
-      var html = '<div class="flame-counter" title="Celestial Flames \u2014 a rare honor bestowed by devoted readers"><i class="ti ti-flare"></i> ' + engageState.flameCount + ' Celestial Flame' + (engageState.flameCount !== 1 ? 's' : '') + '</div>';
+      var html = '<div class="flame-counter" title="' + escHtml(givenHover('Celestial Flame', 'Celestial Flames', engageState.myGivenFlames, 'A rare honor bestowed by devoted readers')) + '"><i class="ti ti-flare"></i> ' + engageState.flameCount + ' Celestial Flame' + (engageState.flameCount !== 1 ? 's' : '') + '</div>';
       if (currentSession && !isOwner) {
         // Click the flame itself to bestow. Available = has balance AND hasn't flamed
         // this novel today. Once clicked it de-highlights and locks until tomorrow;
         // clicking the dimmed flame does nothing.
         var canFlame = engageState.myFlames > 0 && !engageState.flamedToday;
         if (canFlame) {
-          html += '<span class="flame-give-chip available" onclick="submitFlame()" title="Bestow a Celestial Flame on this novel (one per day)"><i class="ti ti-flare"></i> Give a Flame</span>';
+          html += '<span class="flame-give-chip available" onclick="submitFlame()" title="' + escHtml(givenHover('Celestial Flame', 'Celestial Flames', engageState.myGivenFlames, 'Bestow a Celestial Flame on this novel (one per day)')) + '"><i class="ti ti-flare"></i> Give a Flame</span>';
         } else {
           var whyDim = engageState.flamedToday
             ? 'You\u2019ve given your Flame to this novel today \u2014 back tomorrow'
             : 'You have no Celestial Flames to give';
-          html += '<span class="flame-give-chip spent" title="' + whyDim + '"><i class="ti ti-flare"></i> ' + (engageState.flamedToday ? 'Flame given today' : 'No Flames') + '</span>';
+          html += '<span class="flame-give-chip spent" title="' + escHtml(givenHover('Celestial Flame', 'Celestial Flames', engageState.myGivenFlames, whyDim)) + '"><i class="ti ti-flare"></i> ' + (engageState.flamedToday ? 'Flame given today' : 'No Flames') + '</span>';
         }
         // Side count of the viewer's own Flame balance; hidden once they hit 0.
         if (engageState.myFlames > 0) {
@@ -1909,11 +2033,11 @@
 
       // Scribe's Flame tally
       if (engageState.scribeFlameCount > 0 || launched) {
-        html += '<div class="vote-tally scribe"><i class="ti ti-bookmark"></i> ' + (engageState.scribeFlameCount || 0) + ' Scribe\u2019s Flame' + (engageState.scribeFlameCount !== 1 ? 's' : '') + '</div>';
+        html += '<div class="vote-tally scribe" title="' + escHtml(givenHover('Scribe\u2019s Flame', 'Scribe\u2019s Flames', engageState.myGivenScribe)) + '"><i class="ti ti-bookmark"></i> ' + (engageState.scribeFlameCount || 0) + ' Scribe\u2019s Flame' + (engageState.scribeFlameCount !== 1 ? 's' : '') + '</div>';
       }
       // Infernal Dawn tally
       if (engageState.infernalDawnCount > 0 || launched) {
-        html += '<div class="vote-tally infernal"><i class="ti ti-sun"></i> ' + (engageState.infernalDawnCount || 0) + ' Infernal Dawn' + (engageState.infernalDawnCount !== 1 ? 's' : '') + '</div>';
+        html += '<div class="vote-tally infernal" title="' + escHtml(givenHover('Infernal Dawn', 'Infernal Dawns', engageState.myGivenInfernal)) + '"><i class="ti ti-sun"></i> ' + (engageState.infernalDawnCount || 0) + ' Infernal Dawn' + (engageState.infernalDawnCount !== 1 ? 's' : '') + '</div>';
       }
 
       if (!launched) {
@@ -2242,7 +2366,7 @@
         html += '<div class="goal-reached-banner"><i class="ti ti-confetti"></i> Goal reached! ' + (isOwner ? 'Move the goalpost from your Dashboard.' : 'The author\u2019s reward is coming!') + '</div>';
       }
       if (isOwner) {
-        html += '<button class="goal-cancel-btn" onclick="submitCancelGoal(' + JSON.stringify(g.id) + ')">Cancel this goal</button>';
+        html += '<button class="goal-cancel-btn" onclick="submitCancelGoal(' + attrJson(g.id) + ')">Cancel this goal</button>';
       }
       el.innerHTML = html;
     }
@@ -3734,6 +3858,20 @@
       } catch(e) {}
       if (landscapeTimer) { clearInterval(landscapeTimer); landscapeTimer = null; }
       var urls = landscapeRows.map(function(l){ return l.image_url; });
+
+      // A landscape row can outlive its storage object (upload deleted, bucket
+      // cleaned, bad path). Before this guard, a dead URL meant urls.length was
+      // non-zero, so the author-banner fallback below never ran and the hero was
+      // simply blank. Fall back on load failure instead of trusting the row.
+      bannerImg.onerror = function() {
+        this.onerror = null;
+        if (fallbackUrl && this.src !== fallbackUrl) {
+          this.src = fallbackUrl;
+          this.style.display = 'block';
+        } else {
+          this.style.display = 'none';
+        }
+      };
       if (!urls.length) {
         if (fallbackUrl) { bannerImg.src = fallbackUrl; bannerImg.style.display = 'block'; }
         return;
@@ -3831,7 +3969,7 @@
         // image_url was interpolated RAW into src -- a quote in the value closed
         // the attribute and allowed an injected event handler. Author-controlled
         // via novel_locations, so it is untrusted input like any other.
-        return '<div class="ls-pick-thumb'+sel+'" data-ls-id="'+escHtml(l.id)+'" onclick="selectLandscapePin('+JSON.stringify(l.id)+')"><img src="'+safeUrl(l.image_url)+'" alt="landscape"/></div>';
+        return '<div class="ls-pick-thumb'+sel+'" data-ls-id="'+escHtml(l.id)+'" onclick="selectLandscapePin('+attrJson(l.id)+')"><img src="'+safeUrl(l.image_url)+'" alt="landscape"/></div>';
       }).join('');
 
       document.getElementById('landscape-pick-wrap').style.display = (mode === 'single') ? 'block' : 'none';
@@ -3927,7 +4065,10 @@
       btn.disabled=false; btn.innerHTML='<i class="ti ti-upload"></i> Submit';
     }
 
-    window.openCollabModal = function(cid){ return openCollabModal(cid); };
+    // NOTE: openCollabModal is a top-level function declaration, so it is ALREADY
+    // window.openCollabModal. The wrapper that used to sit here reassigned
+    // window.openCollabModal to a function whose body called openCollabModal —
+    // which by then resolved to the wrapper itself. Infinite recursion on click.
     function openCollabModal(preselectCharId) {
       if(!currentSession){ window.location.href=dsAuthNext(); return; }
       collabFileData=null;
@@ -3959,10 +4100,77 @@
     }
     function closeCollabModal(){ document.getElementById('collab-modal-backdrop').classList.remove('show'); }
 
+    // ── Character licence requests ────────────────────────────────────────
+    // One primitive, two scopes. 'avatar' = one cosmetic per slot for that
+    // character; 'scroll' = a full themed set. Both pay 50 artist / 30 author /
+    // 20 platform, which is why they share a request table and one RPC.
+    // Authorization lives in request_character_license — this is only the form.
+    var licenceType = 'avatar';
+
+    window.openLicenceModal = openLicenceModal;
+    async function openLicenceModal(type) {
+      if (!currentSession) { window.location.href = dsAuthNext(); return; }
+      licenceType = (type === 'scroll') ? 'scroll' : 'avatar';
+      document.getElementById('licence-modal-title').textContent =
+        licenceType === 'scroll' ? 'Request a Collab Scroll' : 'Request an Avatar Set';
+      document.getElementById('licence-modal-blurb').textContent =
+        licenceType === 'scroll'
+          ? 'Ask this author for permission to build a full Collab Scroll around one of their characters — a themed set of cosmetics. If they accept, you earn 50% of every sale, the author gets 30%, DawnScribe keeps 20%. Nothing is listed until they say yes.'
+          : 'Ask this author for permission to create an avatar set based on one of their characters — one cosmetic per slot (hair, eyes, shirt, and so on). If they accept, you earn 50% of every sale, the author gets 30%, DawnScribe keeps 20%. Nothing is listed until they say yes.';
+      document.getElementById('licence-pitch').value = '';
+      var sel = document.getElementById('licence-character-select');
+      sel.innerHTML = '<option value="">Loading characters…</option>';
+      document.getElementById('licence-modal-backdrop').classList.add('show');
+      try {
+        var { data: ccs } = await db.from('novel_characters')
+          .select('id,name').eq('work_id', workData.id)
+          .order('sort_order', { ascending: true });
+        sel.innerHTML = '';
+        if (!ccs || !ccs.length) {
+          sel.innerHTML = '<option value="">No characters on this story yet</option>';
+          return;
+        }
+        ccs.forEach(function(c){
+          var o = document.createElement('option');
+          o.value = c.id; o.textContent = c.name;
+          sel.appendChild(o);
+        });
+      } catch(e) {
+        sel.innerHTML = '<option value="">Could not load characters</option>';
+      }
+    }
+    function closeLicenceModal(){ document.getElementById('licence-modal-backdrop').classList.remove('show'); }
+
+    async function submitLicenceRequest() {
+      var charId = document.getElementById('licence-character-select').value;
+      if (!charId) { showToast('Pick a character first.', 'ti-x'); return; }
+      var btn = document.getElementById('licence-submit-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Sending…';
+      try {
+        var { data, error } = await db.rpc('request_character_license', {
+          p_character_id: charId,
+          p_license_type: licenceType,
+          p_pitch: document.getElementById('licence-pitch').value || null
+        });
+        // supabase-js returns { error } rather than throwing, and the RPC itself
+        // reports refusals as { ok:false }. Both have to be checked.
+        if (error || !data || !data.ok) {
+          showToast((data && data.error) || (error && error.message) || 'Could not send request', 'ti-x');
+          return;
+        }
+        closeLicenceModal();
+        showToast('Request sent — the author will be notified.', 'ti-check');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-send"></i> Send Request';
+      }
+    }
+
     /* ── BANNER COLLAB OFFER ─────────────────────────────────────────────── */
     var _bcollabSelected = null;
 
-    window.openBannerCollabModal = function(){ return openBannerCollabModal(); };
+    // Same self-recursion as openCollabModal above — the wrapper is not needed.
     async function openBannerCollabModal(){
       if(!currentSession){ window.location.href=dsAuthNext(); return; }
       _bcollabSelected = null;
