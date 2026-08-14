@@ -150,7 +150,19 @@
   var session = null;
   var workId = null;
 
-  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  // JSON.stringify emits literal double quotes, which close a double-quoted
+  // attribute — the handler then truncates to a bare "fn(" and throws on click.
+  // Entity-encode after stringifying so the parser hands JS a whole literal.
+  function attrJson(v){
+    return JSON.stringify(v === undefined ? null : v)
+      .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function safeUrl(u){
+    u = String(u||'').trim();
+    return /^(https?:\/\/|\/)/i.test(u) ? u : '';
+  }
   function fmt(n){
     n = Number(n||0);
     function s(v, suf){ var t = v.toFixed(1); if(t.slice(-2) === '.0') t = t.slice(0, -2); return t + suf; }
@@ -235,7 +247,7 @@
       '<div class="page-header"><i class="ti ti-chart-line"></i><div class="page-title">Author Dashboard</div></div>'
       + '<div class="page-subtitle">Pick a story to see its readers, retention, and growth.</div>'
       + works.map(function(w){
-          var cover = w.cover_url ? '<img src="' + esc(w.cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>';
+          var cover = safeUrl(w.cover_url) ? '<img src="' + esc(safeUrl(w.cover_url)) + '" alt=""/>' : '<i class="ti ti-book"></i>';
           var rating = w.rating_avg ? Number(w.rating_avg).toFixed(1) + '★ (' + (w.rating_count||0) + ')' : 'No ratings';
           return '<a class="picker-card" href="dashboard.html?work=' + w.id + '">'
             + '<div class="picker-cover">' + cover + '</div>'
@@ -282,7 +294,7 @@
     var page = document.getElementById('page');
     document.title = 'DawnScribe — Dashboard: ' + (ov.title || 'Story');
 
-    var cover = ov.cover_url ? '<img src="' + esc(ov.cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>';
+    var cover = safeUrl(ov.cover_url) ? '<img src="' + esc(safeUrl(ov.cover_url)) + '" alt=""/>' : '<i class="ti ti-book"></i>';
     var ratingVal = ov.rating_avg ? Number(ov.rating_avg).toFixed(1) : '—';
 
     page.innerHTML =
@@ -557,18 +569,18 @@
 
     html += '<div class="goal-actions">';
     if(reached){
-      html += '<button class="goal-btn primary" onclick="openGoalForm(' + JSON.stringify(g.id) + ')"><i class="ti ti-flag"></i> Move the Goalpost</button>';
+      html += '<button class="goal-btn primary" onclick="openGoalForm(' + attrJson(g.id) + ')"><i class="ti ti-flag"></i> Move the Goalpost</button>';
     }
-    html += '<button class="goal-btn" onclick="toggleVisibility(' + JSON.stringify(g.id) + ',' + (g.is_visible ? 'false' : 'true') + ')">'
+    html += '<button class="goal-btn" onclick="toggleVisibility(' + attrJson(g.id) + ',' + (g.is_visible ? 'false' : 'true') + ')">'
       + '<i class="ti ' + (g.is_visible ? 'ti-eye-off' : 'ti-eye') + '"></i> '
       + (g.is_visible ? 'Hide from readers' : 'Show to readers')
     + '</button>';
     if(!reached){
-      html += '<button class="goal-btn danger" onclick="abandonGoal(' + JSON.stringify(g.id) + ')"><i class="ti ti-trash"></i> Abandon</button>';
+      html += '<button class="goal-btn danger" onclick="abandonGoal(' + attrJson(g.id) + ')"><i class="ti ti-trash"></i> Abandon</button>';
     }
     html += '</div>';
 
-    html += '<div class="goal-visibility"><input type="checkbox" id="goal-vis-cb" ' + (g.is_visible ? 'checked' : '') + ' onchange="toggleVisibility(' + JSON.stringify(g.id) + ',this.checked)"> <label for="goal-vis-cb">Visible to readers on story page</label></div>';
+    html += '<div class="goal-visibility"><input type="checkbox" id="goal-vis-cb" ' + (g.is_visible ? 'checked' : '') + ' onchange="toggleVisibility(' + attrJson(g.id) + ',this.checked)"> <label for="goal-vis-cb">Visible to readers on story page</label></div>';
     html += '</div>';
     return html;
   }
@@ -589,7 +601,7 @@
       + '<div><label>Your Promise (pledge)</label>'
         + '<textarea id="gf-pledge" placeholder="e.g. When we hit 500 Sparks I will post a bonus chapter!"></textarea></div>'
       + '<div class="goal-actions">'
-        + '<button class="goal-btn primary" onclick="saveGoal(' + (existingGoalId ? JSON.stringify(existingGoalId) : 'null') + ')"><i class="ti ti-check"></i> ' + (existingGoalId ? 'Update Goal' : 'Set Goal') + '</button>'
+        + '<button class="goal-btn primary" onclick="saveGoal(' + (existingGoalId ? attrJson(existingGoalId) : 'null') + ')"><i class="ti ti-check"></i> ' + (existingGoalId ? 'Update Goal' : 'Set Goal') + '</button>'
         + '<button class="goal-btn" onclick="reloadGoalSection()"><i class="ti ti-x"></i> Cancel</button>'
       + '</div>'
     + '</div>';
