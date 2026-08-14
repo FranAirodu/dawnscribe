@@ -996,7 +996,7 @@
       artworkTags.forEach(function(tag) {
         var pill = document.createElement('span');
         pill.className = 'art-tag-pill';
-        pill.innerHTML = escHtml(tag) + '<button onclick="removeArtTag(\'' + escHtml(tag).replace(/'/g,"\\'") + '\')">×</button>';
+        pill.innerHTML = escHtml(tag) + '<button onclick="removeArtTag(' + attrJson(tag) + ')">×</button>';
         wrap.insertBefore(pill, inputEl);
       });
       // Sync into selectedGoldTags so existing checklist/publish logic sees them
@@ -1051,7 +1051,7 @@
       fandomTags.forEach(function(tag) {
         var pill = document.createElement('span');
         pill.className = 'fandom-pill';
-        pill.innerHTML = escHtml(tag) + '<button onclick="removeFandomTag(\'' + escHtml(tag).replace(/'/g,"\\'") + '\')">×</button>';
+        pill.innerHTML = escHtml(tag) + '<button onclick="removeFandomTag(' + attrJson(tag) + ')">×</button>';
         wrap.insertBefore(pill, inputEl);
       });
       var countEl = document.getElementById('fandom-tag-count');
@@ -1099,13 +1099,13 @@
           var exactMatch = (data || []).some(function(r){ return r.name.toLowerCase() === q.toLowerCase(); });
           var html = '';
           results.forEach(function(r) {
-            html += '<div class="fandom-suggest-item" onclick="addFandomTag(' + "'" + escHtml(r.name).replace(/'/g,"\\'") + "'" + ')">'
+            html += '<div class="fandom-suggest-item" onclick="addFandomTag(' + attrJson(r.name) + ')">'
               + '<span>' + escHtml(r.name) + '</span>'
               + '<span class="use-count">' + r.use_count + ' work' + (r.use_count===1?'':'s') + '</span>'
               + '</div>';
           });
           if (!exactMatch) {
-            html += '<div class="fandom-suggest-create" onclick="addFandomTag(' + "'" + escHtml(q).replace(/'/g,"\\'") + "'" + ')">'
+            html += '<div class="fandom-suggest-create" onclick="addFandomTag(' + attrJson(q) + ')">'
               + '<i class="ti ti-plus"></i> Add "' + escHtml(q) + '" as a new fandom tag</div>';
           }
           if (!html) { closeFandomDropdown(); return; }
@@ -1383,7 +1383,7 @@
       if (!el) return;
       el.innerHTML = CONTENT_WARNING_OPTIONS.map(function(w) {
         var active = selectedContentWarnings.indexOf(w) !== -1;
-        return '<div class="link-type-card' + (active ? ' selected' : '') + '" onclick="toggleContentWarningPick(' + "'" + w.replace(/'/g,"\\'") + "'" + ')"><div class="link-type-card-title">' + w + '</div></div>';
+        return '<div class="link-type-card' + (active ? ' selected' : '') + '" onclick="toggleContentWarningPick(' + attrJson(w) + ')"><div class="link-type-card-title">' + escHtml(w) + '</div></div>';
       }).join('');
     }
     function toggleContentWarningPick(w) {
@@ -1453,6 +1453,14 @@
     }
     function escHtml(str) {
       return String(str==null?'':str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    // A JS string literal safe inside an on* attribute: JSON.stringify for the JS
+    // layer, entity-encoding for the HTML layer. Note escHtml alone is NOT enough
+    // here — the parser decodes &#39; back to a raw quote before JS parses.
+    function attrJson(v){
+      return JSON.stringify(v === undefined ? null : v)
+        .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
     // ── THEME ──────────────────────────────────────────────────────
@@ -3494,13 +3502,13 @@ function ctRender() {
       '<span class="ct-mgr-status ' + statusClass + '">' + statusLabel + '</span>' +
       '<div class="ct-mgr-actions">' +
         (char._staged
-          ? '<button class="ct-mgr-btn danger" onclick="ctRemoveStagedChar(\''+char.id+'\')">Remove<span class="ct-tooltip">Remove this character before publishing</span></button>'
+          ? '<button class="ct-mgr-btn danger" onclick="ctRemoveStagedChar('+attrJson(char.id)+')">Remove<span class="ct-tooltip">Remove this character before publishing</span></button>'
           : (
               (char.chapter_status !== 'skipped' && char.status !== 'ended'
-                ? '<button class="ct-mgr-btn" onclick="ctSkipChar(\''+char.id+'\')">Skip<span class="ct-tooltip">Character isn\'t present in this chapter</span></button>'
-                : (char.chapter_status === 'skipped' ? '<button class="ct-mgr-btn" onclick="ctActivateChar(\''+char.id+'\')">Include<span class="ct-tooltip">Mark character as present in this chapter</span></button>' : '')) +
+                ? '<button class="ct-mgr-btn" onclick="ctSkipChar('+attrJson(char.id)+')">Skip<span class="ct-tooltip">Character isn\'t present in this chapter</span></button>'
+                : (char.chapter_status === 'skipped' ? '<button class="ct-mgr-btn" onclick="ctActivateChar('+attrJson(char.id)+')">Include<span class="ct-tooltip">Mark character as present in this chapter</span></button>' : '')) +
               (char.status !== 'ended'
-                ? '<button class="ct-mgr-btn danger" onclick="ctEndChar(\''+char.id+'\')">End<span class="ct-tooltip">Character has passed away and/or will never return</span></button>'
+                ? '<button class="ct-mgr-btn danger" onclick="ctEndChar('+attrJson(char.id)+')">End<span class="ct-tooltip">Character has passed away and/or will never return</span></button>'
                 : '')
             )
         ) +

@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="characterTitles.css"/>
   <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
   <script src="readingFonts.js"></script>
   <script>
     // Inject Google Fonts link for all reading/editor fonts once READING_FONTS is loaded
@@ -1989,6 +1990,41 @@
     }
   }
   function escXml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  // Imported .docx markup is third-party content: it enters the editor and is then
+  // saved as chapter content. Strip anything Quill would not have produced itself.
+  function sanitizeImportedHtml(html) {
+    html = String(html || '');
+    if (window.DOMPurify) {
+      return window.DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['p','br','strong','b','em','i','u','s','h1','h2','h3','h4',
+                       'blockquote','ul','ol','li','hr','sub','sup','span'],
+        ALLOWED_ATTR: [],
+        FORBID_TAGS: ['script','style','iframe','object','embed','form','img','a'],
+        KEEP_CONTENT: true
+      });
+    }
+    // DOMPurify unavailable (CDN blocked): fall back to plain text rather than
+    // letting unsanitized markup through.
+    var d = document.createElement('div');
+    d.textContent = html.replace(/<[^>]*>/g, ' ');
+    return '<p>' + d.innerHTML + '</p>';
+  }
+  // escXml is for the .docx/XML export path and escapes only & < >. Anything going
+  // into HTML — especially an attribute — needs the quotes handled too.
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  // A JS string literal safe inside an on* attribute. JSON.stringify handles the JS
+  // layer, entity-encoding the HTML layer. Escaping a quote as &#39; alone does NOT
+  // work here: the HTML parser decodes it back to a raw quote before JS parses.
+  function attrJson(v){
+    return JSON.stringify(v === undefined ? null : v)
+      .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function safeUrl(u){
+    u = String(u||'').trim();
+    return /^(https?:\/\/|\/)/i.test(u) ? u : '';
+  }
+  function escapeLike(s){ return String(s||'').replace(/[\\%_]/g, '\\$&'); }
 
   // ── KEYBOARD SHORTCUTS ───────────────────────────────────────
   document.addEventListener('keydown', function(e) {
@@ -2157,7 +2193,7 @@
       reader.onload = function() {
         window.mammoth.convertToHtml({ arrayBuffer: reader.result })
           .then(function(result) {
-            quill.clipboard.dangerouslyPasteHTML(result.value || '<p></p>');
+            quill.clipboard.dangerouslyPasteHTML(sanitizeImportedHtml(result.value) || '<p></p>');
             afterImport(file.name);
           })
           .catch(function(){ showToast('Could not convert that .docx file.', 'ti-x'); });
@@ -2223,7 +2259,7 @@
       var reader = new FileReader();
       reader.onload = function(){
         window.mammoth.convertToHtml({ arrayBuffer: reader.result })
-          .then(function(result){ splitIntoChapters(result.value || ''); })
+          .then(function(result){ splitIntoChapters(sanitizeImportedHtml(result.value)); })
           .catch(function(){ preview.innerHTML = ''; showToast('Could not convert that .docx file.', 'ti-x'); });
       };
       reader.onerror = function(){ preview.innerHTML = ''; showToast('Could not read file.', 'ti-x'); };
@@ -2505,7 +2541,7 @@
       var maxText = p.max_choices === 0 ? 'Unlimited choices' : (p.max_choices === 1 ? 'Single choice' : 'Up to ' + p.max_choices + ' choices');
       card.innerHTML = '<div class="poll-active-q">' + escXml(p.question) + '</div>' +
         '<div class="poll-active-meta"><span><i class="ti ti-list"></i> ' + p.options.length + ' options</span><span><i class="ti ti-checks"></i> ' + maxText + '</span><span><i class="ti ti-clock"></i> ' + closesText + '</span><span><i class="ti ti-' + (p.position==='top'?'arrow-up':'arrow-down') + '"></i> ' + (p.position==='top'?'Top':'Bottom') + '</span></div>' +
-        '<button class="poll-remove-btn" onclick="removePoll(\'' + p.id + '\')"><i class="ti ti-trash"></i> Remove Poll</button>';
+        '<button class="poll-remove-btn" onclick="removePoll(' + attrJson(p.id) + ')"><i class="ti ti-trash"></i> Remove Poll</button>';
       wrap.appendChild(card);
     });
   }
@@ -2644,7 +2680,7 @@
     if (!ttsParas.length) { label.textContent = 'No content to read.'; return; }
     var snippet = ttsParas[ttsCurrentPara] || '';
     if (snippet.length > 60) snippet = snippet.slice(0, 57) + '…';
-    label.innerHTML = '<strong>Para ' + (ttsCurrentPara + 1) + ' / ' + ttsParas.length + '</strong> — ' + snippet;
+    label.innerHTML = '<strong>Para ' + (ttsCurrentPara + 1) + ' / ' + ttsParas.length + '</strong> — ' + esc(snippet);
   }
 
   function ttsHighlightParagraph(idx) {
@@ -2871,11 +2907,11 @@
       lnExisting.map(function(l){
         var isCollab = l.link_type === 'collab';
         var cls = isCollab ? 'linked-tag linked-tag-collab' : 'linked-tag';
-        var label = typeLabels[l.link_type] || l.link_type;
+        var label = typeLabels[l.link_type] || esc(l.link_type);
         var pending = l.status === 'pending' ? ' \u23F3' : '';
         var title = escXml(l._title || l.linked_work_id);
         return '<span class="' + cls + '">' + label + ': ' + title + pending +
-          ' <button class="linked-tag-remove" onclick="lnRemove(\'' + l.id + '\')"><i class="ti ti-x"></i></button></span>';
+          ' <button class="linked-tag-remove" onclick="lnRemove(' + attrJson(l.id) + ')"><i class="ti ti-x"></i></button></span>';
       }).join('');
   }
 
@@ -2913,10 +2949,9 @@
     var el = document.getElementById('ln-own-results');
     if (!filtered.length) { el.innerHTML = '<div style="padding:6px;font-size:12px;color:var(--text3);">No stories found.</div>'; return; }
     el.innerHTML = filtered.map(function(w){
-      var cov = w.cover_url ? '<img class="link-result-cover" src="' + escXml(w.cover_url) + '"/>' : '<div class="link-result-cover"></div>';
-      var safeTitle = escXml(w.title).replace(/'/g, '&#39;');
-      return '<div class="link-result" onclick="lnAdd(\'' + w.id + '\',\'' + safeTitle + '\',false)">' + cov +
-        '<div><div class="link-result-title">' + escXml(w.title) + '</div><div class="link-result-sub">Your story</div></div></div>';
+      var cov = safeUrl(w.cover_url) ? '<img class="link-result-cover" src="' + esc(safeUrl(w.cover_url)) + '"/>' : '<div class="link-result-cover"></div>';
+      return '<div class="link-result" onclick="lnAdd(' + attrJson(w.id) + ',' + attrJson(w.title) + ',false)">' + cov +
+        '<div><div class="link-result-title">' + esc(w.title) + '</div><div class="link-result-sub">Your story</div></div></div>';
     }).join('');
   }
 
@@ -2927,11 +2962,9 @@
     var el = document.getElementById('ln-friend-results');
     if (!filtered.length) { el.innerHTML = '<div style="padding:6px;font-size:12px;color:var(--text3);">No friend stories found.</div>'; return; }
     el.innerHTML = filtered.map(function(w){
-      var cov = w.cover_url ? '<img class="link-result-cover" src="' + escXml(w.cover_url) + '"/>' : '<div class="link-result-cover"></div>';
-      var safeTitle = escXml(w.title).replace(/'/g, '&#39;');
-      var safeAuthorId = w.author_id || '';
-      return '<div class="link-result" onclick="lnAdd(\'' + w.id + '\',\'' + safeTitle + '\',true,\'' + safeAuthorId + '\')">' + cov +
-        '<div><div class="link-result-title">' + escXml(w.title) + '</div><div class="link-result-sub">' + escXml(w.author_name||'') + '</div></div></div>';
+      var cov = safeUrl(w.cover_url) ? '<img class="link-result-cover" src="' + esc(safeUrl(w.cover_url)) + '"/>' : '<div class="link-result-cover"></div>';
+      return '<div class="link-result" onclick="lnAdd(' + attrJson(w.id) + ',' + attrJson(w.title) + ',true,' + attrJson(w.author_id||'') + ')">' + cov +
+        '<div><div class="link-result-title">' + esc(w.title) + '</div><div class="link-result-sub">' + esc(w.author_name||'') + '</div></div></div>';
     }).join('');
   }
 
@@ -2939,7 +2972,7 @@
     if (!q || q.trim().length < 2) { document.getElementById('ln-friend-results').innerHTML = '<div style="padding:6px;font-size:12px;color:var(--text3);">Type at least 2 characters…</div>'; return; }
     var existIds = lnExisting.map(function(l){ return l.linked_work_id; });
     var { data: works } = await db.from('works').select('id,title,cover_url,author_id,language')
-      .ilike('title', '%' + q.trim() + '%')
+      .ilike('title', '%' + escapeLike(q.trim()) + '%')
       .eq('type', 'novel').eq('is_published', true)
       .neq('id', workId)
       .limit(10);
@@ -2955,11 +2988,9 @@
     el.innerHTML = filtered.map(function(w){
       var p = pm[w.author_id] || {};
       var authorName = p.display_name || p.username || 'Unknown';
-      var cov = w.cover_url ? '<img class="link-result-cover" src="' + escXml(w.cover_url) + '"/>' : '<div class="link-result-cover"></div>';
-      var safeTitle = escXml(w.title).replace(/'/g, '&#39;');
-      var safeAuthorName = escXml(authorName).replace(/'/g, '&#39;');
-      return '<div class="link-result" onclick="lnAdd(\'' + w.id + '\',\'' + safeTitle + '\',false,\'' + (w.author_id||'') + '\',\'' + safeAuthorName + '\')">' + cov +
-        '<div><div class="link-result-title">' + escXml(w.title) + '</div><div class="link-result-sub">' + escXml(authorName) + '</div></div></div>';
+      var cov = safeUrl(w.cover_url) ? '<img class="link-result-cover" src="' + esc(safeUrl(w.cover_url)) + '"/>' : '<div class="link-result-cover"></div>';
+      return '<div class="link-result" onclick="lnAdd(' + attrJson(w.id) + ',' + attrJson(w.title) + ',false,' + attrJson(w.author_id||'') + ',' + attrJson(authorName) + ')">' + cov +
+        '<div><div class="link-result-title">' + esc(w.title) + '</div><div class="link-result-sub">' + esc(authorName) + '</div></div></div>';
     }).join('');
   }
 
