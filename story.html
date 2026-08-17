@@ -2245,8 +2245,13 @@
 
     async function loadGoalState() {
       try {
+        // An 'active' goal past expires_at can never be reached — check_goal_reached
+        // filters on expires_at > now() — so showing it to readers advertises a
+        // pledge that can no longer be fulfilled. 'reached' goals stay visible
+        // regardless of expiry, since the pledge is still owed.
         var { data } = await db.from('chapter_goals')
-          .select('*').eq('work_id', workData.id).in('status', ['active','reached'])
+          .select('*').eq('work_id', workData.id)
+          .or('status.eq.reached,and(status.eq.active,expires_at.gt.' + new Date().toISOString() + ')')
           .order('created_at', { ascending: false }).limit(1).maybeSingle();
         goalState.goal = data || null;
         if (goalState.goal) await computeGoalProgress();
