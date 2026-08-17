@@ -36,6 +36,7 @@
   <meta property="og:image" content="https://www.dawnscribe.com/og-default.png" />
   <link rel="canonical" href="https://www.dawnscribe.com/index.html" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="escapeUtils.js"></script>
   <script src="storagePaths.js"></script>
   <script src="spoilerUtils.js"></script>
   <script src="accessibilityPrefs.js"></script>
@@ -1243,7 +1244,19 @@
         return { data: (rows && rows.length) ? rows[0] : null, error: null };
       } catch (e) { return { data: null, error: e }; }
     }
-    function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    // Delegates to escapeUtils.js (window.DSEscape) so every page shares one
+    // implementation. The inline fallback keeps the page working if that script
+    // has not loaded yet; it is deliberately identical to DSEscape.esc.
+    function esc(s){
+      if (window.DSEscape) return window.DSEscape.esc(s);
+      return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function safeUrl(u){
+      if (window.DSEscape) return window.DSEscape.safeUrl(u);
+      u = String(u||'').trim();
+      return /^(https?:\/\/|\/)/i.test(u) ? u : '';
+    }
     // Strip characters that corrupt PostgREST filter syntax (commas/parens
     // break .or() lists, % and \ break ilike patterns). RLS keeps this safe
     // regardless — this is purely so "smith, john" doesn't error the search.

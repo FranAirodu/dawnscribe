@@ -14,6 +14,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="escapeUtils.js"></script>
   <style>
     :root {
       --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
@@ -127,7 +128,19 @@
     companion: 'ti-paw', effect: 'ti-sparkles', background: 'ti-photo'
   };
 
-  function esc(s){ var d=document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+  // Delegates to escapeUtils.js (window.DSEscape) so every page shares one
+  // implementation. The inline fallback keeps the page working if that script
+  // has not loaded yet; it is deliberately identical to DSEscape.esc.
+  function esc(s){
+    if (window.DSEscape) return window.DSEscape.esc(s);
+    return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function safeUrl(u){
+    if (window.DSEscape) return window.DSEscape.safeUrl(u);
+    u = String(u||'').trim();
+    return /^(https?:\/\/|\/)/i.test(u) ? u : '';
+  }
 
   function formatDate(s) {
     return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -161,7 +174,7 @@
       var item = it.cosmetic_items;
       var icon = SLOT_ICONS[item.slot] || 'ti-diamond';
       var thumb = item.image_url
-        ? '<img src="' + esc(item.image_url) + '" alt=""/>'
+        ? '<img src="' + esc(safeUrl(item.image_url)) + '" alt=""/>'
         : '<i class="ti ' + icon + '"></i>';
       var tag = tagByItem[item.id];
       var tagBadge = tag ? '<div class="item-tag-badge"><i class="ti ti-tag"></i>' + esc(tag) + '</div>' : '';
