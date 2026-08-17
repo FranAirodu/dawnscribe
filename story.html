@@ -188,6 +188,19 @@
     .goal-hidden-notice{font-size:11.5px;color:var(--text3);background:var(--bg3);border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
     .goal-setup-btn:hover{border-color:#f0c040;color:#f0c040;}
     .goal-form{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
+    /* multi-goal: each live goal renders as its own card */
+    .goal-item{padding:12px 0;border-bottom:1px solid var(--border);}
+    .goal-item:last-of-type{border-bottom:none;}
+    .goal-timeframe{font-size:11px;color:var(--text3);margin-top:6px;display:flex;align-items:center;gap:5px;}
+    .goal-form-label{font-size:11.5px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;}
+    .goal-type-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:6px;}
+    .goal-type-opt{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text);background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;cursor:pointer;transition:border-color 0.2s;}
+    .goal-type-opt:hover{border-color:var(--accent);}
+    .goal-type-opt.taken{opacity:0.5;cursor:not-allowed;}
+    .goal-type-opt.taken:hover{border-color:var(--border);}
+    .goal-type-taken-note{font-size:10px;color:var(--text3);margin-left:auto;white-space:nowrap;}
+    .goal-setup-btn.secondary{margin-top:10px;font-size:12px;padding:7px 13px;}
+    #goal-duration-select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;}
     .goal-form select,.goal-form input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;}
     .goal-form-actions{display:flex;gap:8px;}
     .goal-form-actions button{flex:1;padding:9px;border-radius:8px;border:none;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
@@ -2241,7 +2254,7 @@
     }
 
     // ── CHAPTER GOALS ─────────────────────────────────────────────
-    var goalState = { goal: null, progress: 0, showForm: false };
+    var goalState = { goals: [], progress: {}, showForm: false };
 
     async function loadGoalState() {
       try {
@@ -2249,59 +2262,65 @@
         // filters on expires_at > now() — so showing it to readers advertises a
         // pledge that can no longer be fulfilled. 'reached' goals stay visible
         // regardless of expiry, since the pledge is still owed.
+        // Goals are independent and concurrent (one live goal per type), so load
+        // the whole set. Open-ended goals have expires_at NULL and never lapse.
+        var nowIso = new Date().toISOString();
         var { data } = await db.from('chapter_goals')
           .select('*').eq('work_id', workData.id)
-          .or('status.eq.reached,and(status.eq.active,expires_at.gt.' + new Date().toISOString() + ')')
-          .order('created_at', { ascending: false }).limit(1).maybeSingle();
-        goalState.goal = data || null;
-        if (goalState.goal) await computeGoalProgress();
-      } catch(e) { goalState.goal = null; }
+          .or('status.eq.reached,and(status.eq.active,expires_at.is.null),and(status.eq.active,expires_at.gt.' + nowIso + ')')
+          .order('created_at', { ascending: false });
+        goalState.goals = data || [];
+        goalState.progress = {};
+        for (var i = 0; i < goalState.goals.length; i++) {
+          goalState.progress[goalState.goals[i].id] = await computeGoalProgress(goalState.goals[i]);
+        }
+      } catch(e) { goalState.goals = []; goalState.progress = {}; }
     }
 
-    async function computeGoalProgress() {
-      var g = goalState.goal;
-      if (!g) { goalState.progress = 0; return; }
+    // Returns progress for ONE goal instead of mutating shared state, so several
+    // concurrent goals can each be computed independently.
+    async function computeGoalProgress(g) {
+      if (!g) return 0;
       var baseline = g.baseline || 0;
-      if (g.goal_type === 'sparks') {
-        goalState.progress = Math.max(0, (workData.spark_count_total || 0) - baseline);
-      } else if (g.goal_type === 'celestial_flames') {
-        goalState.progress = Math.max(0, (workData.celestial_flame_count || 0) - baseline);
-      } else if (g.goal_type === 'scribe_flames') {
-        goalState.progress = Math.max(0, (workData.scribe_flame_count || 0) - baseline);
-      } else if (g.goal_type === 'infernal_dawns') {
-        goalState.progress = Math.max(0, (workData.infernal_dawn_count || 0) - baseline);
-      } else if (g.goal_type === 'offerings') {
-        goalState.progress = Math.max(0, (workData.offering_count || 0) - baseline);
-      } else if (g.goal_type === 'followers') {
-        try {
-          // Follow rows are private; the count comes from an aggregate RPC.
-          var fc = await db.rpc('get_work_follower_count', { p_work_id: workData.id });
-          goalState.progress = Math.max(0, (fc.data || 0) - baseline);
-        } catch(e) { goalState.progress = 0; }
-      } else if (g.goal_type === 'reviews') {
-        goalState.progress = Math.max(0, (workData.rating_count || 0) - baseline);
-      } else if (g.goal_type === 'readers') {
-        try {
-          var rc2 = await db.from('reading_progress').select('user_id', { count: 'exact', head: true }).eq('work_id', workData.id);
-          goalState.progress = Math.max(0, (rc2.count || 0) - baseline);
-        } catch(e) { goalState.progress = 0; }
-      } else if (g.goal_type === 'comments') {
-        goalState.progress = Math.max(0, (workData.comments_count || 0) - baseline);
-      } else if (g.goal_type === 'rallies') {
-        try {
-          var rv = await db.from('chapter_rallies').select('id', { count: 'exact', head: true })
-            .eq('work_id', workData.id).gte('created_at', g.created_at);
-          goalState.progress = rv.count || 0;
-        } catch(e) { goalState.progress = 0; }
-      }
+      var w = workData || {};
+      function fromWork(v){ return Math.max(0, (v || 0) - baseline); }
+      try {
+        switch (g.goal_type) {
+          case 'sparks':           return fromWork(w.spark_count_total);
+          case 'celestial_flames': return fromWork(w.celestial_flame_count);
+          case 'scribe_flames':    return fromWork(w.scribe_flame_count);
+          case 'infernal_dawns':   return fromWork(w.infernal_dawn_count);
+          case 'offerings':        return fromWork(w.offering_count);
+          case 'reviews':          return fromWork(w.rating_count);
+          case 'comments':         return fromWork(w.comments_count);
+          case 'followers': {
+            var fc = await db.rpc('get_work_follower_count', { p_work_id: workData.id });
+            return Math.max(0, (fc.data || 0) - baseline);
+          }
+          case 'readers': {
+            var rc = await db.from('reading_progress')
+              .select('user_id', { count: 'exact', head: true }).eq('work_id', workData.id);
+            return Math.max(0, (rc.count || 0) - baseline);
+          }
+          case 'rallies': {
+            var rv = await db.from('chapter_rallies')
+              .select('id', { count: 'exact', head: true })
+              .eq('work_id', workData.id).gte('created_at', g.created_at);
+            return rv.count || 0;
+          }
+          default: return 0;
+        }
+      } catch(e) { return 0; }
     }
 
+    var GOAL_TYPE_ORDER = ['offerings','sparks','celestial_flames','scribe_flames',
+      'infernal_dawns','followers','reviews','readers','comments','rallies'];
     var GOAL_TYPE_LABELS = {
+      offerings:        'Ember Offerings',
       sparks:           'Sparks of Dawn',
       celestial_flames: 'Celestial Flames',
       scribe_flames:    'Scribe\u2019s Flames',
       infernal_dawns:   'Infernal Dawns',
-      offerings:        'Offerings',
       followers:        'Followers',
       reviews:          'Reviews',
       readers:          'Readers',
@@ -2309,69 +2328,94 @@
       rallies:          'Chapter Rallies'
     };
 
-    function renderGoal() {
-      var sec = document.getElementById('chapter-goal-section');
-      var el = document.getElementById('chapter-goal-content');
-      if (!sec || !el) return;
-      var isOwner = currentSession && currentSession.user.id === workData.author_id;
-      var g = goalState.goal;
+    function goalTypeOptionsHtml() {
+      return GOAL_TYPE_ORDER.map(function(k){
+        var taken = goalState.goals.some(function(g){ return g.goal_type === k; });
+        return '<label class="goal-type-opt' + (taken ? ' taken' : '') + '">'
+          + '<input type="checkbox" class="goal-type-cb" value="' + escHtml(k) + '"'
+          + (taken ? ' disabled' : '') + (k === 'offerings' && !taken ? ' checked' : '') + '/> '
+          + '<span>' + escHtml(GOAL_TYPE_LABELS[k]) + '</span>'
+          + (taken ? '<span class="goal-type-taken-note">already running</span>' : '')
+          + '</label>';
+      }).join('');
+    }
 
-      if (!g) {
-        if (!isOwner) { sec.style.display = 'none'; return; }
-        sec.style.display = 'block';
-        if (!goalState.showForm) {
-          el.innerHTML = '<button class="goal-setup-btn" onclick="toggleGoalForm(true)"><i class="ti ti-target-arrow"></i> Set an Author Goal</button>' +
-            '<div style="font-size:11.5px;color:var(--text3);margin-top:8px;">Give your readers a milestone to rally behind \u2014 pledge a reward when they hit it.</div>';
-        } else {
-          el.innerHTML =
-            '<div class="goal-form">' +
-              '<select id="goal-type-select">' +
-                '<option value="sparks">Sparks of Dawn</option>' +
-                '<option value="celestial_flames">Celestial Flames</option>' +
-                '<option value="scribe_flames">Scribe\u2019s Flames</option>' +
-                '<option value="infernal_dawns">Infernal Dawns</option>' +
-                '<option value="followers">Followers</option>' +
-                '<option value="reviews">Reviews</option>' +
-                '<option value="readers">Readers</option>' +
-                '<option value="comments">Comments</option>' +
-                '<option value="offerings">Offerings</option>' +
-                '<option value="rallies">Chapter Rallies</option>' +
-              '</select>' +
-              '<input type="number" id="goal-target-input" min="1" placeholder="Target number" value="100"/>' +
-              '<input type="text" id="goal-pledge-input" maxlength="200" placeholder="Your promise (e.g. Bonus chapter at 500 Sparks!)"/>' +
-              '<div class="goal-form-actions">' +
-                '<button class="goal-form-save" id="goal-form-save-btn" onclick="submitCreateGoal()">Set Goal</button>' +
-                '<button class="goal-form-cancel" onclick="toggleGoalForm(false)">Cancel</button>' +
-              '</div>' +
-              '<div style="font-size:11px;color:var(--text3);">One active goal per story. Progress is all-time from when the goal is set.</div>' +
-            '</div>';
-        }
-        return;
-      }
+    function renderGoalForm() {
+      return '<div class="goal-form">'
+        + '<div class="goal-form-label">Pick one or more goals</div>'
+        + '<div class="goal-type-grid">' + goalTypeOptionsHtml() + '</div>'
+        + '<input type="number" id="goal-target-input" min="5" max="1000" placeholder="Target number" value="100"/>'
+        + '<input type="text" id="goal-pledge-input" maxlength="200" placeholder="Your promise (e.g. Bonus chapter at 500!)"/>'
+        + '<div class="goal-form-label" style="margin-top:6px;">Timeframe</div>'
+        + '<select id="goal-duration-select">'
+          + '<option value="7">7 days</option>'
+          + '<option value="14">14 days</option>'
+          + '<option value="30">30 days</option>'
+          + '<option value="0">No time limit \u2014 runs until I end it</option>'
+        + '</select>'
+        + '<div class="goal-form-actions">'
+          + '<button class="goal-form-save" id="goal-form-save-btn" onclick="submitCreateGoal()">Set Goals</button>'
+          + '<button class="goal-form-cancel" onclick="toggleGoalForm(false)">Cancel</button>'
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--text3);">Each goal runs independently. The target and pledge apply to every goal you tick.</div>'
+      + '</div>';
+    }
 
-      // Respect is_visible — hide from non-owners if hidden
-      if (!g.is_visible && !isOwner) { sec.style.display = 'none'; return; }
-
-      sec.style.display = 'block';
-      var needed  = Math.max(1, g.target - (g.baseline || 0));
-      var pct     = Math.min(100, Math.round((goalState.progress / needed) * 100));
-      var reached = g.status === 'reached' || pct >= 100;
+    function renderOneGoal(g, isOwner) {
+      var progress = goalState.progress[g.id] || 0;
+      var needed   = Math.max(1, g.target);
+      var pct      = Math.min(100, Math.round((progress / needed) * 100));
+      var reached  = g.status === 'reached' || pct >= 100;
       var typeLabel = GOAL_TYPE_LABELS[g.goal_type] || g.goal_type;
-      var html = '';
+      var html = '<div class="goal-item">';
 
       if (!g.is_visible && isOwner) {
-        html += '<div class="goal-hidden-notice"><i class="ti ti-eye-off"></i> This goal is hidden from readers. Change visibility in your Dashboard.</div>';
+        html += '<div class="goal-hidden-notice"><i class="ti ti-eye-off"></i> Hidden from readers. Change visibility in your Dashboard.</div>';
       }
-
       if (g.pledge) html += '<div class="goal-pledge">\u201c' + escHtml(g.pledge) + '\u201d</div>';
-      html += '<div class="goal-progress-line"><span>' + typeLabel + '</span><span>' + goalState.progress + ' / ' + g.target + '</span></div>';
+
+      html += '<div class="goal-progress-line"><span>' + escHtml(typeLabel) + '</span><span>' + progress + ' / ' + g.target + '</span></div>';
       html += '<div class="goal-bar-track"><div class="goal-bar-fill' + (reached ? ' reached' : '') + '" style="width:' + pct + '%;"></div></div>';
+      html += '<div class="goal-timeframe">' + (g.expires_at
+        ? '<i class="ti ti-clock"></i> Ends ' + new Date(g.expires_at).toLocaleDateString()
+        : '<i class="ti ti-infinity"></i> No time limit') + '</div>';
 
       if (reached) {
-        html += '<div class="goal-reached-banner"><i class="ti ti-confetti"></i> Goal reached! ' + (isOwner ? 'Move the goalpost from your Dashboard.' : 'The author\u2019s reward is coming!') + '</div>';
+        html += '<div class="goal-reached-banner"><i class="ti ti-confetti"></i> Goal reached! '
+             + (isOwner ? 'Move the goalpost from your Dashboard.' : 'The author\u2019s reward is coming!') + '</div>';
       }
       if (isOwner) {
         html += '<button class="goal-cancel-btn" onclick="submitCancelGoal(' + attrJson(g.id) + ')">Cancel this goal</button>';
+      }
+      return html + '</div>';
+    }
+
+    function renderGoal() {
+      var sec = document.getElementById('chapter-goal-section');
+      var el  = document.getElementById('chapter-goal-content');
+      if (!sec || !el) return;
+      var isOwner = currentSession && currentSession.user.id === workData.author_id;
+
+      // Readers only ever see visible goals; the author sees everything.
+      var shown = goalState.goals.filter(function(g){ return isOwner || g.is_visible; });
+
+      if (!shown.length && !goalState.showForm) {
+        if (!isOwner) { sec.style.display = 'none'; return; }
+        sec.style.display = 'block';
+        el.innerHTML = '<button class="goal-setup-btn" onclick="toggleGoalForm(true)"><i class="ti ti-target-arrow"></i> Set an Author Goal</button>'
+          + '<div style="font-size:11.5px;color:var(--text3);margin-top:8px;">Give your readers a milestone to rally behind \u2014 pledge a reward when they hit it.</div>';
+        return;
+      }
+
+      sec.style.display = 'block';
+      var html = shown.map(function(g){ return renderOneGoal(g, isOwner); }).join('');
+
+      if (isOwner) {
+        html += goalState.showForm
+          ? renderGoalForm()
+          : (GOAL_TYPE_ORDER.length > goalState.goals.length
+              ? '<button class="goal-setup-btn secondary" onclick="toggleGoalForm(true)"><i class="ti ti-plus"></i> Add another goal</button>'
+              : '');
       }
       el.innerHTML = html;
     }
@@ -2382,36 +2426,50 @@
     };
 
     window.submitCreateGoal = async function() {
-      var type = document.getElementById('goal-type-select').value;
-      var target = parseInt(document.getElementById('goal-target-input').value, 10);
-      var pledge = document.getElementById('goal-pledge-input').value;
+      var types = [].slice.call(document.querySelectorAll('.goal-type-cb:checked'))
+                    .map(function(cb){ return cb.value; });
+      var target   = parseInt(document.getElementById('goal-target-input').value, 10);
+      var pledge   = document.getElementById('goal-pledge-input').value;
+      var duration = parseInt(document.getElementById('goal-duration-select').value, 10);
       var btn = document.getElementById('goal-form-save-btn');
+
+      if (!types.length) { showToast('Pick at least one goal type.', 'ti-x'); return; }
       if (!target || target < 5 || target > 1000) { showToast('Target must be between 5 and 1000.', 'ti-x'); return; }
       if (btn) { btn.disabled = true; btn.textContent = 'Setting\u2026'; }
-      try {
-        var { data, error } = await db.rpc('create_chapter_goal', {
-          p_work_id: workData.id, p_goal_type: type, p_target: target, p_pledge: pledge
-        });
-        if (error || !data || !data.success) {
-          var msg = (data && data.error) || (error && error.message) || 'Could not set goal';
-          var friendly = {
-            goal_already_active: 'You already have an active goal for this story.',
-            not_owner: 'Only the author can set a goal.',
-            invalid_input: 'Please check your target and goal type.',
-            not_authenticated: 'Please sign in first.'
-          }[msg] || msg;
-          showToast(friendly, 'ti-x');
-          if (btn) { btn.disabled = false; btn.textContent = 'Set Goal'; }
-          return;
+
+      var friendlyMap = {
+        goal_already_active: 'already running',
+        not_owner:           'only the author can set goals',
+        invalid_input:       'check the target',
+        invalid_duration:    'check the timeframe',
+        not_authenticated:   'please sign in first'
+      };
+
+      // Each goal is created independently, so one failure must not lose the rest.
+      var made = 0, failed = [];
+      for (var i = 0; i < types.length; i++) {
+        try {
+          var res = await db.rpc('create_chapter_goal', {
+            p_work_id: workData.id, p_goal_type: types[i], p_target: target,
+            p_pledge: pledge, p_duration_days: duration
+          });
+          var data = res.data, error = res.error;
+          if (error || !data || !data.success) {
+            var code = (data && data.error) || (error && error.message) || 'failed';
+            failed.push((GOAL_TYPE_LABELS[types[i]] || types[i]) + ' (' + (friendlyMap[code] || code) + ')');
+          } else { made++; }
+        } catch(e) {
+          failed.push(GOAL_TYPE_LABELS[types[i]] || types[i]);
         }
-        showToast('Goal set! Readers will see it now. \ud83c\udfaf', 'ti-target-arrow');
-        goalState.showForm = false;
-        await loadGoalState();
-        renderGoal();
-      } catch(e) {
-        showToast('Error setting goal.', 'ti-x');
-        if (btn) { btn.disabled = false; btn.textContent = 'Set Goal'; }
       }
+
+      if (made) showToast(made + ' goal' + (made > 1 ? 's' : '') + ' set! \ud83c\udfaf', 'ti-target-arrow');
+      if (failed.length) showToast('Could not set: ' + failed.join(', '), 'ti-x');
+
+      goalState.showForm = false;
+      await loadGoalState();
+      renderGoal();
+      if (btn) { btn.disabled = false; btn.textContent = 'Set Goals'; }
     };
 
     window.submitCancelGoal = async function(goalId) {
@@ -2419,14 +2477,17 @@
         var { data, error } = await db.rpc('cancel_chapter_goal', { p_goal_id: goalId });
         if (error || !data || !data.success) { showToast('Could not cancel goal.', 'ti-x'); return; }
         showToast('Goal cancelled.', 'ti-x');
-        goalState.goal = null;
+        // Other goals keep running, so reload the set rather than blanking it.
+        await loadGoalState();
         renderGoal();
       } catch(e) { showToast('Error cancelling goal.', 'ti-x'); }
     };
 
     async function refreshGoalProgress() {
-      if (!goalState.goal) return;
-      await computeGoalProgress();
+      if (!goalState.goals.length) return;
+      for (var i = 0; i < goalState.goals.length; i++) {
+        goalState.progress[goalState.goals[i].id] = await computeGoalProgress(goalState.goals[i]);
+      }
       renderGoal();
     }
 

@@ -116,6 +116,13 @@
     .goal-btn.danger:hover{background:rgba(248,113,113,0.1);}
     .goal-visibility{font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;margin-top:10px;}
     .goal-visibility input{cursor:pointer;accent-color:var(--accent);}
+    .goal-type-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;margin-top:6px;}
+    .goal-type-opt{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text);background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;cursor:pointer;transition:border-color 0.2s;}
+    .goal-type-opt:hover{border-color:var(--accent);}
+    .goal-type-opt.taken{opacity:0.5;cursor:not-allowed;}
+    .goal-type-opt.taken:hover{border-color:var(--border);}
+    .goal-type-taken-note{font-size:10px;color:var(--text3);margin-left:auto;}
+    .goal-form select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;width:100%;}
     .goal-form{display:flex;flex-direction:column;gap:12px;}
     .goal-form label{font-size:12px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.7px;margin-bottom:2px;display:block;}
     .goal-form select,.goal-form input,.goal-form textarea{width:100%;background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13.5px;font-family:'Lato',sans-serif;outline:none;transition:border-color 0.2s;}
@@ -362,7 +369,7 @@
         + '<div id="goals-body"><div style="color:var(--text3);font-size:13px;">Loading…</div></div>'
       + '</div>';
 
-    loadGoals(payload.active_goal || null);
+    loadGoals(payload.active_goals || (payload.active_goal ? [payload.active_goal] : []));
 
     // Show a right-edge fade on the retention table only while more columns
     // are hidden off-screen; hide it once the user scrolls to the end.
@@ -523,17 +530,44 @@
   // These are the only three the DB accepts (chapter_goals goal_type CHECK) and
   // the only three goal_progress() knows how to measure. The picker used to
   // offer six more that create_chapter_goal rejects outright.
+  // Ember Offerings leads: most-used type. Keys are the DB values and must not change.
+  var GOAL_TYPE_ORDER = ['offerings','sparks','celestial_flames','scribe_flames',
+    'infernal_dawns','followers','reviews','readers','comments','rallies'];
   var GOAL_TYPES = {
-    sparks:    { label: 'Dawn Sparks', icon: 'ti-flame' },
-    rallies:   { label: 'Rallies',     icon: 'ti-users' },
-    offerings: { label: 'Offerings',   icon: 'ti-gift' }
+    offerings:        { label: 'Ember Offerings',  icon: 'ti-gift' },
+    sparks:           { label: 'Sparks of Dawn',   icon: 'ti-flame' },
+    celestial_flames: { label: 'Celestial Flames', icon: 'ti-flare' },
+    scribe_flames:    { label: 'Scribe\u2019s Flames',  icon: 'ti-feather' },
+    infernal_dawns:   { label: 'Infernal Dawns',   icon: 'ti-sun' },
+    followers:        { label: 'Followers',        icon: 'ti-user-plus' },
+    reviews:          { label: 'Reviews',          icon: 'ti-star' },
+    readers:          { label: 'Readers',          icon: 'ti-book' },
+    comments:         { label: 'Comments',         icon: 'ti-message' },
+    rallies:          { label: 'Chapter Rallies',  icon: 'ti-users' }
   };
   var GOAL_TARGET_MIN = 5, GOAL_TARGET_MAX = 1000;
 
-  async function loadGoals(activeGoal){
+  async function loadGoals(activeGoals){
     var body = document.getElementById('goals-body');
     if(!body) return;
-    body.innerHTML = renderGoal(activeGoal);
+    body.innerHTML = renderGoals(activeGoals || []);
+  }
+
+  // Goals are concurrent now (one live goal per type), so render the whole set.
+  function renderGoals(goals){
+    if(!goals.length){
+      return '<div class="goal-empty">No active goals set.</div>'
+        + '<div class="goal-actions" style="margin-top:14px;">'
+          + '<button class="goal-btn primary" onclick="openGoalForm(null)"><i class="ti ti-plus"></i> Set a Goal</button>'
+        + '</div>';
+    }
+    var html = goals.map(function(g){ return renderGoal(g); }).join('');
+    if(goals.length < GOAL_TYPE_ORDER.length){
+      html += '<div class="goal-actions" style="margin-top:14px;">'
+        + '<button class="goal-btn" onclick="openGoalForm(null)"><i class="ti ti-plus"></i> Add another goal</button>'
+        + '</div>';
+    }
+    return html;
   }
 
   function renderGoal(g){
@@ -567,6 +601,12 @@
     html += '<div class="goal-bar-wrap"><div class="goal-bar-fill" style="width:' + pct + '%;' + (reached ? 'background:var(--green);' : '') + '"></div></div>';
     html += '<div class="goal-pct">Progress: <b>' + fmt(progress) + ' / ' + fmt(g.target) + '</b> (' + pct + '%)</div>';
 
+    html += '<div class="goal-timeframe" style="font-size:11px;color:var(--text3);margin-top:6px;">'
+      + (g.expires_at
+          ? '<i class="ti ti-clock"></i> Ends ' + new Date(g.expires_at).toLocaleDateString()
+          : '<i class="ti ti-infinity"></i> No time limit')
+      + '</div>';
+
     html += '<div class="goal-actions">';
     if(reached){
       html += '<button class="goal-btn primary" onclick="openGoalForm(' + attrJson(g.id) + ')"><i class="ti ti-flag"></i> Move the Goalpost</button>';
@@ -588,20 +628,48 @@
   function openGoalForm(existingGoalId){
     var body = document.getElementById('goals-body');
     if(!body) return;
-    var typeOptions = Object.keys(GOAL_TYPES).map(function(k){
-      return '<option value="' + k + '">' + GOAL_TYPES[k].label + '</option>';
+
+    var live = (window._dashPayload && (window._dashPayload.active_goals ||
+      (window._dashPayload.active_goal ? [window._dashPayload.active_goal] : []))) || [];
+    var taken = live.map(function(g){ return g.goal_type; });
+
+    // "Move the Goalpost" edits ONE existing goal, so it stays single-select.
+    var editing = !!existingGoalId;
+    var editType = editing ? (live.filter(function(g){ return g.id === existingGoalId; })[0] || {}).goal_type : null;
+
+    var typeHtml = GOAL_TYPE_ORDER.map(function(k){
+      var isTaken = taken.indexOf(k) !== -1 && k !== editType;
+      if(editing){
+        return '<label class="goal-type-opt' + (isTaken ? ' taken' : '') + '">'
+          + '<input type="radio" name="gf-type-r" class="goal-type-cb" value="' + esc(k) + '"'
+          + (isTaken ? ' disabled' : '') + (k === editType ? ' checked' : '') + '/> '
+          + '<span>' + esc(GOAL_TYPES[k].label) + '</span></label>';
+      }
+      return '<label class="goal-type-opt' + (isTaken ? ' taken' : '') + '">'
+        + '<input type="checkbox" class="goal-type-cb" value="' + esc(k) + '"'
+        + (isTaken ? ' disabled' : '') + (k === 'offerings' && !isTaken ? ' checked' : '') + '/> '
+        + '<span>' + esc(GOAL_TYPES[k].label) + '</span>'
+        + (isTaken ? '<span class="goal-type-taken-note">running</span>' : '')
+      + '</label>';
     }).join('');
 
     body.innerHTML = '<div class="goal-form">'
-      + '<div><label>Goal Type</label>'
-        + '<select id="gf-type">' + typeOptions + '</select></div>'
+      + '<div><label>' + (editing ? 'Goal Type' : 'Pick one or more goals') + '</label>'
+        + '<div class="goal-type-grid">' + typeHtml + '</div></div>'
       + '<div><label>Target Number</label>'
         + '<input type="number" id="gf-target" min="' + GOAL_TARGET_MIN + '" max="' + GOAL_TARGET_MAX + '" placeholder="e.g. 500"/>'
-        + '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Between ' + GOAL_TARGET_MIN + ' and ' + GOAL_TARGET_MAX + '. Goals run for 7 days.</div></div>'
+        + '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Between ' + GOAL_TARGET_MIN + ' and ' + GOAL_TARGET_MAX + '.</div></div>'
+      + '<div><label>Timeframe</label>'
+        + '<select id="gf-duration">'
+          + '<option value="7">7 days</option>'
+          + '<option value="14">14 days</option>'
+          + '<option value="30">30 days</option>'
+          + '<option value="0">No time limit \u2014 runs until I end it</option>'
+        + '</select></div>'
       + '<div><label>Your Promise (pledge)</label>'
         + '<textarea id="gf-pledge" placeholder="e.g. When we hit 500 Sparks I will post a bonus chapter!"></textarea></div>'
       + '<div class="goal-actions">'
-        + '<button class="goal-btn primary" onclick="saveGoal(' + (existingGoalId ? attrJson(existingGoalId) : 'null') + ')"><i class="ti ti-check"></i> ' + (existingGoalId ? 'Update Goal' : 'Set Goal') + '</button>'
+        + '<button class="goal-btn primary" onclick="saveGoal(' + (existingGoalId ? attrJson(existingGoalId) : 'null') + ')"><i class="ti ti-check"></i> ' + (editing ? 'Update Goal' : 'Set Goals') + '</button>'
         + '<button class="goal-btn" onclick="reloadGoalSection()"><i class="ti ti-x"></i> Cancel</button>'
       + '</div>'
     + '</div>';
@@ -616,35 +684,51 @@
     not_owner:           'Only the author of a published story can set a goal.',
     invalid_input:       'Pick a goal type and a target between ' + GOAL_TARGET_MIN + ' and ' + GOAL_TARGET_MAX + '.',
     goal_already_active: 'This story already has an active goal. Abandon it first.',
-    not_found:           'That goal is no longer available. Refreshing.'
+    not_found:           'That goal is no longer available. Refreshing.',
+    invalid_duration:    'Pick a valid timeframe.'
   };
   function goalErrorText(code){ return GOAL_ERRORS[code] || 'Something went wrong. Please try again.'; }
 
   async function saveGoal(existingGoalId){
-    var type   = document.getElementById('gf-type').value;
-    var target = parseInt(document.getElementById('gf-target').value, 10);
-    var pledge = (document.getElementById('gf-pledge').value || '').trim();
+    var types = [].slice.call(document.querySelectorAll('.goal-type-cb:checked'))
+                  .map(function(cb){ return cb.value; });
+    var target   = parseInt(document.getElementById('gf-target').value, 10);
+    var pledge   = (document.getElementById('gf-pledge').value || '').trim();
+    var duration = parseInt(document.getElementById('gf-duration').value, 10);
 
-    if(!type || !target || target < GOAL_TARGET_MIN || target > GOAL_TARGET_MAX){
-      alert('Please choose a goal type and a target between ' + GOAL_TARGET_MIN + ' and ' + GOAL_TARGET_MAX + '.');
+    if(!types.length){ alert('Please choose at least one goal type.'); return; }
+    if(!target || target < GOAL_TARGET_MIN || target > GOAL_TARGET_MAX){
+      alert('Please choose a target between ' + GOAL_TARGET_MIN + ' and ' + GOAL_TARGET_MAX + '.');
       return;
     }
 
     try {
-      // "Move the Goalpost": cancel the reached goal first so the new one is
+      // "Move the Goalpost": cancel the reached goal first so the replacement is
       // not rejected as goal_already_active.
       if(existingGoalId){
         var canRes = await db.rpc('cancel_chapter_goal', { p_goal_id: existingGoalId });
         if(canRes.error) throw canRes.error;
       }
-      var { data, error } = await db.rpc('create_chapter_goal', {
-        p_work_id:   workId,
-        p_goal_type: type,
-        p_target:    target,
-        p_pledge:    pledge || null
-      });
-      if(error) throw error;
-      if(!data || data.success !== true){ alert(goalErrorText(data && data.error)); return; }
+
+      // Each goal is independent, so one failure must not discard the others.
+      var made = 0, failed = [];
+      for(var i = 0; i < types.length; i++){
+        var res = await db.rpc('create_chapter_goal', {
+          p_work_id:       workId,
+          p_goal_type:     types[i],
+          p_target:        target,
+          p_pledge:        pledge || null,
+          p_duration_days: duration
+        });
+        if(res.error || !res.data || res.data.success !== true){
+          var label = (GOAL_TYPES[types[i]] || {}).label || types[i];
+          failed.push(label + ' \u2014 ' + goalErrorText(res.data && res.data.error));
+        } else { made++; }
+      }
+
+      if(failed.length){
+        alert((made ? made + ' goal(s) set.\n\n' : '') + 'Could not set:\n' + failed.join('\n'));
+      }
       await reloadGoalSection();
     } catch(e){
       alert('Could not save goal. Please try again.');
@@ -679,7 +763,7 @@
       if(data){
         window._dashPayload = data;
         var body = document.getElementById('goals-body');
-        if(body) body.innerHTML = renderGoal(data.active_goal || null);
+        if(body) body.innerHTML = renderGoals(data.active_goals || (data.active_goal ? [data.active_goal] : []));
       }
     } catch(e) {}
   }
