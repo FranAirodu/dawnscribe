@@ -1672,6 +1672,11 @@ function dsApplyAccent(hex) {
           if (rw.spark_grant > 0) bits.push('+' + rw.spark_grant + ' Spark' + (rw.spark_grant !== 1 ? 's' : '') + ' of Dawn \u26a1 (Monday bonus!)');
           if (rw.scribes_flame > 0) bits.push('+1 Scribe\u2019s Flame \uD83D\uDD16 (monthly vote unlocked!)');
           if (rw.infernal_dawn > 0) bits.push('+1 Infernal Dawn \u2600\uFE0F (yearly vote unlocked!)');
+          // Due but withheld: the yearly token needs 3 months of account tenure.
+          else if (rw.infernal_locked) {
+            bits.push('Infernal Dawn \u2600\uFE0F unlocks after 3 months'
+              + (rw.infernal_eligible_on ? ' \u2014 eligible ' + rw.infernal_eligible_on : ''));
+          }
           if (rw.perfect_month) bits.push('Perfect month! Dawnkeeper honor earned \ud83c\udfc6');
           bits.forEach(function(bb, bi){ setTimeout(function(){ window.showToast(bb, 'ti-flame'); }, bi * 900); });
         }
