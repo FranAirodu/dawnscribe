@@ -2730,11 +2730,19 @@ async function handleFriendBtn() {
         return;
       }
       try {
-        var res = await db.from('reading_progress')
-          .select('work_id, chapter_id, updated_at')
-          .eq('user_id', profileId)
-          .order('updated_at', { ascending: false })
-          .limit(20);
+        // reading_progress RLS is own-rows-only, so a non-owner must go through
+        // get_public_reading_list, which enforces the privacy_readinglist opt-in
+        // server-side (plus blocks, soft-deletes and the age gate).
+        var res;
+        if (isOwner) {
+          res = await db.from('reading_progress')
+            .select('work_id, chapter_id, updated_at')
+            .eq('user_id', profileId)
+            .order('updated_at', { ascending: false })
+            .limit(20);
+        } else {
+          res = await db.rpc('get_public_reading_list', { p_user_id: profileId, p_limit: 20 });
+        }
         if (res.error || !res.data || res.data.length === 0) {
           container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:12px 0;">No reading history yet.</div>';
           return;
