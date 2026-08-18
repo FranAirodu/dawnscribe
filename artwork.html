@@ -398,6 +398,15 @@
     .edit-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;outline:none;transition:border-color 0.2s;}
     .edit-input:focus{border-color:var(--accent);}
     .edit-textarea{resize:none;min-height:90px;line-height:1.6;}
+    .collab-results{margin-top:6px;display:none;max-height:170px;overflow-y:auto;border:1px solid var(--border);border-radius:9px;background:var(--bg3);}
+    .collab-result{padding:9px 12px;font-size:12.5px;color:var(--text);cursor:pointer;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid var(--border);}
+    .collab-result:last-child{border-bottom:none;}
+    .collab-result:hover{background:var(--bg4);}
+    .collab-result-author{font-size:11px;color:var(--text3);}
+    .collab-current{padding:10px 12px;border-radius:9px;background:var(--bg3);border:1px solid var(--border);font-size:12.5px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+    .collab-current-status{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;padding:2px 7px;border-radius:6px;}
+    .collab-status-pending{color:var(--gold);background:rgba(245,158,11,0.13);}
+    .collab-status-approved{color:var(--accent);background:rgba(45,212,191,0.13);}
     .edit-modal-footer{padding:0 24px 20px;display:flex;gap:10px;justify-content:flex-end;}
     .edit-cancel{background:transparent;border:1px solid var(--border);border-radius:8px;padding:9px 20px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
     .edit-cancel:hover{border-color:var(--text3);}
@@ -489,6 +498,18 @@
         <div class="edit-field">
           <label class="edit-label">Tags <span style="font-weight:400;text-transform:none;letter-spacing:0;">(comma-separated)</span></label>
           <input class="edit-input" type="text" id="edit-tags" placeholder="e.g. fantasy, character art, digital"/>
+        </div>
+
+        <div class="edit-field" id="edit-collab-field">
+          <label class="edit-label">Linked Novel <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+          <div id="edit-collab-current" style="display:none;"></div>
+          <input class="edit-input" type="text" id="edit-collab-search" maxlength="80" placeholder="Search a novel by title…" autocomplete="off" oninput="onCollabSearch()"/>
+          <div id="edit-collab-results" class="collab-results"></div>
+          <input class="edit-input" type="text" id="edit-collab-character" maxlength="80" placeholder="Character shown (optional)" style="margin-top:8px;display:none;"/>
+          <input class="edit-input" type="text" id="edit-collab-note" maxlength="300" placeholder="Note for the author (optional)" style="margin-top:8px;display:none;"/>
+          <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.55;">
+            Links this artwork to a novel so viewers can jump to the story. The novel's author must approve it first, and re-linking sends it back for approval.
+          </div>
         </div>
       </div>
       <div class="edit-msg" id="edit-msg"></div>
@@ -588,6 +609,14 @@
       if (window.DSEscape) return window.DSEscape.esc(s);
       return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
         .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    // JSON.stringify emits literal double quotes, which would terminate a
+    // double-quoted on* attribute. Escape after stringifying.
+    function attrJson(v){
+      if (window.DSEscape && window.DSEscape.attrJson) return window.DSEscape.attrJson(v);
+      return JSON.stringify(v === undefined ? null : v)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
     function safeUrl(u){
       if (window.DSEscape) return window.DSEscape.safeUrl(u);
@@ -703,6 +732,8 @@
         loadPendingCollabs();
       }
 
+      // Kept for the edit modal, which shows the current link and its status.
+      collabNovelTitle = collabNovel ? collabNovel.title : null;
       renderPage(collabNovel);
       loadComments();
       loadCollabNovels();
@@ -1896,10 +1927,91 @@
       var tags = [];
       try{ tags = JSON.parse(workData.tags_all || workData.tags_main || '[]'); }catch(e){}
       document.getElementById('edit-tags').value = tags.join(', ');
+      renderCollabField();
       var msg = document.getElementById('edit-msg');
       msg.className = 'edit-msg'; msg.style.display = 'none';
       document.getElementById('edit-backdrop').classList.add('show');
       document.body.style.overflow = 'hidden';
+    }
+
+    // ── LINKED NOVEL (retroactive collab request) ──────────────────
+    // collab_work_id/collab_status are no longer directly writable: every link
+    // goes through request_showcase_collab, which always lands in 'pending' so
+    // the novel's author has to consent, even when re-linking approved artwork.
+    var pendingCollabNovel = null;   // {id,title,author}
+    var collabNovelTitle = null;
+
+    function renderCollabField(){
+      pendingCollabNovel = null;
+      var cur   = document.getElementById('edit-collab-current');
+      var search= document.getElementById('edit-collab-search');
+      var res   = document.getElementById('edit-collab-results');
+      var chEl  = document.getElementById('edit-collab-character');
+      var noteEl= document.getElementById('edit-collab-note');
+      res.style.display='none'; res.innerHTML='';
+      search.value=''; chEl.value=''; noteEl.value='';
+      chEl.style.display='none'; noteEl.style.display='none';
+
+      var status = workData.collab_status || 'none';
+      if(workData.collab_work_id && status !== 'none'){
+        var cls = status === 'approved' ? 'collab-status-approved' : 'collab-status-pending';
+        cur.innerHTML = '<div class="collab-current">'
+          + '<div><div style="font-weight:700;">' + esc(collabNovelTitle || 'Linked novel') + '</div>'
+          + '<div class="collab-result-author">' + (status === 'approved' ? 'Approved by the author' : 'Waiting for the author') + '</div></div>'
+          + '<span class="collab-current-status ' + cls + '">' + esc(status) + '</span>'
+        + '</div>';
+        cur.style.display='';
+        search.placeholder = 'Search a different novel to re-link…';
+      } else {
+        cur.style.display='none'; cur.innerHTML='';
+        search.placeholder = 'Search a novel by title…';
+      }
+    }
+
+    var collabSearchTimer = null;
+    function onCollabSearch(){
+      var term = document.getElementById('edit-collab-search').value.trim();
+      var res  = document.getElementById('edit-collab-results');
+      clearTimeout(collabSearchTimer);
+      if(term.length < 2){ res.style.display='none'; res.innerHTML=''; return; }
+      collabSearchTimer = setTimeout(async function(){
+        try {
+          // ilike wildcards in user input would widen the search, so escape them.
+          var safe = term.replace(/[%_\\]/g, function(c){ return '\\' + c; });
+          var q = await db.from('works')
+            .select('id,title,author_id')
+            .eq('type','novel').eq('is_published',true)
+            .neq('author_id', workData.author_id)
+            .ilike('title', '%' + safe + '%')
+            .limit(8);
+          var rows = q.data || [];
+          if(!rows.length){
+            res.innerHTML = '<div class="collab-result" style="cursor:default;color:var(--text3);">No novels found.</div>';
+            res.style.display=''; return;
+          }
+          var ids = rows.map(function(r){ return r.author_id; });
+          var pr = await db.from('profiles').select('id,username,display_name').in('id', ids);
+          var byId = {};
+          (pr.data||[]).forEach(function(p){ byId[p.id]=p; });
+          res.innerHTML = rows.map(function(r){
+            var a = byId[r.author_id] || {};
+            var name = a.display_name || a.username || 'Unknown';
+            return '<div class="collab-result" onclick="pickCollabNovel(' + attrJson(r.id) + ',' + attrJson(r.title) + ',' + attrJson(name) + ')">'
+              + '<span>' + esc(r.title) + '</span>'
+              + '<span class="collab-result-author">by ' + esc(name) + '</span>'
+            + '</div>';
+          }).join('');
+          res.style.display='';
+        } catch(e){ res.style.display='none'; }
+      }, 250);
+    }
+
+    function pickCollabNovel(id, title, author){
+      pendingCollabNovel = { id:id, title:title, author:author };
+      document.getElementById('edit-collab-search').value = title;
+      document.getElementById('edit-collab-results').style.display='none';
+      document.getElementById('edit-collab-character').style.display='';
+      document.getElementById('edit-collab-note').style.display='';
     }
 
     function closeEditModal(){
@@ -1931,6 +2043,41 @@
       btn.innerHTML = '<i class="ti ti-check"></i> Save Changes';
 
       if(error){ showEditMsg('error', 'Save failed: ' + error.message); return; }
+
+      // Linking is a separate, permissioned step: the columns are RPC-only and
+      // the request always lands in 'pending' for the novel author to approve.
+      if(pendingCollabNovel){
+        try {
+          var linkRes = await db.rpc('request_showcase_collab', {
+            p_artwork_id: workId,
+            p_novel_id:   pendingCollabNovel.id,
+            p_character:  document.getElementById('edit-collab-character').value.trim() || null,
+            p_note:       document.getElementById('edit-collab-note').value.trim() || null
+          });
+          var ld = linkRes.data;
+          if(linkRes.error || !ld || !ld.success){
+            var codes = {
+              already_pending: 'This artwork is already awaiting an author\u2019s answer.',
+              own_novel:       'You can\u2019t link artwork to your own novel.',
+              not_owner:       'You can only link your own artwork.',
+              novel_not_found: 'That novel could not be found.'
+            };
+            var code = (ld && ld.error) || 'failed';
+            showEditMsg('error', 'Saved, but the novel link failed: ' + (codes[code] || code));
+            pendingCollabNovel = null;
+            return;
+          }
+          workData.collab_status  = 'pending';
+          workData.collab_work_id = pendingCollabNovel.id;
+          collabNovelTitle        = pendingCollabNovel.title;
+          pendingCollabNovel = null;
+          showEditMsg('success', 'Saved. Your link request was sent to the author for approval.');
+        } catch(e){
+          showEditMsg('error', 'Saved, but the novel link could not be sent.');
+          pendingCollabNovel = null;
+          return;
+        }
+      }
 
       // Update local data so page reflects changes without reload
       workData.title = title;
