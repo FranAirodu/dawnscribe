@@ -4271,12 +4271,23 @@ function dsLoadLayoutFromCache() {
       var session = (await db.auth.getSession()).data.session;
       if (!session) { window.location.href = 'auth.html'; return; }
       var uid = session.user.id;
+      // "Today" must come from the server: daily_checkin derives the date from
+      // profiles.timezone, so computing it here (this copy used UTC, nav.js used
+      // browser-local) would show a live claim button that the RPC then answers
+      // with already_checked_in, and a calendar off by a day. Fall back to UTC
+      // only if the RPC is unavailable.
       var now = new Date();
       var todayStr = now.toISOString().slice(0, 10);
-      var y = now.getUTCFullYear(), m = now.getUTCMonth();
+      try {
+        var sd = await db.rpc('ds_my_checkin_date');
+        if (sd && sd.data && /^\d{4}-\d{2}-\d{2}$/.test(String(sd.data))) todayStr = String(sd.data);
+      } catch(e) { /* fall through to the UTC date */ }
+      var y = parseInt(todayStr.slice(0, 4), 10);
+      var m = parseInt(todayStr.slice(5, 7), 10) - 1;
+      var dNum = parseInt(todayStr.slice(8, 10), 10);
       var mStart = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
       var mEnd = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
-      var yest = new Date(Date.UTC(y, m, now.getUTCDate() - 1)).toISOString().slice(0, 10);
+      var yest = new Date(Date.UTC(y, m, dNum - 1)).toISOString().slice(0, 10);
 
       var sRes = await db.from('user_streaks')
         .select('current_streak,longest_streak,last_checkin')

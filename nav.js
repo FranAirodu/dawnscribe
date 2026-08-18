@@ -1493,8 +1493,23 @@ function dsApplyAccent(hex) {
       var session = (await db.auth.getSession()).data.session;
       if (!session) { window.location.href = 'auth.html'; return; }
       var uid = session.user.id;
+      // "Today" must come from the server: daily_checkin derives the date from
+      // profiles.timezone, so computing it from the browser here would show a
+      // live claim button that the RPC then answers with already_checked_in,
+      // and a calendar off by a day. Fall back to the browser date only if the
+      // RPC is unavailable.
       var now = new Date();
-      var y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+      var y, m, d;
+      try {
+        var sd = await db.rpc('ds_my_checkin_date');
+        var parts = (sd && sd.data) ? String(sd.data).split('-') : null;
+        if (parts && parts.length === 3) {
+          y = parseInt(parts[0], 10);
+          m = parseInt(parts[1], 10) - 1;
+          d = parseInt(parts[2], 10);
+        }
+      } catch(e) { /* fall through to the browser date */ }
+      if (!(y >= 1970)) { y = now.getFullYear(); m = now.getMonth(); d = now.getDate(); }
       var todayStr = y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
       var mStart = y + '-' + String(m+1).padStart(2,'0') + '-01';
       var daysInMo = new Date(y, m+1, 0).getDate();
