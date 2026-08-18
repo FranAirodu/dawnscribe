@@ -400,14 +400,30 @@
     }
 
     async function toggleAutoPayouts(enabled) {
+      // creator_payout_balances is SELECT-only to users -- it holds real money.
+      // The old direct .update() was silently refused by RLS, and PostgREST
+      // returns that as result.error rather than throwing, so the catch never
+      // fired and this reported success while nothing changed. The cron pays out
+      // on payout_schedule_enabled = true, so a "paused" creator kept being paid.
       try {
-        await db.from('creator_payout_balances')
-          .update({ payout_schedule_enabled: enabled })
-          .eq('user_id', currentSession.user.id);
+        var res = await db.rpc('set_payout_schedule', { p_enabled: !!enabled });
+        if (res.error || !res.data || res.data.ok !== true) {
+          var code = (res.data && res.data.error) || (res.error && res.error.message) || 'failed';
+          var friendly = code === 'no_balance_row'
+            ? 'You have no earnings yet, so there is nothing to schedule.'
+            : 'Could not update setting — please try again.';
+          showToast(friendly, 'ti-alert-triangle');
+          // Put the switch back so it cannot show a state the server never saved.
+          var sw = document.getElementById('auto-payout-toggle');
+          if (sw) sw.checked = !!window._payoutScheduleEnabled;
+          return;
+        }
         window._payoutScheduleEnabled = enabled;
         showToast(enabled ? 'Auto-payouts enabled' : 'Auto-payouts paused', enabled ? 'ti-circle-check' : 'ti-player-pause');
       } catch(e) {
         showToast('Could not update setting', 'ti-alert-triangle');
+        var sw2 = document.getElementById('auto-payout-toggle');
+        if (sw2) sw2.checked = !!window._payoutScheduleEnabled;
       }
     }
 
