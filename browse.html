@@ -555,14 +555,16 @@
         var novChapsP = novelIds.length
           ? db.from('chapters').select('id,work_id').in('work_id', novelIds)
           : Promise.resolve({ data: [] });
+        // Individual spark / offering rows are private (they identify the
+        // supporter). Counts come from aggregate SECURITY DEFINER RPCs.
         var offeringsP = (!isRising && novelIds.length)
-          ? db.from('work_offerings').select('work_id,created_at').in('work_id', novelIds).gte('created_at', winISO)
+          ? db.rpc('get_work_offering_counts', { p_work_ids: novelIds, p_since: winISO })
           : Promise.resolve({ data: [] });
         var artCommentsP = artIds.length
           ? db.from('artwork_comments').select('work_id,created_at').in('work_id', artIds).gte('created_at', winISO)
           : Promise.resolve({ data: [] });
         var sparksP = allIds.length
-          ? db.from('dawn_sparks').select('work_id,spark_date').in('work_id', allIds).gte('spark_date', winDate)
+          ? db.rpc('get_work_spark_counts', { p_work_ids: allIds, p_since: winDate })
           : Promise.resolve({ data: [] });
 
         var sig = await Promise.all([followsP, novChapsP, offeringsP, artCommentsP, sparksP]);
@@ -571,15 +573,13 @@
         if (isRising) {
           // Rising: flat +1 per signal, then divide by age in days (velocity).
           (followsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += (x.follows||0); });
-          (sparksRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
+          (sparksRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += (x.sparks||0); });
           (artCommentsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
         } else {
           // Trending: weighted. Sparks +2 (cap +10), follows +2, offerings +1, art comments +2.
-          var sparkCounts = {};
-          (sparksRes.data||[]).forEach(function(s){ sparkCounts[s.work_id] = (sparkCounts[s.work_id]||0) + 1; });
-          Object.keys(sparkCounts).forEach(function(id){ if(score[id]!==undefined) score[id] += Math.min(10, sparkCounts[id]*2); });
+          (sparksRes.data||[]).forEach(function(s){ if(score[s.work_id]!==undefined) score[s.work_id] += Math.min(10, (s.sparks||0)*2); });
           (followsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 2 * (x.follows||0); });
-          (offeringsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 1; });
+          (offeringsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += (x.offerings||0); });
           (artCommentsRes.data||[]).forEach(function(x){ if(score[x.work_id]!==undefined) score[x.work_id] += 2; });
         }
 

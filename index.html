@@ -2590,23 +2590,22 @@
         var followsP = novelIds.length
           ? db.rpc('get_work_follow_counts', { p_work_ids: novelIds, p_since: sevenAgoISO })
           : Promise.resolve({ data: [] });
+        // Supporter identity is private; counts come from aggregate RPCs.
         var offeringsP = novelIds.length
-          ? db.from('work_offerings').select('work_id,created_at').in('work_id', novelIds).gte('created_at', sevenAgoISO)
+          ? db.rpc('get_work_offering_counts', { p_work_ids: novelIds, p_since: sevenAgoISO })
           : Promise.resolve({ data: [] });
         var artCommentsP = artIds.length
           ? db.from('artwork_comments').select('work_id,created_at').in('work_id', artIds).gte('created_at', sevenAgoISO)
           : Promise.resolve({ data: [] });
         var sparksP = allIds.length
-          ? db.from('dawn_sparks').select('work_id,spark_date').in('work_id', allIds).gte('spark_date', sevenAgoDate)
+          ? db.rpc('get_work_spark_counts', { p_work_ids: allIds, p_since: sevenAgoDate })
           : Promise.resolve({ data: [] });
 
         var [novChapsRes, followsRes, offeringsRes, artCommentsRes, sparksRes] =
           await Promise.all([novChapsP, followsP, offeringsP, artCommentsP, sparksP]);
 
         // Sparks (both types) +2 each, capped at +10 per work.
-        var sparkCounts = {};
-        (sparksRes.data||[]).forEach(function(s){ sparkCounts[s.work_id] = (sparkCounts[s.work_id]||0) + 1; });
-        Object.keys(sparkCounts).forEach(function(id){ if(scores[id]!==undefined) scores[id] += Math.min(10, sparkCounts[id]*2); });
+        (sparksRes.data||[]).forEach(function(s){ if(scores[s.work_id]!==undefined) scores[s.work_id] += Math.min(10, (s.sparks||0)*2); });
 
         // Novel follows +2 each.
         (followsRes.data||[]).forEach(function(f){ if(scores[f.work_id]!==undefined) scores[f.work_id] += 2 * (f.follows||0); });
@@ -2689,14 +2688,14 @@
           ? db.from('artwork_comments').select('work_id,created_at').in('work_id', artIds).gte('created_at', thirtyAgoISO)
           : Promise.resolve({ data: [] });
         var sparksP = allIds.length
-          ? db.from('dawn_sparks').select('work_id,spark_date').in('work_id', allIds).gte('spark_date', thirtyAgoDate)
+          ? db.rpc('get_work_spark_counts', { p_work_ids: allIds, p_since: thirtyAgoDate })
           : Promise.resolve({ data: [] });
 
         var [followsRes, novChapsRes, artCommentsRes, sparksRes] =
           await Promise.all([followsP, novChapsP, artCommentsP, sparksP]);
 
         (followsRes.data||[]).forEach(function(f){ if(eng[f.work_id]!==undefined) eng[f.work_id] += (f.follows||0); });
-        (sparksRes.data||[]).forEach(function(s){ if(eng[s.work_id]!==undefined) eng[s.work_id] += 1; });
+        (sparksRes.data||[]).forEach(function(s){ if(eng[s.work_id]!==undefined) eng[s.work_id] += (s.sparks||0); });
         (artCommentsRes.data||[]).forEach(function(c){ if(eng[c.work_id]!==undefined) eng[c.work_id] += 1; });
 
         var chapMap = {}; (novChapsRes.data||[]).forEach(function(ch){ chapMap[ch.id] = ch.work_id; });
@@ -2796,12 +2795,11 @@
       var track = document.getElementById('track-rally');
       if (!track) return;
       try {
-        // Ideally this aggregation would be an RPC; for now we fetch open rallies and count client-side.
-        // Limited to 500 rows to avoid huge payloads; popular works will still surface.
-        var { data: rallies } = await db.from('chapter_rallies')
-          .select('work_id').is('fulfilled_at', null).limit(500);
+        // Rally rows identify who rallied, so they are no longer client-readable.
+        // The RPC returns pre-aggregated open-rally counts, ranked.
+        var { data: rallies } = await db.rpc('get_top_rally_works', { p_limit: 50 });
         var counts = {};
-        (rallies||[]).forEach(function(r){ if(r.work_id) counts[r.work_id] = (counts[r.work_id]||0) + 1; });
+        (rallies||[]).forEach(function(r){ if(r.work_id) counts[r.work_id] = Number(r.rallies) || 0; });
         var rallyIds = Object.keys(counts);
         if (!rallyIds.length) { if (section) section.style.display = 'none'; return; }
         var { data: works } = await db.from('works')

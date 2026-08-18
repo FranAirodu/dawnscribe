@@ -1921,10 +1921,12 @@
       engageState.scribeFlameCount  = workData.scribe_flame_count || 0;
       engageState.infernalDawnCount = workData.infernal_dawn_count || 0;
       try {
-        var rc = await db.from('chapter_rallies').select('id,user_id').eq('work_id', workData.id).is('fulfilled_at', null);
-        var rows = rc.data || [];
-        engageState.activeRallies = rows.length;
-        if (currentSession) engageState.iAmRallying = rows.some(function(r){ return r.user_id === currentSession.user.id; });
+        // Rally rows are private (they name the rallier). This RPC returns the
+        // open-rally count plus whether the caller is one of them.
+        var rc = await db.rpc('get_work_rally_state', { p_work_id: workData.id });
+        var rrow = (rc.data && rc.data.length) ? rc.data[0] : null;
+        engageState.activeRallies = rrow ? (Number(rrow.rallies) || 0) : 0;
+        engageState.iAmRallying = !!(rrow && rrow.i_am_rallying);
       } catch(e) {}
       if (!currentSession) return;
       var uid = currentSession.user.id;
@@ -2308,10 +2310,8 @@
             return Math.max(0, (rc.count || 0) - baseline);
           }
           case 'rallies': {
-            var rv = await db.from('chapter_rallies')
-              .select('id', { count: 'exact', head: true })
-              .eq('work_id', workData.id).gte('created_at', g.created_at);
-            return rv.count || 0;
+            var rv = await db.rpc('get_work_rally_count_since', { p_work_id: workData.id, p_since: g.created_at });
+            return Number(rv.data) || 0;
           }
           default: return 0;
         }
