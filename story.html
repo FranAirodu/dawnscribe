@@ -1805,9 +1805,14 @@
         if (histBtn) histBtn.style.display = 'inline-flex';
       }
 
-      // Count completed chapters from local progress (init already synced it from the DB)
-      var localRead = readProgress[workData.id] ? Object.keys(readProgress[workData.id]).filter(function(k){ return readProgress[workData.id][k]; }).length : 0;
-      offeringState.chaptersRead = localRead;
+      // Count EARNED reads, not merely marked-read ones: record_offering gates on
+      // ember_awards (one server-written row per chapter that passed the dwell
+      // timer), so counting local progress here would show 5/5 and then be
+      // refused by the server. Own rows only, per ember_awards RLS.
+      var { count: earnedRead } = await db.from('ember_awards')
+        .select('chapter_id', { count: 'exact', head: true })
+        .eq('work_id', workData.id).eq('user_id', currentSession.user.id);
+      offeringState.chaptersRead = earnedRead || 0;
     }
 
     async function submitOffering() {
@@ -1819,7 +1824,7 @@
         if (error || !data || !data.success) {
           var msg = (data && data.error) || (error && error.message) || 'Could not offer';
           var friendly = {
-            need_5_chapters: 'Read 5 chapters to offer to this story.',
+            need_5_chapters: 'Read 5 chapters of this story to make an Ember Offering.',
             insufficient_embers: 'You need at least 1 Ember to make a daily offering.',
             already_offered_today: 'You\'ve already made your Ember Offering today. Come back tomorrow!',
             not_authenticated: 'Please sign in first.'
