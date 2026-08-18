@@ -355,6 +355,7 @@
     .currency-card-val{font-family:'Cinzel',serif;font-size:20px;font-weight:700;color:var(--text);}
     .currency-card-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);display:flex;align-items:center;gap:5px;}
     .currency-card-label i{font-size:13px;}
+    .currency-card-spent{font-size:10.5px;color:var(--text3);opacity:0.85;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);}
     .currency-card-sub{font-size:11px;color:var(--text3);margin-top:1px;}
     .currency-section-title{font-family:'Cinzel',serif;font-size:13px;font-weight:700;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:0.5px;}
     @media(max-width:540px){.info-grid{grid-template-columns:1fr;}}
@@ -3636,6 +3637,50 @@ async function handleFriendBtn() {
       });
       pendant.addEventListener('dragend',function(){this.classList.remove('dragging');row.querySelectorAll('.prestige-pendant').forEach(function(p){p.classList.remove('drag-over');});});
     }
+    // ── LIFETIME SPENT (owner-only) ──────────────────────────────
+    // Every currency has its own spend record rather than a shared ledger, so
+    // each figure is counted from the table that actually records the spend.
+    // head:true returns only the count, so no rows cross the wire.
+    async function loadCurrencySpent(uid) {
+      function q(p) { return Promise.resolve(p).catch(function(){ return {}; }); }
+      try {
+        var res = await Promise.all([
+          q(db.from('ember_spends').select('embers_spent').eq('user_id', uid)),
+          q(db.from('marketplace_purchases').select('quills_paid').eq('buyer_id', uid)),
+          q(db.from('banner_purchases').select('quills_paid').eq('buyer_id', uid)),
+          q(db.from('dawn_sparks').select('id', { count: 'exact', head: true }).eq('user_id', uid)),
+          q(db.from('celestial_flame_gifts').select('id', { count: 'exact', head: true }).eq('user_id', uid)),
+          q(db.from('scribe_flame_votes').select('id', { count: 'exact', head: true }).eq('user_id', uid)),
+          q(db.from('infernal_dawn_votes').select('id', { count: 'exact', head: true }).eq('user_id', uid))
+        ]);
+
+        function sum(r, col) {
+          return ((r && r.data) || []).reduce(function(a, row){ return a + (Number(row[col]) || 0); }, 0);
+        }
+        function cnt(r) { return (r && r.count) || 0; }
+
+        var spent = {
+          'cw-embers':    sum(res[0], 'embers_spent'),
+          'cw-quills':    sum(res[1], 'quills_paid') + sum(res[2], 'quills_paid'),
+          'cw-sparks':    cnt(res[3]),
+          'cw-celestial': cnt(res[4]),
+          'cw-scribe':    cnt(res[5]),
+          'cw-infernal':  cnt(res[6])
+        };
+
+        Object.keys(spent).forEach(function(id){
+          var valEl = document.getElementById(id);
+          if (!valEl || !valEl.parentElement) return;
+          var card = valEl.parentElement;
+          if (card.querySelector('.currency-card-spent')) return;
+          var el = document.createElement('div');
+          el.className = 'currency-card-spent';
+          el.textContent = Number(spent[id]).toLocaleString() + ' spent';
+          card.appendChild(el);
+        });
+      } catch(e) {}
+    }
+
     // ── CURRENCY WALLET (owner-only, Info tab) ───────────────────
     async function loadCurrencyWallet(uid) {
       try {
@@ -3657,6 +3702,8 @@ async function handleFriendBtn() {
         setEl('cw-celestial',val(celestialRes));
         setEl('cw-scribe',   val(scribeRes));
         setEl('cw-infernal', val(infernalRes));
+
+        loadCurrencySpent(uid);
       } catch(e) {}
     }
 
