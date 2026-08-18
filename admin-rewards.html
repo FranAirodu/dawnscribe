@@ -1475,11 +1475,21 @@
     // ── CLEAN ORPHANED ITEMS ──────────────────────────────────────
     // Bug 6 fix: uses the server-side RPC (no URL-length risk on large tables)
     async function cleanOrphanedItems() {
-      if (!confirm('Scan for cosmetic items with no reward attached and permanently delete them?')) return;
-      var res = await db.rpc('delete_orphaned_cosmetic_items');
+      // Two-step now: the RPC defaults to a dry run and returns the exact rows
+      // it would remove, so the deletion is confirmed against a real list
+      // rather than a guess. It also no longer treats every non-tag-reward
+      // cosmetic (base items, artist submissions, owned items) as an orphan.
+      var scan = await db.rpc('delete_orphaned_cosmetic_items', { p_dry_run: true });
+      if (scan.error) { showToast('Error: ' + scan.error.message, 'ti-alert-circle', true); return; }
+      var found = (scan.data && scan.data.items) || [];
+      if (!found.length) { showToast('No orphans found — all clean!', 'ti-check'); return; }
+      var preview = found.slice(0, 10).map(function(it){ return '\u2022 ' + (it.name || it.id) + ' (' + (it.slot || '?') + ')'; }).join('\n');
+      if (found.length > 10) preview += '\n\u2026and ' + (found.length - 10) + ' more';
+      if (!confirm('Permanently delete ' + found.length + ' unused cosmetic item' + (found.length===1?'':'s') + '?\n\n' + preview)) return;
+      var res = await db.rpc('delete_orphaned_cosmetic_items', { p_dry_run: false });
       if (res.error) { showToast('Error: ' + res.error.message, 'ti-alert-circle', true); return; }
-      var count = res.data || 0;
-      showToast(count === 0 ? 'No orphans found — all clean!' : 'Cleaned up ' + count + ' orphaned item' + (count===1?'':'s') + '.', count === 0 ? 'ti-check' : 'ti-trash');
+      var count = (res.data && res.data.count) || 0;
+      showToast(count === 0 ? 'Nothing to clean.' : 'Cleaned up ' + count + ' orphaned item' + (count===1?'':'s') + '.', count === 0 ? 'ti-check' : 'ti-trash');
     }
 
     // ── COPY REWARDS FROM ANOTHER TAG ─────────────────────────────
