@@ -452,8 +452,12 @@
 
     async function queryAuthors(q, offset) {
       if (!q) return { data: [], count: 0 };
+      // Soft-deleted accounts are anonymised but still exist (30-day grace), so
+      // they would otherwise surface as "Deleted User" hits in people search.
+      // deleted_at is nullable, so .is(null) rather than .neq('account_status',...).
       return await db.from('profiles')
         .select('id, username, display_name, avatar_url, role, bio', { count: 'exact' })
+        .is('deleted_at', null)
         .or('username.ilike.' + orIlikeVal(q) + ',display_name.ilike.' + orIlikeVal(q))
         .or('role.ilike.%Writer%,role.ilike.%Reader%,role.ilike.%Artist%')
         .order('username')
@@ -477,6 +481,7 @@
       if (!q) return { data: [], count: 0 };
       return await db.from('profiles')
         .select('id, username, display_name, avatar_url, role, bio', { count: 'exact' })
+        .is('deleted_at', null)
         .or('username.ilike.' + orIlikeVal(q) + ',display_name.ilike.' + orIlikeVal(q))
         .ilike('role', '%Artist%')
         .order('username')
