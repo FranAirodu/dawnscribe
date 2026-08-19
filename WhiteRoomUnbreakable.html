@@ -109,6 +109,18 @@
     /* ── STATS GRID ── */
     .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px;}
     .stat-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;}
+    .econ-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .econ-table th{text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);border-bottom:1px solid var(--border);white-space:nowrap;}
+    .econ-table th:first-child,.econ-table td:first-child{text-align:left;}
+    .econ-table td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+    .econ-table tbody tr:hover{background:var(--bg3);}
+    .econ-user{font-weight:700;color:var(--text);}
+    .econ-flag{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700;}
+    .econ-ok{color:var(--text3);}
+    .econ-warn{background:rgba(245,158,11,.15);color:var(--amber);}
+    .econ-bad{background:rgba(248,113,113,.15);color:var(--red);}
+    .econ-scroll{overflow-x:auto;}
+    .econ-note{font-size:12px;color:var(--text3);line-height:1.6;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
     .stat-card.clickable{cursor:pointer;transition:all 0.15s;text-decoration:none;display:block;}
     .stat-card.clickable:hover{border-color:rgba(45,212,191,0.3);transform:translateY(-1px);}
     .stat-number{font-family:'Cinzel',serif;font-size:26px;font-weight:700;color:var(--accent);}
@@ -264,6 +276,7 @@
       <button class="admin-tab"        data-tab="content"     onclick="switchAdminTab('content')">    <i class="ti ti-speakerphone"></i>     Content</button>
       <button class="admin-tab"        data-tab="moderation"  onclick="switchAdminTab('moderation')"> <i class="ti ti-shield-check"></i>     Moderation</button>
       <button class="admin-tab"        data-tab="tools"       onclick="switchAdminTab('tools')">      <i class="ti ti-tool"></i>             Tools</button>
+      <button class="admin-tab"        data-tab="economy"     onclick="switchAdminTab('economy')">    <i class="ti ti-coins"></i>            Economy</button>
       <button class="admin-tab"        data-tab="audit"       onclick="switchAdminTab('audit')">      <i class="ti ti-history"></i>          Audit Log</button>
     </div>
 
@@ -485,6 +498,31 @@
     </div>
 
     <!-- ── AUDIT LOG ─────────────────────────────────────────────── -->
+    <!-- ── ECONOMY: BALANCES vs LEDGER ───────────────────────────── -->
+    <div class="section" id="sec-economy" data-tab="economy">
+      <div class="section-title"><i class="ti ti-coins"></i> Currency Balances</div>
+      <div class="section-sub">Every account's Ember and Quill balance, checked against the ledgers that should explain it. A non-zero "Unexplained" figure means the balance does not match what the records say was earned and spent — that is the number to look at.</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <button class="action-btn" onclick="loadCurrencyOverview()"><i class="ti ti-refresh"></i> Refresh</button>
+      </div>
+      <div class="econ-scroll"><table class="econ-table" id="econ-table" style="display:none;">
+        <thead><tr>
+          <th>User</th>
+          <th>Embers</th><th>Expected</th><th>Unexplained</th>
+          <th>Spent</th><th>24h</th><th>7d</th><th>Chapters</th>
+          <th>Quills</th><th>Expected</th><th>Unexplained</th>
+          <th>Payout</th>
+        </tr></thead>
+        <tbody id="econ-body"></tbody>
+      </table></div>
+      <div id="econ-empty" class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...</div>
+      <div class="econ-note">
+        <b>How to read this.</b> <b>Expected</b> is lifetime earned + received + granted, minus everything spent. <b>Unexplained</b> is the balance minus that figure. A positive number means someone holds more than the records account for; a negative one means the ledger claims more than they hold.<br><br>
+        <b>Unexplained is a drift signal, not proof.</b> It only means "cheating" if every path that adds Embers also increments lifetime_earned. That has not been verified across all of them yet, so treat a flag as a prompt to look at the account, not a verdict.<br><br>
+        <b>24h / 7d</b> are Embers awarded for reading in that window, and <b>Chapters</b> is how many distinct chapters have ever paid out. A large 24h figure spread over very few chapters is the shape Ember farming takes.
+      </div>
+    </div>
+
     <div class="section" id="sec-audit" data-tab="audit">
       <div class="section-title"><i class="ti ti-notebook"></i> Audit Log</div>
       <div class="section-sub">A record of admin actions taken in this panel. Stored in the database — persists across browsers and supports multiple admins.</div>
@@ -1587,6 +1625,65 @@
       });
     }
 
+    // ── ECONOMY: CURRENCY OVERVIEW ───────────────────────────────
+    // admin_currency_overview() is SECURITY DEFINER and is_admin()-gated: it
+    // returns zero rows to a non-admin rather than erroring, so there is no
+    // separate client-side gate to keep in sync.
+    function econNum(n) { return (n == null ? 0 : n).toLocaleString(); }
+
+    function econFlag(v) {
+      if (!v) return '<span class="econ-ok">0</span>';
+      var cls = Math.abs(v) >= 100 ? 'econ-bad' : 'econ-warn';
+      return '<span class="econ-flag ' + cls + '">' + (v > 0 ? '+' : '') + econNum(v) + '</span>';
+    }
+
+    async function loadCurrencyOverview() {
+      var body = document.getElementById('econ-body');
+      var table = document.getElementById('econ-table');
+      var empty = document.getElementById('econ-empty');
+      empty.style.display = '';
+      empty.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...';
+      table.style.display = 'none';
+
+      var res = await Promise.resolve(db.rpc('admin_currency_overview'))
+        .catch(function(e) { return { error: e }; });
+
+      if (res.error) {
+        empty.innerHTML = '<i class="ti ti-alert-circle" style="display:block;margin-bottom:6px;"></i>Could not load balances: ' + escHtml(res.error.message || 'unknown error');
+        return;
+      }
+      var rows = res.data || [];
+      if (!rows.length) {
+        empty.innerHTML = '<i class="ti ti-coins" style="display:block;margin-bottom:6px;"></i>No accounts to show.';
+        return;
+      }
+
+      body.innerHTML = rows.map(function(r) {
+        var name = escHtml(r.username || '(no username)');
+        if (r.account_status && r.account_status !== 'active') {
+          name += ' <span class="econ-flag econ-bad">' + escHtml(r.account_status) + '</span>';
+        }
+        if (r.is_admin_user) name += ' <span class="econ-flag econ-warn">admin</span>';
+        return '<tr>' +
+          '<td><span class="econ-user">' + name + '</span></td>' +
+          '<td>' + econNum(r.ember_balance) + '</td>' +
+          '<td class="econ-ok">' + econNum(r.ember_expected) + '</td>' +
+          '<td>' + econFlag(r.ember_unexplained) + '</td>' +
+          '<td class="econ-ok">' + econNum(r.ember_spent) + '</td>' +
+          '<td>' + econNum(r.embers_24h) + '</td>' +
+          '<td>' + econNum(r.embers_7d) + '</td>' +
+          '<td class="econ-ok">' + econNum(r.distinct_chapters) + '</td>' +
+          '<td>' + econNum(r.quill_balance) + '</td>' +
+          '<td class="econ-ok">' + econNum(r.quills_expected) + '</td>' +
+          '<td>' + econFlag(r.quills_unexplained) + '</td>' +
+          '<td class="econ-ok">$' + ((r.payout_usd_cents || 0) / 100).toFixed(2) + '</td>' +
+        '</tr>';
+      }).join('');
+
+      empty.style.display = 'none';
+      table.style.display = '';
+    }
+
     // ── ADMIN TAB NAVIGATION ─────────────────────────────────────
     function switchAdminTab(tab) {
       document.querySelectorAll('.admin-tab').forEach(function(btn) {
@@ -1595,6 +1692,12 @@
       document.querySelectorAll('.section[data-tab]').forEach(function(sec) {
         sec.style.display = sec.dataset.tab === tab ? '' : 'none';
       });
+      // Lazy: the reconciliation query scans the ledgers, so it runs when the
+      // tab is actually opened rather than on every admin page load.
+      if (tab === 'economy' && !window._econLoaded) {
+        window._econLoaded = true;
+        loadCurrencyOverview();
+      }
       window.scrollTo({ top: 0, behavior: 'smooth' });
       try { localStorage.setItem('ds_admin_tab', tab); } catch(e) {}
     }
@@ -1607,7 +1710,8 @@
       feedback: { tab: 'moderation', sec: 'sec-feedback' },
       titles:   { tab: 'tools',      sec: 'sec-title-suggestions' },
       users:    { tab: 'moderation', sec: 'sec-users' },
-      audit:    { tab: 'audit',      sec: 'sec-audit' }
+      audit:    { tab: 'audit',      sec: 'sec-audit' },
+      economy:  { tab: 'economy',    sec: 'sec-economy' }
     };
 
     function applyAdminHash() {
