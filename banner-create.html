@@ -393,7 +393,7 @@
       var row = document.createElement('div');
       row.className = 'draft-row';
       row.innerHTML =
-        '<div class="draft-row-thumb">' + (urlLooksOk(b.banner_url) ? '<img src="' + esc(b.banner_url) + '" alt=""/>' : '') + '</div>' +
+        '<div class="draft-row-thumb">' + (b.banner_url ? '<img src="' + esc(DSStorage.url(db, DSStorage.BUCKETS.BANNERS, b.banner_url)) + '" alt=""/>' : '') + '</div>' +
         '<div class="draft-row-info">' +
           '<div class="draft-row-name">' + esc(b.name || 'Untitled Banner') + '</div>' +
           '<div class="draft-row-meta">' + (b.quill_price || '—') + ' Quills · ' + (b.submitted_at ? 'Submitted ' + new Date(b.submitted_at).toLocaleDateString() : 'Not submitted') + '</div>' +
@@ -526,12 +526,15 @@
         showToast('Upload failed: ' + (res.error.message || 'please try again.'), true);
         return;
       }
-      var publicUrl = DSStorage.url(db, DSStorage.BUCKETS.BANNERS, res.path);
-      if (!urlLooksOk(publicUrl)) {
-        showToast('Upload succeeded but the image link came back malformed. Please try again.', true);
+      // Store the STORAGE PATH, not an absolute URL. The serving host then
+      // lives in storagePaths.js alone, so moving to a CDN later is a config
+      // change rather than a rewrite of every banner row. DSStorage.url()
+      // accepts either form, so legacy absolute rows keep working.
+      if (!res.path) {
+        showToast('Upload succeeded but no storage path came back. Please try again.', true);
         return;
       }
-      document.getElementById('f-image').value = publicUrl;
+      document.getElementById('f-image').value = res.path;
       updatePreview();
       showToast('Image uploaded. Remember to save.');
     } catch (e) {
@@ -556,8 +559,9 @@
     var price = document.getElementById('f-price').value || '300';
     // Only preview a URL the DB will actually accept, so the preview cannot
     // imply a banner will save when it will not.
-    if (urlLooksOk(url)) {
-      img.src = url;
+    var resolved = url ? DSStorage.url(db, DSStorage.BUCKETS.BANNERS, url) : '';
+    if (resolved) {
+      img.src = resolved;
       img.style.display = 'block';
       ph.style.display = 'none';
     } else {
@@ -583,8 +587,10 @@
     var fields = Object.assign(getFields(), extraFields || {});
     if (!fields.name) { showToast('Please enter a name', true); return null; }
     if (!fields.banner_url) { showToast('Please upload a banner image', true); return null; }
-    if (!urlLooksOk(fields.banner_url)) {
-      showToast('That image link is not valid. Please upload the image again.', true); return null;
+    // Accept either a bare storage path (what new uploads write) or a legacy
+    // absolute URL, matching what the DB will accept.
+    if (!urlLooksOk(fields.banner_url) && !/^[A-Za-z0-9][A-Za-z0-9._/-]*\/[A-Za-z0-9._-]+$/.test(fields.banner_url)) {
+      showToast('That image reference is not valid. Please upload the image again.', true); return null;
     }
     if (fields.quill_price < PRICE_MIN || fields.quill_price > PRICE_MAX) {
       showToast('Quill price must be between ' + PRICE_MIN + ' and ' + PRICE_MAX.toLocaleString() + '.', true); return null;

@@ -638,7 +638,8 @@
     var wrap = document.getElementById('sc-banner-preview');
     var img  = document.getElementById('sc-banner-preview-img');
     var main = document.getElementById('sc-banner-drop-main');
-    if (url) { img.src = url; wrap.style.display = 'block'; }
+    var resolved = url ? DSStorage.url(db, DSStorage.BUCKETS.BANNERS, url) : '';
+    if (resolved) { img.src = resolved; wrap.style.display = 'block'; }
     else { img.removeAttribute('src'); wrap.style.display = 'none'; }
     if (main && !document.getElementById('sc-banner-drop').classList.contains('busy')) {
       main.textContent = url ? 'Choose a different image' : 'Choose an image';
@@ -670,9 +671,11 @@
       var path = currentUser.id + '/scroll-banner-' + Date.now() + '.' + ext;
       var res = await DSStorage.upload(db, DSStorage.BUCKETS.BANNERS, path, file);
       if (res.error) { showToast('Upload failed: ' + (res.error.message || 'please try again.'), true); return; }
-      var publicUrl = DSStorage.url(db, DSStorage.BUCKETS.BANNERS, res.path);
-      if (!publicUrl) { showToast('Upload succeeded but the image link came back empty. Please try again.', true); return; }
-      document.getElementById('sc-banner').value = publicUrl;
+      // Store the STORAGE PATH, not an absolute URL — the serving host lives
+      // in storagePaths.js alone, so a CDN move is a config change instead of
+      // a rewrite of every scroll row. DSStorage.url() reads either form.
+      if (!res.path) { showToast('Upload succeeded but no storage path came back. Please try again.', true); return; }
+      document.getElementById('sc-banner').value = res.path;
       showToast('Banner uploaded. Remember to save.');
     } catch (e) {
       showToast('Upload failed: ' + ((e && e.message) || 'please try again.'), true);
