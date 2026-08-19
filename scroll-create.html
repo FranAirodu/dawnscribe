@@ -897,8 +897,16 @@
     var res;
     if (currentScrollId) {
       delete payload.status; // don't overwrite status on update
-      var { error } = await db.from('scrolls').update(payload).eq('id', currentScrollId);
+      // .select() so an RLS no-match is distinguishable from a real write.
+      // A PostgREST UPDATE that matches 0 rows returns NO error, and the
+      // scrolls UPDATE policy only matches draft|rejected — without this the
+      // page reported success for a save that never happened.
+      var { data: updRows, error } = await db.from('scrolls').update(payload).eq('id', currentScrollId).select('id');
       if (error) { showToast('Could not save: ' + error.message, true); return; }
+      if (!updRows || !updRows.length) {
+        showToast('Nothing was saved — a scroll can only be edited while it is a draft or needs changes.', true);
+        return;
+      }
     } else {
       var { data: created, error: err2 } = await db.from('scrolls').insert(payload).select('id').single();
       if (err2) { showToast('Could not create scroll: ' + err2.message, true); return; }
@@ -939,13 +947,23 @@
       var ch = storyChapters[i];
       if (!ch.title || !ch.body) continue;
       if (ch._id) {
-        await db.from('scroll_story_chapters').update({title: ch.title, body: ch.body, updated_at: new Date().toISOString()}).eq('id', ch._id);
+        var { data: chRows, error: chErr } = await db.from('scroll_story_chapters')
+          .update({title: ch.title, body: ch.body, updated_at: new Date().toISOString()})
+          .eq('id', ch._id).select('id');
+        if (chErr || !chRows || !chRows.length) {
+          showToast('Chapter ' + ch.chapter_number + ' could not be saved' + (chErr ? ': ' + chErr.message : '.'), true);
+          return;
+        }
       } else {
-        var { data: ins } = await db.from('scroll_story_chapters').insert({
+        var { data: ins, error: insErr } = await db.from('scroll_story_chapters').insert({
           scroll_id: currentScrollId, chapter_number: ch.chapter_number,
           title: ch.title, body: ch.body
         }).select('id').single();
-        if (ins) ch._id = ins.id;
+        if (insErr || !ins) {
+          showToast('Chapter ' + ch.chapter_number + ' could not be saved' + (insErr ? ': ' + insErr.message : '.'), true);
+          return;
+        }
+        ch._id = ins.id;
       }
     }
     buildSubmitChecklist();
@@ -1067,8 +1085,14 @@
       var existing2 = localItems[editingItemIdx];
       itemData.sort_order = existing2.sort_order;
       if (existing2.id) {
-        var { error } = await db.from('scroll_items').update(itemData).eq('id', existing2.id);
+        var { data: itemRows, error } = await db.from('scroll_items').update(itemData).eq('id', existing2.id).select('id');
         if (error) { showToast('Could not save item: ' + error.message, true); btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save Item'; return; }
+        // Items are frozen once the parent scroll leaves draft/rejected. A
+        // 0-row update returns no error, so check rows before trusting it.
+        if (!itemRows || !itemRows.length) {
+          showToast('Nothing was saved — items can only be changed while the scroll is a draft or needs changes.', true);
+          btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save Item'; return;
+        }
         localItems[editingItemIdx] = Object.assign({}, existing2, itemData);
       }
     } else {
@@ -1088,7 +1112,16 @@
     if (!confirm('Remove this item?')) return;
     var item = localItems[idx];
     if (item.id) {
-      await db.from('scroll_items').delete().eq('id', item.id);
+      // Drop it locally only if the row actually went. Splicing regardless
+      // hid the item from the editor while it stayed in the database, so the
+      // item count the submit checklist showed disagreed with what the
+      // server would count.
+      var { data: gone, error } = await db.from('scroll_items').delete().eq('id', item.id).select('id');
+      if (error) { showToast('Could not remove item: ' + error.message, true); return; }
+      if (!gone || !gone.length) {
+        showToast('Nothing was removed — items can only be deleted while the scroll is a draft or needs changes.', true);
+        return;
+      }
     }
     localItems.splice(idx, 1);
     renderItemList();
@@ -1121,10 +1154,23 @@
     renderStoryChapters();
   }
 
-  function removeStoryChapter(idx){
+  async function removeStoryChapter(idx){
     if (!confirm('Remove this chapter?')) return;
     var ch = storyChapters[idx];
-    if (ch._id) { db.from('scroll_story_chapters').delete().eq('id', ch._id); }
+    if (ch._id) {
+      // Await it and check the row count. This used to fire and forget, then
+      // renumber the remaining chapters locally — so when the DELETE was
+      // refused (the policy blocks it once the scroll has buyers) the row
+      // survived while every later chapter shifted down a number, and the
+      // next save wrote each chapter's text under the wrong number.
+      var { data: gone, error } = await db.from('scroll_story_chapters')
+        .delete().eq('id', ch._id).select('id');
+      if (error) { showToast('Could not remove chapter: ' + error.message, true); return; }
+      if (!gone || !gone.length) {
+        showToast('Nothing was removed — chapters can\'t be deleted once the scroll has buyers.', true);
+        return;
+      }
+    }
     storyChapters.splice(idx, 1);
     storyChapters.forEach(function(c, i){ c.chapter_number = i + 1; });
     renderStoryChapters();

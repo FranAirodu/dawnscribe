@@ -14,6 +14,7 @@
        undefined, init() threw, and #main-content never unhid — the page
        rendered as nav + footer with an empty middle. -->
   <script src="creatorAgeGate.js"></script>
+  <script src="storagePaths.js"></script>
   <style>
     :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f0c040;--amber:#f59e0b;}
     html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#a16207;--amber:#b45309;}
@@ -57,6 +58,14 @@
     .field input:focus,.field textarea:focus{border-color:var(--accent);}
     .field .hint{font-size:11.5px;color:var(--text3);margin-top:5px;line-height:1.5;}
     .field-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    .upload-drop{border:1px dashed var(--border);border-radius:10px;background:var(--bg3);padding:18px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;}
+    .upload-drop:hover{border-color:var(--accent);}
+    .upload-drop.busy{opacity:.6;pointer-events:none;}
+    .upload-drop i{font-size:26px;color:var(--text3);display:block;margin-bottom:6px;}
+    .upload-drop .ud-main{font-size:13.5px;color:var(--text);font-weight:700;}
+    .upload-drop .ud-sub{font-size:11.5px;color:var(--text3);margin-top:4px;}
+    .upload-current{display:flex;align-items:center;gap:10px;margin-top:9px;font-size:12px;color:var(--text2);}
+    .upload-current i{color:var(--green);}
     @media(max-width:560px){.field-row{grid-template-columns:1fr;}}
 
     /* Preview */
@@ -229,9 +238,22 @@
         </div>
 
         <div class="field">
-          <label>Banner Image URL <span class="req">*</span></label>
-          <input type="url" id="f-image" placeholder="https://…" oninput="updatePreview()"/>
-          <div class="hint">Paste a direct image link. Must start with https:// and contain no quotes or angle brackets. Recommended 1400×400 px.</div>
+          <label>Banner Image <span class="req">*</span></label>
+          <!-- The image is uploaded to DawnScribe storage, not linked from an
+               outside host. Banners are sold for Quills, so the file a reviewer
+               approves has to be the file a buyer receives: an external link
+               could be swapped after approval, or simply go dead. The DB
+               enforces this too (scrolls_banner_url_is_own_upload), so a hand
+               crafted request cannot put a foreign URL here either. -->
+          <input type="hidden" id="f-image"/>
+          <input type="file" id="f-image-file" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadBannerImage(this)"/>
+          <div class="upload-drop" id="f-image-drop" onclick="document.getElementById('f-image-file').click()">
+            <i class="ti ti-cloud-upload"></i>
+            <div class="ud-main" id="f-image-drop-main">Choose an image</div>
+            <div class="ud-sub">PNG, JPEG or WebP · up to 8 MB · recommended 1400×400 px</div>
+          </div>
+          <div class="upload-current" id="f-image-current" style="display:none;"><i class="ti ti-circle-check"></i><span>Image uploaded. Choose another to replace it.</span></div>
+          <div class="hint">Hosted by DawnScribe so your buyers always see the image you had approved.</div>
         </div>
       </div>
 
@@ -309,7 +331,8 @@
 
   function friendlyDbError(err){
     var m = (err && (err.message || err.details)) || '';
-    if (/scrolls_banner_url_safe/.test(m)) return 'That image URL isn’t accepted. It must start with https:// and contain no quotes or angle brackets.';
+    if (/scrolls_banner_url_is_own_upload/.test(m)) return 'The banner image must be one you uploaded here. Please choose the image again.';
+    if (/scrolls_banner_url_safe/.test(m)) return 'That image link isn’t accepted. Please upload the image again.';
     if (/scrolls_creator_price_range/.test(m)) return 'Quill price must be between ' + PRICE_MIN + ' and ' + PRICE_MAX.toLocaleString() + '.';
     if (/row-level security/i.test(m)) return 'This banner can’t be saved right now — you must be 18+ to sell banners, and a banner can only be edited while it is a draft or needs changes.';
     if (/suspended/i.test(m)) return 'This account is suspended.';
@@ -412,9 +435,10 @@
       // approved banner would silently affect 0 rows — Save Draft is disabled
       // here rather than left to report a success that never happened.
       var locked = !isEditable();
-      ['f-name','f-desc','f-price','f-emoji','f-image'].forEach(function(id){
+      ['f-name','f-desc','f-price','f-emoji'].forEach(function(id){
         document.getElementById(id).disabled = locked;
       });
+      setImageUploadEnabled(!locked);
       document.getElementById('submit-btn').disabled = locked;
       document.getElementById('submit-btn').style.display = locked ? 'none' : 'flex';
       document.getElementById('save-btn').disabled = locked;
@@ -435,9 +459,10 @@
       document.getElementById('submit-btn').style.display = 'flex';
       document.getElementById('save-btn').disabled = false;
       document.getElementById('save-btn').style.display = 'flex';
-      ['f-name','f-desc','f-price','f-emoji','f-image'].forEach(function(id){
+      ['f-name','f-desc','f-price','f-emoji'].forEach(function(id){
         document.getElementById(id).disabled = false;
       });
+      setImageUploadEnabled(true);
     }
   }
 
@@ -462,8 +487,69 @@
     showEditor(null);
   }
 
+  function setImageUploadEnabled(on) {
+    var drop = document.getElementById('f-image-drop');
+    if (!drop) return;
+    drop.style.display = on ? 'block' : 'none';
+    document.getElementById('f-image-file').disabled = !on;
+  }
+
+  /* Upload straight to the banners bucket, under this user's own folder.
+     The storage policy only permits <uid>/… and the scrolls CHECK constraint
+     only accepts a URL under that same folder, so the two agree by
+     construction. Filenames are unique per upload rather than upserted:
+     `authenticated` has no UPDATE grant on storage.objects, so an upsert
+     would fail on the second save of the same banner. */
+  async function uploadBannerImage(input) {
+    var file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+
+    var MAX = 8 * 1024 * 1024;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      showToast('Please choose a PNG, JPEG or WebP image.', true); return;
+    }
+    if (file.size > MAX) {
+      showToast('That image is larger than 8 MB. Please use a smaller file.', true); return;
+    }
+
+    var drop = document.getElementById('f-image-drop');
+    var main = document.getElementById('f-image-drop-main');
+    drop.classList.add('busy');
+    main.textContent = 'Uploading…';
+
+    try {
+      var ext = file.type === 'image/png' ? 'png' : (file.type === 'image/webp' ? 'webp' : 'jpg');
+      var path = currentUser.id + '/banner-' + Date.now() + '.' + ext;
+      var res = await DSStorage.upload(db, DSStorage.BUCKETS.BANNERS, path, file);
+      if (res.error) {
+        showToast('Upload failed: ' + (res.error.message || 'please try again.'), true);
+        return;
+      }
+      var publicUrl = DSStorage.url(db, DSStorage.BUCKETS.BANNERS, res.path);
+      if (!urlLooksOk(publicUrl)) {
+        showToast('Upload succeeded but the image link came back malformed. Please try again.', true);
+        return;
+      }
+      document.getElementById('f-image').value = publicUrl;
+      updatePreview();
+      showToast('Image uploaded. Remember to save.');
+    } catch (e) {
+      showToast('Upload failed: ' + ((e && e.message) || 'please try again.'), true);
+    } finally {
+      drop.classList.remove('busy');
+      main.textContent = document.getElementById('f-image').value ? 'Choose a different image' : 'Choose an image';
+    }
+  }
+
   function updatePreview() {
     var url = (document.getElementById('f-image').value || '').trim();
+    var cur = document.getElementById('f-image-current');
+    if (cur) cur.style.display = url ? 'flex' : 'none';
+    var dropMain = document.getElementById('f-image-drop-main');
+    if (dropMain && !document.getElementById('f-image-drop').classList.contains('busy')) {
+      dropMain.textContent = url ? 'Choose a different image' : 'Choose an image';
+    }
     var img = document.getElementById('preview-img');
     var ph = document.getElementById('preview-placeholder');
     var name = (document.getElementById('f-name').value || '').trim() || 'Banner Name';
@@ -496,9 +582,9 @@
   async function upsert(extraFields) {
     var fields = Object.assign(getFields(), extraFields || {});
     if (!fields.name) { showToast('Please enter a name', true); return null; }
-    if (!fields.banner_url) { showToast('Please provide an image URL', true); return null; }
+    if (!fields.banner_url) { showToast('Please upload a banner image', true); return null; }
     if (!urlLooksOk(fields.banner_url)) {
-      showToast('Image URL must start with https:// and contain no quotes or angle brackets.', true); return null;
+      showToast('That image link is not valid. Please upload the image again.', true); return null;
     }
     if (fields.quill_price < PRICE_MIN || fields.quill_price > PRICE_MAX) {
       showToast('Quill price must be between ' + PRICE_MIN + ' and ' + PRICE_MAX.toLocaleString() + '.', true); return null;
