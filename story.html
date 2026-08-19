@@ -1062,7 +1062,7 @@
           }
         }
         // Other works link to THIS one as a translation — show available translations
-        var { data: toLinks } = await db.from('story_links').select('work_id').eq('linked_work_id', workData.id).eq('link_type','fan_translation').eq('status','accepted');
+        var { data: toLinks } = await db.from('story_links').select('id,work_id').eq('linked_work_id', workData.id).eq('link_type','fan_translation').eq('status','accepted');
         if (toLinks && toLinks.length) {
           var transIds = toLinks.map(function(l){ return l.work_id; });
           var { data: transWorks } = await db.from('works').select('id,title,cover_url,author_id,language').in('id', transIds);
@@ -1070,9 +1070,14 @@
             var taIds = [...new Set(transWorks.map(function(w){return w.author_id;}).filter(Boolean))];
             var { data: tprofs } = await db.from('profiles').select('id,username,display_name').in('id', taIds);
             var tpm = {}; (tprofs||[]).forEach(function(p){ tpm[p.id]=p; });
+            var linkByWork = {};
+            (toLinks||[]).forEach(function(l){ linkByWork[l.work_id] = l.id; });
             transWorks.forEach(function(w){
               var p = tpm[w.author_id]||{};
-              items.push({ relation: 'Translation', work: w, authorName: p.display_name||p.username||'Unknown' });
+              // linkId is only carried for inbound translations: these are the
+              // ones attached to THIS work, so its author may remove them.
+              items.push({ relation: 'Translation', work: w, authorName: p.display_name||p.username||'Unknown',
+                           linkId: linkByWork[w.id] || null });
             });
           }
         }
@@ -1094,8 +1099,62 @@
           '<i class="ti ti-chevron-right" style="color:var(--text3);flex-shrink:0;"></i>' +
         '</a>';
       }).join('');
+      // The author of THIS work controls which translations appear on their page.
+      // Translations go live instantly, so removal is the author's remedy.
+      var _tOwner = currentSession && workData && currentSession.user.id === workData.author_id;
+      if (_tOwner) {
+        items.forEach(function(it, i){
+          if (!it.linkId) return;
+          var row = listEl.children[i];
+          if (!row) return;
+          var ctrl = document.createElement('div');
+          ctrl.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin:-4px 0 8px;';
+          ctrl.innerHTML =
+            '<button type="button" class="tl-remove" style="background:none;border:none;color:var(--text3);font-size:11px;font-family:inherit;cursor:pointer;text-decoration:underline;">Remove from my page</button>' +
+            '<button type="button" class="tl-report" style="background:none;border:none;color:var(--text3);font-size:11px;font-family:inherit;cursor:pointer;text-decoration:underline;">Report</button>';
+          row.insertAdjacentElement('afterend', ctrl);
+          ctrl.querySelector('.tl-remove').onclick = function(){ removeTranslationLink(it.linkId, it.work.title); };
+          ctrl.querySelector('.tl-report').onclick = function(){ reportTranslation(it.work.id, it.work.title); };
+        });
+      }
       section.style.display = 'block';
     }
+    // Removal is permanent from the translator's side: a DB trigger stops them
+    // putting the link back, so the author only has to do this once.
+    async function removeTranslationLink(linkId, title) {
+      if (!linkId) return;
+      if (!confirm('Remove this translation from your story page?\n\n"' + (title||'This translation') + '"\n\nIt stays published as their own work \u2014 it just stops appearing here, and they cannot re-add it.')) return;
+      var res = await Promise.resolve(
+        db.from('story_links').update({ status: 'removed' }).eq('id', linkId)
+      ).catch(function(e){ return { error: e }; });
+      if (res && res.error) { showToast('Could not remove: ' + (res.error.message||''), 'ti-x'); return; }
+      showToast('Removed from your page.', 'ti-check');
+      loadLinkedTranslations();
+    }
+
+    async function reportTranslation(workId, title) {
+      if (!currentSession) { window.location.href = dsAuthNext(); return; }
+      var why = prompt('Report this translation to the DawnScribe team.\n\n"' + (title||'') + '"\n\nTell us what is wrong \u2014 for example harassment, a deliberately bad or altered translation, or stolen work:');
+      if (why === null) return;
+      why = (why||'').trim();
+      if (!why) { showToast('Please describe the problem.', 'ti-alert-triangle'); return; }
+      if (why.length > 2000) why = why.slice(0, 2000);
+      var dup = await db.from('reports').select('id')
+        .eq('content_id', workId).eq('reporter_id', currentSession.user.id)
+        .eq('reason', 'translation_abuse').maybeSingle();
+      if (dup && dup.data) { showToast('You already reported this translation.', 'ti-info-circle'); return; }
+      var res = await db.from('reports').insert({
+        content_id: workId,
+        content_type: 'work',
+        reason: 'translation_abuse',
+        description: why,
+        reporter_id: currentSession.user.id,
+        status: 'open'
+      });
+      if (res.error) { showToast('Could not submit report.', 'ti-x'); return; }
+      showToast('Report sent to the team. Thank you.', 'ti-check');
+    }
+
     function applyDocumentLang(code){
       var valid = ['en','pt','es','fr','de','ja','ko','zh','id'];
       if (code && valid.indexOf(code) !== -1) document.documentElement.lang = code;
