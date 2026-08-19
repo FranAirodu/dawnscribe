@@ -14,6 +14,7 @@
        undefined, init() threw, and #main-content never unhid — the page
        rendered as nav + footer with an empty middle. -->
   <script src="creatorAgeGate.js"></script>
+  <script src="storagePaths.js"></script>
   <style>
     :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f0c040;--amber:#f59e0b;}
     html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#a16207;--amber:#b45309;}
@@ -74,6 +75,14 @@
     .field select option{background:var(--bg3);}
     .field .hint{font-size:11.5px;color:var(--text3);margin-top:5px;line-height:1.5;}
     .field-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    .upload-drop{border:1px dashed var(--border);border-radius:10px;background:var(--bg3);padding:18px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;}
+    .upload-drop:hover{border-color:var(--accent);}
+    .upload-drop.busy{opacity:.6;pointer-events:none;}
+    .upload-drop i{font-size:26px;color:var(--text3);display:block;margin-bottom:6px;}
+    .upload-drop .ud-main{font-size:13.5px;color:var(--text);font-weight:700;}
+    .upload-drop .ud-sub{font-size:11.5px;color:var(--text3);margin-top:4px;}
+    .upload-preview{margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid var(--border);display:none;}
+    .upload-preview img{display:block;width:100%;max-height:180px;object-fit:cover;}
     @media(max-width:600px){.field-row{grid-template-columns:1fr;}}
 
     /* ── TOGGLE ── */
@@ -322,9 +331,23 @@
         </div>
 
         <div class="field">
-          <label>Banner Image URL <span class="req">*</span></label>
-          <input type="url" id="sc-banner" placeholder="https://..."/>
-          <div class="hint">Upload your banner to a host like Imgur or Supabase Storage, then paste the link here. Recommended size: 900×300px. This image also becomes a purchasable profile background for owners.</div>
+          <label>Banner Image <span class="req">*</span></label>
+          <!-- Uploaded to DawnScribe storage rather than linked from an outside
+               host. This image is sold: it becomes a profile background for
+               everyone who buys the scroll, so the file a reviewer approves has
+               to be the file buyers keep. An external link could be swapped
+               after approval or simply go dead. The DB agrees
+               (scrolls_banner_url_is_own_upload), so a hand-crafted request
+               cannot put a foreign URL here either. -->
+          <input type="hidden" id="sc-banner"/>
+          <input type="file" id="sc-banner-file" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadScrollBanner(this)"/>
+          <div class="upload-drop" id="sc-banner-drop" onclick="document.getElementById('sc-banner-file').click()">
+            <i class="ti ti-cloud-upload"></i>
+            <div class="ud-main" id="sc-banner-drop-main">Choose an image</div>
+            <div class="ud-sub">PNG, JPEG or WebP · up to 8 MB · recommended 900×300 px</div>
+          </div>
+          <div class="upload-preview" id="sc-banner-preview"><img id="sc-banner-preview-img" src="" alt=""/></div>
+          <div class="hint">Hosted by DawnScribe, so buyers always keep the image you had approved.</div>
         </div>
 
         <div class="field">
@@ -610,6 +633,55 @@
   var editingItemIdx = null;
 
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function syncScrollBannerUi(){
+    var url = (document.getElementById('sc-banner').value || '').trim();
+    var wrap = document.getElementById('sc-banner-preview');
+    var img  = document.getElementById('sc-banner-preview-img');
+    var main = document.getElementById('sc-banner-drop-main');
+    if (url) { img.src = url; wrap.style.display = 'block'; }
+    else { img.removeAttribute('src'); wrap.style.display = 'none'; }
+    if (main && !document.getElementById('sc-banner-drop').classList.contains('busy')) {
+      main.textContent = url ? 'Choose a different image' : 'Choose an image';
+    }
+  }
+
+  /* Writes to banners/<uid>/scroll-banner-<ts>.<ext>. The storage policy only
+     permits this user's own folder and the scrolls CHECK constraint only
+     accepts a URL under that same folder, so the two agree by construction.
+     Unique filename per upload rather than an upsert: `authenticated` has no
+     UPDATE grant on storage.objects, so an upsert fails on the second save. */
+  async function uploadScrollBanner(input){
+    var file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      showToast('Please choose a PNG, JPEG or WebP image.', true); return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      showToast('That image is larger than 8 MB. Please use a smaller file.', true); return;
+    }
+
+    var drop = document.getElementById('sc-banner-drop');
+    var main = document.getElementById('sc-banner-drop-main');
+    drop.classList.add('busy');
+    main.textContent = 'Uploading\u2026';
+    try {
+      var ext = file.type === 'image/png' ? 'png' : (file.type === 'image/webp' ? 'webp' : 'jpg');
+      var path = currentUser.id + '/scroll-banner-' + Date.now() + '.' + ext;
+      var res = await DSStorage.upload(db, DSStorage.BUCKETS.BANNERS, path, file);
+      if (res.error) { showToast('Upload failed: ' + (res.error.message || 'please try again.'), true); return; }
+      var publicUrl = DSStorage.url(db, DSStorage.BUCKETS.BANNERS, res.path);
+      if (!publicUrl) { showToast('Upload succeeded but the image link came back empty. Please try again.', true); return; }
+      document.getElementById('sc-banner').value = publicUrl;
+      showToast('Banner uploaded. Remember to save.');
+    } catch (e) {
+      showToast('Upload failed: ' + ((e && e.message) || 'please try again.'), true);
+    } finally {
+      drop.classList.remove('busy');
+      syncScrollBannerUi();
+    }
+  }
+
   function showToast(msg, err){
     var t = document.getElementById('toast');
     var ic = document.getElementById('toast-icon');
@@ -693,6 +765,7 @@
     document.getElementById('sc-desc').value = s.description || '';
     document.getElementById('sc-price').value = s.quill_price || 500;
     document.getElementById('sc-banner').value = s.banner_url || '';
+    syncScrollBannerUi();
     document.getElementById('sc-emoji').value = s.banner_emoji || '📜';
     document.getElementById('sc-type').value = s.type || 'artist';
     document.getElementById('sc-complete').checked = !!s.novel_is_complete;
@@ -875,7 +948,7 @@
 
     if (!name) { showToast('Please enter a scroll name', true); return; }
     if (!desc) { showToast('Please add a description', true); return; }
-    if (!banner) { showToast('Please add a banner image URL', true); return; }
+    if (!banner) { showToast('Please upload a banner image', true); return; }
     if (type === 'novel' && !novelId) { showToast('Please select a linked novel', true); return; }
     if (type === 'collab' && !novelistId) { showToast('Please select a novelist partner', true); return; }
 
