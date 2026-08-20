@@ -497,6 +497,31 @@
       </div>
     </div>
 
+    <!-- ── STORAGE FOOTPRINT ─────────────────────────────────────── -->
+    <div class="section" id="sec-storage" data-tab="economy">
+      <div class="section-title"><i class="ti ti-database"></i> Storage Footprint</div>
+      <div class="section-sub">How much image data you are hosting, and which files are heaviest. Bandwidth is billed every time a file is served, so one oversized asset costs you repeatedly — this is the list to act on.</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <button class="action-btn" onclick="loadStorageOverview()"><i class="ti ti-refresh"></i> Refresh</button>
+        <a class="action-btn" href="https://supabase.com/dashboard/project/cajjyyskpmjnpcxcfeuk/settings/billing/usage" target="_blank" rel="noopener noreferrer"><i class="ti ti-external-link"></i> Egress on Supabase</a>
+      </div>
+      <div class="econ-scroll"><table class="econ-table" id="stor-bucket-table" style="display:none;">
+        <thead><tr><th>Bucket</th><th>Files</th><th>Total</th><th>Average</th><th>Largest</th><th>Last upload</th></tr></thead>
+        <tbody id="stor-bucket-body"></tbody>
+      </table></div>
+      <div id="stor-empty" class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...</div>
+
+      <div class="section-title" style="margin-top:26px;font-size:15px;"><i class="ti ti-arrow-big-down-lines"></i> Heaviest Files</div>
+      <div class="econ-scroll"><table class="econ-table" id="stor-heavy-table" style="display:none;">
+        <thead><tr><th>File</th><th>Bucket</th><th>Type</th><th>Size</th><th>Uploaded</th></tr></thead>
+        <tbody id="stor-heavy-body"></tbody>
+      </table></div>
+      <div class="econ-note">
+        Anything over about <b>500 KB</b> is worth a look; over <b>1 MB</b> is worth fixing. Avatar layers are excluded from automatic resizing on purpose, because they must line up pixel-for-pixel with the body art — but they can still be losslessly compressed without any resampling.<br><br>
+        <b>Egress is not shown here.</b> Supabase does not expose bandwidth to the database, and it cannot be reconstructed from request logs: storage responses are streamed and mostly carry no byte count, so any figure shown here would silently undercount the traffic that matters most. Use the Supabase link above for the real number.
+      </div>
+    </div>
+
     <!-- ── AUDIT LOG ─────────────────────────────────────────────── -->
     <!-- ── ECONOMY: BALANCES vs LEDGER ───────────────────────────── -->
     <div class="section" id="sec-economy" data-tab="economy">
@@ -1684,6 +1709,85 @@
       table.style.display = '';
     }
 
+    // ── STORAGE FOOTPRINT ────────────────────────────────────────
+    // Both RPCs are SECURITY DEFINER and is_admin()-gated, returning zero rows
+    // to a non-admin rather than erroring.
+    function fmtBytes(b) {
+      b = Number(b) || 0;
+      if (b < 1024) return b + ' B';
+      var u = ['KB','MB','GB'], i = -1;
+      do { b /= 1024; i++; } while (b >= 1024 && i < u.length - 1);
+      return (b >= 10 ? Math.round(b) : b.toFixed(1)) + ' ' + u[i];
+    }
+
+    function fmtDate(d) {
+      if (!d) return '—';
+      try { return new Date(d).toLocaleDateString(); } catch (e) { return '—'; }
+    }
+
+    function sizeClass(b) {
+      b = Number(b) || 0;
+      if (b >= 1024 * 1024) return 'econ-flag econ-bad';
+      if (b >= 500 * 1024) return 'econ-flag econ-warn';
+      return 'econ-ok';
+    }
+
+    async function loadStorageOverview() {
+      var empty = document.getElementById('stor-empty');
+      var bTable = document.getElementById('stor-bucket-table');
+      var hTable = document.getElementById('stor-heavy-table');
+      empty.style.display = '';
+      empty.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...';
+      bTable.style.display = 'none';
+      hTable.style.display = 'none';
+
+      var results = await Promise.all([
+        Promise.resolve(db.rpc('admin_storage_by_bucket')).catch(function(e){ return { error: e }; }),
+        Promise.resolve(db.rpc('admin_storage_heaviest', { p_limit: 25 })).catch(function(e){ return { error: e }; })
+      ]);
+      var buckets = results[0], heavy = results[1];
+
+      if (buckets.error) {
+        empty.innerHTML = '<i class="ti ti-alert-circle" style="display:block;margin-bottom:6px;"></i>Could not load storage: ' + escHtml(buckets.error.message || 'unknown error');
+        return;
+      }
+      var rows = buckets.data || [];
+      if (!rows.length) {
+        empty.innerHTML = '<i class="ti ti-database-off" style="display:block;margin-bottom:6px;"></i>No stored files.';
+        return;
+      }
+
+      var grand = rows.reduce(function(a, r){ return a + Number(r.total_bytes || 0); }, 0);
+      var files = rows.reduce(function(a, r){ return a + Number(r.objects || 0); }, 0);
+
+      document.getElementById('stor-bucket-body').innerHTML = rows.map(function(r) {
+        return '<tr>' +
+          '<td><span class="econ-user">' + escHtml(r.bucket_id) + '</span></td>' +
+          '<td>' + Number(r.objects || 0).toLocaleString() + '</td>' +
+          '<td>' + fmtBytes(r.total_bytes) + '</td>' +
+          '<td class="' + sizeClass(r.avg_bytes) + '">' + fmtBytes(r.avg_bytes) + '</td>' +
+          '<td class="' + sizeClass(r.max_bytes) + '">' + fmtBytes(r.max_bytes) + '</td>' +
+          '<td class="econ-ok">' + fmtDate(r.last_upload) + '</td>' +
+        '</tr>';
+      }).join('') +
+        '<tr><td><b>All buckets</b></td><td><b>' + files.toLocaleString() + '</b></td>' +
+        '<td><b>' + fmtBytes(grand) + '</b></td><td></td><td></td><td></td></tr>';
+
+      document.getElementById('stor-heavy-body').innerHTML = (heavy.data || []).map(function(o) {
+        return '<tr>' +
+          '<td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;">' + escHtml(o.name) + '</td>' +
+          '<td class="econ-ok">' + escHtml(o.bucket_id) + '</td>' +
+          '<td class="econ-ok">' + escHtml(o.mime || '—') + '</td>' +
+          '<td><span class="' + sizeClass(o.bytes) + '">' + fmtBytes(o.bytes) + '</span></td>' +
+          '<td class="econ-ok">' + fmtDate(o.uploaded) + '</td>' +
+        '</tr>';
+      }).join('');
+
+      empty.style.display = 'none';
+      bTable.style.display = '';
+      if (heavy.data && heavy.data.length) hTable.style.display = '';
+    }
+
     // ── ADMIN TAB NAVIGATION ─────────────────────────────────────
     function switchAdminTab(tab) {
       document.querySelectorAll('.admin-tab').forEach(function(btn) {
@@ -1697,6 +1801,7 @@
       if (tab === 'economy' && !window._econLoaded) {
         window._econLoaded = true;
         loadCurrencyOverview();
+        loadStorageOverview();
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
       try { localStorage.setItem('ds_admin_tab', tab); } catch(e) {}
