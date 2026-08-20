@@ -526,13 +526,17 @@
     <!-- ── ECONOMY: BALANCES vs LEDGER ───────────────────────────── -->
     <div class="section" id="sec-economy" data-tab="economy">
       <div class="section-title"><i class="ti ti-coins"></i> Currency Balances</div>
-      <div class="section-sub">Every account's Ember and Quill balance, checked against the ledgers that should explain it. A non-zero "Unexplained" figure means the balance does not match what the records say was earned and spent — that is the number to look at.</div>
-      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-        <button class="action-btn" onclick="loadCurrencyOverview()"><i class="ti ti-refresh"></i> Refresh</button>
+      <div class="section-sub">Accounts whose Ember or Quill balance does not match the ledgers that should explain it. Only accounts with something worth looking at are shown by default, worst first — switch to "everyone" to browse the full list. Click a username to message them.</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
+        <button class="action-btn" onclick="loadCurrencyOverview(0)"><i class="ti ti-refresh"></i> Refresh</button>
+        <button class="action-btn" id="econ-mode-btn" onclick="econToggleMode()"><i class="ti ti-flag"></i> Showing: flagged only</button>
+        <input class="form-input" id="econ-search" type="text" placeholder="Search username…" style="max-width:220px;"/>
+        <button class="action-btn" onclick="loadCurrencyOverview(0)"><i class="ti ti-search"></i> Search</button>
       </div>
+      <div id="econ-summary" style="font-size:13px;color:var(--text3);margin-bottom:10px;"></div>
       <div class="econ-scroll"><table class="econ-table" id="econ-table" style="display:none;">
         <thead><tr>
-          <th>User</th>
+          <th>User</th><th>Risk</th><th>Why</th>
           <th>Embers</th><th>Expected</th><th>Unexplained</th>
           <th>Spent</th><th>24h</th><th>7d</th><th>Chapters</th>
           <th>Quills</th><th>Expected</th><th>Unexplained</th>
@@ -541,9 +545,15 @@
         <tbody id="econ-body"></tbody>
       </table></div>
       <div id="econ-empty" class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...</div>
+      <div id="econ-pager" style="display:none;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">
+        <button class="action-btn" id="econ-prev"><i class="ti ti-chevron-left"></i> Previous</button>
+        <button class="action-btn" id="econ-next">Next <i class="ti ti-chevron-right"></i></button>
+        <span id="econ-page-label" style="font-size:12px;color:var(--text3);"></span>
+      </div>
       <div class="econ-note">
         <b>How to read this.</b> <b>Expected</b> is lifetime earned + received + granted, minus everything spent. <b>Unexplained</b> is the balance minus that figure. A positive number means someone holds more than the records account for; a negative one means the ledger claims more than they hold.<br><br>
-        <b>Unexplained is a drift signal, not proof.</b> It only means "cheating" if every path that adds Embers also increments lifetime_earned. That has not been verified across all of them yet, so treat a flag as a prompt to look at the account, not a verdict.<br><br>
+        <b>Risk</b> ranks how much an account is worth looking at. Quill mismatches score highest because Quills are bought with real money; Ember gaps, heavy earning over very few chapters, and holding a withdrawable payout balance all add to it. <b>Why</b> spells out what triggered it.<br><br>
+        <b>A flag is a prompt, not a verdict.</b> Most drift is an honest bug rather than cheating — click the username to message the account and ask before assuming anything.<br><br>
         <b>24h / 7d</b> are Embers awarded for reading in that window, and <b>Chapters</b> is how many distinct chapters have ever paid out. A large 24h figure spread over very few chapters is the shape Ember farming takes.
       </div>
     </div>
@@ -1655,52 +1665,124 @@
       return '<span class="econ-flag ' + cls + '">' + (v > 0 ? '+' : '') + econNum(v) + '</span>';
     }
 
-    async function loadCurrencyOverview() {
-      var body = document.getElementById('econ-body');
-      var table = document.getElementById('econ-table');
-      var empty = document.getElementById('econ-empty');
+    // Server-side paging and filtering: the client never receives more than one
+    // page, so this survives a real user base. The RPC is is_admin()-gated and
+    // returns zero rows to a non-admin rather than erroring.
+    var econMode = 'flagged';
+    var econOffset = 0;
+    var econPageSize = 50;
+
+    function econToggleMode() {
+      econMode = (econMode === 'flagged') ? 'all' : 'flagged';
+      var btn = document.getElementById('econ-mode-btn');
+      btn.innerHTML = (econMode === 'flagged')
+        ? '<i class="ti ti-flag"></i> Showing: flagged only'
+        : '<i class="ti ti-users"></i> Showing: everyone';
+      loadCurrencyOverview(0);
+    }
+
+    async function loadCurrencyOverview(offset) {
+      econOffset = Math.max(0, offset || 0);
+      var body    = document.getElementById('econ-body');
+      var table   = document.getElementById('econ-table');
+      var empty   = document.getElementById('econ-empty');
+      var pager   = document.getElementById('econ-pager');
+      var summary = document.getElementById('econ-summary');
+      var search  = (document.getElementById('econ-search').value || '').trim();
+
       empty.style.display = '';
       empty.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...';
       table.style.display = 'none';
+      pager.style.display = 'none';
+      summary.textContent = '';
 
-      var res = await Promise.resolve(db.rpc('admin_currency_overview'))
-        .catch(function(e) { return { error: e }; });
+      var res = await Promise.resolve(db.rpc('admin_currency_overview', {
+        p_mode: econMode,
+        p_search: search || null,
+        p_limit: econPageSize,
+        p_offset: econOffset
+      })).catch(function(e) { return { error: e }; });
 
       if (res.error) {
         empty.innerHTML = '<i class="ti ti-alert-circle" style="display:block;margin-bottom:6px;"></i>Could not load balances: ' + escHtml(res.error.message || 'unknown error');
         return;
       }
+
       var rows = res.data || [];
       if (!rows.length) {
-        empty.innerHTML = '<i class="ti ti-coins" style="display:block;margin-bottom:6px;"></i>No accounts to show.';
+        empty.innerHTML = (econMode === 'flagged' && !search)
+          ? '<i class="ti ti-shield-check" style="display:block;margin-bottom:6px;"></i>Nothing to flag \u2014 every balance matches its ledger.'
+          : '<i class="ti ti-coins" style="display:block;margin-bottom:6px;"></i>No accounts match.';
         return;
       }
 
+      var total = Number(rows[0].match_count) || rows.length;
+
       body.innerHTML = rows.map(function(r) {
-        var name = escHtml(r.username || '(no username)');
+        var uname = r.username || '';
+        var label = escHtml(uname || '(no username)');
+        // Most drift is an honest bug, so the first move is a conversation.
+        var name = uname
+          ? '<a class="econ-user" href="messages.html?to=' + encodeURIComponent(uname) + '" title="Message this user">' + label + '</a>'
+          : '<span class="econ-user">' + label + '</span>';
         if (r.account_status && r.account_status !== 'active') {
           name += ' <span class="econ-flag econ-bad">' + escHtml(r.account_status) + '</span>';
         }
-        if (r.is_admin_user) name += ' <span class="econ-flag econ-warn">admin</span>';
+        if (r.is_admin_account) name += ' <span class="econ-flag econ-warn">admin</span>';
+
+        var score = Number(r.risk_score) || 0;
+        var scoreCell = score > 0
+          ? '<span class="econ-flag ' + (score >= 100 ? 'econ-bad' : 'econ-warn') + '">' + score + '</span>'
+          : '<span class="econ-ok">\u2014</span>';
+
+        var reasons = (r.risk_reasons && r.risk_reasons.length)
+          ? r.risk_reasons.map(function(x) {
+              return '<span class="econ-flag ' + (score >= 100 ? 'econ-bad' : 'econ-warn') + '" style="margin:1px 2px;display:inline-block;">' + escHtml(x) + '</span>';
+            }).join(' ')
+          : '<span class="econ-ok">\u2014</span>';
+
         return '<tr>' +
-          '<td><span class="econ-user">' + name + '</span></td>' +
+          '<td>' + name + '</td>' +
+          '<td>' + scoreCell + '</td>' +
+          '<td style="text-align:left;white-space:normal;max-width:280px;">' + reasons + '</td>' +
           '<td>' + econNum(r.ember_balance) + '</td>' +
           '<td class="econ-ok">' + econNum(r.ember_expected) + '</td>' +
-          '<td>' + econFlag(r.ember_unexplained) + '</td>' +
+          '<td>' + econFlag(r.ember_drift) + '</td>' +
           '<td class="econ-ok">' + econNum(r.ember_spent) + '</td>' +
           '<td>' + econNum(r.embers_24h) + '</td>' +
           '<td>' + econNum(r.embers_7d) + '</td>' +
-          '<td class="econ-ok">' + econNum(r.distinct_chapters) + '</td>' +
+          '<td class="econ-ok">' + econNum(r.chapters_credited) + '</td>' +
           '<td>' + econNum(r.quill_balance) + '</td>' +
           '<td class="econ-ok">' + econNum(r.quills_expected) + '</td>' +
-          '<td>' + econFlag(r.quills_unexplained) + '</td>' +
+          '<td>' + econFlag(r.quill_drift) + '</td>' +
           '<td class="econ-ok">$' + ((r.payout_usd_cents || 0) / 100).toFixed(2) + '</td>' +
         '</tr>';
       }).join('');
 
+      var from = econOffset + 1;
+      var to   = econOffset + rows.length;
+      summary.textContent = 'Showing ' + from + '\u2013' + to + ' of ' + total +
+        (econMode === 'flagged' ? ' flagged account' : ' account') + (total === 1 ? '' : 's') +
+        (search ? ' matching \u201C' + search + '\u201D' : '');
+
       empty.style.display = 'none';
       table.style.display = '';
+      pager.style.display = (total > econPageSize) ? 'flex' : 'none';
+      document.getElementById('econ-prev').disabled = econOffset === 0;
+      document.getElementById('econ-next').disabled = to >= total;
+      document.getElementById('econ-page-label').textContent =
+        'Page ' + (Math.floor(econOffset / econPageSize) + 1) + ' of ' + Math.max(1, Math.ceil(total / econPageSize));
     }
+
+    document.getElementById('econ-prev').addEventListener('click', function() {
+      loadCurrencyOverview(Math.max(0, econOffset - econPageSize));
+    });
+    document.getElementById('econ-next').addEventListener('click', function() {
+      loadCurrencyOverview(econOffset + econPageSize);
+    });
+    document.getElementById('econ-search').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') loadCurrencyOverview(0);
+    });
 
     // ── STORAGE FOOTPRINT ────────────────────────────────────────
     // Both RPCs are SECURITY DEFINER and is_admin()-gated, returning zero rows
@@ -1793,7 +1875,7 @@
       // tab is actually opened rather than on every admin page load.
       if (tab === 'economy' && !window._econLoaded) {
         window._econLoaded = true;
-        loadCurrencyOverview();
+        loadCurrencyOverview(0);
         loadStorageOverview();
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
