@@ -44,6 +44,31 @@ window.READING_FONTS = {
   worksans:    { label: 'Work Sans',        css: "'Work Sans',sans-serif",       category: 'sans' }
 };
 
+/* Safe resolver. Consumers currently do `READING_FONTS[key] || READING_FONTS.lato`,
+   which reads as a guarded lookup but is not one: a key naming an
+   Object.prototype member ('constructor', 'toString', 'valueOf') is TRUTHY, so
+   it defeats the `|| lato` fallback and returns an object whose .css is
+   undefined. Applying that to --reader-font breaks the reading font with no
+   error anywhere.
+
+   chapters.font now carries a CHECK constraint that blocks this at the source
+   for the cross-user case (an author setting it for every reader of a chapter).
+   This helper covers the remaining path - the reader's own localStorage
+   'ds_reading'.font, which no constraint can reach - and is what new call sites
+   should use instead of a bare lookup.
+
+   WHEN A FONT IS ADDED: add its key above, to the chapters_font_check CHECK
+   constraint, and to READING_FONTS_GOOGLE_URL below if it is a web font. */
+window.resolveReadingFont = function (key) {
+  var map = window.READING_FONTS || {};
+  if (typeof key === 'string' &&
+      Object.prototype.hasOwnProperty.call(map, key) &&
+      map[key] && typeof map[key].css === 'string') {
+    return map[key];
+  }
+  return map.lato || { label: 'Lato', css: "'Lato',sans-serif", category: 'sans' };
+};
+
 /* Google Fonts <link> URL covering web fonts above (system fonts like
    Times New Roman, Calibri, Verdana, Liberation Serif, Minion Pro use
    OS-installed fonts and need no Google Fonts entry).
