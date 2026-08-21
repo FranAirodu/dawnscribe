@@ -415,6 +415,11 @@ function dsApplyAccent(hex) {
 
   // HTML-escaping does not neutralise a javascript: URL, so href/src values need
   // a scheme allowlist as well. '' means "no usable URL".
+  // EVERY href/src value goes through this, not dsEsc(). The session-17 pass
+  // routed avatar_url through here and left cover_url on dsEsc, so five sinks
+  // accepted any scheme. dsSafeUrl returns '' for anything that is not http(s)
+  // or site-relative, so callers must test ITS result - testing the raw column
+  // instead renders <img src=""> where the letter fallback belongs.
   function dsSafeUrl(u){
     u = String(u == null ? '' : u).trim();
     if (!/^(https?:\/\/|\/)/i.test(u)) return '';
@@ -542,7 +547,12 @@ function dsApplyAccent(hex) {
     });
     localStorage.setItem('ds_notif_cleared_' + tab, JSON.stringify(Object.keys(cleared)));
     if (serverIds.length) {
-      try { db.from('notifications').update({is_read:true}).in('id', serverIds); } catch(e) {}
+      // A bare try/catch around an un-awaited builder catches NOTHING: the
+      // rejection is asynchronous, so it escapes as an unhandled promise
+      // rejection instead. Wrapping in Promise.resolve() first is required -
+      // .catch() chained straight onto a Supabase builder throws synchronously.
+      Promise.resolve(db.from('notifications').update({is_read:true}).in('id', serverIds))
+        .catch(function(){});
     }
     feed.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;"><i class="ti ti-checks"></i> All caught up!</div>';
     if (window.dsRecalcNotifBadge) window.dsRecalcNotifBadge();
@@ -606,8 +616,9 @@ function dsApplyAccent(hex) {
                 var a = document.createElement('a');
                 a.className = 'search-preview-item';
                 a.href = 'story.html?id='+item.id;
-                var coverHtml = item.cover_url
-                  ? '<img src="'+dsEsc(item.cover_url)+'" style="width:100%;height:100%;object-fit:cover;"/>'
+                var _cu = dsSafeUrl(item.cover_url);
+                var coverHtml = _cu
+                  ? '<img src="'+_cu+'" style="width:100%;height:100%;object-fit:cover;"/>'
                   : dsEsc((item.title||'?').charAt(0).toUpperCase());
                 a.innerHTML = '<div class="search-preview-cover '+dsCoverColor(item.id)+'">'+coverHtml+'</div>'
                   + '<div class="search-preview-info"><div class="search-preview-title">'+dsEsc(item.title||'Unknown')+'</div></div>';
@@ -619,9 +630,11 @@ function dsApplyAccent(hex) {
                 a.className = 'search-preview-item';
                 var isWork = !!item.title;
                 a.href = isWork ? (type==='titles'?'story.html?id=':'artwork.html?id=')+item.id : 'profile.html?user='+(item.username||'');
-                var coverHtml = (isWork && item.cover_url)
-                  ? '<img src="'+dsEsc(item.cover_url)+'" style="width:100%;height:100%;object-fit:cover;"/>'
-                  : ((!isWork && item.avatar_url) ? '<img src="'+dsSafeUrl(item.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : dsEsc((item.title||item.display_name||'?').charAt(0).toUpperCase()));
+                var _cu2 = isWork ? dsSafeUrl(item.cover_url) : '';
+                var _au2 = isWork ? '' : dsSafeUrl(item.avatar_url);
+                var coverHtml = _cu2
+                  ? '<img src="'+_cu2+'" style="width:100%;height:100%;object-fit:cover;"/>'
+                  : (_au2 ? '<img src="'+_au2+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>' : dsEsc((item.title||item.display_name||'?').charAt(0).toUpperCase()));
                 a.innerHTML = '<div class="search-preview-cover '+dsCoverColor(item.id)+'">'+coverHtml+'</div>'
                   + '<div class="search-preview-info"><div class="search-preview-title">'+dsEsc(item.title||item.display_name||'Unknown')+'</div></div>';
                 preview.appendChild(a);
@@ -703,10 +716,13 @@ function dsApplyAccent(hex) {
         var chLabel=ch.title?'Chapter '+ch.chapter_number+' — "'+ch.title+'"':'Chapter '+ch.chapter_number;
         var item=document.createElement('div'); item.className='notif-item unread'; item.dataset.id=ch.id; item.style.cursor='pointer';
         item.onclick=function(){if(work) window.location.href='story.html?id='+work.id;};
-        var coverHtml = work && work.cover_url
-          ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
+        var _cu3 = work ? dsSafeUrl(work.cover_url) : '';
+        var coverHtml = _cu3
+          ? '<img src="'+_cu3+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
           : dsEsc(dsCoverLetter(title));
-        var coverClass = work && work.cover_url ? '' : dsCoverColor(ch.work_id);
+        // Must follow the same test as coverHtml, or a rejected URL shows the
+        // letter with no background colour behind it.
+        var coverClass = _cu3 ? '' : dsCoverColor(ch.work_id);
         item.innerHTML='<div class="notif-cover '+coverClass+'" style="overflow:hidden;padding:0;">'+coverHtml+'</div>'
           +'<div class="notif-body"><div class="notif-title">'+dsEsc(title)+'</div><div class="notif-text">'+dsEsc(chLabel)+' is now available</div>'
           +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(ch.created_at)+'</div></div><div class="notif-dot"></div>';
@@ -778,7 +794,7 @@ function dsApplyAccent(hex) {
               +'<div class="notif-body"><div class="notif-title">'+dsEsc(name)+'</div><div class="notif-text">Started following you</div>'
               +'<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(fl.created_at)+'</div></div><div class="notif-dot"></div>';
             el.onclick=function(){
-              db.from('notifications').update({is_read:true}).eq('id',fl.id);
+              Promise.resolve(db.from('notifications').update({is_read:true}).eq('id',fl.id)).catch(function(){});
               el.classList.remove('unread');
               if (window.dsRecalcNotifBadge) window.dsRecalcNotifBadge();
               if(p.username) window.location.href='profile.html?u='+p.username;
@@ -793,10 +809,12 @@ function dsApplyAccent(hex) {
     else {
       unrA.forEach(function(work){
         var prof=work.profiles; var name=prof?(prof.display_name||prof.username||'Unknown'):'Unknown';
-        var avHtml = work.cover_url
-          ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
-          : prof&&prof.avatar_url ? '<img src="'+dsSafeUrl(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
-        var coverClass = work.cover_url ? '' : dsCoverColor(work.author_id);
+        var _cu4 = dsSafeUrl(work.cover_url);
+        var _au4 = prof ? dsSafeUrl(prof.avatar_url) : '';
+        var avHtml = _cu4
+          ? '<img src="'+_cu4+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
+          : _au4 ? '<img src="'+_au4+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
+        var coverClass = _cu4 ? '' : dsCoverColor(work.author_id);
         var item=document.createElement('div'); item.className='notif-item unread'; item.dataset.id=work.id; item.style.cursor='pointer';
         item.onclick=function(){window.location.href='artwork.html?id='+work.id;};
         item.innerHTML='<div class="notif-cover '+coverClass+'" style="overflow:hidden;padding:0;">'+avHtml+'</div>'
@@ -885,10 +903,12 @@ function dsApplyAccent(hex) {
           }
           else { window.location.href='chapter.html?id='+cm.chapter_id; }
         };
-        var avHtml2 = work && work.cover_url
-          ? '<img src="'+dsEsc(work.cover_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
-          : prof&&prof.avatar_url ? '<img src="'+dsSafeUrl(prof.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
-        var coverClass2 = work && work.cover_url ? '' : dsCoverColor(cm.user_id||cm.id);
+        var _cu5 = work ? dsSafeUrl(work.cover_url) : '';
+        var _au5 = prof ? dsSafeUrl(prof.avatar_url) : '';
+        var avHtml2 = _cu5
+          ? '<img src="'+_cu5+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>'
+          : _au5 ? '<img src="'+_au5+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>' : dsEsc(name.charAt(0).toUpperCase());
+        var coverClass2 = _cu5 ? '' : dsCoverColor(cm.user_id||cm.id);
         var cmTypeLabel = cm._type==='song' ? ' suggested a song for ' : cm._type==='opinion' ? ' shared a character opinion on ' : cm._type==='para' ? ' commented on a paragraph in ' : ' commented on ';
         var cmTypeColor = cm._type==='song' ? 'color:var(--gold);' : cm._type==='opinion' ? 'color:#ec4899;' : '';
         item.innerHTML='<div class="notif-cover '+coverClass2+'" style="overflow:hidden;padding:0;">'+avHtml2+'</div>'
@@ -991,7 +1011,7 @@ function dsApplyAccent(hex) {
             map[n.id] = true;
             localStorage.setItem('ds_notif_cleared_activity', JSON.stringify(Object.keys(map)));
             item.classList.remove('unread');
-            db.from('notifications').update({is_read:true}).eq('id',n.id);
+            Promise.resolve(db.from('notifications').update({is_read:true}).eq('id',n.id)).catch(function(){});
             if (window.dsRecalcNotifBadge) window.dsRecalcNotifBadge();
             if (dest) window.location.href = dest;
           };
