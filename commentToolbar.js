@@ -5,6 +5,14 @@
    installs a minimal pass-through if the real helper is absent. Behaviour is
    identical to the pre-refactor inline SDK calls, so nothing changes on those
    pages until storagePaths.js is added to them.
+
+   STATUS: every page that loads commentToolbar.js (artwork.html, chapter.html,
+   story.html) now also loads storagePaths.js FIRST, and storagePaths assigns
+   window.DSStorage unconditionally - so this block is currently dead code. It
+   is kept as a guard for any future page that loads commentToolbar alone. That
+   makes it a divergence trap: keep remove()'s return shape in step with the
+   real implementation, or a caller that checks `removed` silently reads
+   undefined here and reports a successful delete as a failure.
    ──────────────────────────────────────────────────────────────────────── */
 if (!window.DSStorage) {
   window.DSStorage = {
@@ -34,10 +42,27 @@ if (!window.DSStorage) {
     remove: async function (db, bucket, paths) {
       try {
         var list = (Array.isArray(paths) ? paths : [paths]).filter(Boolean);
-        if (!list.length) return { error: null };
+        if (!list.length) return { error: null, requested: 0, removed: 0, missing: [] };
         var r = await db.storage.from(bucket).remove(list);
-        return { error: (r && r.error) || null };
-      } catch (e) { return { error: e || { message: 'Delete failed.' } }; }
+        var err = (r && r.error) || null;
+        // storage .remove() does NOT error on a path that isn't there - it
+        // resolves with an empty data array. Report the counts so a caller can
+        // tell "deleted" from "was never there".
+        var names = ((r && Array.isArray(r.data)) ? r.data : [])
+          .map(function (o) { return o && (o.name || o.path); })
+          .filter(Boolean);
+        return {
+          error: err,
+          requested: list.length,
+          removed: err ? 0 : names.length,
+          missing: err ? list.slice() : list.filter(function (x) {
+            return names.indexOf(x) === -1 && names.indexOf(x.split('/').pop()) === -1;
+          })
+        };
+      } catch (e) {
+        return { error: e || { message: 'Delete failed.' },
+                 requested: 0, removed: 0, missing: [] };
+      }
     },
     pathFromUrl: function (bucket, absUrl) {
       if (!absUrl || typeof absUrl !== 'string') return '';
@@ -112,8 +137,16 @@ if (!window.DSStorage) {
   // ── PUBLIC API ─────────────────────────────────────────────────────────────
 
   function renderToolbar(opts) {
-    var ctx = opts.context || 'default';
-    var taId = opts.textareaId || '';
+    // ctx and taId are interpolated into single-quoted JS string literals
+    // inside on* attributes below. An on* attribute is parsed twice - HTML
+    // entity decoding, then JS - so _esc() alone would NOT contain a quote
+    // here. Every current caller passes a literal or a UUID-derived id, so
+    // nothing is reachable today; this restricts the values to the character
+    // set those callers actually use, which is cheaper and stricter than
+    // escaping and cannot be got wrong by the next caller.
+    var safeId = function (v) { return String(v == null ? '' : v).replace(/[^A-Za-z0-9_-]/g, ''); };
+    var ctx = safeId(opts.context) || 'default';
+    var taId = safeId(opts.textareaId);
     var spoiler = taId && global.dsSpoiler
       ? '<button type="button" class="ct-btn ct-spoiler-btn" title="Mark spoiler" onclick="(function(){if(window.dsSpoiler&&document.getElementById(\''+taId+'\'))window.dsSpoiler.wrapSelection(document.getElementById(\''+taId+'\'));})()">' +
         '<i class="ti ti-eye-off"></i></button>'
@@ -422,18 +455,28 @@ if (!window.DSStorage) {
   // Resize image to fit within maxW x maxH before uploading (never enlarges)
   function _resizeImage(file, maxW, maxH) {
     return new Promise(function(resolve) {
+      // Both handlers below MUST resolve. Without them a file that passes the
+      // MIME check but cannot be decoded (truncated, corrupt, zero-byte) left
+      // this promise pending forever: _handleImageUpload awaited it, so the
+      // upload button stayed disabled on a spinner with no toast and no way
+      // back short of a page reload. Resolve with the original file and let
+      // the bucket's own validation have the final say.
+      var settled = false;
+      function done(v) { if (!settled) { settled = true; resolve(v); } }
       var reader = new FileReader();
+      reader.onerror = function() { done(file); };
       reader.onload = function(e) {
         var img = new Image();
+        img.onerror = function() { done(file); };
         img.onload = function() {
           var w = img.width, h = img.height;
-          if (w <= maxW && h <= maxH) { resolve(file); return; }
+          if (w <= maxW && h <= maxH) { done(file); return; }
           var scale = Math.min(maxW / w, maxH / h);
           var canvas = document.createElement('canvas');
           canvas.width = Math.round(w * scale);
           canvas.height = Math.round(h * scale);
           canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob(function(blob) { resolve(blob || file); }, 'image/jpeg', 0.82);
+          canvas.toBlob(function(blob) { done(blob || file); }, 'image/jpeg', 0.82);
         };
         img.src = e.target.result;
       };
@@ -460,7 +503,15 @@ if (!window.DSStorage) {
       if (file.type !== 'image/gif') {
         uploadFile = await _resizeImage(file, 800, 800);
       }
-      var ext = file.type === 'image/gif' ? 'gif' : 'jpg';
+      // _resizeImage returns the ORIGINAL file untouched when the image is
+      // already within 800x800 (and now also when it cannot be decoded). The
+      // extension and Content-Type must therefore follow the payload actually
+      // being sent, not the input: a small PNG or WebP was being stored at a
+      // .jpg path and served as image/jpeg while the bytes were still PNG.
+      var payloadType = (uploadFile && uploadFile.type) || file.type;
+      var EXT_BY_TYPE = { 'image/gif': 'gif', 'image/png': 'png',
+                          'image/webp': 'webp', 'image/jpeg': 'jpg' };
+      var ext = EXT_BY_TYPE[payloadType] || 'jpg';
       // Path MUST start with the uploader's uid. The comment-images storage
       // policies scope by (storage.foldername(name))[1] = auth.uid(), so the old
       // 'comments/...' prefix meant the DELETE policy could never match and users
@@ -470,7 +521,7 @@ if (!window.DSStorage) {
       var _uid = _sess && _sess.data && _sess.data.session ? _sess.data.session.user.id : null;
       if (!_uid) throw new Error('You need to be signed in to attach an image.');
       var path = _uid + '/comments/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
-      var contentType = file.type === 'image/gif' ? 'image/gif' : 'image/jpeg';
+      var contentType = EXT_BY_TYPE[payloadType] ? payloadType : 'image/jpeg';
       var { error } = await DSStorage.upload(_db, IMAGE_BUCKET, path, uploadFile, { upsert: false, contentType: contentType });
       if (error) throw error;
       var url = DSStorage.url(_db, IMAGE_BUCKET, path);
@@ -663,7 +714,12 @@ if (!window.DSStorage) {
   // ── HELPERS ───────────────────────────────────────────────────────────────
 
   function _esc(s) {
-    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function _showToast(msg, icon) {
