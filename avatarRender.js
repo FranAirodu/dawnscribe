@@ -165,10 +165,24 @@
     return preset && preset.body_type ? preset.body_type : null;
   }
 
+  // JSON maps keyed by a caller-supplied string. Without an own-property
+  // guard, pose 'constructor' or 'toString' returns an inherited function
+  // instead of undefined, and that function gets string-concatenated into an
+  // href. save_avatar_appearance constrains pose to 'pose1' plus server-rolled
+  // unlocks so this is not reachable today; the guard keeps it that way if
+  // the write path ever loosens.
+  function ownStr(obj, key) {
+    if (!obj || key == null) return null;
+    if (!Object.prototype.hasOwnProperty.call(obj, key)) return null;
+    var v = obj[key];
+    return (typeof v === 'string' && v.trim()) ? v : null;
+  }
+
   function getPoseImagePath(preset, pose) {
     if (!preset) return null;
     var paths = preset.pose_paths || {};
-    return paths[pose] || paths.pose1 || preset.image_path || null;
+    return ownStr(paths, pose) || ownStr(paths, 'pose1') ||
+           ((typeof preset.image_path === 'string' && preset.image_path) || null);
   }
 
   // ── HEADSHOT CROPS ────────────────────────────────────────────
@@ -245,8 +259,8 @@
   function pickAssetPath(item, bodyType) {
     if (!item) return null;
     var paths = item.asset_paths || {};
-    var p = paths[bodyType || 'male'] || paths.any || null;
-    if (p && String(p).trim()) return p;
+    var p = ownStr(paths, bodyType || 'male') || ownStr(paths, 'any');
+    if (p) return p;
     return item.image_url || null;
   }
 
@@ -259,9 +273,17 @@
     return COSMETIC_ASSET_BASE + u;
   }
 
+  // Mirrors DSEscape.esc(). The single quote matters even though every sink
+  // in this file is double-quoted: a half-escaper is exactly the drift
+  // escapeUtils.js was written to end, and the next sink added here should
+  // not have to know which quote it is safe under.
   function escapeAttr(v) {
-    return String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
-                    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   /**
@@ -344,7 +366,7 @@
       var bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
       if (bodyPath) {
         var bBox = bodyBoxFor(avatarData.body_type);
-        parts.push('<image href="' + BODY_ASSET_BASE + bodyPath + '" x="' + bBox.x + '" y="' + bBox.y + '" width="' + bBox.w + '" height="' + bBox.h + '" preserveAspectRatio="xMidYMax meet"/>');
+        parts.push('<image href="' + escapeAttr(BODY_ASSET_BASE + bodyPath) + '" x="' + bBox.x + '" y="' + bBox.y + '" width="' + bBox.w + '" height="' + bBox.h + '" preserveAspectRatio="xMidYMax meet"/>');
       }
     }
 
@@ -418,7 +440,7 @@
       var bodyPath = getPoseImagePath(preset, avatarData.pose || 'pose1');
       if (bodyPath) {
         var bBox = bodyBoxFor(avatarData.body_type);
-        parts.push('<image href="' + BODY_ASSET_BASE + bodyPath + '" x="' + bBox.x + '" y="' + bBox.y + '" width="' + bBox.w + '" height="' + bBox.h + '" preserveAspectRatio="xMidYMax meet"/>');
+        parts.push('<image href="' + escapeAttr(BODY_ASSET_BASE + bodyPath) + '" x="' + bBox.x + '" y="' + bBox.y + '" width="' + bBox.w + '" height="' + bBox.h + '" preserveAspectRatio="xMidYMax meet"/>');
       }
     }
 
@@ -493,7 +515,12 @@
 
     // Inline every external <image href> as a data URI
     var hrefs = [];
-    svg.replace(/href="(https?:[^"]+)"/g, function (m, u) { if (hrefs.indexOf(u) === -1) hrefs.push(u); return m; });
+    // Must catch protocol-relative (//host/x.png) as well as https:. Any
+    // remote href left un-inlined taints the canvas, and a tainted canvas
+    // makes toBlob() throw SecurityError - the whole headshot save fails with
+    // an error pointing nowhere near the cause. data: needs no inlining and
+    // is deliberately excluded.
+    svg.replace(/href="((?:https?:|\/\/)[^"]+)"/g, function (m, u) { if (hrefs.indexOf(u) === -1) hrefs.push(u); return m; });
     for (var i = 0; i < hrefs.length; i++) {
       try {
         var resp = await fetch(hrefs[i]);
