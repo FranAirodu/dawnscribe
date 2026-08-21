@@ -105,8 +105,24 @@ export default async function middleware(request) {
   if (!pageRes.ok) return;
   let html = await pageRes.text();
 
-  // Replace <title> and any existing og: tags
-  html = html.replace(/<title>[^<]*<\/title>/i, `<title>${esc(meta.title)}</title>`);
+  // Every replacement below goes through sub()/upsert(). NEVER pass a template
+  // string straight to String.replace(): the replacement is scanned for $&, $`,
+  // $' and $1, and page titles are user-controlled. A title containing  $`
+  // would splice the whole preceding document, unescaped, into a content=""
+  // attribute. A function replacement disables that substitution entirely.
+  const sub = (s, re, out) => s.replace(re, () => out);
+
+  // Replace a tag in place if the static page already has one, otherwise queue
+  // it for injection. Appending unconditionally left two of every tag in the
+  // head, and scrapers read the first one - the placeholder, not the story.
+  const pending = [];
+  const upsert = (re, tag) => {
+    if (re.test(html)) html = sub(html, re, tag);
+    else pending.push(tag);
+  };
+
+  html = sub(html, /<title>[^<]*<\/title>/i, `<title>${esc(meta.title)}</title>`);
+
   const ogMap = {
     'og:title': meta.title,
     'og:description': meta.desc,
@@ -115,23 +131,37 @@ export default async function middleware(request) {
     'og:type': meta.ogType,
   };
   for (const [prop, val] of Object.entries(ogMap)) {
-    const re = new RegExp(`<meta\\s+property="${prop}"[^>]*>`, 'i');
-    const tag = `<meta property="${prop}" content="${esc(val)}"/>`;
-    html = re.test(html) ? html.replace(re, tag) : html;
+    // An empty value would blank out the static fallback, which is worse than
+    // leaving it alone - a work with no cover should keep the default image.
+    if (!val) continue;
+    upsert(
+      new RegExp(`<meta\\s+property="${prop}"[^>]*>`, 'i'),
+      `<meta property="${prop}" content="${esc(val)}"/>`
+    );
   }
 
-  // Inject description, canonical, twitter card, robots, JSON-LD before </head>
-  const inject = [
-    `<meta name="description" content="${esc(meta.desc)}"/>`,
-    `<link rel="canonical" href="${esc(meta.url)}"/>`,
-    `<meta name="twitter:card" content="${meta.image ? 'summary_large_image' : 'summary'}"/>`,
-    `<meta name="twitter:title" content="${esc(meta.title)}"/>`,
-    `<meta name="twitter:description" content="${esc(meta.desc)}"/>`,
-    meta.image ? `<meta name="twitter:image" content="${esc(meta.image)}"/>` : '',
-    meta.noindex ? '<meta name="robots" content="noindex"/>' : '',
-    `<script type="application/ld+json">${JSON.stringify(meta.jsonld).replace(/</g, '\\u003c')}</script>`,
-  ].filter(Boolean).join('\n  ');
-  html = html.replace(/<\/head>/i, `  ${inject}\n</head>`);
+  upsert(/<meta\s+name="description"[^>]*>/i,
+    `<meta name="description" content="${esc(meta.desc)}"/>`);
+  upsert(/<link\s+rel="canonical"[^>]*>/i,
+    `<link rel="canonical" href="${esc(meta.url)}"/>`);
+  upsert(/<meta\s+name="twitter:card"[^>]*>/i,
+    `<meta name="twitter:card" content="${meta.image ? 'summary_large_image' : 'summary'}"/>`);
+  upsert(/<meta\s+name="twitter:title"[^>]*>/i,
+    `<meta name="twitter:title" content="${esc(meta.title)}"/>`);
+  upsert(/<meta\s+name="twitter:description"[^>]*>/i,
+    `<meta name="twitter:description" content="${esc(meta.desc)}"/>`);
+  if (meta.image) {
+    upsert(/<meta\s+name="twitter:image"[^>]*>/i,
+      `<meta name="twitter:image" content="${esc(meta.image)}"/>`);
+  }
+  if (meta.noindex) {
+    upsert(/<meta\s+name="robots"[^>]*>/i, '<meta name="robots" content="noindex"/>');
+  }
+  pending.push(
+    `<script type="application/ld+json">${JSON.stringify(meta.jsonld).replace(/</g, '\\u003c')}</script>`
+  );
+
+  html = sub(html, /<\/head>/i, `  ${pending.join('\n  ')}\n</head>`);
 
   return new Response(html, {
     status: 200,

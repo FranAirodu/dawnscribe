@@ -54,9 +54,15 @@
   }
 
   // ── status ──────────────────────────────────────────────────────────
-  function readCache() {
+  // Keyed by user id. sessionStorage survives a sign-out, so an unkeyed cache
+  // handed the next account in the same tab the previous account's adult
+  // status for up to five minutes - in both directions.
+  function cacheKeyFor(uid) { return CACHE_KEY + ':' + uid; }
+
+  function readCache(uid) {
+    if (!uid) return null;
     try {
-      var raw = sessionStorage.getItem(CACHE_KEY);
+      var raw = sessionStorage.getItem(cacheKeyFor(uid));
       if (!raw) return null;
       var obj = JSON.parse(raw);
       if (!obj || (Date.now() - obj.t) > CACHE_MS) return null;
@@ -64,8 +70,20 @@
     } catch (e) { return null; }
   }
 
-  function writeCache(v) {
-    try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), v: v })); } catch (e) {}
+  function writeCache(uid, v) {
+    if (!uid) return;
+    try { sessionStorage.setItem(cacheKeyFor(uid), JSON.stringify({ t: Date.now(), v: v })); } catch (e) {}
+  }
+
+  function clearCache() {
+    try {
+      // Legacy unkeyed entry, plus every per-user entry in this tab.
+      sessionStorage.removeItem(CACHE_KEY);
+      for (var i = sessionStorage.length - 1; i >= 0; i--) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf(CACHE_KEY + ':') === 0) sessionStorage.removeItem(k);
+      }
+    } catch (e) {}
   }
 
   var SIGNED_OUT = {
@@ -74,24 +92,28 @@
   };
 
   async function fetchStatus(force) {
-    if (!force) {
-      if (_status) return _status;
-      var cached = readCache();
-      if (cached) { _status = cached; return cached; }
-    }
+    if (!force && _status) return _status;
     if (_inflight) return _inflight;
 
-    _inflight = (async function () {
+    var p = (async function () {
       var client = await waitForDb();
       if (!client) return SIGNED_OUT;
 
+      var uid = null;
       try {
         var sess = await client.auth.getSession();
-        if (!sess || !sess.data || !sess.data.session) {
-          _status = SIGNED_OUT;
-          return _status;
-        }
+        uid = (sess && sess.data && sess.data.session && sess.data.session.user)
+          ? sess.data.session.user.id : null;
       } catch (e) { return SIGNED_OUT; }
+
+      if (!uid) { _status = SIGNED_OUT; return _status; }
+
+      // Cache is consulted only once the session is known, so it can be keyed
+      // by user. getSession() reads local storage, so this costs nothing.
+      if (!force) {
+        var cached = readCache(uid);
+        if (cached) { _status = cached; return cached; }
+      }
 
       try {
         var res = await client.rpc('get_monetization_status');
@@ -103,17 +125,25 @@
           return _status;
         }
         _status = res.data || SIGNED_OUT;
-        writeCache(_status);
+        writeCache(uid, _status);
         return _status;
       } catch (e) {
         console.warn('[DSAgeGate] status check threw:', e);
         return Object.assign({}, SIGNED_OUT, { authenticated: true });
-      } finally {
-        _inflight = null;
       }
     })();
 
-    return _inflight;
+    // The clear MUST hang off the promise, not off a `finally` inside it.
+    // Three of the paths above return before that block is ever entered
+    // (no client, getSession threw, no session), which left _inflight
+    // pointing at a resolved signed-out promise forever. Because the
+    // `if (_inflight)` guard runs even when force is true, refresh() then
+    // returned that stale result for the rest of the page's life: an adult
+    // saw the 18+ wall and ensureAttestation() resolved false with no error.
+    _inflight = p;
+    var clear = function () { _inflight = null; };
+    p.then(clear, clear);
+    return p;
   }
 
   // ── hide monetization entry points ──────────────────────────────────
@@ -306,8 +336,9 @@
   }
 
   async function refresh() {
-    try { sessionStorage.removeItem(CACHE_KEY); } catch (e) {}
+    clearCache();
     _status = null;
+    _inflight = null;
     return fetchStatus(true);
   }
 

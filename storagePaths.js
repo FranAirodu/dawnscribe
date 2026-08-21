@@ -352,15 +352,38 @@
     }
   }
 
-  /* Delete objects by path. */
+  /* Delete objects by path.
+     Returns { error, requested, removed, missing }.
+     `error` keeps its old shape, so existing call sites are unaffected.
+
+     WHY THE COUNTS: storage .remove() does NOT error on a path that isn't
+     there — it resolves with an empty data array. This is the storage-layer
+     twin of the PostgREST zero-row silent no-op that has bitten this codebase
+     repeatedly: the caller checks `error`, sees null, and reports success for
+     a file that is still sitting in a public bucket. Any call site that
+     deletes on a user's behalf (removing a cover, withdrawing artwork,
+     scrubbing on account deletion) should check `removed` as well as `error`. */
   async function remove(db, bucket, paths) {
     try {
       var list = (Array.isArray(paths) ? paths : [paths]).map(trimSlashes).filter(Boolean);
-      if (!list.length) return { error: null };
+      if (!list.length) return { error: null, requested: 0, removed: 0, missing: [] };
       var res = await db.storage.from(bucket).remove(list);
-      return { error: (res && res.error) || null };
+      var err = (res && res.error) || null;
+      var got = (res && Array.isArray(res.data)) ? res.data : [];
+      var gotNames = got.map(function (o) { return o && (o.name || o.path); }).filter(Boolean);
+      var missing = err ? list.slice() : list.filter(function (p) {
+        return gotNames.indexOf(p) === -1 &&
+               gotNames.indexOf(p.split('/').pop()) === -1;
+      });
+      return {
+        error: err,
+        requested: list.length,
+        removed: err ? 0 : gotNames.length,
+        missing: missing
+      };
     } catch (e) {
-      return { error: e || { message: 'Delete failed.' } };
+      return { error: e || { message: 'Delete failed.' },
+               requested: 0, removed: 0, missing: [] };
     }
   }
 
