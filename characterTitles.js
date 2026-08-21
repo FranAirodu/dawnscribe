@@ -66,6 +66,27 @@ window.CharacterTitles = (function() {
   ];
 
   // ── HELPERS ───────────────────────────────────────────────────
+  /* Apply an author moderation write and report whether it ACTUALLY landed.
+   *
+   * Every one of these tables is protected by an author-scoped RLS policy with
+   * both a USING and a WITH CHECK clause. That is correct and it holds - probed
+   * as a non-author: no error raised, ROW_COUNT = 0, status unchanged. The
+   * problem is that PostgREST reports a zero-row UPDATE as success, so the old
+   * `.catch(function(){})` form could not tell "moderated" from "refused", and
+   * the handler went on to notify the submitter regardless. A denied approve
+   * told a reader their quote was approved while it sat still pending; a denied
+   * reject sent a false rejection notice. Chaining .select('id') makes the
+   * affected rows observable - if the array is empty, nothing changed. */
+  async function ctApplyMod(table, patch, id) {
+    try {
+      var res = await Promise.resolve(
+        db().from(table).update(patch).eq('id', id).select('id')
+      );
+      if (res && res.error) return false;
+      return !!(res && Array.isArray(res.data) && res.data.length > 0);
+    } catch (e) { return false; }
+  }
+
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   // Only http(s) and site-relative URLs may reach an href or src. A javascript:
   // URL in an <a href> executes on click; esc() does not stop it.
@@ -1788,14 +1809,16 @@ window.CharacterTitles = (function() {
         }).join('');
       pendDynSlot.querySelectorAll('[data-dyna]').forEach(function(b) {
         b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
-          await Promise.resolve(db().from('character_dynamics').update({ status: 'active' }).eq('id', b.getAttribute('data-dyna'))).catch(function(){});
+          var _ok = await ctApplyMod('character_dynamics', { status: 'active' }, b.getAttribute('data-dyna'));
+          if (!_ok) { b.disabled = false; ctToast('Could not approve that dynamic.', 'ti-x'); return; }
           ctNotifyUser(b.getAttribute('data-dynu'), uid, workId, char.id, 'dynamic_approved', 'Your dynamic for ' + char.name + ' was approved by the author!');
           rerender();
         });
       });
       pendDynSlot.querySelectorAll('[data-dynr]').forEach(function(b) {
         b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
-          await Promise.resolve(db().from('character_dynamics').update({ status: 'rejected' }).eq('id', b.getAttribute('data-dynr'))).catch(function(){});
+          var _ok = await ctApplyMod('character_dynamics', { status: 'rejected' }, b.getAttribute('data-dynr'));
+          if (!_ok) { b.disabled = false; ctToast('Could not reject that dynamic.', 'ti-x'); return; }
           ctNotifyUser(b.getAttribute('data-dynu'), uid, workId, char.id, 'dynamic_rejected', 'Your dynamic for ' + char.name + ' wasn\u2019t approved this time.');
           rerender();
         });
@@ -1887,14 +1910,16 @@ window.CharacterTitles = (function() {
           }).join('');
         pendQuoteSlot.querySelectorAll('[data-qa]').forEach(function(b) {
           b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
-            await Promise.resolve(db().from('character_quotes').update({ status: 'approved' }).eq('id', b.getAttribute('data-qa'))).catch(function(){});
+            var _ok = await ctApplyMod('character_quotes', { status: 'approved' }, b.getAttribute('data-qa'));
+            if (!_ok) { b.disabled = false; ctToast('Could not approve that quote.', 'ti-x'); return; }
             ctNotifyUser(b.getAttribute('data-qu'), uid, workId, char.id, 'quote_approved', 'Your quote for ' + char.name + ' was approved by the author! \u275d');
             rerender();
           });
         });
         pendQuoteSlot.querySelectorAll('[data-qr]').forEach(function(b) {
           b.addEventListener('click', async function(e) { e.stopPropagation(); b.disabled = true;
-            await Promise.resolve(db().from('character_quotes').update({ status: 'rejected' }).eq('id', b.getAttribute('data-qr'))).catch(function(){});
+            var _ok = await ctApplyMod('character_quotes', { status: 'rejected' }, b.getAttribute('data-qr'));
+            if (!_ok) { b.disabled = false; ctToast('Could not reject that quote.', 'ti-x'); return; }
             ctNotifyUser(b.getAttribute('data-qu'), uid, workId, char.id, 'quote_rejected', 'Your quote for ' + char.name + ' wasn\u2019t approved this time.');
             rerender();
           });
@@ -2021,8 +2046,8 @@ window.CharacterTitles = (function() {
               if (!text && !gifUrl) { if (ta2) ta2.focus(); return; }
               b.disabled = true;
               var answerHtml = esc(text).replace(/\n/g, '<br>') + (gifUrl ? '<img src="' + esc(gifUrl) + '" alt="" class="ct-q-gif"/>' : '');
-              var res2 = await Promise.resolve(db().from('character_questions').update({ status: 'answered', answer: answerHtml, answered_at: new Date().toISOString() }).eq('id', qid)).catch(function(err){ return { error: err }; });
-              if (res2 && res2.error) { b.disabled = false; ctToast('Could not save answer.', 'ti-x'); return; }
+              var _ok2 = await ctApplyMod('character_questions', { status: 'answered', answer: answerHtml, answered_at: new Date().toISOString() }, qid);
+              if (!_ok2) { b.disabled = false; ctToast('Could not save answer.', 'ti-x'); return; }
               if (window.CommentToolbar && CommentToolbar.clearAttachments) CommentToolbar.clearAttachments('ctq-' + qid);
               ctToast('Answered in-character!', 'ti-message-check');
               try { await db().rpc('award_in_character_badge', { p_user_id: uid, p_character_id: char.id }); } catch(e) {}
@@ -2034,7 +2059,8 @@ window.CharacterTitles = (function() {
             b.addEventListener('click', async function(e) {
               e.stopPropagation(); b.disabled = true;
               var _dqid = b.getAttribute('data-decline-q');
-              await Promise.resolve(db().from('character_questions').update({ status: 'declined' }).eq('id', _dqid)).catch(function(){});
+              var _okd = await ctApplyMod('character_questions', { status: 'declined' }, _dqid);
+              if (!_okd) { b.disabled = false; ctToast('Could not decline that question.', 'ti-x'); return; }
               ctNotifyUser((pendQById[_dqid] || {}).user_id, uid, workId, char.id, 'question_declined', 'Your question for ' + char.name + ' was declined by the author.');
               rerender();
             });
