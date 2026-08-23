@@ -4,7 +4,7 @@
 // engines and social scrapers see actual content instead of empty shells.
 
 const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhamp5eXNrcG1qbnBjeGNmZXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDUyMDUsImV4cCI6MjA5NTMyMTIwNX0.s93zWwRYymTsoW5BfUhUDli13ArCtk4S-tegAs54A2c';
+const SUPABASE_ANON_KEY = 'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx';
 const SITE_URL = 'https://www.dawnscribe.com';
 const DEFAULT_DESC = 'Read on DawnScribe — a home for stories, art, and the people who love them.';
 
