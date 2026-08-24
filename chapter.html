@@ -26,14 +26,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="description" content="Read chapters with polls, reactions, and reader comments on DawnScribe." />
   <meta property="og:site_name" content="DawnScribe" />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="Reading — DawnScribe" />
-  <meta property="og:description" content="Read chapters with polls, reactions, and reader comments on DawnScribe." />
-  <meta property="og:url" content="https://www.dawnscribe.com/chapter.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" id="og-title" content="Reading — DawnScribe" />
+  <meta property="og:description" id="og-description" content="Read chapters with polls, reactions, and reader comments on DawnScribe." />
+  <meta property="og:url" id="og-url" content="https://www.dawnscribe.com/chapter.html" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" id="tw-title" content="Reading — DawnScribe" />
+  <meta name="twitter:description" id="tw-description" content="Read chapters with polls, reactions, and reader comments on DawnScribe." />
+  <meta name="twitter:image" id="tw-image" content="https://www.dawnscribe.com/og-default.png" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230d9488%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2244%22%20r%3D%2214%22%20fill%3D%22%23fbbf24%22/%3E%3Cg%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2232%22%20y1%3D%2214%22%20x2%3D%2232%22%20y2%3D%2224%22/%3E%3Cline%20x1%3D%2214%22%20y1%3D%2224%22%20x2%3D%2221%22%20y2%3D%2231%22/%3E%3Cline%20x1%3D%2250%22%20y1%3D%2224%22%20x2%3D%2243%22%20y2%3D%2231%22/%3E%3C/g%3E%3Crect%20y%3D%2244%22%20width%3D%2264%22%20height%3D%2220%22%20fill%3D%22%230d9488%22/%3E%3C/svg%3E" />
   <title>DawnScribe — Reading</title>
-  <meta property="og:image" content="https://www.dawnscribe.com/og-default.png" />
+  <meta property="og:image" id="og-image" content="https://www.dawnscribe.com/og-default.png" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="storagePaths.js"></script>
 <script src="blockUtils.js"></script>
@@ -1817,6 +1820,7 @@
       chapterData.author_note_bottom = noteBottom || null;
       document.getElementById('chapter-title-display').textContent = title;
       document.getElementById('nav-chapter-title').textContent = title;
+      document.title = ((workData && workData.title ? workData.title + ' — ' : '') + title) + ' — DawnScribe';
 
       // Re-render author notes immediately
       renderAuthorNote('top', chapterData.author_note_top);
@@ -3806,6 +3810,49 @@
       document.getElementById('nav-chapter-title').textContent = chapterData.title;
       document.getElementById('chapter-number').textContent = 'Chapter ' + chapterData.chapter_number;
       document.getElementById('chapter-title-display').textContent = chapterData.title;
+
+      // Per-chapter page title and link-preview metadata. Mirrors the block in
+      // story.html; without it every shared chapter link previewed identically as
+      // "Reading — DawnScribe", and chapters are the thing readers actually share.
+      (function () {
+        var workTitle = workData ? workData.title : '';
+        var full = chapterData.title
+          ? (workTitle ? workTitle + ' — ' + chapterData.title : chapterData.title)
+          : workTitle;
+        document.title = (full || 'Reading') + ' — DawnScribe';
+
+        // Adult works are deliberately given a GENERIC description. The chapter
+        // itself is age-gated server-side, but an OG description is emitted to
+        // anyone who pastes the link — chat clients, scrapers, search previews —
+        // with no age check possible. Leaking the synopsis there would route
+        // around the gate, so only non-adult works get a real description.
+        var isAdult = !!(workData && (workData.content_rating_erotica || workData.content_rating_gore));
+        var desc;
+        if (isAdult) {
+          desc = 'A chapter on DawnScribe. Sign in to read.';
+        } else {
+          desc = (workData && workData.synopsis ? String(workData.synopsis) : '').slice(0, 200) ||
+                 'Read on DawnScribe — a home for stories, art, and the people who love them.';
+        }
+
+        var img = (!isAdult && workData && workData.cover_url)
+          ? workData.cover_url
+          : 'https://www.dawnscribe.com/og-default.png';
+        var pageUrl = 'https://www.dawnscribe.com/chapter.html?id=' + chapterData.id;
+
+        var setMeta = function (id, val) {
+          var el = document.getElementById(id);
+          if (el) el.setAttribute('content', val);
+        };
+        setMeta('og-title',       (full || 'Reading') + ' — DawnScribe');
+        setMeta('og-description', desc);
+        setMeta('og-image',       img);
+        setMeta('og-url',         pageUrl);
+        setMeta('tw-title',       (full || 'Reading') + ' — DawnScribe');
+        setMeta('tw-description', desc);
+        setMeta('tw-image',       img);
+      })();
+
       document.getElementById('chapter-meta-row').innerHTML =
         '<span><i class="ti ti-calendar" style="font-size:13px;"></i> ' + formatDate(chapterData.created_at) + '</span>' +
         '<span><i class="ti ti-writing" style="font-size:13px;"></i> ' + (chapterData.word_count||0).toLocaleString() + ' words</span>';
