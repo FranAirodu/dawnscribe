@@ -78,6 +78,28 @@
 
     .empty { text-align:center; padding:36px 20px; color: var(--text3); font-size:13px; line-height:1.7; border:1px dashed var(--border); border-radius:12px; }
     .note { font-size:12px; color: var(--text3); margin-top:10px; line-height:1.6; }
+    /* The artwork sits in a positioned wrapper so the credit chip and the
+       hover note can overlay it without affecting card layout. */
+    .shot-wrap { position:relative; }
+    .credit-chip { position:absolute; right:10px; bottom:10px; display:inline-flex; align-items:center; gap:6px;
+      background:rgba(8,10,16,0.78); border:1px solid rgba(255,255,255,0.16); color:#e8eaf0;
+      border-radius:999px; padding:6px 12px; font-size:11px; font-weight:700; text-decoration:none;
+      backdrop-filter:blur(3px); transition:background .18s, border-color .18s; }
+    .credit-chip:hover { background:rgba(8,10,16,0.92); border-color:var(--accent); color:var(--accent); }
+    .credit-chip i { font-size:13px; }
+
+    /* Flavour text from the artist. Hidden unless there is something to say —
+       an empty tooltip appearing on hover reads as a bug. */
+    .flavour { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      padding:22px 28px; text-align:center; background:rgba(6,8,14,0.82); color:#e8eaf0;
+      font-size:13px; line-height:1.65; font-style:italic; opacity:0; pointer-events:none;
+      transition:opacity .2s ease; }
+    .shot-wrap:hover .flavour, .shot-wrap:focus-within .flavour { opacity:1; }
+    .flavour-by { display:block; margin-top:8px; font-style:normal; font-size:11px;
+      font-weight:700; letter-spacing:0.6px; text-transform:uppercase; color:var(--accent); }
+    @media (hover:none) { .flavour { position:static; opacity:1; background:transparent;
+      padding:12px 14px 0; text-align:left; } }
+
     .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:26px; background: var(--bg3); border:1px solid var(--border); color: var(--text); padding:12px 20px; border-radius:10px; font-size:13px; font-weight:700; z-index:500; display:none; box-shadow:0 10px 30px rgba(0,0,0,0.4); }
   </style>
 </head>
@@ -176,7 +198,7 @@
     document.getElementById('main').style.display = 'block';
 
     var res = await db.from('cosmetic_items')
-      .select('id,name,description,image_url,ember_unlock_price')
+      .select('id,name,description,image_url,ember_unlock_price,artist_name,artist_url,artist_note')
       .eq('slot','landscape').eq('status','approved').order('name');
     state.items = res.data || [];
 
@@ -207,9 +229,33 @@
   }
 
   function shot(it) {
-    return it.image_url
+    var img = it.image_url
       ? '<img class="shot" src="' + esc(it.image_url) + '" alt="' + esc(it.name) + '" loading="lazy"/>'
       : '<div class="shot-ph">Artwork coming soon</div>';
+
+    // Only render the note when the artist has actually written one. Myani
+    // hasn't yet, so these currently show the credit chip alone.
+    var note = '';
+    if (it.artist_note) {
+      note = '<div class="flavour">' + esc(it.artist_note) +
+        (it.artist_name ? '<span class="flavour-by">— ' + esc(it.artist_name) + '</span>' : '') +
+        '</div>';
+    }
+
+    var chip = '';
+    if (it.artist_name) {
+      var label = '<i class="ti ti-palette"></i> Art by ' + esc(it.artist_name);
+      chip = it.artist_url
+        // noopener/noreferrer: without them the opened tab can reach back into
+        // this one via window.opener. External links always get both.
+        ? '<a class="credit-chip" href="' + esc(it.artist_url) + '" target="_blank" ' +
+          'rel="noopener noreferrer nofollow" title="View ' + esc(it.artist_name) +
+          '\'s portfolio" onclick="event.stopPropagation();">' + label +
+          ' <i class="ti ti-external-link"></i></a>'
+        : '<span class="credit-chip">' + label + '</span>';
+    }
+
+    return '<div class="shot-wrap">' + img + note + chip + '</div>';
   }
 
   function render() {
