@@ -1328,6 +1328,20 @@ function dsApplyAccent(hex) {
               // The sunrise nav button opens the calendar modal; a pulsing
               // gold dot shows while today's reward is unclaimed. localStorage
               // is the fast path; user_streaks confirms cross-device claims.
+              // Timezone capture. daily_checkin, the night owl badge and the
+              // digest emails all derive "when" from profiles.timezone, and an
+              // unset value means UTC \u2014 which rolls a user's reward day over
+              // in the middle of their evening. set_my_timezone validates the
+              // name against pg_timezone_names and skips the write when it
+              // hasn't changed, so this is cheap to call and safe to repeat.
+              try {
+                var dsTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                if (dsTz && localStorage.getItem('ds_tz_sent_' + uid2) !== dsTz) {
+                  var tzRes = await db.rpc('set_my_timezone', { p_tz: dsTz });
+                  if (tzRes && !tzRes.error) localStorage.setItem('ds_tz_sent_' + uid2, dsTz);
+                }
+              } catch(e) {}
+
               var ckBtn = document.getElementById('ds-checkin-btn');
               if (ckBtn) ckBtn.style.display = 'flex';
               // The button ships dimmed, so it can only ever brighten once the
@@ -1446,6 +1460,49 @@ function dsApplyAccent(hex) {
      user_streaks + daily_checkins (both have SELECT RLS). */
   var dsCkState = null;
 
+  /* ── "NEXT REWARD" COUNTDOWN ──────────────────────────────────
+     daily_checkin() enforces a 20-hour floor between claims on top of the
+     local-date rule, so "come back tomorrow" was not always true: claim late
+     in the evening and the next one genuinely unlocks late the following
+     afternoon. ds_my_checkin_status() hands back that exact instant, so the
+     modal can state it instead of guessing. */
+  var dsCkTimer = null;
+
+  function dsCkCountdownText(iso) {
+    var ms = Date.parse(iso) - Date.now();
+    if (!(ms > 0)) return null;
+    var h = Math.floor(ms / 3600000);
+    var m = Math.floor((ms % 3600000) / 60000);
+    var sec = Math.floor((ms % 60000) / 1000);
+    if (h > 0) return h + 'h ' + m + 'm';
+    if (m > 0) return m + 'm ' + sec + 's';
+    return sec + 's';
+  }
+
+  function dsCkStopCountdown() {
+    if (dsCkTimer) { clearInterval(dsCkTimer); dsCkTimer = null; }
+  }
+
+  function dsCkStartCountdown() {
+    dsCkStopCountdown();
+    var s = dsCkState;
+    var el = document.getElementById('ck-next');
+    if (!el || !s || !s.claimedToday || !s.claimableAt) return;
+    var tick = function() {
+      var t = dsCkCountdownText(s.claimableAt);
+      if (!t) {
+        dsCkStopCountdown();
+        el.innerHTML = 'Your next reward is ready \u2014 <b>refresh to claim it</b>.';
+        try { localStorage.removeItem(dsCkCacheKey(s.uid)); } catch(e) {}
+        dsSetCheckinDot(true);
+        return;
+      }
+      el.innerHTML = 'Next reward unlocks in <b style="color:var(--gold);">' + t + '</b>.';
+    };
+    tick();
+    dsCkTimer = setInterval(tick, 1000);
+  }
+
   /* ── CHECK-IN BUTTON STATE CACHE ──────────────────────────────
      The gold sunrise button must only be lit when a claim would really
      succeed. daily_checkin() owns that decision: it derives "today" from
@@ -1526,6 +1583,7 @@ function dsApplyAccent(hex) {
     var ov = document.getElementById('ds-checkin-modal');
     if (ov) ov.classList.remove('open');
     document.body.style.overflow = '';
+    dsCkStopCountdown();
   };
 
   window.dsOpenCheckin = async function() {
@@ -1595,9 +1653,14 @@ function dsApplyAccent(hex) {
         streak: streak, claimedDates: claimedDates, y: y, m: m,
         repairedToday: repairedToday
       };
-      // Sync localStorage if this device missed a claim made elsewhere
-      // Re-sync the nav button against the server's own answer.
-      dsRefreshCheckinCache(uid);
+      // Re-sync the nav button against the server's own answer, and keep the
+      // exact unlock instant so the modal can count down to it.
+      var ckStatus = await dsRefreshCheckinCache(uid);
+      if (ckStatus) {
+        dsCkState.claimableAt = ckStatus.claimable_at || null;
+        if (typeof ckStatus.claimed === 'boolean') dsCkState.claimedToday = ckStatus.claimed;
+        claimedToday = dsCkState.claimedToday;
+      }
       dsSetCheckinDot(!claimedToday);
       dsRenderCheckin();
     } catch(e) {
@@ -1611,7 +1674,8 @@ function dsApplyAccent(hex) {
     if (!s) return;
     var sub = document.getElementById('ck-sub');
     if (s.claimedToday) {
-      sub.innerHTML = 'Day <b style="color:var(--gold);">' + s.effStreak + '</b> claimed \u2014 come back tomorrow to keep the streak going! Longest streak: <b>' + Math.max(s.streak.longest_streak || 0, s.effStreak) + '</b> days.';
+      sub.innerHTML = 'Day <b style="color:var(--gold);">' + s.effStreak + '</b> claimed \u2014 keep the streak going! Longest streak: <b>' + Math.max(s.streak.longest_streak || 0, s.effStreak) + '</b> days.'
+        + '<div id="ck-next" style="margin-top:6px;"></div>';
     } else if (s.effStreak > 1) {
       sub.innerHTML = 'You\u2019re on a <b style="color:var(--gold);">' + (s.effStreak - 1) + '-day</b> streak \u2014 claim now to make it <b>' + s.effStreak + '</b>!';
     } else {
@@ -1633,6 +1697,8 @@ function dsApplyAccent(hex) {
         '</div>';
     }
     document.getElementById('ck-strip').innerHTML = html;
+
+    dsCkStartCountdown();
 
     var btn = document.getElementById('ck-claim-btn');
     btn.style.display = s.claimedToday ? 'none' : 'block';
@@ -1711,7 +1777,8 @@ function dsApplyAccent(hex) {
     try {
       var res = await db.rpc('daily_checkin', { p_local_date: s.todayStr });
       if (!res.data || !res.data.success) throw new Error('claim_failed');
-      dsRefreshCheckinCache(s.uid);
+      var ckAfter = await dsRefreshCheckinCache(s.uid);
+      if (ckAfter) s.claimableAt = ckAfter.claimable_at || null;
       if (!res.data.already_checked_in) {
         var rw = res.data.rewards || {};
         if (rw.embers) {
