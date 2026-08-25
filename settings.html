@@ -687,6 +687,34 @@
           <div id="sessions-list"><div style="font-size:13px;color:var(--text2);padding:8px 0;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading…</div></div>
         </div>
 
+        <div class="field-group" style="margin-bottom:16px;" id="mfa-block">
+          <label class="field-label">Two-Factor Authentication</label>
+          <div id="mfa-status" style="font-size:13px;color:var(--text2);margin-bottom:8px;">
+            <i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading&hellip;
+          </div>
+          <div id="mfa-enroll-area" style="display:none;">
+            <div style="background:var(--bg2,#12121a);border-radius:10px;padding:14px;margin-bottom:10px;text-align:center;">
+              <div id="mfa-qr" style="display:inline-block;background:#fff;padding:10px;border-radius:8px;"></div>
+              <div style="font-size:12px;color:var(--text2);margin-top:10px;">
+                Scan this with your authenticator app, then enter the 6-digit code below.
+              </div>
+              <div style="font-size:11px;color:var(--text2);margin-top:8px;word-break:break-all;">
+                Can't scan? Enter this key manually:<br/>
+                <code id="mfa-secret" style="font-size:12px;color:var(--text);"></code>
+              </div>
+            </div>
+            <input class="field-input" type="text" id="mfa-verify-code" placeholder="6-digit code"
+                   inputmode="numeric" maxlength="6" style="margin-bottom:8px;"/>
+            <button class="account-action-btn" onclick="mfaConfirmEnroll()"><i class="ti ti-shield-check"></i> Confirm &amp; Enable</button>
+            <button class="account-action-btn" onclick="mfaCancelEnroll()" style="margin-left:6px;"><i class="ti ti-x"></i> Cancel</button>
+          </div>
+          <div id="mfa-actions">
+            <button class="account-action-btn" id="mfa-enable-btn" onclick="mfaStartEnroll()" style="display:none;"><i class="ti ti-shield-lock"></i> Enable Two-Factor</button>
+            <button class="account-action-btn" id="mfa-disable-btn" onclick="mfaDisable()" style="display:none;"><i class="ti ti-shield-off"></i> Turn Off Two-Factor</button>
+          </div>
+          <div class="field-hint">Requires an authenticator app such as Google Authenticator, Authy, or 1Password.</div>
+        </div>
+
         <div class="danger-btn-row">
           <div class="danger-action">
             <div class="danger-action-info">
@@ -1694,6 +1722,89 @@
       await db.auth.signOut();
       window.location.href = 'index.html';
     }
+
+    /* ── TWO-FACTOR AUTHENTICATION ────────────────────────────────
+       Enrolment is a two-step handshake on purpose: the factor is created
+       unverified, and only becomes active once the user proves they can read
+       a code off it. That ordering is what stops someone enabling 2FA with a
+       QR code they never successfully scanned and locking themselves out. */
+    var dsMfaEnrolling = null;
+
+    async function mfaRefresh() {
+      var statusEl = document.getElementById('mfa-status');
+      var enableBtn = document.getElementById('mfa-enable-btn');
+      var disableBtn = document.getElementById('mfa-disable-btn');
+      if (!statusEl) return;
+      try {
+        var res = await window.db.auth.mfa.listFactors();
+        if (res.error) throw res.error;
+        var verified = ((res.data && res.data.totp) || []).filter(function(f) { return f.status === 'verified'; });
+        if (verified.length) {
+          statusEl.innerHTML = '<span style="color:var(--green,#4ade80);"><i class="ti ti-shield-check"></i> <b>On</b> \u2014 a code from your authenticator app is required at sign-in.</span>';
+          enableBtn.style.display = 'none';
+          disableBtn.style.display = '';
+        } else {
+          statusEl.innerHTML = '<span style="color:var(--text2);"><i class="ti ti-shield-off"></i> <b>Off</b> \u2014 your password alone can sign you in.</span>';
+          enableBtn.style.display = '';
+          disableBtn.style.display = 'none';
+        }
+      } catch (e) {
+        statusEl.textContent = 'Could not load two-factor status.';
+      }
+    }
+
+    async function mfaStartEnroll() {
+      var res = await window.db.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'DawnScribe ' + Date.now() });
+      if (res.error) { showToast('Could not start setup: ' + res.error.message); return; }
+      dsMfaEnrolling = res.data.id;
+      document.getElementById('mfa-qr').innerHTML = res.data.totp.qr_code || '';
+      document.getElementById('mfa-secret').textContent = res.data.totp.secret || '';
+      document.getElementById('mfa-enroll-area').style.display = '';
+      document.getElementById('mfa-actions').style.display = 'none';
+    }
+
+    async function mfaCancelEnroll() {
+      // Leaving the half-finished factor behind would show up as a pending
+      // factor forever, so unenrol it rather than just hiding the panel.
+      if (dsMfaEnrolling) {
+        try { await window.db.auth.mfa.unenroll({ factorId: dsMfaEnrolling }); } catch (e) {}
+      }
+      dsMfaEnrolling = null;
+      document.getElementById('mfa-enroll-area').style.display = 'none';
+      document.getElementById('mfa-actions').style.display = '';
+      mfaRefresh();
+    }
+
+    async function mfaConfirmEnroll() {
+      if (!dsMfaEnrolling) return;
+      var code = (document.getElementById('mfa-verify-code').value || '').replace(/\D/g, '');
+      if (code.length !== 6) { showToast('Enter the 6-digit code from your app.'); return; }
+      var vr = await window.db.auth.mfa.challengeAndVerify({ factorId: dsMfaEnrolling, code: code });
+      if (vr.error) {
+        showToast('That code was not accepted. Codes change every 30 seconds \u2014 try the current one.');
+        document.getElementById('mfa-verify-code').value = '';
+        return;
+      }
+      dsMfaEnrolling = null;
+      document.getElementById('mfa-enroll-area').style.display = 'none';
+      document.getElementById('mfa-actions').style.display = '';
+      document.getElementById('mfa-verify-code').value = '';
+      showToast('Two-factor authentication is on.');
+      mfaRefresh();
+    }
+
+    async function mfaDisable() {
+      if (!confirm('Turn off two-factor authentication? Your password alone will be enough to sign in.')) return;
+      var res = await window.db.auth.mfa.listFactors();
+      if (res.error) { showToast('Could not load factors.'); return; }
+      var all = ((res.data && res.data.totp) || []);
+      for (var i = 0; i < all.length; i++) {
+        try { await window.db.auth.mfa.unenroll({ factorId: all[i].id }); } catch (e) {}
+      }
+      showToast('Two-factor authentication is off.');
+      mfaRefresh();
+    }
+
     async function signOutOtherDevices() {
       if (!currentSession) return;
       if (!confirm('Sign out every other device and browser currently logged into your account? This device will stay signed in.')) return;
@@ -2256,6 +2367,7 @@
 
         currentSession = session;
         document.getElementById('current-email-display').textContent = session.user.email || '(no email on file)';
+        mfaRefresh();
 
         var res = await db.from('profiles')
           .select('created_at,username,display_name,bio,role,language,avatar_url,banner_url,id,twitter,kofi,privacy_readinglist,privacy_activity,privacy_dm,show_location,show_pronouns,show_gender,account_status,is_moderator,prestige_xp,prestige_tier,pinned_work_id,currently_writing,last_active_at,active_banner_scroll_id,profile_section_order,deleted_at')

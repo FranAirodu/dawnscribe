@@ -296,6 +296,17 @@
           <a id="forgot-link" href="#" style="font-size:13px;color:var(--accent);text-decoration:none;">Forgot password?</a>
         </div>
 
+
+        <!-- ── TWO-FACTOR STEP (hidden until the account requires it) ── -->
+        <div class="form-group" id="login-mfa-group" style="display:none;">
+          <label class="form-label" for="login-mfa-code">Authentication Code</label>
+          <div class="input-wrap">
+            <i aria-hidden="true" class="ti ti-shield-lock input-icon"></i>
+            <input class="form-input" type="text" placeholder="6-digit code" id="login-mfa-code"
+                   inputmode="numeric" autocomplete="one-time-code" maxlength="6"/>
+          </div>
+          <span class="form-hint">Open your authenticator app and enter the current code.</span>
+        </div>
         <span class="form-hint error" id="login-error" style="display:none;" aria-live="polite"></span>
         <button class="submit-btn" id="login-btn"><i aria-hidden="true" class="ti ti-login"></i> Sign In</button>
         <div class="or-divider">or continue with</div>
@@ -918,6 +929,9 @@
     document.getElementById('login-email').addEventListener('input', clearLoginError);
     document.getElementById('login-password').addEventListener('input', clearLoginError);
 
+    // Holds the factor id between the password step and the code step.
+    var dsMfaPending = null;
+
     document.getElementById('login-btn').addEventListener('click', async function() {
       clearLoginError();
       var email    = document.getElementById('login-email').value.trim();
@@ -929,20 +943,69 @@
       this.innerHTML = '<i aria-hidden="true" class="ti ti-loader-2"></i> Signing in...';
       this.disabled = true;
 
+      var btn = this;
+      var reset = function() {
+        btn.innerHTML = '<i aria-hidden="true" class="ti ti-login"></i> Sign In';
+        btn.disabled = false;
+      };
+
+      // Second factor already on screen: the password step is done, this click
+      // is submitting the code against the pending challenge.
+      if (dsMfaPending) {
+        var code = (document.getElementById('login-mfa-code').value || '').replace(/\D/g, '');
+        if (code.length !== 6) { showLoginError('Enter the 6-digit code from your authenticator app.'); reset(); return; }
+        var vr = await db.auth.mfa.challengeAndVerify({ factorId: dsMfaPending, code: code });
+        if (vr.error) {
+          // Codes rotate every 30s, so a stale code is the common case here.
+          showLoginError('That code was not accepted. Check your app and try the current code.');
+          document.getElementById('login-mfa-code').value = '';
+          reset();
+          return;
+        }
+        dsMfaPending = null;
+        var sr = await db.auth.getSession();
+        await dsHandleSession(sr.data.session);
+        if (!dsAuthRedirecting) reset();
+        return;
+      }
+
       var result = await db.auth.signInWithPassword({ email: email, password: password });
 
       if (result.error) {
         showLoginError(result.error.message);
-        this.innerHTML = '<i aria-hidden="true" class="ti ti-login"></i> Sign In';
-        this.disabled = false;
+        reset();
       } else {
+        // Password accepted. If this account carries a second factor, Supabase
+        // reports a session that is authenticated but not yet fully assured
+        // (nextLevel aal2), and the DB refuses admin powers at that level —
+        // so a stolen password alone buys nothing but a reader account.
+        var needsMfa = false;
+        try {
+          var aal = await db.auth.mfa.getAuthenticatorAssuranceLevel();
+          var d = aal && aal.data;
+          needsMfa = !!(d && d.nextLevel === 'aal2' && d.currentLevel !== 'aal2');
+        } catch (e) { needsMfa = false; }
+
+        if (needsMfa) {
+          var fl = await db.auth.mfa.listFactors();
+          var factor = fl && fl.data && (fl.data.totp || []).filter(function(f) { return f.status === 'verified'; })[0];
+          if (factor) {
+            dsMfaPending = factor.id;
+            document.getElementById('login-mfa-group').style.display = '';
+            document.getElementById('login-email').disabled = true;
+            document.getElementById('login-password').disabled = true;
+            clearLoginError();
+            btn.innerHTML = '<i aria-hidden="true" class="ti ti-shield-check"></i> Verify Code';
+            btn.disabled = false;
+            setTimeout(function() { document.getElementById('login-mfa-code').focus(); }, 50);
+            return;
+          }
+        }
+
         // dsHandleSession redirects on success, or signs out + shows the
         // suspension banner if the account is banned
         await dsHandleSession(result.data.session);
-        if (!dsAuthRedirecting) {
-          this.innerHTML = '<i aria-hidden="true" class="ti ti-login"></i> Sign In';
-          this.disabled = false;
-        }
+        if (!dsAuthRedirecting) reset();
       }
     });
 
