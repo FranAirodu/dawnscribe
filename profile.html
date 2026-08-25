@@ -512,7 +512,6 @@
   </style>
 </head>
 <body>
-  <input type="file" class="hidden-input" id="banner-input" accept="image/*">
   <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
 
   <nav style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
@@ -526,9 +525,9 @@
     <a class="banner-credit-chip" id="banner-credit-chip" href="#" title="View artist profile">
       <i class="ti ti-palette"></i><span id="banner-credit-label">Art by @—</span>
     </a>
-    <button class="banner-edit-btn owner-only" id="banner-edit-btn" onclick="document.getElementById('banner-input').click()">
-      <i class="ti ti-photo-edit"></i> Change Banner
-    </button>
+    <a class="banner-edit-btn owner-only" id="banner-edit-btn" href="landscapes.html" style="text-decoration:none;">
+      <i class="ti ti-photo-edit"></i> Change Landscape
+    </a>
   </div>
 
   <!-- PROFILE SECTIONS WRAP -->
@@ -2349,54 +2348,14 @@ async function handleFriendBtn() {
     }
 
     /* ── BANNER UPLOAD ──────────────────────────────────────────── */
-    document.getElementById('banner-input').addEventListener('change', async function(e) {
-      var file = e.target.files[0];
-      if (!file) { return; }
-      if (!file.type.startsWith('image/')) { showToast('Please select an image file', 'ti-alert-triangle'); this.value = ''; return; }
-      if (file.size > 5 * 1024 * 1024) { showToast('Banner must be under 5MB', 'ti-alert-triangle'); this.value = ''; return; }
-      var reader = new FileReader();
-      reader.onload = function(ev) {
-        var wrap = document.getElementById('banner-wrap');
-        var img = wrap.querySelector('.banner-img');
-        if (!img) {
-          img = document.createElement('img');
-          img.className = 'banner-img';
-          wrap.insertBefore(img, wrap.firstChild);
-        }
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(file);
-      try {
-        var sessionRes = await db.auth.getSession();
-        var s = sessionRes && sessionRes.data ? sessionRes.data.session : null;
-        if (!s) { return; }
-        var ext = file.name.split('.').pop();
-        var path = s.user.id + '/banner.' + ext;
-        await DSStorage.upload(db, DSStorage.BUCKETS.BANNERS, path, file, { upsert: true });
-        var url = DSStorage.url(db, DSStorage.BUCKETS.BANNERS, path);
-        // Write the uploaded banner. active_banner_scroll_id is NOT written here —
-        // that column has no client grant (equipping a paid banner Scroll for free
-        // was possible while it did). Clearing it goes through equip_banner_scroll(null),
-        // the same DEFINER RPC marketplace.html uses to equip.
-        var bUp = await db.from('profiles')
-          .update({ banner_url: url })
-          .eq('id', s.user.id)
-          .select('id');
-        if (bUp.error || !bUp.data || !bUp.data.length) {
-          console.error('Banner save failed:', bUp.error);
-          showToast('Could not save your banner. Please try again.', 'ti-alert-triangle');
-          return;
-        }
-        // Drop any equipped banner Scroll so the credit chip and the DB agree.
-        var clr = await db.rpc('equip_banner_scroll', { p_scroll_id: null });
-        if (clr.error || (clr.data && clr.data.ok === false)) {
-          console.error('Clearing banner Scroll failed:', clr.error || clr.data);
-        }
-        var chip = document.getElementById('banner-credit-chip');
-        if (chip) chip.style.display = 'none';
-        showToast('Banner updated!', 'ti-photo');
-      } catch(err) { console.error('Banner upload error:', err); }
-    });
+    /* The free-form banner upload was removed deliberately. Banners (called
+       "landscapes" in the UI) are now unlockable artwork by commissioned
+       artists, so letting anyone upload any image made it trivial to re-post
+       someone else's work as your own, with no review step in between.
+       Changing your landscape now goes through landscapes.html, which can
+       only equip items you actually own. The matching column grant on
+       profiles.banner_url was revoked too — hiding the control alone would
+       have left the direct API write wide open. */
 
     function fmtNum(n) {
       if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'm';
