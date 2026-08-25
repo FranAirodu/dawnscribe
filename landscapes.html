@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Landscapes — DawnScribe</title>
+  <meta name="robots" content="noindex,nofollow" />
+  <script>
+    (function(){
+      var t=localStorage.getItem('ds_theme');
+      if(t==='light'){document.documentElement.setAttribute('data-theme','light');}
+    })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="escapeUtils.js"></script>
+  <script src="accessibilityPrefs.js"></script>
+  <style>
+    :root {
+      --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
+      --border:#2a3347; --text:#e8eaf0; --text2:#9ba3b8; --text3:#5c6480;
+      --accent:#2dd4bf; --gold:#f59e0b; --red:#f87171; --green:#34d399;
+    }
+    [data-theme="light"] {
+      --bg:#f4f5f8; --bg2:#ffffff; --bg3:#eef0f5; --bg4:#e4e7ef;
+      --border:#d0d5e8; --text:#1a1f2e; --text2:#4a5270; --text3:#8890a8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Lato', sans-serif; min-height: 100vh; }
+
+    nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .nav-left { display: flex; align-items: center; gap: 16px; }
+    .logo { font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700; color: var(--text); text-decoration: none; letter-spacing: 0.5px; }
+    .logo span { color: var(--accent); }
+    .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; font-weight: 700; text-decoration: none; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); transition: all 0.2s; }
+    .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .page-wrap { max-width: 900px; margin: 0 auto; padding: 36px 20px 80px; }
+    .page-header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+    .page-icon { width: 44px; height: 44px; border-radius: 11px; background: rgba(45,212,191,0.12); display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--accent); }
+    h1 { font-family: 'Cinzel', serif; font-size: 26px; font-weight: 700; }
+    .page-sub { color: var(--text2); font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+
+    .ember-pill { display:inline-flex; align-items:center; gap:7px; background: var(--bg3); border:1px solid var(--border); border-radius:999px; padding:7px 15px; font-size:13px; font-weight:700; margin-bottom:26px; }
+    .ember-pill i { color: var(--gold); }
+
+    .section-title { font-family:'Cinzel',serif; font-size:17px; font-weight:700; margin: 30px 0 6px; }
+    .section-hint { font-size:13px; color: var(--text3); line-height:1.6; margin-bottom:16px; }
+
+    .card { border:1px solid var(--border); border-radius:12px; overflow:hidden; background: var(--bg2); margin-bottom:16px; }
+    .card.active-card { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    /* 4:1 preview so what's on screen matches the shape it will occupy. */
+    .shot { width:100%; aspect-ratio:4/1; background: var(--bg4); display:block; object-fit:cover; }
+    .shot-ph { width:100%; aspect-ratio:4/1; background: var(--bg4); display:flex; align-items:center; justify-content:center; color: var(--text3); font-size:12px; }
+    .card-body { padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .card-name { font-size:14px; font-weight:700; }
+    .card-meta { font-size:12px; color: var(--text3); margin-top:2px; }
+
+    .btn { border:0; cursor:pointer; border-radius:8px; padding:9px 16px; font-size:13px; font-weight:700; font-family:inherit; background: var(--accent); color:#08131a; }
+    .btn:hover { filter: brightness(1.08); }
+    .btn[disabled] { opacity:0.5; cursor:not-allowed; filter:none; }
+    .btn-ghost { background: var(--bg3); color: var(--text2); border:1px solid var(--border); }
+    .btn-sm { padding:7px 12px; font-size:12px; }
+
+    .mode-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .mode-btn { border:1px solid var(--border); background: var(--bg3); color: var(--text2); border-radius:8px; padding:9px 16px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; }
+    .mode-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.1); }
+
+    .rot-list { display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
+    .rot-item { display:flex; align-items:center; gap:10px; background: var(--bg3); border:1px solid var(--border); border-radius:9px; padding:8px 10px; }
+    .rot-thumb { width:88px; aspect-ratio:4/1; object-fit:cover; border-radius:5px; background: var(--bg4); flex-shrink:0; }
+    .rot-name { font-size:13px; font-weight:700; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .rot-controls { display:flex; gap:5px; }
+    .icon-btn { border:1px solid var(--border); background: var(--bg2); color: var(--text2); border-radius:6px; width:30px; height:30px; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; }
+    .icon-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    .empty { text-align:center; padding:36px 20px; color: var(--text3); font-size:13px; line-height:1.7; border:1px dashed var(--border); border-radius:12px; }
+    .note { font-size:12px; color: var(--text3); margin-top:10px; line-height:1.6; }
+    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:26px; background: var(--bg3); border:1px solid var(--border); color: var(--text); padding:12px 20px; border-radius:10px; font-size:13px; font-weight:700; z-index:500; display:none; box-shadow:0 10px 30px rgba(0,0,0,0.4); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-left">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="avatar.html"><i class="ti ti-arrow-left"></i> Back to Avatar</a>
+  </div>
+</nav>
+
+<div class="page-wrap">
+  <div class="page-header">
+    <div class="page-icon"><i class="ti ti-photo"></i></div>
+    <h1>My Landscapes</h1>
+  </div>
+  <div class="page-sub">
+    A <b>landscape</b> is the wide scene shown behind your profile header and your story pages.
+    It is not the background behind your avatar figure &mdash; that is a separate item.
+  </div>
+
+  <div class="ember-pill"><i class="ti ti-flame"></i><span id="ember-bal">&mdash;</span> Embers</div>
+
+  <div id="auth-wall" style="display:none;" class="empty">
+    Sign in to collect landscapes. <a href="auth.html" style="color:var(--accent);">Sign in</a>
+  </div>
+
+  <div id="main" style="display:none;">
+    <div class="section-title">Your Collection</div>
+    <div class="section-hint" id="owned-hint">Landscapes you've unlocked. Set one as active, or build a rotation below.</div>
+    <div id="owned-list"></div>
+
+    <div id="rotation-block" style="display:none;">
+      <div class="section-title">Rotation</div>
+      <div class="section-hint">
+        Choose how your landscape changes. <b>Manual</b> keeps the one you picked.
+        <b>Daily</b> and <b>Weekly</b> move to the next one in the list automatically.
+      </div>
+      <div class="mode-row">
+        <button class="mode-btn" data-mode="manual" onclick="setMode('manual')">Manual</button>
+        <button class="mode-btn" data-mode="daily"  onclick="setMode('daily')">Daily</button>
+        <button class="mode-btn" data-mode="weekly" onclick="setMode('weekly')">Weekly</button>
+      </div>
+      <div class="rot-list" id="rot-list"></div>
+      <button class="btn" id="save-rot" onclick="saveRotation()"><i class="ti ti-device-floppy"></i> Save rotation</button>
+      <div class="note" id="rot-note"></div>
+    </div>
+
+    <div class="section-title">Available to Unlock</div>
+    <div class="section-hint">Spend Embers to add these to your collection. Embers are earned by reading and checking in.</div>
+    <div id="shop-list"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx';
+  var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  var uid = null;
+  var state = { items: [], owned: {}, activeUrl: null, mode: 'manual', rotation: [] };
+
+  function esc(x) {
+    return String(x == null ? '' : x).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.style.display = 'block';
+    clearTimeout(t._h); t._h = setTimeout(function(){ t.style.display='none'; }, 3200);
+  }
+
+  async function init() {
+    var sess = await db.auth.getSession();
+    uid = sess.data.session && sess.data.session.user.id;
+    if (!uid) { document.getElementById('auth-wall').style.display = 'block'; return; }
+    document.getElementById('main').style.display = 'block';
+
+    var res = await db.from('cosmetic_items')
+      .select('id,name,description,image_url,ember_unlock_price')
+      .eq('slot','landscape').eq('status','approved').order('name');
+    state.items = res.data || [];
+
+    var own = await db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', uid);
+    (own.data || []).forEach(function(r){ state.owned[r.cosmetic_item_id] = true; });
+
+    var prof = await db.from('profiles').select('banner_url').eq('id', uid).maybeSingle();
+    state.activeUrl = (prof.data && prof.data.banner_url) || null;
+
+    var av = await db.from('user_avatars')
+      .select('banner_rotation_ids,banner_rotation_mode').eq('user_id', uid).maybeSingle();
+    if (av.data) {
+      state.mode = av.data.banner_rotation_mode || 'manual';
+      var ids = av.data.banner_rotation_ids;
+      // Stored as jsonb; only keep entries still owned, so a lapsed item
+      // can't sit in the list looking equippable.
+      if (Array.isArray(ids)) state.rotation = ids.filter(function(i){ return state.owned[i]; });
+    }
+
+    var emb = await db.from('user_embers').select('balance').eq('user_id', uid).maybeSingle();
+    document.getElementById('ember-bal').textContent = (emb.data && emb.data.balance) || 0;
+
+    render();
+  }
+
+  function byId(id) {
+    return state.items.filter(function(i){ return i.id === id; })[0];
+  }
+
+  function shot(it) {
+    return it.image_url
+      ? '<img class="shot" src="' + esc(it.image_url) + '" alt="' + esc(it.name) + '" loading="lazy"/>'
+      : '<div class="shot-ph">Artwork coming soon</div>';
+  }
+
+  function render() {
+    var owned = state.items.filter(function(i){ return state.owned[i.id]; });
+    var shop  = state.items.filter(function(i){ return !state.owned[i.id]; });
+
+    document.getElementById('owned-list').innerHTML = owned.length ? owned.map(function(it){
+      var isActive = state.activeUrl && state.activeUrl === it.image_url;
+      return '<div class="card' + (isActive ? ' active-card' : '') + '">' + shot(it) +
+        '<div class="card-body"><div><div class="card-name">' + esc(it.name) + '</div>' +
+        '<div class="card-meta">' + (isActive ? 'Currently showing' : 'In your collection') + '</div></div>' +
+        (isActive ? '<span style="font-size:12px;font-weight:700;color:var(--accent);"><i class="ti ti-check"></i> Active</span>'
+                  : '<button class="btn btn-sm" onclick="equip(' + JSON.stringify(it.id) + ')">Set active</button>') +
+        '</div></div>';
+    }).join('') : '<div class="empty">You haven\'t unlocked any landscapes yet. Pick one up below.</div>';
+
+    document.getElementById('rotation-block').style.display = owned.length >= 2 ? 'block' : 'none';
+    document.getElementById('owned-hint').textContent = owned.length >= 2
+      ? "Landscapes you've unlocked. Set one as active, or build a rotation below."
+      : "Landscapes you've unlocked.";
+
+    document.querySelectorAll('.mode-btn').forEach(function(b){
+      b.classList.toggle('on', b.dataset.mode === state.mode);
+    });
+    renderRotation();
+
+    document.getElementById('shop-list').innerHTML = shop.length ? shop.map(function(it){
+      var price = it.ember_unlock_price || 0;
+      return '<div class="card">' + shot(it) +
+        '<div class="card-body"><div><div class="card-name">' + esc(it.name) + '</div>' +
+        '<div class="card-meta">' + (price ? price + ' Embers' : 'Free') + '</div></div>' +
+        '<button class="btn btn-sm" onclick="unlock(' + JSON.stringify(it.id) + ')">' +
+        (price ? 'Unlock (' + price + ')' : 'Claim') + '</button></div></div>';
+    }).join('') : '<div class="empty">You own every landscape available right now. More are on the way.</div>';
+  }
+
+  function renderRotation() {
+    var wrap = document.getElementById('rot-list');
+    if (!wrap) return;
+    // Anything owned but not yet in the rotation is offered at the bottom.
+    var inRot = state.rotation.slice();
+    var rows = inRot.map(function(id, idx){
+      var it = byId(id);
+      if (!it) return '';
+      return '<div class="rot-item">' +
+        (it.image_url ? '<img class="rot-thumb" src="' + esc(it.image_url) + '" alt=""/>' : '<div class="rot-thumb"></div>') +
+        '<div class="rot-name">' + (idx + 1) + '. ' + esc(it.name) + '</div>' +
+        '<div class="rot-controls">' +
+          '<button class="icon-btn" title="Move up" onclick="moveRot(' + idx + ',-1)"><i class="ti ti-arrow-up"></i></button>' +
+          '<button class="icon-btn" title="Move down" onclick="moveRot(' + idx + ',1)"><i class="ti ti-arrow-down"></i></button>' +
+          '<button class="icon-btn" title="Remove" onclick="removeRot(' + idx + ')"><i class="ti ti-x"></i></button>' +
+        '</div></div>';
+    }).join('');
+
+    var avail = state.items.filter(function(i){
+      return state.owned[i.id] && inRot.indexOf(i.id) === -1;
+    });
+    if (avail.length) {
+      rows += '<div style="font-size:12px;color:var(--text3);margin-top:6px;">Add to rotation:</div>' +
+        avail.map(function(it){
+          return '<div class="rot-item"><div class="rot-name">' + esc(it.name) + '</div>' +
+            '<button class="btn btn-ghost btn-sm" onclick="addRot(' + JSON.stringify(it.id) + ')">' +
+            '<i class="ti ti-plus"></i> Add</button></div>';
+        }).join('');
+    }
+    wrap.innerHTML = rows || '<div style="font-size:13px;color:var(--text3);">Add landscapes to build a rotation.</div>';
+
+    document.getElementById('rot-note').textContent = state.mode === 'manual'
+      ? 'Manual: your landscape stays put until you change it.'
+      : (state.rotation.length < 2
+          ? 'Add at least two landscapes for automatic rotation to do anything.'
+          : 'Rotates to the next landscape ' + (state.mode === 'daily' ? 'each day.' : 'each week.'));
+  }
+
+  function setMode(m) { state.mode = m; render(); }
+  function addRot(id) { state.rotation.push(id); renderRotation(); }
+  function removeRot(i) { state.rotation.splice(i,1); renderRotation(); }
+  function moveRot(i, d) {
+    var j = i + d;
+    if (j < 0 || j >= state.rotation.length) return;
+    var t = state.rotation[i]; state.rotation[i] = state.rotation[j]; state.rotation[j] = t;
+    renderRotation();
+  }
+
+  async function saveRotation() {
+    var btn = document.getElementById('save-rot');
+    btn.disabled = true;
+    var res = await db.rpc('save_banner_rotation', {
+      p_item_ids: state.rotation, p_mode: state.mode
+    });
+    btn.disabled = false;
+    if (res.error) { toast('Could not save that rotation.'); return; }
+    var first = byId(state.rotation[0]);
+    if (first) state.activeUrl = first.image_url;
+    toast('Rotation saved.');
+    render();
+  }
+
+  async function equip(id) {
+    var res = await db.rpc('set_active_banner', { p_cosmetic_item_id: id });
+    if (res.error) { toast('Could not set that landscape.'); return; }
+    var it = byId(id);
+    state.activeUrl = it && it.image_url;
+    toast('Landscape set — it now shows behind your profile and story pages.');
+    render();
+  }
+
+  async function unlock(id) {
+    var res = await db.rpc('unlock_landscape', { p_item_id: id });
+    var d = res.data || {};
+    if (res.error) { toast('Something went wrong.'); return; }
+    if (d.status === 'insufficient_embers') {
+      toast('Not enough Embers — you need ' + d.cost + ' and have ' + d.balance + '.');
+      return;
+    }
+    if (d.status !== 'ok' && d.status !== 'already_owned') { toast('Could not unlock that one.'); return; }
+    state.owned[id] = true;
+    if (typeof d.balance === 'number') document.getElementById('ember-bal').textContent = d.balance;
+    toast('Unlocked! It\'s in your collection.');
+    render();
+  }
+
+  init();
+</script>
+<script src="footer.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>
