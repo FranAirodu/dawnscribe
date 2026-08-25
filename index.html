@@ -636,7 +636,7 @@
         <i class="ti ti-flame"></i>
         <span class="ember-count" id="ds-ember-count">0</span>
       </div>
-      <button class="checkin-btn" id="ds-checkin-btn" title="Daily Check-In — claim your reward!" onclick="dsOpenCheckin()">
+      <button class="checkin-btn claimed" id="ds-checkin-btn" title="Daily Check-In" onclick="dsOpenCheckin()">
         <i class="ti ti-sunrise"></i>
         <span class="checkin-dot" id="ds-checkin-dot"></span>
       </button>
@@ -4216,6 +4216,38 @@ function dsLoadLayoutFromCache() {
      user_streaks + daily_checkins (both have SELECT RLS). */
   var dsCkState = null;
 
+  /* ── CHECK-IN BUTTON STATE CACHE ──────────────────────────────
+     The gold sunrise button must only be lit when a claim would really
+     succeed. daily_checkin() owns that decision: it derives "today" from
+     profiles.timezone and also enforces a 20-hour real-time floor, so any
+     date computed from the browser clock will disagree with it (badly, for
+     users west of UTC late in the evening) and the button re-lights on every
+     page load. ds_my_checkin_status() returns the exact instant the next
+     claim unlocks; we cache that timestamp and stay dimmed until it passes. */
+  function dsCkCacheKey(uid) { return 'ds_checkin_next_' + uid; }
+
+  function dsCkCachedClaimed(uid) {
+    try {
+      var v = localStorage.getItem(dsCkCacheKey(uid));
+      return !!(v && Date.parse(v) > Date.now());
+    } catch(e) { return false; }
+  }
+
+  async function dsRefreshCheckinCache(uid) {
+    try {
+      var st = await db.rpc('ds_my_checkin_status');
+      var d = (st && st.data) || {};
+      if (d.authenticated === false) return null;
+      if (typeof d.claimed !== 'boolean') return null;
+      try {
+        if (d.claimed && d.claimable_at) localStorage.setItem(dsCkCacheKey(uid), d.claimable_at);
+        else localStorage.removeItem(dsCkCacheKey(uid));
+      } catch(e) {}
+      dsSetCheckinDot(!d.claimed);
+      return d;
+    } catch(e) { return null; }
+  }
+
   function dsCkRewardFor(day) {
     if (day === 7) return { embers: 10, flame: false, spark: false };
     return { embers: 2, flame: false, spark: false };
@@ -4328,7 +4360,8 @@ function dsLoadLayoutFromCache() {
         repairedToday: repairedToday, signupStr: signupStr
       };
       // Sync localStorage if this device missed a claim made elsewhere
-      if (claimedToday) localStorage.setItem('ds_checkin_' + uid, todayStr);
+      // Re-sync the nav button against the server's own answer.
+      dsRefreshCheckinCache(uid);
       dsSetCheckinDot(!claimedToday);
       dsRenderCheckin();
     } catch(e) {
@@ -4452,7 +4485,7 @@ function dsLoadLayoutFromCache() {
     try {
       var res = await db.rpc('daily_checkin', { p_local_date: s.todayStr });
       if (!res.data || !res.data.success) throw new Error('claim_failed');
-      localStorage.setItem('ds_checkin_' + s.uid, s.todayStr);
+      dsRefreshCheckinCache(s.uid);
       if (!res.data.already_checked_in) {
         var rw = res.data.rewards || {};
         if (rw.embers) {
@@ -4527,27 +4560,24 @@ function dsLoadLayoutFromCache() {
         if (username) document.getElementById('dd-profile-link').href = 'profile.html?user=' + username;
         if (username) dsSetOwnWorkLinks(username);
 
-        // Check-in dot: fast path from localStorage, no network
-        var dsCkToday = new Date().toISOString().slice(0, 10);
-        var dsCkKey = 'ds_checkin_' + uid;
-        if (localStorage.getItem(dsCkKey) === dsCkToday) {
-          dsSetCheckinDot(false);
-        } else {
-          dsSetCheckinDot(true); // optimistic; corrected below once DB responds
-        }
+        // Check-in button: dimmed until the server confirms a claim is really
+        // available. Never guess from the browser clock — this page used to
+        // compare against the UTC date, which re-lit the button every evening
+        // for users behind UTC even though today's reward was already claimed.
+        if (dsCkCachedClaimed(uid)) dsSetCheckinDot(false);
+        else dsRefreshCheckinCache(uid);
 
         // ── Fire all independent DB reads in parallel ──────────────
         var [
           emberRes, quillRes, accentRes, roleRes, profileRes,
-          adminRes, streakRes
+          adminRes
         ] = await Promise.all([
           Promise.resolve(db.from('user_embers').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
           Promise.resolve(db.from('user_quills').select('balance').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
           Promise.resolve(db.from('user_avatars').select('accent_color').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; }),
           Promise.resolve(db.from('profiles').select('role').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
           Promise.resolve(db.from('profiles').select('avatar_url,display_name,username,id,account_status').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
-          Promise.resolve(db.from('admins').select('id').eq('id', uid).maybeSingle()).catch(function(){ return {}; }),
-          Promise.resolve(db.from('user_streaks').select('last_checkin').eq('user_id', uid).maybeSingle()).catch(function(){ return {}; })
+          Promise.resolve(db.from('admins').select('id').eq('id', uid).maybeSingle()).catch(function(){ return {}; })
         ]);
 
         // Ember balance
@@ -4584,15 +4614,6 @@ function dsLoadLayoutFromCache() {
         var userRole = roleRes.data ? (roleRes.data.role || '') : '';
         if (userRole.toLowerCase().includes('artist')) {
           document.getElementById('showcase-btn').style.display = 'flex';
-        }
-
-        // Correct check-in dot now that streak row has responded
-        if (localStorage.getItem(dsCkKey) !== dsCkToday) {
-          if (streakRes.data && streakRes.data.last_checkin === dsCkToday) {
-            localStorage.setItem(dsCkKey, dsCkToday); // claimed on another device
-            dsSetCheckinDot(false);
-          }
-          // else: dot stays gold (correctly set optimistically above)
         }
 
         // Avatar + richer display name from profile row

@@ -252,7 +252,7 @@ function dsApplyAccent(hex) {
       <i class="ti ti-flame"></i>
       <span class="ember-count" id="ds-ember-count">0</span>
     </div>
-    <button class="checkin-btn" id="ds-checkin-btn" title="Daily Check-In — claim your reward!" onclick="dsOpenCheckin()">
+    <button class="checkin-btn claimed" id="ds-checkin-btn" title="Daily Check-In" onclick="dsOpenCheckin()">
       <i class="ti ti-sunrise"></i>
       <span class="checkin-dot" id="ds-checkin-dot"></span>
     </button>
@@ -1330,19 +1330,11 @@ function dsApplyAccent(hex) {
               // is the fast path; user_streaks confirms cross-device claims.
               var ckBtn = document.getElementById('ds-checkin-btn');
               if (ckBtn) ckBtn.style.display = 'flex';
-              var _ckNow = new Date(); var dsCkToday = _ckNow.getFullYear() + '-' + String(_ckNow.getMonth()+1).padStart(2,'0') + '-' + String(_ckNow.getDate()).padStart(2,'0');
-              var dsCkKey = 'ds_checkin_' + uid2;
-              if (localStorage.getItem(dsCkKey) === dsCkToday) {
-                dsSetCheckinDot(false);
-              } else {
-                var ckSt = await db.from('user_streaks').select('last_checkin').eq('user_id', uid2).maybeSingle();
-                if (ckSt.data && ckSt.data.last_checkin === dsCkToday) {
-                  localStorage.setItem(dsCkKey, dsCkToday);   // claimed on another device
-                  dsSetCheckinDot(false);
-                } else {
-                  dsSetCheckinDot(true);
-                }
-              }
+              // The button ships dimmed, so it can only ever brighten once the
+              // server confirms a claim is available. Cached "next claimable"
+              // instant means most navigations cost no network call at all.
+              if (dsCkCachedClaimed(uid2)) dsSetCheckinDot(false);
+              else await dsRefreshCheckinCache(uid2);
             } catch(e) {}
           })();
         }
@@ -1453,6 +1445,38 @@ function dsApplyAccent(hex) {
      Rewards come from the daily_checkin RPC; this UI reads
      user_streaks + daily_checkins (both have SELECT RLS). */
   var dsCkState = null;
+
+  /* ── CHECK-IN BUTTON STATE CACHE ──────────────────────────────
+     The gold sunrise button must only be lit when a claim would really
+     succeed. daily_checkin() owns that decision: it derives "today" from
+     profiles.timezone and also enforces a 20-hour real-time floor, so any
+     date computed from the browser clock will disagree with it (badly, for
+     users west of UTC late in the evening) and the button re-lights on every
+     page load. ds_my_checkin_status() returns the exact instant the next
+     claim unlocks; we cache that timestamp and stay dimmed until it passes. */
+  function dsCkCacheKey(uid) { return 'ds_checkin_next_' + uid; }
+
+  function dsCkCachedClaimed(uid) {
+    try {
+      var v = localStorage.getItem(dsCkCacheKey(uid));
+      return !!(v && Date.parse(v) > Date.now());
+    } catch(e) { return false; }
+  }
+
+  async function dsRefreshCheckinCache(uid) {
+    try {
+      var st = await db.rpc('ds_my_checkin_status');
+      var d = (st && st.data) || {};
+      if (d.authenticated === false) return null;
+      if (typeof d.claimed !== 'boolean') return null;
+      try {
+        if (d.claimed && d.claimable_at) localStorage.setItem(dsCkCacheKey(uid), d.claimable_at);
+        else localStorage.removeItem(dsCkCacheKey(uid));
+      } catch(e) {}
+      dsSetCheckinDot(!d.claimed);
+      return d;
+    } catch(e) { return null; }
+  }
 
   function dsCkRewardFor(day) {
     if (day === 7) return { embers: 10, flame: true, spark: false };
@@ -1572,7 +1596,8 @@ function dsApplyAccent(hex) {
         repairedToday: repairedToday
       };
       // Sync localStorage if this device missed a claim made elsewhere
-      if (claimedToday) localStorage.setItem('ds_checkin_' + uid, todayStr);
+      // Re-sync the nav button against the server's own answer.
+      dsRefreshCheckinCache(uid);
       dsSetCheckinDot(!claimedToday);
       dsRenderCheckin();
     } catch(e) {
@@ -1686,7 +1711,7 @@ function dsApplyAccent(hex) {
     try {
       var res = await db.rpc('daily_checkin', { p_local_date: s.todayStr });
       if (!res.data || !res.data.success) throw new Error('claim_failed');
-      localStorage.setItem('ds_checkin_' + s.uid, s.todayStr);
+      dsRefreshCheckinCache(s.uid);
       if (!res.data.already_checked_in) {
         var rw = res.data.rewards || {};
         if (rw.embers) {
