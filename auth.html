@@ -275,10 +275,10 @@
       <div class="auth-form active" id="form-login">
 
         <div class="form-group">
-          <label class="form-label" for="login-email">Email</label>
+          <label class="form-label" for="login-email">Email or Username</label>
           <div class="input-wrap">
             <i aria-hidden="true" class="ti ti-mail input-icon"></i>
-            <input class="form-input" type="email" placeholder="your@email.com" id="login-email" name="email" autocomplete="email"/>
+            <input class="form-input" type="text" placeholder="your@email.com or YourName" id="login-email" name="username" autocomplete="username"/>
           </div>
         </div>
 
@@ -538,7 +538,7 @@
       if (this.dataset.sending === 'true') return;
       var email = document.getElementById('login-email').value.trim();
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        showLoginError('Enter your email address above first, then click Forgot password.');
+        showLoginError('Enter your email address in the field above (not your username), then click Forgot password.');
         return;
       }
       this.dataset.sending = 'true';
@@ -932,13 +932,46 @@
     // Holds the factor id between the password step and the code step.
     var dsMfaPending = null;
 
+    // Exchanges a username + password for a real session. The edge function
+    // verifies the password through Supabase auth itself and answers with the
+    // same tokens an email sign-in would produce, so everything downstream —
+    // including the two-factor step — behaves identically either way.
+    async function dsUsernameSignIn(username, password) {
+      var res;
+      try {
+        res = await fetch(SUPABASE_URL + '/functions/v1/login-username', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+          body: JSON.stringify({ username: username, password: password })
+        });
+      } catch (e) {
+        return { error: { message: 'Could not reach the server. Check your connection and try again.' } };
+      }
+
+      var body = null;
+      try { body = await res.json(); } catch (e) {}
+
+      if (!res.ok || !body || !body.access_token) {
+        // Deliberately identical whether the username exists or not.
+        return { error: { message: 'Incorrect username or password.' } };
+      }
+
+      var sess = await db.auth.setSession({
+        access_token: body.access_token,
+        refresh_token: body.refresh_token
+      });
+      if (sess.error) return { error: sess.error };
+      return { data: { session: sess.data.session } };
+    }
+
     document.getElementById('login-btn').addEventListener('click', async function() {
       clearLoginError();
       var email    = document.getElementById('login-email').value.trim();
       var password = document.getElementById('login-password').value;
 
-      if (!email || !password) { showLoginError('Please enter your email and password.'); return; }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showLoginError('Please enter a valid email address.'); return; }
+      if (!email || !password) { showLoginError('Please enter your email or username, and your password.'); return; }
+      var dsIsEmail = email.indexOf('@') !== -1;
+      if (dsIsEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showLoginError('Please enter a valid email address.'); return; }
 
       this.innerHTML = '<i aria-hidden="true" class="ti ti-loader-2"></i> Signing in...';
       this.disabled = true;
@@ -969,7 +1002,16 @@
         return;
       }
 
-      var result = await db.auth.signInWithPassword({ email: email, password: password });
+      var result;
+      if (dsIsEmail) {
+        result = await db.auth.signInWithPassword({ email: email, password: password });
+      } else {
+        // Username sign-in is resolved server-side by the login-username edge
+        // function. The browser never learns the address behind a username —
+        // otherwise the feature would double as a way to harvest every user's
+        // email by walking the username list.
+        result = await dsUsernameSignIn(email, password);
+      }
 
       if (result.error) {
         showLoginError(result.error.message);
