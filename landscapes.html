@@ -16,6 +16,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="escapeUtils.js"></script>
   <script src="accessibilityPrefs.js"></script>
+  <script src="badgeCelebrate.js"></script>
   <style>
     :root {
       --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
@@ -126,9 +127,14 @@
       <div class="note" id="rot-note"></div>
     </div>
 
-    <div class="section-title">Available to Unlock</div>
-    <div class="section-hint">Spend Embers to add these to your collection. Embers are earned by reading and checking in.</div>
-    <div id="shop-list"></div>
+    <div class="section-title">Unlock a Banner</div>
+    <div class="section-hint" id="roll-hint">
+      Spend <b>10 Embers</b> for a random banner you don't own yet. You'll never
+      be given one twice. Embers are earned by reading and checking in.
+    </div>
+    <button class="btn" id="roll-btn" onclick="rollBanner()"><i class="ti ti-gift"></i> Roll a Banner (10 Embers)</button>
+    <div id="roll-result" style="margin-top:16px;"></div>
+    <div id="locked-list" style="margin-top:18px;"></div>
   </div>
 </div>
 
@@ -219,14 +225,29 @@
     });
     renderRotation();
 
-    document.getElementById('shop-list').innerHTML = shop.length ? shop.map(function(it){
-      var price = it.ember_unlock_price || 0;
-      return '<div class="card">' + shot(it) +
-        '<div class="card-body"><div><div class="card-name">' + esc(it.name) + '</div>' +
-        '<div class="card-meta">' + (price ? price + ' Embers' : 'Free') + '</div></div>' +
-        '<button class="btn btn-sm" onclick="unlock(' + JSON.stringify(it.id) + ')">' +
-        (price ? 'Unlock (' + price + ')' : 'Claim') + '</button></div></div>';
-    }).join('') : '<div class="empty">You own every banner available right now. More are on the way.</div>';
+    // Locked banners are shown obscured rather than as a price list: the roll
+    // is the only way to get them, so a browsable shop would imply a choice
+    // the user doesn't have.
+    var rollBtn = document.getElementById('roll-btn');
+    if (shop.length) {
+      document.getElementById('locked-list').innerHTML =
+        '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">' +
+        shop.length + ' still locked</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        shop.map(function(it){
+          return '<div style="width:96px;aspect-ratio:4/1;border-radius:6px;overflow:hidden;' +
+            'background:var(--bg4);position:relative;">' +
+            (it.image_url ? '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" ' +
+              'style="width:100%;height:100%;object-fit:cover;filter:blur(6px) grayscale(1) brightness(0.5);"/>' : '') +
+            '<i class="ti ti-lock" style="position:absolute;inset:0;display:flex;align-items:center;' +
+            'justify-content:center;color:var(--text2);font-size:16px;"></i></div>';
+        }).join('') + '</div>';
+      if (rollBtn) { rollBtn.disabled = false; rollBtn.innerHTML = '<i class="ti ti-gift"></i> Roll a Banner (10 Embers)'; }
+    } else {
+      document.getElementById('locked-list').innerHTML =
+        '<div class="empty">You own every banner available right now. More are on the way.</div>';
+      if (rollBtn) { rollBtn.disabled = true; rollBtn.innerHTML = '<i class="ti ti-check"></i> All banners unlocked'; }
+    }
   }
 
   function renderRotation() {
@@ -300,18 +321,44 @@
     render();
   }
 
-  async function unlock(id) {
-    var res = await db.rpc('unlock_landscape', { p_item_id: id });
-    var d = res.data || {};
-    if (res.error) { toast('Something went wrong.'); return; }
+  async function rollBanner() {
+    var btn = document.getElementById('roll-btn');
+    var out = document.getElementById('roll-result');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader"></i> Rolling\u2026';
+
+    var res = await db.rpc('roll_banner_unlock', { p_user_id: uid });
+    var d = (res && res.data) || {};
+
+    if (res.error) { toast('Something went wrong.'); render(); return; }
     if (d.status === 'insufficient_embers') {
-      toast('Not enough Embers — you need ' + d.cost + ' and have ' + d.balance + '.');
-      return;
+      out.innerHTML = '';
+      toast('Not enough Embers \u2014 a roll costs ' + d.cost + ' and you have ' + d.balance + '.');
+      render(); return;
     }
-    if (d.status !== 'ok' && d.status !== 'already_owned') { toast('Could not unlock that one.'); return; }
-    state.owned[id] = true;
+    if (d.status === 'all_unlocked') {
+      out.innerHTML = '';
+      toast('You already own every banner.');
+      render(); return;
+    }
+    if (d.status !== 'success') { toast('Could not roll right now.'); render(); return; }
+
+    state.owned[d.unlocked] = true;
     if (typeof d.balance === 'number') document.getElementById('ember-bal').textContent = d.balance;
-    toast('Unlocked! It\'s in your collection.');
+
+    // Show the prize rather than just a toast — the reveal is the point.
+    out.innerHTML = '<div class="card active-card">' +
+      (d.image_url ? '<img class="shot" src="' + esc(d.image_url) + '" alt=""/>' : '<div class="shot-ph"></div>') +
+      '<div class="card-body"><div><div class="card-name">' + esc(d.label) + '</div>' +
+      '<div class="card-meta">New banner unlocked' +
+        (typeof d.remaining === 'number' && d.remaining > 0 ? ' \u00b7 ' + d.remaining + ' still to find' : '') +
+      '</div></div>' +
+      '<button class="btn btn-sm" onclick="equip(' + JSON.stringify(d.unlocked) + ')">Set active</button>' +
+      '</div></div>';
+
+    if (typeof window.DSBadgeCelebrate === 'function') {
+      window.DSBadgeCelebrate([{ name: d.label, icon: 'ti-photo', gem_name: 'New Banner', gem_color: '#2dd4bf' }]);
+    }
     render();
   }
 
