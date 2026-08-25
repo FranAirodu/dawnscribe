@@ -39,6 +39,7 @@
   <script src="storagePaths.js"></script>
   <script src="spoilerUtils.js"></script>
   <script src="accessibilityPrefs.js"></script>
+  <script src="badgeCelebrate.js"></script>
 <script src="blockUtils.js"></script>
 <script src="avatarRender.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
@@ -4694,6 +4695,26 @@ function dsLoadLayoutFromCache() {
           window.location.href = 'auth.html?reason=banned';
           return;
         }
+
+        try {
+          // ── BADGE UNLOCK QUEUE DRAIN (mirror of nav.js) ──────────────
+          // index.html does NOT load nav.js, so without this the homepage —
+          // the page users land on most — never showed a single unlock, and
+          // badges earned here sat in the queue until some other page ran.
+          var drained = await db.rpc('drain_badge_unlocks');
+          var unlocks = (drained.data && drained.data.unlocks) || [];
+          if (unlocks.length && typeof window.DSBadgeCelebrate === 'function') {
+            window.DSBadgeCelebrate(unlocks.map(function (u) {
+              return {
+                name: u.badge_name || (u.badge_slug || 'badge').replace(/_/g, ' '),
+                icon: u.badge_icon || 'ti-award',
+                gem_name: u.gem_name,
+                gem_color: u.gem_color || u.badge_color,
+                xp_reward: u.xp_reward
+              };
+            }));
+          }
+        } catch (e) {}
 
         // ── TIMEZONE CAPTURE (mirror of nav.js; index.html keeps its own nav copy) ──
         // Night Owl and any future local-time badge evaluate "night" in the reader's

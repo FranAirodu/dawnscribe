@@ -1384,6 +1384,47 @@ function dsApplyAccent(hex) {
   // sessionStorage and replay on the next page that can show it.
   var DS_UNLOCK_STASH = 'ds_pending_badge_toasts';
 
+  /* Badge unlocks get a full-screen celebration rather than a toast that
+     reads the same as "Settings saved". Loaded as a shared file so nav.js
+     and index.html (which keeps its own nav copy) can't drift apart. */
+  (function dsLoadBadgeCelebrate() {
+    if (window.DSBadgeCelebrate || document.getElementById('ds-bc-script')) return;
+    var sc = document.createElement('script');
+    sc.id = 'ds-bc-script';
+    sc.src = 'badgeCelebrate.js';
+    document.head.appendChild(sc);
+  })();
+
+  /* Flattens both unlock shapes — the one-time { awarded, badge_slug } form
+     and the tiered { newly_unlocked: [...] } form — into one list of things
+     to celebrate. */
+  function dsUnlocksToCelebrations(results) {
+    var out = [];
+    (results || []).forEach(function (r) {
+      var label = r.badge_name ||
+                  (r.badge_slug ? r.badge_slug.replace(/_/g, ' ') : 'badge');
+      var icon = r.badge_icon || 'ti-award';
+      if (r.newly_unlocked && r.newly_unlocked.length) {
+        r.newly_unlocked.forEach(function (tier) {
+          out.push({
+            name: label, icon: icon,
+            gem_name: tier.gem_name,
+            gem_color: tier.gem_color || r.badge_color,
+            xp_reward: tier.xp_reward
+          });
+        });
+      } else if (r.awarded && r.badge_slug) {
+        out.push({
+          name: label, icon: icon,
+          gem_name: r.gem_name,
+          gem_color: r.gem_color || r.badge_color,
+          xp_reward: r.xp_reward
+        });
+      }
+    });
+    return out;
+  }
+
   function dsStashUnlocks(results) {
     try {
       var prev = JSON.parse(sessionStorage.getItem(DS_UNLOCK_STASH) || '[]');
@@ -1402,8 +1443,19 @@ function dsApplyAccent(hex) {
   window.addEventListener('ds-badge-unlocked', function(e) {
     var results = (e.detail && e.detail.results) || [];
     if (!results.length) return;
-    // No toast function on this page — hold them rather than lose them.
-    if (typeof window.showToast !== 'function') { dsStashUnlocks(results); return; }
+    // The celebration renderer is self-contained, so unlike the old toast
+    // path it works on every page — nothing to hold back waiting for a
+    // page-local showToast. Only stash if the shared file hasn't loaded yet
+    // AND there's no toast fallback, so an unlock is never simply lost.
+    if (typeof window.DSBadgeCelebrate !== 'function' &&
+        typeof window.showToast !== 'function') { dsStashUnlocks(results); return; }
+
+    if (typeof window.DSBadgeCelebrate === 'function') {
+      var held0 = dsTakeStashedUnlocks();
+      if (held0.length) results = held0.concat(results);
+      window.DSBadgeCelebrate(dsUnlocksToCelebrations(results));
+      return;
+    }
     // Prepend anything held from an earlier page that couldn't display.
     var held = dsTakeStashedUnlocks();
     if (held.length) results = held.concat(results);
@@ -1436,7 +1488,8 @@ function dsApplyAccent(hex) {
   // Deferred so page scripts have defined showToast by the time this runs.
   window.addEventListener('load', function() {
     setTimeout(function() {
-      if (typeof window.showToast !== 'function') return;
+      if (typeof window.DSBadgeCelebrate !== 'function' &&
+          typeof window.showToast !== 'function') return;
       var held = dsTakeStashedUnlocks();
       if (!held.length) return;
       window.dispatchEvent(new CustomEvent('ds-badge-unlocked', {
