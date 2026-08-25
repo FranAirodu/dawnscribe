@@ -107,38 +107,7 @@
   </div>
 
   <div id="main" style="display:none;">
-    <div class="section-title">Your Collection</div>
-    <div class="section-hint" id="owned-hint">Banners you've unlocked. Set one as active, or build a rotation below.</div>
-    <div id="owned-list"></div>
-
-    <div id="rotation-block" style="display:none;">
-      <div class="section-title">Active Banners</div>
-      <div class="section-hint">
-        Add only the banners you actually want on display &mdash; the rest stay in your
-        collection, unused. With two or more in here, your profile and story pages
-        cycle through them on the timing you choose below.
-      </div>
-      <div class="rot-list" id="rot-list"></div>
-      <div class="section-title" style="font-size:15px;">How often it changes</div>
-      <div class="section-hint">
-        <b>Just one</b> keeps a single banner up until you change it yourself.
-      </div>
-      <div class="mode-row">
-        <button class="mode-btn" data-mode="manual" onclick="setMode('manual')">Just one</button>
-        <button class="mode-btn" data-mode="5min"   onclick="setMode('5min')">5 min</button>
-        <button class="mode-btn" data-mode="15min"  onclick="setMode('15min')">15 min</button>
-        <button class="mode-btn" data-mode="30min"  onclick="setMode('30min')">30 min</button>
-        <button class="mode-btn" data-mode="hourly" onclick="setMode('hourly')">Hourly</button>
-        <button class="mode-btn" data-mode="6h"     onclick="setMode('6h')">6 hours</button>
-        <button class="mode-btn" data-mode="12h"    onclick="setMode('12h')">12 hours</button>
-        <button class="mode-btn" data-mode="daily"  onclick="setMode('daily')">Daily</button>
-        <button class="mode-btn" data-mode="weekly" onclick="setMode('weekly')">Weekly</button>
-      </div>
-      <button class="btn" id="save-rot" onclick="saveRotation()"><i class="ti ti-device-floppy"></i> Save rotation</button>
-      <div class="note" id="rot-note"></div>
-    </div>
-
-    <div class="section-title">Unlock a Banner</div>
+    <div class="section-title" style="margin-top:6px;">Unlock a Banner</div>
     <div class="section-hint" id="roll-hint">
       Spend <b>10 Embers</b> for a random banner you don't own yet. You'll never
       be given one twice. Embers are earned by reading and checking in.
@@ -146,6 +115,37 @@
     <button class="btn" id="roll-btn" onclick="rollBanner()"><i class="ti ti-gift"></i> Roll a Banner (10 Embers)</button>
     <div id="roll-result" style="margin-top:16px;"></div>
     <div id="locked-list" style="margin-top:18px;"></div>
+
+    <div class="section-title">Your Collection</div>
+    <div class="section-hint" id="owned-hint">
+      Tick the banners you want shown on your profile and story pages. Pick one
+      to keep it up permanently, or several to cycle between them.
+    </div>
+    <div id="owned-list"></div>
+
+    <div id="rotation-block" style="display:none;">
+      <div class="section-title">On Display <span id="display-count" style="font-size:13px;font-family:Lato,sans-serif;color:var(--text3);font-weight:400;"></span></div>
+      <div class="section-hint" id="display-hint"></div>
+      <div class="rot-list" id="rot-list"></div>
+
+      <div id="timing-wrap">
+        <div class="section-title" style="font-size:15px;">How often it changes</div>
+        <div class="mode-row">
+          <button class="mode-btn" data-mode="manual" onclick="setMode('manual')">Don't change</button>
+          <button class="mode-btn" data-mode="5min"   onclick="setMode('5min')">5 min</button>
+          <button class="mode-btn" data-mode="15min"  onclick="setMode('15min')">15 min</button>
+          <button class="mode-btn" data-mode="30min"  onclick="setMode('30min')">30 min</button>
+          <button class="mode-btn" data-mode="hourly" onclick="setMode('hourly')">Hourly</button>
+          <button class="mode-btn" data-mode="6h"     onclick="setMode('6h')">6 hours</button>
+          <button class="mode-btn" data-mode="12h"    onclick="setMode('12h')">12 hours</button>
+          <button class="mode-btn" data-mode="daily"  onclick="setMode('daily')">Daily</button>
+          <button class="mode-btn" data-mode="weekly" onclick="setMode('weekly')">Weekly</button>
+        </div>
+      </div>
+
+      <button class="btn" id="save-rot" onclick="saveRotation()"><i class="ti ti-device-floppy"></i> Save changes</button>
+      <div class="note" id="rot-note"></div>
+    </div>
   </div>
 </div>
 
@@ -157,7 +157,7 @@
   var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
   var uid = null;
-  var state = { items: [], owned: {}, activeUrl: null, mode: 'manual', rotation: [] };
+  var state = { items: [], owned: {}, activeUrl: null, mode: 'manual', rotation: [], dirty: false };
 
   function esc(x) {
     return String(x == null ? '' : x).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -217,19 +217,30 @@
     var shop  = state.items.filter(function(i){ return !state.owned[i.id]; });
 
     document.getElementById('owned-list').innerHTML = owned.length ? owned.map(function(it){
-      var isActive = state.activeUrl && state.activeUrl === it.image_url;
-      return '<div class="card' + (isActive ? ' active-card' : '') + '">' + shot(it) +
+      var onDisplay = state.rotation.indexOf(it.id) !== -1;
+      var showing   = state.activeUrl && state.activeUrl === it.image_url;
+      return '<div class="card' + (onDisplay ? ' active-card' : '') + '">' + shot(it) +
         '<div class="card-body"><div><div class="card-name">' + esc(it.name) + '</div>' +
-        '<div class="card-meta">' + (isActive ? 'Currently showing' : 'In your collection') + '</div></div>' +
-        (isActive ? '<span style="font-size:12px;font-weight:700;color:var(--accent);"><i class="ti ti-check"></i> Active</span>'
-                  : '<button class="btn btn-sm" onclick="equip(\'' + it.id + '\')">Set active</button>') +
+        '<div class="card-meta">' +
+          (showing ? 'Showing right now' : (onDisplay ? 'On display' : 'Not shown')) +
+        '</div></div>' +
+        '<button class="btn btn-sm' + (onDisplay ? '' : ' btn-ghost') + '" ' +
+          'onclick="toggleDisplay(\'' + it.id + '\')">' +
+          (onDisplay ? '<i class="ti ti-check"></i> On display' : '<i class="ti ti-plus"></i> Show this') +
+        '</button>' +
         '</div></div>';
-    }).join('') : '<div class="empty">You haven\'t unlocked any banners yet. Pick one up below.</div>';
+    }).join('') : '<div class="empty">You haven\'t unlocked any banners yet. Roll for one above.</div>';
 
-    document.getElementById('rotation-block').style.display = owned.length >= 2 ? 'block' : 'none';
-    document.getElementById('owned-hint').textContent = owned.length >= 2
-      ? "Banners you've unlocked. Set one as active, or build a rotation below."
-      : "Banners you've unlocked.";
+    document.getElementById('rotation-block').style.display = owned.length ? 'block' : 'none';
+    // Timing only makes sense with something to cycle between.
+    document.getElementById('timing-wrap').style.display = state.rotation.length >= 2 ? 'block' : 'none';
+    document.getElementById('display-count').textContent =
+      state.rotation.length ? '(' + state.rotation.length + ')' : '';
+    document.getElementById('display-hint').textContent = state.rotation.length >= 2
+      ? 'These cycle on your profile and story pages, in this order.'
+      : (state.rotation.length === 1
+          ? 'This one stays up. Tick another in your collection to start cycling.'
+          : 'Nothing on display yet — tick a banner in your collection above.');
 
     document.querySelectorAll('.mode-btn').forEach(function(b){
       b.classList.toggle('on', b.dataset.mode === state.mode);
@@ -295,6 +306,14 @@
     var LABELS = { '5min':'every 5 minutes', '15min':'every 15 minutes',
       '30min':'every 30 minutes', 'hourly':'every hour', '6h':'every 6 hours',
       '12h':'every 12 hours', 'daily':'every day', 'weekly':'every week' };
+    var saveBtn = document.getElementById('save-rot');
+    if (saveBtn) {
+      saveBtn.innerHTML = state.dirty
+        ? '<i class="ti ti-device-floppy"></i> Save changes'
+        : '<i class="ti ti-check"></i> Saved';
+      saveBtn.disabled = !state.dirty || state.rotation.length === 0;
+    }
+
     document.getElementById('rot-note').textContent = state.mode === 'manual'
       ? 'Only the first banner in your active list will show, and it stays until you change it.'
       : (state.rotation.length < 2
@@ -304,14 +323,26 @@
             'profile updates even when you are not on the site.');
   }
 
-  function setMode(m) { state.mode = m; render(); }
-  function addRot(id) { state.rotation.push(id); renderRotation(); }
-  function removeRot(i) { state.rotation.splice(i,1); renderRotation(); }
+  function setMode(m) { state.mode = m; state.dirty = true; render(); }
+
+  /* One control, one idea: a banner is either on display or it isn't.
+     Previously "Set active" picked a single banner while the rotation list
+     picked several, which read as two competing settings for one slot. */
+  function toggleDisplay(id) {
+    var i = state.rotation.indexOf(id);
+    if (i === -1) state.rotation.push(id);
+    else state.rotation.splice(i, 1);
+    state.dirty = true;
+    render();
+  }
+  function addRot(id) { state.rotation.push(id); state.dirty = true; render(); }
+  function removeRot(i) { state.rotation.splice(i,1); state.dirty = true; render(); }
   function moveRot(i, d) {
     var j = i + d;
     if (j < 0 || j >= state.rotation.length) return;
     var t = state.rotation[i]; state.rotation[i] = state.rotation[j]; state.rotation[j] = t;
-    renderRotation();
+    state.dirty = true;
+    render();
   }
 
   async function saveRotation() {
@@ -324,7 +355,8 @@
     if (res.error) { toast('Could not save that rotation.'); return; }
     var first = byId(state.rotation[0]);
     if (first) state.activeUrl = first.image_url;
-    toast('Rotation saved.');
+    state.dirty = false;
+    toast(state.rotation.length > 1 ? 'Saved — your banners will cycle.' : 'Saved — banner updated.');
     render();
   }
 
@@ -369,7 +401,8 @@
       '<div class="card-meta">New banner unlocked' +
         (typeof d.remaining === 'number' && d.remaining > 0 ? ' \u00b7 ' + d.remaining + ' still to find' : '') +
       '</div></div>' +
-      '<button class="btn btn-sm" onclick="equip(\'' + d.unlocked + '\')">Set active</button>' +
+      '<button class="btn btn-sm" onclick="toggleDisplay(\'' + d.unlocked + '\')">' +
+      '<i class="ti ti-plus"></i> Show this</button>' +
       '</div></div>';
 
     if (typeof window.DSBadgeCelebrate === 'function') {
