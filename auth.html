@@ -245,6 +245,24 @@
           <span class="form-hint error" id="dob-error" style="display:none;" aria-live="polite"><i aria-hidden="true" class="ti ti-alert-circle"></i> Please enter a valid date of birth.</span>
         </div>
 
+
+        <div class="form-group" id="mature-prefs" style="display:none;">
+          <label class="form-label">Mature Content</label>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5;">
+            DawnScribe hides mature content by default. Choose what you'd like to see —
+            you can change this any time in Settings.
+          </div>
+          <div class="terms-wrap" style="margin-bottom:8px;">
+            <input type="checkbox" id="signup-show-gore"/>
+            <label for="signup-show-gore">Show <b>graphic violence &amp; gore</b></label>
+          </div>
+          <div class="terms-wrap">
+            <input type="checkbox" id="signup-show-erotica"/>
+            <label for="signup-show-erotica">Show <b>erotica &amp; sexual content</b></label>
+          </div>
+          <span class="form-hint">Leave both unticked to browse safely. Nothing mature will be shown.</span>
+        </div>
+
         <div class="terms-wrap">
           <input type="checkbox" id="terms"/>
           <label for="terms">I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></label>
@@ -805,6 +823,40 @@
       return null;
     }
 
+
+    /* ── MATURE CONTENT STEP (18+ only) ───────────────────────────
+       Asked at signup so a new reader isn't left wondering why the site looks
+       empty, or surprised by something they didn't want. The block only exists
+       for adults: under-18s are never shown the question, never mind the
+       content. dobPicker.js fires a bubbling 'change' on the hidden date input
+       whenever the three selects form a complete date, so this stays in sync
+       even though the visible controls aren't the input itself. */
+    function dsSignupIsAdult() {
+      var v = document.getElementById('signup-dob').value;
+      if (!v) return false;
+      var d = new Date(v + 'T00:00:00');
+      if (isNaN(d.getTime())) return false;
+      var cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - 18);
+      return d <= cutoff;
+    }
+
+    function dsUpdateMaturePrefs() {
+      var block = document.getElementById('mature-prefs');
+      if (!block) return;
+      var adult = dsSignupIsAdult();
+      block.style.display = adult ? '' : 'none';
+      if (!adult) {
+        // Clear rather than merely hide: someone who ticks a box, then corrects
+        // their birth year downward, must not carry the answer through.
+        document.getElementById('signup-show-gore').checked = false;
+        document.getElementById('signup-show-erotica').checked = false;
+      }
+    }
+
+    document.getElementById('signup-dob').addEventListener('change', dsUpdateMaturePrefs);
+    document.getElementById('signup-dob').addEventListener('input', dsUpdateMaturePrefs);
+
     document.getElementById('signup-btn').addEventListener('click', async function() {
       clearSignupError();
       var btn = this;
@@ -862,7 +914,14 @@
         email: email,
         password: password,
         options: {
-          data: { username: username, role: role, date_of_birth: dob },
+          data: {
+            username: username, role: role, date_of_birth: dob,
+            // Only ever sent for adults; the database re-checks the date of
+            // birth before honouring these, so the form cannot grant itself
+            // access by posting them alongside a minor's birthday.
+            show_gore:    dsSignupIsAdult() && document.getElementById('signup-show-gore').checked,
+            show_erotica: dsSignupIsAdult() && document.getElementById('signup-show-erotica').checked
+          },
           emailRedirectTo: window.location.origin + '/auth.html' + (dsValidNext() ? '?next=' + encodeURIComponent(dsValidNext()) : '')
         }
       });
