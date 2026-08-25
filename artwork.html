@@ -5,11 +5,15 @@
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DawnScribe — Artwork</title>
   <meta property="og:site_name" content="DawnScribe" />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="DawnScribe — Artwork" />
-  <meta property="og:description" content="DawnScribe is a creative platform where web novel authors and artists collaborate, share, and build community together." />
-  <meta property="og:image" content="https://www.dawnscribe.com/og-default.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" id="og-title" content="DawnScribe — Artwork" />
+  <meta property="og:description" id="og-description" content="DawnScribe is a creative platform where web novel authors and artists collaborate, share, and build community together." />
+  <meta property="og:image" id="og-image" content="https://www.dawnscribe.com/og-default.png" />
+  <meta property="og:url" id="og-url" content="https://www.dawnscribe.com/artwork.html" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" id="tw-title" content="DawnScribe — Artwork" />
+  <meta name="twitter:description" id="tw-description" content="DawnScribe is a creative platform where web novel authors and artists collaborate, share, and build community together." />
+  <meta name="twitter:image" id="tw-image" content="https://www.dawnscribe.com/og-default.png" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="escapeUtils.js"></script>
 <script src="storagePaths.js"></script>
@@ -666,6 +670,37 @@
       applyDocumentLang(workData.language);
       document.title = 'DawnScribe — ' + (data.title || 'Artwork');
 
+      // Link-preview metadata. Previously the OG tags were static, so every
+      // shared artwork previewed as "DawnScribe — Artwork" with the site logo
+      // instead of the piece itself — the worst possible default on an art site.
+      (function () {
+        var isAdult = !!(workData.content_rating_erotica || workData.content_rating_gore);
+        var title   = (data.title || 'Artwork') + ' — DawnScribe';
+
+        // Adult work: no synopsis, no image. The page itself is age-gated
+        // server-side, but an OG tag is served to any scraper or chat client
+        // with no age check possible, so the preview must not carry the art.
+        var desc = isAdult
+          ? 'Artwork on DawnScribe. Sign in to view.'
+          : ((workData.synopsis ? String(workData.synopsis) : '').slice(0, 200) ||
+             'Artwork on DawnScribe — a home for stories, art, and the people who love them.');
+        var img = (!isAdult && workData.cover_url)
+          ? workData.cover_url
+          : 'https://www.dawnscribe.com/og-default.png';
+
+        var setMeta = function (id, val) {
+          var el = document.getElementById(id);
+          if (el) el.setAttribute('content', val);
+        };
+        setMeta('og-title', title);
+        setMeta('og-description', desc);
+        setMeta('og-image', img);
+        setMeta('og-url', 'https://www.dawnscribe.com/artwork.html?id=' + data.id);
+        setMeta('tw-title', title);
+        setMeta('tw-description', desc);
+        setMeta('tw-image', img);
+      })();
+
       // Load artist profile separately (author_id has no FK constraint)
       var { data: profileData } = await db.from('profiles')
         .select('id, username, display_name, avatar_url')
@@ -746,7 +781,7 @@
       var artistName = p.display_name || p.username || 'Unknown';
       var artistInitial = (artistName[0] || '?').toUpperCase();
       var avatarHtml = p.avatar_url
-        ? '<img src="' + esc(p.avatar_url) + '" alt="avatar"/>'
+        ? '<img loading="lazy" decoding="async" src="' + esc(p.avatar_url) + '" alt="avatar"/>'
         : artistInitial;
 
       var tags = [];
@@ -1224,7 +1259,7 @@
       var p = profileMap[c.user_id] || {};
       var name = p.display_name || p.username || 'User';
       var avatarHtml = p.avatar_url
-        ? '<img src="' + esc(p.avatar_url) + '" alt=""/>'
+        ? '<img loading="lazy" decoding="async" src="' + esc(p.avatar_url) + '" alt=""/>'
         : '<i class="ti ti-user"></i>';
       var canDelete = session && (session.user.id === c.user_id || isOwner);
       var card = document.createElement('div');
@@ -1239,8 +1274,8 @@
           + (canDelete ? '<button class="comment-delete-btn" title="Delete"><i class="ti ti-trash"></i></button>' : '')
         + '</div>'
         + '<div class="comment-text">' + dsSpoiler.render(esc(c.content))
-          + (c.gif_url ? '<img class="cmt-attach" src="' + esc(c.gif_url) + '" alt="gif"/>' : '')
-          + (c.image_url ? '<img class="cmt-attach" src="' + esc(c.image_url) + '" alt="image"/>' : '')
+          + (c.gif_url ? '<img loading="lazy" decoding="async" class="cmt-attach" src="' + esc(c.gif_url) + '" alt="gif"/>' : '')
+          + (c.image_url ? '<img loading="lazy" decoding="async" class="cmt-attach" src="' + esc(c.image_url) + '" alt="image"/>' : '')
         + '</div>'
         + (session ? '<div class="comment-actions">'
             + '<button class="comment-reply-btn"><i class="ti ti-corner-down-right"></i> Reply</button>'
@@ -1528,7 +1563,7 @@
       }
       grid.innerHTML = data.map(function(w){
         var imgHtml = w.cover_url
-          ? '<img class="related-img" src="' + esc(w.cover_url) + '" alt="' + esc(w.title) + '"/>'
+          ? '<img loading="lazy" decoding="async" class="related-img" src="' + esc(w.cover_url) + '" alt="' + esc(w.title) + '"/>'
           : '<div class="related-img-placeholder">🎨</div>';
         return '<a class="related-card" href="artwork.html?id=' + w.id + '">'
           + imgHtml
@@ -1584,7 +1619,7 @@
         card.id = 'approval-card-' + collab.id;
         card.innerHTML =
           '<div class="approval-cover">'
-            + (novel.cover_url ? '<img src="' + esc(novel.cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>')
+            + (novel.cover_url ? '<img loading="lazy" decoding="async" src="' + esc(novel.cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>')
           + '</div>'
           + '<div class="approval-info">'
             + '<div class="approval-title">' + esc(novel.title || 'Untitled') + '</div>'
@@ -1642,7 +1677,7 @@
         var authorName = prof.display_name || prof.username || 'Author';
         var authorInitial = (authorName[0]||'?').toUpperCase();
         var avatarHtml = prof.avatar_url
-          ? '<img src="' + esc(prof.avatar_url) + '" alt=""/>'
+          ? '<img loading="lazy" decoding="async" src="' + esc(prof.avatar_url) + '" alt=""/>'
           : authorInitial;
 
         var card = document.createElement('div');
@@ -1651,7 +1686,7 @@
         card.innerHTML =
           '<div class="collab-novel-top">'
             + '<div class="collab-novel-cover">'
-              + (novel.cover_url ? '<img src="' + esc(novel.cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>')
+              + (novel.cover_url ? '<img loading="lazy" decoding="async" src="' + esc(novel.cover_url) + '" alt=""/>' : '<i class="ti ti-book"></i>')
             + '</div>'
             + '<div class="collab-novel-info">'
               + '<div class="collab-novel-badge"><i class="ti ti-writing"></i> Collab Story</div>'
@@ -1714,7 +1749,7 @@
         var name = p.display_name || p.username || 'User';
         var canDel = session && (session.user.id === c.user_id
           || (workData && session.user.id === workData.author_id));
-        var av = p.avatar_url ? '<img src="' + esc(p.avatar_url) + '" alt=""/>' : '<i class="ti ti-user"></i>';
+        var av = p.avatar_url ? '<img loading="lazy" decoding="async" src="' + esc(p.avatar_url) + '" alt=""/>' : '<i class="ti ti-user"></i>';
         var item = document.createElement('div');
         item.className = 'collab-comment-item';
         item.dataset.commentId = c.id;
@@ -1771,7 +1806,7 @@
           .select('id,username,display_name,avatar_url').eq('id', session.user.id).maybeSingle();
         var p = myProf || {};
         var name = p.display_name || p.username || 'User';
-        var av = p.avatar_url ? '<img src="' + esc(p.avatar_url) + '" alt=""/>' : '<i class="ti ti-user"></i>';
+        var av = p.avatar_url ? '<img loading="lazy" decoding="async" src="' + esc(p.avatar_url) + '" alt=""/>' : '<i class="ti ti-user"></i>';
         var item = document.createElement('div');
         item.className = 'collab-comment-item';
         item.dataset.commentId = inserted.id;
