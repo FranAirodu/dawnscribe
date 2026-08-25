@@ -21,12 +21,13 @@ const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx';
 const SITE = 'https://www.dawnscribe.com';
 
-// Static entries, carried over from the previous sitemap.
+// Static entries. NOTE: /collab-gallery.html was removed — it requires a
+// ?work= id and the bare URL renders "No story specified.", so listing it
+// pointed crawlers at an empty page. That page is now noindex too.
 const STATIC = [
   { loc: '/',                    priority: '1.0' },
   { loc: '/browse.html',         priority: '0.9' },
   { loc: '/rising.html',         priority: '0.8' },
-  { loc: '/collab-gallery.html', priority: '0.6' },
   { loc: '/about.html',          priority: '0.3' },
 ];
 
