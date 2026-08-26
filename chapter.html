@@ -2,6 +2,23 @@
 <html lang="en">
 <head>
   <script>
+
+  /* Badge and mission unlocks used the same small toast as "Settings saved",
+     which is exactly the "too easy to miss" problem the celebration exists to
+     fix. nav.js injects badgeCelebrate.js asynchronously, so an unlock firing
+     early could arrive before it loads — hence the toast fallback rather than
+     a silent no-op. */
+  function dsCelebrateUnlock(label, sub) {
+    if (typeof window.DSBadgeCelebrate === 'function') {
+      window.DSBadgeCelebrate([{
+        name: label, icon: 'ti-award',
+        gem_name: sub || null, gem_color: '#f0c674'
+      }]);
+      return;
+    }
+    if (typeof showToast === 'function') showToast('\uD83C\uDFC5 ' + label + '!', 'ti-award');
+  }
+
     (function() {
       var t = localStorage.getItem('ds_theme'); if (t) document.documentElement.setAttribute('data-theme', t);
       var w = localStorage.getItem('ds_reader_width'); if (w) document.documentElement.style.setProperty('--reader-width', w);
@@ -1532,7 +1549,7 @@
                   } else if (result.awarded) {
                     // One-time special badge
                     setTimeout(function() {
-                      showToast('🏅 Special badge unlocked: ' + (result.badge_slug || '') + '!', 'ti-award');
+                      dsCelebrateUnlock(String(result.badge_slug || 'badge').replace(/_/g, ' '), 'Special Badge');
                     }, (i + 1) * 700);
                   }
                 });
@@ -1881,7 +1898,7 @@
       try {
         var result = await db.rpc('complete_mission', { p_mission_key: missionKey });
         if (result.data && result.data.success) {
-          showToast('🏅 Mission complete: ' + result.data.badge_label + '!', 'ti-award');
+          dsCelebrateUnlock(result.data.badge_label, 'Mission Complete');
           if (result.data.all_done) {
             setTimeout(function() {
               showToast('⬛ Obsidian Medal unlocked! All new reader missions complete!', 'ti-sparkles');
@@ -5114,6 +5131,7 @@
 <script src="commentToolbar.js"></script>
 <script src="characterTitles.js"></script>
 <script src="footer.js"></script>
+<script src="badgeCelebrate.js"></script>
 <script src="nav.js"></script>
 </body>
 </html>

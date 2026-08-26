@@ -2,6 +2,23 @@
 <html lang="en">
 <head>
   <script>
+
+  /* Badge and mission unlocks used the same small toast as "Settings saved",
+     which is exactly the "too easy to miss" problem the celebration exists to
+     fix. nav.js injects badgeCelebrate.js asynchronously, so an unlock firing
+     early could arrive before it loads — hence the toast fallback rather than
+     a silent no-op. */
+  function dsCelebrateUnlock(label, sub) {
+    if (typeof window.DSBadgeCelebrate === 'function') {
+      window.DSBadgeCelebrate([{
+        name: label, icon: 'ti-award',
+        gem_name: sub || null, gem_color: '#f0c674'
+      }]);
+      return;
+    }
+    if (typeof showToast === 'function') showToast('\uD83C\uDFC5 ' + label + '!', 'ti-award');
+  }
+
     (function() {
       var h = localStorage.getItem('ds_accent_hex');
       if (!h) return;
@@ -531,7 +548,11 @@
   </div>
 
   <!-- PROFILE SECTIONS WRAP -->
-  <div id="profile-sections-wrap">
+  <!-- Starts hidden. init() waits on the auth session before it can populate
+       anything, so painting this immediately shows an empty or stale profile
+       for up to ~2s. Revealed by psRevealProfile() once real data is applied,
+       and by a failsafe timer so a slow lookup can never leave a blank page. -->
+  <div id="profile-sections-wrap" style="visibility:hidden;">
 
   <!-- PROFILE HEADER -->
   <div class="profile-header">
@@ -1048,6 +1069,7 @@
               ? 'We could not load this profile right now. Please try again in a moment.'
               : 'The user <strong>@' + escHtml(viewingUser) + '</strong> does not exist or their profile is unavailable.';
             if(ph) ph.innerHTML = '<div style="padding:48px;text-align:center;color:var(--text3);"><i class="ti ' + icon + '" style="font-size:40px;display:block;margin-bottom:12px;"></i><div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px;">' + title + '</div><div style="font-size:13px;">' + msg + '</div><a href="index.html" style="display:inline-block;margin-top:16px;color:var(--accent);">← Back to home</a></div>';
+            psRevealProfile();   // error state still has to be visible
             return;
           }
         } else if (viewingId) {
@@ -1077,6 +1099,9 @@
             } catch(e) {}
           }
         }
+        // Set BEFORE psInitLayout so the per-profile cache key resolves to the
+        // profile being viewed rather than to nothing.
+        if (profileData && profileData.id) { window._viewedProfileUserId = profileData.id; }
         var isOwnerNow = !!(session && profileData && session.user.id === profileData.id);
         window._viewedProfileData = profileData; // expose for toggleFollow and other handlers
         window._currentViewerSession = session; // expose session for loadActivity and other deferred functions
@@ -1084,6 +1109,7 @@
         // Init profile layout customization
         psInitLayout(session ? session.user.id : null, isOwnerNow);
         if (profileData) { applyProfileData(profileData, resolvedUsername, isOwnerNow); }
+        psRevealProfile();
         if (profileData && profileData.id) { loadStats(profileData.id); }
         if (profileData && profileData.id) { loadPrestigePills(profileData.id, isOwnerNow); }
         var isOwner = isOwnerNow;
@@ -2229,7 +2255,7 @@ async function checkFollowThreeAuthorsMission(myUserId) {
     if (authorCount < 3) return;
     var mRes = await db.rpc('complete_mission', { p_mission_key: 'follow_three_authors' });
     if (mRes.data && mRes.data.success) {
-      showToast('🏅 Mission complete: ' + mRes.data.badge_label + '!', 'ti-award');
+      dsCelebrateUnlock(mRes.data.badge_label, 'Mission Complete');
       if (mRes.data.all_done) {
         setTimeout(function() {
           showToast('⬛ Obsidian Medal unlocked! All new reader missions complete!', 'ti-sparkles');
@@ -3752,17 +3778,47 @@ async function handleFriendBtn() {
       { id: 'tabs',          icon: 'ti-layout-grid',  label: 'Works & Tabs',    hideable: false, ownerOnly: false },
     ];
     var PS_DEFAULT_ORDER  = ['bio','stats','prestige','announcements','collabs','tabs'];
+
+    /* Reveals the profile body once real data is in the DOM. Idempotent, so
+       it is safe to call from several points in the load sequence. */
+    var _psRevealed = false;
+    function psRevealProfile() {
+      if (_psRevealed) return;
+      _psRevealed = true;
+      var w = document.getElementById('profile-sections-wrap');
+      if (w) w.style.visibility = '';
+    }
+    /* Failsafe: if the profile lookup errors or hangs, the page must still
+       become visible rather than staying blank forever. A hidden page is a
+       worse failure than a briefly imperfect one. */
+    setTimeout(psRevealProfile, 4000);
     var psLayoutOrder     = null;
     var psLayoutHidden    = {};
     var psLayoutDragSrc   = null;
     var psIsOwner         = false;
 
+    /* Keyed per profile. A single shared key meant the last profile you
+       viewed lent its layout to the next one for the first few hundred
+       milliseconds — visible, and confusing, because it is someone else's
+       arrangement on your page. */
+    function psCacheKey() {
+      var id = window._viewedProfileUserId;
+      return id ? 'ds_profile_layout_' + id : null;
+    }
     function psLoadFromCache() {
-      try { var r = localStorage.getItem('ds_profile_layout'); return r ? JSON.parse(r) : null; } catch(e) { return null; }
+      var k = psCacheKey();
+      if (!k) return null;
+      try { var r = localStorage.getItem(k); return r ? JSON.parse(r) : null; } catch(e) { return null; }
     }
     function psSaveToCache(layout) {
-      try { localStorage.setItem('ds_profile_layout', JSON.stringify(layout)); } catch(e) {}
+      var k = psCacheKey();
+      if (!k) return;
+      try { localStorage.setItem(k, JSON.stringify(layout)); } catch(e) {}
     }
+
+    /* One-time cleanup of the old shared key, so the stale layout can't be
+       read by anything that still looks for it. */
+    try { localStorage.removeItem('ds_profile_layout'); } catch(e) {}
 
     function psApplyLayout(layout, isOwner) {
       if (!layout || !layout.order) return;
@@ -3991,6 +4047,7 @@ async function handleFriendBtn() {
 
 <script src="footer.js"></script>
 <script src="spoilerUtils.js"></script>
+<script src="badgeCelebrate.js"></script>
 <script src="nav.js"></script>
 </body>
 </html>

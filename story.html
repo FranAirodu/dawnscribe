@@ -2,6 +2,23 @@
 <html lang="en">
 <head>
   <script>
+
+  /* Badge and mission unlocks used the same small toast as "Settings saved",
+     which is exactly the "too easy to miss" problem the celebration exists to
+     fix. nav.js injects badgeCelebrate.js asynchronously, so an unlock firing
+     early could arrive before it loads — hence the toast fallback rather than
+     a silent no-op. */
+  function dsCelebrateUnlock(label, sub) {
+    if (typeof window.DSBadgeCelebrate === 'function') {
+      window.DSBadgeCelebrate([{
+        name: label, icon: 'ti-award',
+        gem_name: sub || null, gem_color: '#f0c674'
+      }]);
+      return;
+    }
+    if (typeof showToast === 'function') showToast('\uD83C\uDFC5 ' + label + '!', 'ti-award');
+  }
+
     function dsAuthNext() {
       return 'auth.html?next=' + encodeURIComponent(window.location.pathname.replace(/^\//,'') + window.location.search);
     }
@@ -2672,7 +2689,7 @@
         try {
           var { data: mRes } = await db.rpc('complete_mission', { p_mission_key: 'add_to_library' });
           if (mRes && mRes.success) {
-            showToast('🏅 Mission complete: ' + mRes.badge_label + '!', 'ti-award');
+            dsCelebrateUnlock(mRes.badge_label, 'Mission Complete');
             if (mRes.all_done) setTimeout(function(){ showToast('⬛ Obsidian Medal unlocked! All missions complete!', 'ti-sparkles'); }, 1200);
           }
         } catch(e) {}
@@ -4534,6 +4551,7 @@
 <script src="characterTitles.js"></script>
 <script src="commentToolbar.js"></script>
 <script src="footer.js"></script>
+<script src="badgeCelebrate.js"></script>
 <script src="nav.js"></script>
 </body>
 </html>

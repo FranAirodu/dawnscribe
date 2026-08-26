@@ -2,6 +2,23 @@
 <html lang="en">
 <head>
   <script>
+
+  /* Badge and mission unlocks used the same small toast as "Settings saved",
+     which is exactly the "too easy to miss" problem the celebration exists to
+     fix. nav.js injects badgeCelebrate.js asynchronously, so an unlock firing
+     early could arrive before it loads — hence the toast fallback rather than
+     a silent no-op. */
+  function dsCelebrateUnlock(label, sub) {
+    if (typeof window.DSBadgeCelebrate === 'function') {
+      window.DSBadgeCelebrate([{
+        name: label, icon: 'ti-award',
+        gem_name: sub || null, gem_color: '#f0c674'
+      }]);
+      return;
+    }
+    if (typeof showToast === 'function') showToast('\uD83C\uDFC5 ' + label + '!', 'ti-award');
+  }
+
     (function(){
       var t=localStorage.getItem('ds_theme');
       if(t) document.documentElement.setAttribute('data-theme',t);
@@ -274,6 +291,7 @@
   var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   window.db = db; // explicit: nav.js reads window.db (top-level var already does this, but every other page states it)
 </script>
+<script src="badgeCelebrate.js"></script>
 <script src="nav.js"></script>
 
 <!-- ── HERO ──────────────────────────────────────────────────── -->
@@ -491,7 +509,7 @@
     try {
       const { data } = await db.rpc('complete_mission', { p_mission_key: 'visit_marketplace' });
       if (data && data.success) {
-        showToast('🏅 Mission complete: ' + data.badge_label + '!', 'ti-award');
+        dsCelebrateUnlock(data.badge_label, 'Mission Complete');
         if (data.all_done) {
           setTimeout(function() {
             showToast('⬛ Obsidian Medal unlocked! All new reader missions complete!', 'ti-sparkles');
