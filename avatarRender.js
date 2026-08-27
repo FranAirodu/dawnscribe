@@ -256,10 +256,17 @@
    * art use the 'any' key. Falls back to the legacy flat image_url so
    * pre-existing rows keep working.
    */
-  function pickAssetPath(item, bodyType) {
+  function pickAssetPath(item, bodyType, pose) {
     if (!item) return null;
     var paths = item.asset_paths || {};
-    var p = ownStr(paths, bodyType || 'male') || ownStr(paths, 'any');
+    var bt = bodyType || 'male';
+    // Most specific first: per-pose art (e.g. "female:pose2" for Side View
+    // eyes), then pose-agnostic per-body-type, then body-agnostic 'any',
+    // then the legacy flat image_url. Older rows keyed just "female"/"male"/
+    // "any" keep resolving exactly as before.
+    var p = (pose && ownStr(paths, bt + ':' + pose)) ||
+            ownStr(paths, bt) ||
+            ownStr(paths, 'any');
     if (p) return p;
     return item.image_url || null;
   }
@@ -306,6 +313,7 @@
     skipSlots = skipSlots || [];
     var equipped = (avatarData && avatarData.equipped) || {};
     var bodyType = (avatarData && avatarData.body_type) || 'male';
+    var pose = (avatarData && avatarData.pose) || 'pose1';
     var layers = [];
 
     SLOT_ORDER.forEach(function (slot, slotIndex) {
@@ -314,7 +322,7 @@
       if (!eq) return;
       var item = allItems.find(function (it) { return it.id === eq.item_id; });
       if (!item) return;
-      var href = resolveAssetUrl(pickAssetPath(item, bodyType));
+      var href = resolveAssetUrl(pickAssetPath(item, bodyType, pose));
       if (!href) return; // no art for this body type yet — draw nothing
 
       var box = (slot === 'background') ? BG_BOX : bodyBoxFor(bodyType);
