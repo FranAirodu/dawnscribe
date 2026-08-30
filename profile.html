@@ -93,6 +93,15 @@
     .ps-layout-item.drag-over{border-color:var(--accent);background:rgba(45,212,191,0.06);}
     .ps-layout-item.is-hidden{opacity:0.45;}
     .ps-layout-item.locked{cursor:default;}
+    /* Sub-items belong to a parent section (e.g. Currently Writing lives inside
+       Bio). They can be hidden but not reordered, so no drag handle and they are
+       deliberately NOT .ps-layout-item — the drag listeners must not see them. */
+    .ps-sub-item{display:flex;align-items:center;gap:10px;padding:8px 12px 8px 34px;border-radius:10px;border:1px solid var(--border);border-top:none;background:var(--bg3);margin:-6px 0 8px 0;cursor:default;transition:opacity 0.15s;user-select:none;font-size:13px;}
+    .ps-sub-item.is-hidden{opacity:0.45;}
+    .ps-sub-item .ps-item-label{font-weight:600;}
+    .ps-sub-branch{color:var(--text3);font-size:12px;opacity:0.6;}
+    /* Wins over the inline display:flex set by renderCurrentlyWriting(). */
+    .ps-subsection-hidden{display:none !important;}
     .ps-drag-grip{color:var(--text3);font-size:16px;flex-shrink:0;}
     .ps-layout-item.locked .ps-drag-grip{opacity:0.25;pointer-events:none;}
     .ps-item-label{flex:1;font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:7px;}
@@ -1682,6 +1691,9 @@
         el.textContent = text;
         wrap.style.display = 'flex';
       }
+      // The hidden class carries !important so it still wins, but re-assert it
+      // here so state is correct immediately after any re-render.
+      wrap.classList.toggle('ps-subsection-hidden', psIsSubHidden('writing'));
     }
     function openCurrentlyWritingEditor() {
       openEditModal();
@@ -2576,6 +2588,7 @@ async function handleFriendBtn() {
       // Update currently writing display
       document.getElementById('currently-writing-text').textContent = currentlyWriting;
       document.getElementById('currently-writing-display').style.display = currentlyWriting ? 'flex' : 'none';
+      psApplySubsections();
       document.getElementById('edit-modal').classList.remove('open');
       showToast('Profile updated!');
       if (window._viewedProfileData) {
@@ -3770,13 +3783,22 @@ async function handleFriendBtn() {
        Sections: announcements, prestige, collabs (owner-only), tabs (locked/required)
     ══════════════════════════════════════════════════════════════ */
     var PS_SECTION_DEFS = [
-      { id: 'bio',           icon: 'ti-user',         label: 'Bio & Currently Writing', hideable: false, ownerOnly: false },
+      { id: 'bio',           icon: 'ti-user',         label: 'Bio',             hideable: false, ownerOnly: false },
       { id: 'stats',         icon: 'ti-chart-bar',    label: 'Stats (Followers, etc.)', hideable: true,  ownerOnly: false },
       { id: 'announcements', icon: 'ti-speakerphone', label: 'Announcements',   hideable: true,  ownerOnly: false },
       { id: 'prestige',      icon: 'ti-award',        label: 'Prestige Badges', hideable: true,  ownerOnly: false },
       { id: 'collabs',       icon: 'ti-writing',      label: 'Collab Shortcuts',hideable: true,  ownerOnly: true  },
       { id: 'tabs',          icon: 'ti-layout-grid',  label: 'Works & Tabs',    hideable: false, ownerOnly: false },
     ];
+    /* Sub-sections live inside a parent section's DOM block, so they can be
+       hidden but not reordered. `el` is the element the hidden class lands on.
+       They are intentionally absent from PS_DEFAULT_ORDER — they carry no
+       position of their own. Hidden state rides in the same
+       profile_section_order JSON under `hidden`, so no schema change. */
+    var PS_SUBSECTION_DEFS = [
+      { id: 'writing', parent: 'bio', icon: 'ti-pencil', label: 'Currently Writing', el: 'currently-writing-display' },
+    ];
+    function psIsSubHidden(id) { return !!(psLayoutHidden && psLayoutHidden[id]); }
     var PS_DEFAULT_ORDER  = ['bio','stats','prestige','announcements','collabs','tabs'];
 
     /* Reveals the profile body once real data is in the DOM. Idempotent, so
@@ -3854,6 +3876,17 @@ async function handleFriendBtn() {
         var shouldHide = !!psLayoutHidden[def.id];
         el.classList.toggle('ps-section-hidden', shouldHide);
       });
+      psApplySubsections();
+    }
+
+    /* Sub-sections are toggled on their own element rather than a
+       ps-section-* wrapper. Safe to call repeatedly. */
+    function psApplySubsections() {
+      PS_SUBSECTION_DEFS.forEach(function(def) {
+        var el = document.getElementById(def.el);
+        if (!el) return;
+        el.classList.toggle('ps-subsection-hidden', psIsSubHidden(def.id));
+      });
     }
 
     async function psInitLayout(uid, isOwner) {
@@ -3907,6 +3940,21 @@ async function handleFriendBtn() {
             ? '<button class="ps-item-toggle" onclick="psToggleHidden(&quot;' + id + '&quot;)" title="' + (hidden ? 'Show' : 'Hide') + '"><i class="ti ' + (hidden ? 'ti-eye-off' : 'ti-eye') + '"></i></button>'
             : '<span style="font-size:12px;color:var(--text3);padding-right:4px;"><i class="ti ti-lock" style="font-size:12px;"></i></span>');
         list.appendChild(item);
+
+        // Any sub-sections belonging to this section render directly beneath
+        // it: hide toggle only, no drag grip.
+        PS_SUBSECTION_DEFS.forEach(function(sub) {
+          if (sub.parent !== id) return;
+          var subHidden = psIsSubHidden(sub.id);
+          var subItem = document.createElement('div');
+          subItem.className = 'ps-sub-item' + (subHidden ? ' is-hidden' : '');
+          subItem.dataset.subId = sub.id;
+          subItem.innerHTML =
+            '<span class="ps-sub-branch">&#8627;</span>' +
+            '<span class="ps-item-label"><i class="ti ' + sub.icon + '"></i>' + sub.label + '</span>' +
+            '<button class="ps-item-toggle" onclick="psToggleSubHidden(&quot;' + sub.id + '&quot;)" title="' + (subHidden ? 'Show' : 'Hide') + '"><i class="ti ' + (subHidden ? 'ti-eye-off' : 'ti-eye') + '"></i></button>';
+          list.appendChild(subItem);
+        });
       });
       document.getElementById('profile-layout-modal-overlay').classList.add('open');
     }
@@ -3918,6 +3966,19 @@ async function handleFriendBtn() {
     function psToggleHidden(id) {
       psLayoutHidden[id] = !psLayoutHidden[id];
       var item = document.querySelector('.ps-layout-item[data-section-id="' + id + '"]');
+      if (!item) return;
+      var isHidden = !!psLayoutHidden[id];
+      item.classList.toggle('is-hidden', isHidden);
+      var btn = item.querySelector('.ps-item-toggle');
+      if (btn) {
+        btn.innerHTML = '<i class="ti ' + (isHidden ? 'ti-eye-off' : 'ti-eye') + '"></i>';
+        btn.title = isHidden ? 'Show' : 'Hide';
+      }
+    }
+
+    function psToggleSubHidden(id) {
+      psLayoutHidden[id] = !psLayoutHidden[id];
+      var item = document.querySelector('.ps-sub-item[data-sub-id="' + id + '"]');
       if (!item) return;
       var isHidden = !!psLayoutHidden[id];
       item.classList.toggle('is-hidden', isHidden);
