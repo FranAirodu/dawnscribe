@@ -81,6 +81,11 @@
     .ps-section{max-width:960px;margin:0 auto;padding:0 24px;}
     .profile-layout-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:600;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(3px);}
     .profile-layout-modal-overlay.open{display:flex;}
+    .plm-pin-row{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:7px;}
+    .plm-pin-label{font-size:12px;font-weight:700;color:var(--text2);display:flex;align-items:center;gap:6px;}
+    .plm-pin-label .ti{color:var(--accent);}
+    .plm-pin-select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;outline:none;width:100%;box-sizing:border-box;}
+    .plm-pin-select:focus{border-color:var(--accent);}
     .profile-layout-modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:min(92vw,480px);max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.6);}
     .plm-header{padding:18px 22px 14px;display:flex;align-items:center;gap:10px;font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--text);border-bottom:1px solid var(--border);}
     .plm-header i{color:var(--accent);}
@@ -1732,7 +1737,15 @@
           unpinBtn.title = 'Unpin';
           unpinBtn.style.cssText = 'margin-left:6px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text3);vertical-align:middle;';
           unpinBtn.innerHTML = '<i class="ti ti-x"></i>';
-          unpinBtn.onclick = function(e) { e.preventDefault(); pinWork(null); };
+          unpinBtn.setAttribute('aria-label', 'Unpin this work');
+          unpinBtn.onclick = function(e) {
+            e.preventDefault();
+            // Unpinning used to be a single unlabelled click with no undo, and
+            // the bare X sits close enough to the bio that it reads as a
+            // dismiss control for something else.
+            if (!confirm('Unpin this work from your profile?\n\nYou can pin it again from Customize Profile.')) return;
+            pinWork(null);
+          };
           wrap.appendChild(unpinBtn);
         }
       } catch(e) { console.error('renderPinnedWork error:', e); }
@@ -3956,6 +3969,13 @@ async function handleFriendBtn() {
           list.appendChild(subItem);
         });
       });
+      // Pinned-work picker: owner only. Unpinning from the profile card is a
+      // one-way click, so this is the way back.
+      var pinRow = document.getElementById('plm-pin-row');
+      if (pinRow) {
+        pinRow.style.display = psIsOwner ? 'flex' : 'none';
+        if (psIsOwner) psLoadPinOptions();
+      }
       document.getElementById('profile-layout-modal-overlay').classList.add('open');
     }
 
@@ -3975,6 +3995,43 @@ async function handleFriendBtn() {
 
     /* Closing without saving must not leave the preview applied, so the last
        saved layout is put back. */
+    /* Fills the pinned-work dropdown with the owner's own works. Runs on every
+       open so a work published since the last open still shows up. */
+    async function psLoadPinOptions() {
+      var sel = document.getElementById('plm-pin-select');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">Loading…</option>';
+      try {
+        var s = (await db.auth.getSession()).data.session;
+        if (!s) { sel.innerHTML = '<option value="">Not signed in</option>'; return; }
+        var res = await db.from('works')
+          .select('id,title')
+          .eq('author_id', s.user.id)
+          .order('created_at', { ascending: false });
+        var rows = (res && res.data) || [];
+        var current = (window._viewedProfileData && window._viewedProfileData.pinned_work_id) || '';
+        var html = '<option value="">— Nothing pinned —</option>';
+        rows.forEach(function(w) {
+          html += '<option value="' + escHtml(w.id) + '"' + (w.id === current ? ' selected' : '') + '>' +
+                  escHtml(w.title || 'Untitled') + '</option>';
+        });
+        if (!rows.length) html = '<option value="">You have no works yet</option>';
+        sel.innerHTML = html;
+      } catch (e) {
+        sel.innerHTML = '<option value="">Could not load works</option>';
+      }
+    }
+
+    /* Applies immediately rather than waiting for Save: pinning writes straight
+       to profiles.pinned_work_id, which is a different column from the layout
+       JSON that Save owns. Folding it into Save would mean one button writing
+       two unrelated things. */
+    function psPinSelectChanged() {
+      var sel = document.getElementById('plm-pin-select');
+      if (!sel) return;
+      pinWork(sel.value || null);
+    }
+
     function closeProfileLayoutModal() {
       document.getElementById('profile-layout-modal-overlay').classList.remove('open');
       var saved = psLoadFromCache();
@@ -4123,6 +4180,12 @@ async function handleFriendBtn() {
     <div class="plm-body">
       <p class="plm-desc">Drag to reorder sections. Use the eye icon to hide sections you don't want visitors to see. The Works tab cannot be hidden but can be moved.</p>
       <div id="ps-layout-list"></div>
+      <div class="plm-pin-row" id="plm-pin-row" style="display:none;">
+        <label class="plm-pin-label" for="plm-pin-select"><i class="ti ti-pin"></i> Pinned work</label>
+        <select class="plm-pin-select" id="plm-pin-select" onchange="psPinSelectChanged()">
+          <option value="">Loading…</option>
+        </select>
+      </div>
     </div>
     <div class="plm-footer">
       <button class="ps-reset-btn" onclick="resetProfileLayout()"><i class="ti ti-refresh"></i> Reset to Default</button>
