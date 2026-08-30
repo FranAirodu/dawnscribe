@@ -121,6 +121,7 @@ if (!window.DSStorage) {
 
   var _emojiTargetId = null;
   var _emojiOpen = false;
+  var _emojiOpenedAt = 0;
 
   var _pendingGif = {};    // context -> url
   var _pendingImage = {};  // context -> url
@@ -181,6 +182,12 @@ if (!window.DSStorage) {
   }
 
   function openEmoji(textareaId, context) {
+    // Stamped so the document-level outside-click handler can tell "the click
+    // that just opened this" apart from a genuine click elsewhere. Triggers are
+    // marked up three different ways across pages (id prefix, data-emoji-btn,
+    // bare onclick), so a selector-based exemption would miss some of them and
+    // the picker would close in the same tick it opened.
+    _emojiOpenedAt = Date.now();
     _emojiTargetId = textareaId;
     var picker = document.getElementById('ct-emoji-overlay');
     if (!picker) return;
@@ -595,13 +602,13 @@ if (!window.DSStorage) {
       .ct-emoji-search:focus{border-color:var(--accent,#2dd4bf);}
       .ct-emoji-cats{display:flex;gap:2px;padding:6px 8px;border-bottom:1px solid var(--border,#2a2a3a);overflow-x:auto;scrollbar-width:none;}
       .ct-emoji-cats::-webkit-scrollbar{display:none;}
-      .ct-emoji-cat{background:transparent;border:none;border-radius:6px;padding:4px 7px;cursor:pointer;font-size:16px;transition:background 0.15s;flex-shrink:0;}
+      .ct-emoji-cat{background:transparent;border:none;border-radius:6px;padding:4px 7px;cursor:pointer;font-size:20px;transition:background 0.15s;flex-shrink:0;}
       .ct-emoji-cat:hover{background:var(--bg3,#1a1a2e);}
       .ct-emoji-cat.active{background:rgba(45,212,191,0.15);}
       .ct-emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:8px;max-height:200px;overflow-y:auto;scrollbar-width:thin;}
       .ct-emoji-grid::-webkit-scrollbar{width:4px;}
       .ct-emoji-grid::-webkit-scrollbar-thumb{background:var(--bg3,#1a1a2e);border-radius:4px;}
-      .ct-emoji-btn{background:transparent;border:none;border-radius:6px;padding:5px;font-size:20px;cursor:pointer;transition:background 0.1s;line-height:1;}
+      .ct-emoji-btn{background:transparent;border:none;border-radius:6px;padding:5px;font-size:24px;cursor:pointer;transition:background 0.1s;line-height:1;}
       .ct-emoji-btn:hover{background:var(--bg3,#1a1a2e);}
       .ct-emoji-empty{grid-column:1/-1;text-align:center;padding:16px;color:var(--text3,#666);font-size:13px;}
 
@@ -674,7 +681,12 @@ if (!window.DSStorage) {
   // ── GLOBAL EVENTS ─────────────────────────────────────────────────────────
 
   function _bindGlobalEvents() {
-    document.addEventListener('DOMContentLoaded', function() {
+    // init() is called by pages AFTER the document has parsed, so listening for
+    // DOMContentLoaded here meant the event had already fired and none of the
+    // handlers below were ever attached (outside-click close, Escape close and
+    // the GIF backdrop close were all dead). Bind immediately when the document
+    // is already past loading; otherwise wait for the event as before.
+    function _bind() {
       // GIF search on Enter
       document.addEventListener('keydown', function(e) {
         var input = document.getElementById('ct-gif-search-input');
@@ -694,8 +706,12 @@ if (!window.DSStorage) {
         var picker = document.getElementById('ct-emoji-overlay');
         if (!picker || !picker.classList.contains('show')) return;
         if (picker.contains(e.target)) return;
-        // Also allow emoji buttons to toggle it
-        if (e.target.closest && e.target.closest('.ct-emoji-btn')) return;
+        // Ignore the same click that opened it (see openEmoji).
+        if (Date.now() - _emojiOpenedAt < 150) return;
+        // Let the toolbar's own trigger button through so it can toggle the
+        // picker shut. Matched by id prefix only: the .ct-emoji-btn class is
+        // shared with every tile in the grid, so matching on the class here
+        // would exempt the tiles too.
         if (e.target.closest && e.target.closest('[id^="ct-emoji-btn-"]')) return;
         picker.classList.remove('show');
         _emojiOpen = false;
@@ -708,7 +724,13 @@ if (!window.DSStorage) {
           _gifClose();
         }
       });
-    });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _bind);
+    } else {
+      _bind();
+    }
   }
 
   // ── HELPERS ───────────────────────────────────────────────────────────────
