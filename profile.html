@@ -3959,12 +3959,36 @@ async function handleFriendBtn() {
       document.getElementById('profile-layout-modal-overlay').classList.add('open');
     }
 
+    /* Applies the current (unsaved) hidden flags to the page behind the modal
+       so the eye icon has a visible effect straight away. Without this the
+       toggle looks broken: nothing changes until Save is pressed. Order is
+       deliberately NOT previewed - reordering the live DOM mid-drag would be
+       disorienting, and Save handles it. */
+    function psPreviewHidden() {
+      PS_SECTION_DEFS.forEach(function(def) {
+        if (!def.hideable) return;
+        var el = document.getElementById('ps-section-' + def.id);
+        if (el) el.classList.toggle('ps-section-hidden', !!psLayoutHidden[def.id]);
+      });
+      psApplySubsections();
+    }
+
+    /* Closing without saving must not leave the preview applied, so the last
+       saved layout is put back. */
     function closeProfileLayoutModal() {
       document.getElementById('profile-layout-modal-overlay').classList.remove('open');
+      var saved = psLoadFromCache();
+      if (saved) {
+        psApplyLayout(saved, psIsOwner);
+      } else {
+        psLayoutHidden = {};
+        psPreviewHidden();
+      }
     }
 
     function psToggleHidden(id) {
       psLayoutHidden[id] = !psLayoutHidden[id];
+      psPreviewHidden();
       var item = document.querySelector('.ps-layout-item[data-section-id="' + id + '"]');
       if (!item) return;
       var isHidden = !!psLayoutHidden[id];
@@ -3978,6 +4002,7 @@ async function handleFriendBtn() {
 
     function psToggleSubHidden(id) {
       psLayoutHidden[id] = !psLayoutHidden[id];
+      psPreviewHidden();
       var item = document.querySelector('.ps-sub-item[data-sub-id="' + id + '"]');
       if (!item) return;
       var isHidden = !!psLayoutHidden[id];
@@ -4003,8 +4028,8 @@ async function handleFriendBtn() {
       PS_DEFAULT_ORDER.forEach(function(id){ if (order.indexOf(id) === -1) order.push(id); });
       psLayoutOrder = order;
       var layout = { order: psLayoutOrder, hidden: psLayoutHidden };
-      psApplyLayout(layout, psIsOwner);
       psSaveToCache(layout);
+      psApplyLayout(layout, psIsOwner);
       closeProfileLayoutModal();
       showToast('Profile layout saved', 'ti-check');
       try {
