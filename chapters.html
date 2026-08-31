@@ -972,7 +972,8 @@
         if (!confirm('Remove the Book Card? Its aura, songs, takes, quotes, vibe, and Q&A will be deleted.')) {
           if (btn) btn.disabled = false; return;
         }
-        await db.from('novel_characters').delete().eq('id', _bookCardId);
+        { var _w1 = await db.from('novel_characters').delete().eq('id', _bookCardId);
+          if (_w1 && _w1.error) { console.error('[write] chapters.html:', _w1.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
         _bookCardId = null;
         showToast('Book Card removed', 'ti-check');
       } else {
@@ -1524,10 +1525,21 @@
   async function bulkPublish() {
     var ids = getSelectedChapterIds();
     if (!ids.length) return;
-    for (var i=0;i<ids.length;i++) await db.from('chapters').update({ status:'published', scheduled_for:null }).eq('id', ids[i]);
+    // Count failures instead of assuming the batch succeeded: a mid-loop
+    // failure used to leave some chapters unpublished while the toast still
+    // claimed all of them went out.
+    var _pubFail = 0;
+    for (var i=0;i<ids.length;i++) {
+      var _pr = await db.from('chapters').update({ status:'published', scheduled_for:null }).eq('id', ids[i]);
+      if (_pr && _pr.error) { console.error('[write] chapters.html bulkPublish:', _pr.error); _pubFail++; }
+    }
     // Award publish badges once for the batch (never block the flow)
     try { await db.rpc('award_chapter_publish_badges', { p_user_id: currentSession.user.id, p_work_id: workId }); } catch(e) {}
-    showToast(ids.length + ' chapter(s) published!', 'ti-rocket');
+    if (_pubFail) {
+      showToast(_pubFail + ' of ' + ids.length + ' chapter(s) could not be published. Please try again.', 'ti-alert-triangle');
+    } else {
+      showToast(ids.length + ' chapter(s) published!', 'ti-rocket');
+    }
     // Keep the open editor in sync so autosave doesn't revert the status
     if (ids.includes(editingChapterId)) {
       currentChapterStatus = 'published';
@@ -1544,8 +1556,16 @@
   async function bulkDraft() {
     var ids = getSelectedChapterIds();
     if (!ids.length) return;
-    for (var i=0;i<ids.length;i++) await db.from('chapters').update({ status:'draft', scheduled_for:null }).eq('id', ids[i]);
-    showToast(ids.length + ' chapter(s) set to draft.', 'ti-device-floppy');
+    var _draftFail = 0;
+    for (var i=0;i<ids.length;i++) {
+      var _dr = await db.from('chapters').update({ status:'draft', scheduled_for:null }).eq('id', ids[i]);
+      if (_dr && _dr.error) { console.error('[write] chapters.html bulkDraft:', _dr.error); _draftFail++; }
+    }
+    if (_draftFail) {
+      showToast(_draftFail + ' of ' + ids.length + ' chapter(s) could not be changed. Please try again.', 'ti-alert-triangle');
+    } else {
+      showToast(ids.length + ' chapter(s) set to draft.', 'ti-device-floppy');
+    }
     if (ids.includes(editingChapterId)) {
       currentChapterStatus = 'draft';
       var plbl = document.getElementById('publish-label');
@@ -1558,8 +1578,16 @@
     var ids = getSelectedChapterIds();
     if (!ids.length) return;
     if (!confirm('Delete ' + ids.length + ' chapter(s)? This cannot be undone.')) return;
-    for (var i=0;i<ids.length;i++) await db.from('chapters').delete().eq('id', ids[i]);
-    showToast(ids.length + ' chapter(s) deleted.', 'ti-trash');
+    var _delFail = 0;
+    for (var i=0;i<ids.length;i++) {
+      var _xr = await db.from('chapters').delete().eq('id', ids[i]);
+      if (_xr && _xr.error) { console.error('[write] chapters.html bulkDelete:', _xr.error); _delFail++; }
+    }
+    if (_delFail) {
+      showToast(_delFail + ' of ' + ids.length + ' chapter(s) could not be deleted. Please try again.', 'ti-alert-triangle');
+    } else {
+      showToast(ids.length + ' chapter(s) deleted.', 'ti-trash');
+    }
     if (ids.includes(editingChapterId)) setModeAdd();
     await loadChapters();
     updateBulkBar();
@@ -1714,12 +1742,14 @@
       if (!silent) showToast(finalStatus === 'scheduled' ? 'Chapter scheduled!' : 'Chapter updated!', finalStatus === 'scheduled' ? 'ti-calendar-clock' : 'ti-check');
 
       // Save a revision snapshot
-      await db.from('chapter_revisions').insert({ chapter_id: editingChapterId, title: title, content: content, word_count: wordCount });
+      { var _w2 = await db.from('chapter_revisions').insert({ chapter_id: editingChapterId, title: title, content: content, word_count: wordCount });
+        if (_w2 && _w2.error) { console.error('[write] chapters.html:', _w2.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
       // Prune to last 5
       var { data: revs } = await db.from('chapter_revisions').select('id,created_at').eq('chapter_id', editingChapterId).order('created_at', { ascending: false });
       if (revs && revs.length > 5) {
         var toDelete = revs.slice(5).map(function(r){ return r.id; });
-        await db.from('chapter_revisions').delete().in('id', toDelete);
+        { var _w3 = await db.from('chapter_revisions').delete().in('id', toDelete);
+          if (_w3 && _w3.error) { console.error('[write] chapters.html:', _w3.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
       }
     } else {
       // INSERT new chapter
@@ -2547,7 +2577,8 @@
   }
   async function removePoll(pollId) {
     if (!confirm('Remove this poll? Existing votes will be deleted too.')) return;
-    await db.from('chapter_polls').delete().eq('id', pollId);
+    { var _w4 = await db.from('chapter_polls').delete().eq('id', pollId);
+      if (_w4 && _w4.error) { console.error('[write] chapters.html:', _w4.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
     activePolls = activePolls.filter(function(p){ return p.id !== pollId; });
     renderActivePolls();
     showToast('Poll removed.', 'ti-trash');
@@ -3020,7 +3051,8 @@
         if (!workData || !workData.translation_note) {
           updatePayload.translation_note = 'Fan translation of "' + linkedTitle + '"' + (authorName ? ' by ' + authorName : '');
         }
-        await db.from('works').update(updatePayload).eq('id', workId);
+        { var _w5 = await db.from('works').update(updatePayload).eq('id', workId);
+          if (_w5 && _w5.error) { console.error('[write] chapters.html:', _w5.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
         if (workData) { workData.is_fan_translation = true; if (updatePayload.translation_note) workData.translation_note = updatePayload.translation_note; }
       } catch(e) {}
       // Informational notification only — no approval needed
@@ -3208,7 +3240,8 @@
     if (!char) return;
     var reason = await openEndCharModal(char.name, id);
     if (reason === null) return;
-    await db.from('novel_characters').update({ status: 'ended', ended_reason: reason }).eq('id', id);
+    { var _w6 = await db.from('novel_characters').update({ status: 'ended', ended_reason: reason }).eq('id', id);
+      if (_w6 && _w6.error) { console.error('[write] chapters.html:', _w6.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
     char.status = 'ended'; char.chapter_status = 'skipped';
     ctRender();
     showToast(char.name + ' marked as ended.', 'ti-skull');
@@ -3219,7 +3252,8 @@
     var rows = ctCharacters.map(function(c) {
       return { chapter_id: chapterId, character_id: c.id, work_id: wId, status: c.chapter_status || 'active' };
     });
-    await db.from('chapter_characters').upsert(rows, { onConflict: 'chapter_id,character_id' });
+    { var _w7 = await db.from('chapter_characters').upsert(rows, { onConflict: 'chapter_id,character_id' });
+      if (_w7 && _w7.error) { console.error('[write] chapters.html:', _w7.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
   }
 </script>
 
@@ -3404,17 +3438,19 @@
     for (var s = 0; s < _swrMatches.length; s++) {
       var sm = _swrMatches[s];
       try {
-        await db.from('chapter_revisions').insert({
+        { var _w8 = await db.from('chapter_revisions').insert({
           chapter_id: sm.chapterId,
           title: sm.chapterTitle || 'Untitled',
           content: sm.content,
           word_count: (sm.content || '').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().split(' ').filter(Boolean).length
         });
+          if (_w8 && _w8.error) { console.error('[write] chapters.html:', _w8.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
         // Prune to last 5 revisions per chapter
         var { data: revs } = await db.from('chapter_revisions').select('id,created_at').eq('chapter_id', sm.chapterId).order('created_at', { ascending: false });
         if (revs && revs.length > 5) {
           var toDelete = revs.slice(5).map(function(r){ return r.id; });
-          await db.from('chapter_revisions').delete().in('id', toDelete);
+          { var _w9 = await db.from('chapter_revisions').delete().in('id', toDelete);
+            if (_w9 && _w9.error) { console.error('[write] chapters.html:', _w9.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
         }
       } catch(e) {} // non-blocking
     }

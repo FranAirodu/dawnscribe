@@ -518,11 +518,12 @@
     await loadMessages(convo.id);
 
     // Mark as read
-    await db.from('messages')
+    { var _w1 = await db.from('messages')
       .update({ read_at: new Date().toISOString() })
       .eq('conversation_id', convo.id)
       .is('read_at', null)
       .neq('sender_id', currentSession.user.id);
+      if (_w1 && _w1.error) { console.error('[write] messages.html:', _w1.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
 
     // Update unread count in local data
     var c = conversations.find(function(x){ return x.id===convo.id; });
@@ -670,7 +671,8 @@
       showToast('Failed to send: '+res.error.message, 'ti-x'); btn.disabled=false; _sendingMessage=false; return;
     }
     // Update convo last_message
-    await db.from('conversations').update({ last_message: text, last_message_at: new Date().toISOString() }).eq('id', activeConvoId);
+    { var _w2 = await db.from('conversations').update({ last_message: text, last_message_at: new Date().toISOString() }).eq('id', activeConvoId);
+      if (_w2 && _w2.error) { console.error('[write] messages.html:', _w2.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
     input.value = '';
     input.style.height = 'auto';
     document.getElementById('char-remaining').textContent = '2000';
@@ -740,7 +742,8 @@
           if(m.sender_id === currentSession.user.id) return; // already rendered locally
           appendMessage(m);
           // Mark read immediately since they're looking at the convo
-          await db.from('messages').update({ read_at: new Date().toISOString() }).eq('id', m.id);
+          { var _w3 = await db.from('messages').update({ read_at: new Date().toISOString() }).eq('id', m.id);
+            if (_w3 && _w3.error) { console.error('[write] messages.html:', _w3.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
           // Update convo list
           var c = conversations.find(function(x){ return x.id===convoId; });
           if(c){ c.last_message = m.content; c.last_message_at = m.created_at; }
@@ -770,8 +773,10 @@
     if(softRes.error){ showToast('Could not delete conversation: ' + softRes.error.message, 'ti-x'); return; }
     if(!softRes.data || !softRes.data.length){ showToast('Could not delete conversation.', 'ti-x'); return; }
     // Soft-delete messages: sent by me and received by me
-    await db.from('messages').update({ deleted_by_sender: true }).eq('conversation_id', idToDelete).eq('sender_id', myId);
-    await db.from('messages').update({ deleted_by_recipient: true }).eq('conversation_id', idToDelete).neq('sender_id', myId);
+    { var _w4 = await db.from('messages').update({ deleted_by_sender: true }).eq('conversation_id', idToDelete).eq('sender_id', myId);
+      if (_w4 && _w4.error) { console.error('[write] messages.html:', _w4.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
+    { var _w5 = await db.from('messages').update({ deleted_by_recipient: true }).eq('conversation_id', idToDelete).neq('sender_id', myId);
+      if (_w5 && _w5.error) { console.error('[write] messages.html:', _w5.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
     conversations = conversations.filter(function(c){ return c.id !== idToDelete; });
     activeConvoId = null; activeOtherUser = null;
     document.getElementById('active-convo').style.display = 'none';
@@ -850,7 +855,8 @@
     // Send message
     var res = await db.from('messages').insert({ conversation_id: convoId, sender_id: currentSession.user.id, content: body }).select().single();
     if(res.error){ showToast('Error: '+res.error.message,'ti-x'); btn.disabled=false; btn.innerHTML='<i class="ti ti-send"></i> Send'; return; }
-    await db.from('conversations').update({ last_message: body, last_message_at: new Date().toISOString() }).eq('id', convoId);
+    { var _w6 = await db.from('conversations').update({ last_message: body, last_message_at: new Date().toISOString() }).eq('id', convoId);
+      if (_w6 && _w6.error) { console.error('[write] messages.html:', _w6.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
 
     closeComposeModal();
     showToast('Message sent!', 'ti-send');

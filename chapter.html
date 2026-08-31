@@ -2190,8 +2190,9 @@
         if (dnBtn) dnBtn.classList.remove('voted-down');
         if (dir === 'up' && upCount) upCount.textContent = Math.max(0, parseInt(upCount.textContent||0) - 1);
         if (dir === 'down' && dnCount) dnCount.textContent = Math.max(0, parseInt(dnCount.textContent||0) - 1);
-        await db.from('paragraph_comment_votes').delete()
+        { var _w1 = await db.from('paragraph_comment_votes').delete()
           .eq('comment_id', commentId).eq('user_id', currentSession.user.id);
+          if (_w1 && _w1.error) { console.error('[write] chapter.html:', _w1.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
         // Server trigger recomputes vote counts on paragraph_comments
       } else {
         // Switching or new vote
@@ -2202,9 +2203,10 @@
         paraVoteCache[commentId] = dir;
         if (dir === 'up') { if(upBtn) upBtn.classList.add('voted-up'); if(upCount) upCount.textContent = parseInt(upCount.textContent||0) + 1; }
         if (dir === 'down') { if(dnBtn) dnBtn.classList.add('voted-down'); if(dnCount) dnCount.textContent = parseInt(dnCount.textContent||0) + 1; }
-        await db.from('paragraph_comment_votes').upsert({
+        { var _w2 = await db.from('paragraph_comment_votes').upsert({
           comment_id: commentId, user_id: currentSession.user.id, vote_type: dir
         }, { onConflict: 'comment_id,user_id' });
+          if (_w2 && _w2.error) { console.error('[write] chapter.html:', _w2.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
         // Server trigger recomputes vote counts and auto-deletes at 7 downvotes
         var dnVal = parseInt(dnCount ? dnCount.textContent : 0);
         if (dir === 'down' && dnVal >= 7) {
@@ -2942,7 +2944,8 @@
       confirmBtn.addEventListener('click', async function() {
         var reason = inp.value.trim() || 'No longer in story';
         wrap.remove();
-        await db.from('novel_characters').update({ status: 'ended', ended_reason: reason }).eq('id', id);
+        { var _w3 = await db.from('novel_characters').update({ status: 'ended', ended_reason: reason }).eq('id', id);
+          if (_w3 && _w3.error) { console.error('[write] chapter.html:', _w3.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
         char.status = 'ended'; char.chapter_status = 'skipped';
         editCtRender();
         showToast(char.name + ' marked as ended.', 'ti-skull');
@@ -2958,7 +2961,8 @@
       var rows = editCtCharacters.map(function(c) {
         return { chapter_id: chapterId, character_id: c.id, work_id: workId, status: c.chapter_status || 'active' };
       });
-      await db.from('chapter_characters').upsert(rows, { onConflict: 'chapter_id,character_id' });
+      { var _w4 = await db.from('chapter_characters').upsert(rows, { onConflict: 'chapter_id,character_id' });
+        if (_w4 && _w4.error) { console.error('[write] chapter.html:', _w4.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
     }
 
 
@@ -3247,7 +3251,8 @@
       var newUps = comment.upvotes || 0;
       if (prev === 'up') {
         // Toggle off
-        await db.from(table).delete().eq('comment_id', commentId).eq('user_id', currentSession.user.id);
+        { var _w5 = await db.from(table).delete().eq('comment_id', commentId).eq('user_id', currentSession.user.id);
+          if (_w5 && _w5.error) { console.error('[write] chapter.html:', _w5.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
         newUps = Math.max(0, newUps - 1);
         // Counters are derived: a DEFINER trigger on the vote table recomputes
         // upvotes/downvotes. Writing them from here is not permitted and never
@@ -3255,7 +3260,8 @@
         delete spMyVotes[commentId];
       } else {
         // New upvote (if they had a downvote, remove it first — downvotes not shown here but kept consistent)
-        await db.from(table).upsert({ comment_id: commentId, user_id: currentSession.user.id, vote_type: 'up' }, { onConflict: 'comment_id,user_id' });
+        { var _w6 = await db.from(table).upsert({ comment_id: commentId, user_id: currentSession.user.id, vote_type: 'up' }, { onConflict: 'comment_id,user_id' });
+          if (_w6 && _w6.error) { console.error('[write] chapter.html:', _w6.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
         if (prev !== 'up') newUps = newUps + 1;
         spMyVotes[commentId] = 'up';
       }
@@ -4167,7 +4173,8 @@
       // If already placed, remove first (move)
       var existing = myEchoes[typeId];
       if (existing) {
-        await db.from('reader_echoes').delete().eq('id', existing.id);
+        { var _w7 = await db.from('reader_echoes').delete().eq('id', existing.id);
+          if (_w7 && _w7.error) { console.error('[write] chapter.html:', _w7.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
       }
       var { data, error } = await db.from('reader_echoes').insert({
         work_id: chapterData.work_id,
@@ -4195,7 +4202,8 @@
       activeEchoType = null;
       echoModeActive = false;
       var existing = myEchoes[typeId];
-      if (existing) { await db.from('reader_echoes').delete().eq('id', existing.id); }
+      if (existing) { { var _w8 = await db.from('reader_echoes').delete().eq('id', existing.id);
+   if (_w8 && _w8.error) { console.error('[write] chapter.html:', _w8.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } } }
       var { data, error } = await db.from('reader_echoes').insert({
         work_id: chapterData.work_id,
         chapter_id: chapterData.id,
@@ -4215,7 +4223,8 @@
       activeEchoType = null;
       echoModeActive = false;
       var existing = myEchoes[typeId];
-      if (existing) { await db.from('reader_echoes').delete().eq('id', existing.id); }
+      if (existing) { { var _w9 = await db.from('reader_echoes').delete().eq('id', existing.id);
+   if (_w9 && _w9.error) { console.error('[write] chapter.html:', _w9.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } } }
       var { data, error } = await db.from('reader_echoes').insert({
         work_id: chapterData.work_id,
         echo_type_id: typeId,
@@ -4333,7 +4342,8 @@
     async function echoRemove(typeId) {
       var existing = myEchoes[typeId];
       if (!existing) return;
-      await db.from('reader_echoes').delete().eq('id', existing.id);
+      { var _w10 = await db.from('reader_echoes').delete().eq('id', existing.id);
+        if (_w10 && _w10.error) { console.error('[write] chapter.html:', _w10.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
       delete myEchoes[typeId];
       echoRenderPanel();
       echoRenderPage();
