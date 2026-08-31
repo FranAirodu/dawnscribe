@@ -253,6 +253,19 @@
     .modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;}
     .modal-title{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:20px;display:flex;align-items:center;gap:8px;}
     .modal-title i{color:var(--accent);}
+    .fl-tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);}
+    .fl-tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;color:var(--text3);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.15s;}
+    .fl-tab:hover{color:var(--text2);}
+    .fl-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+    .fl-list{min-height:180px;max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
+    .fl-row{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:10px;text-decoration:none;transition:background 0.15s;}
+    .fl-row:hover{background:var(--bg3);}
+    .fl-av{width:38px;height:38px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--text3);}
+    .fl-av img{width:100%;height:100%;object-fit:cover;display:block;}
+    .fl-name{font-size:13.5px;font-weight:700;color:var(--text);line-height:1.3;}
+    .fl-handle{font-size:12px;color:var(--text3);}
+    .fl-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:44px 12px;color:var(--text3);font-size:13px;text-align:center;}
+    .fl-empty i{font-size:26px;opacity:0.5;}
     .form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;}
     .form-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);}
     .form-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;transition:border-color 0.2s;width:100%;}
@@ -828,6 +841,18 @@
   </div><!-- /profile-sections-wrap -->
 
   <!-- EDIT PROFILE MODAL -->
+  <div class="modal-overlay" id="followers-modal">
+    <div class="modal">
+      <div class="modal-title"><i class="ti ti-users"></i> <span id="fl-title">Followers</span></div>
+      <div class="fl-tabs">
+        <button class="fl-tab" id="fl-tab-followers" onclick="switchFollowersTab('followers')">Followers</button>
+        <button class="fl-tab" id="fl-tab-following" onclick="switchFollowersTab('following')">Following</button>
+      </div>
+      <div class="fl-list" id="fl-list"></div>
+      <button class="modal-cancel" style="width:100%;margin-top:16px;" onclick="closeFollowersModal()">Close</button>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="edit-modal">
     <div class="modal">
       <div class="modal-title"><i class="ti ti-edit"></i> Edit Profile</div>
@@ -3836,6 +3861,78 @@ async function handleFriendBtn() {
        viewed lent its layout to the next one for the first few hundred
        milliseconds — visible, and confusing, because it is someone else's
        arrangement on your page. */
+    /* ── FOLLOWERS / FOLLOWING MODAL ─────────────────────────────────────
+       The stat tiles have always been clickable (cursor:pointer + a tooltip)
+       but openFollowersModal was never written, so clicking them threw. */
+    var _flTab = 'followers';
+
+    function openFollowersModal(tab) {
+      document.getElementById('followers-modal').classList.add('open');
+      switchFollowersTab(tab === 'following' ? 'following' : 'followers');
+    }
+
+    function closeFollowersModal() {
+      document.getElementById('followers-modal').classList.remove('open');
+    }
+
+    function switchFollowersTab(tab) {
+      _flTab = tab;
+      document.getElementById('fl-title').textContent = tab === 'following' ? 'Following' : 'Followers';
+      ['followers', 'following'].forEach(function(t) {
+        var b = document.getElementById('fl-tab-' + t);
+        if (b) b.classList.toggle('active', t === tab);
+      });
+      loadFollowList(tab);
+    }
+
+    async function loadFollowList(tab) {
+      var list = document.getElementById('fl-list');
+      if (!list) return;
+      list.innerHTML = '<div class="fl-empty"><i class="ti ti-loader-2"></i>Loading…</div>';
+      var uid = window._viewedProfileUserId;
+      if (!uid) { list.innerHTML = '<div class="fl-empty"><i class="ti ti-alert-circle"></i>Could not load.</div>'; return; }
+      try {
+        // follows: follower_id follows following_id.
+        var col    = tab === 'following' ? 'following_id' : 'follower_id';
+        var filter = tab === 'following' ? 'follower_id'  : 'following_id';
+        var rel = await db.from('follows').select(col).eq(filter, uid).limit(200);
+        if (rel.error) throw rel.error;
+        var ids = (rel.data || []).map(function(r) { return r[col]; }).filter(Boolean);
+        if (!ids.length) {
+          list.innerHTML = '<div class="fl-empty"><i class="ti ti-users"></i>' +
+            (tab === 'following' ? 'Not following anyone yet.' : 'No followers yet.') + '</div>';
+          return;
+        }
+        // Deleted accounts keep their follow rows, so filter them out here.
+        var pr = await db.from('profiles')
+          .select('id,username,display_name,avatar_url,deleted_at')
+          .in('id', ids);
+        if (pr.error) throw pr.error;
+        var rows = (pr.data || []).filter(function(p) { return !p.deleted_at; });
+        if (!rows.length) {
+          list.innerHTML = '<div class="fl-empty"><i class="ti ti-users"></i>No active accounts to show.</div>';
+          return;
+        }
+        rows.sort(function(a, b) {
+          return (a.display_name || a.username || '').localeCompare(b.display_name || b.username || '');
+        });
+        list.innerHTML = rows.map(function(p) {
+          var name   = p.display_name || p.username || 'User';
+          var handle = p.username ? '@' + p.username : '';
+          var av = p.avatar_url
+            ? '<img src="' + escHtml(p.avatar_url) + '" alt=""/>'
+            : escHtml((name[0] || '?').toUpperCase());
+          return '<a class="fl-row" href="profile.html?user=' + encodeURIComponent(p.username || '') + '">' +
+                   '<div class="fl-av">' + av + '</div>' +
+                   '<div><div class="fl-name">' + escHtml(name) + '</div>' +
+                   (handle ? '<div class="fl-handle">' + escHtml(handle) + '</div>' : '') + '</div>' +
+                 '</a>';
+        }).join('');
+      } catch (e) {
+        list.innerHTML = '<div class="fl-empty"><i class="ti ti-alert-circle"></i>Could not load list.</div>';
+      }
+    }
+
     function psCacheKey() {
       var id = window._viewedProfileUserId;
       return id ? 'ds_profile_layout_' + id : null;
@@ -4100,6 +4197,7 @@ async function handleFriendBtn() {
     (function() {
       document.addEventListener('click', function(e) {
         if (e.target.id === 'profile-layout-modal-overlay') closeProfileLayoutModal();
+        if (e.target.id === 'followers-modal') closeFollowersModal();
       });
       document.addEventListener('DOMContentLoaded', function() {
         var list = document.getElementById('ps-layout-list');
