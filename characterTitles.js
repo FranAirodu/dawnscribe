@@ -2265,14 +2265,15 @@ window.CharacterTitles = (function() {
       if (window.dsCompleteMission) {
         try { await window.dsCompleteMission('suggest_character_song'); } catch(e) {}
       }
-      // Songwriter badge: distinct characters that have a song suggestion of
-      // yours ACCEPTED by the author (not raw submissions — that metric was
-      // wrong and disagreed with the trigger path, which overwrote it).
-      // Both DJ and Songwriter are awarded by a DB trigger on author approval,
-      // so this call is only a self-healing recount: at submit time the new row
-      // is still 'pending' and cannot move either badge. Server-side and
-      // identity-guarded; fire-and-forget so it never blocks the submit flow.
-      try { await db().rpc('award_songwriter_badge', { p_user_id: userId }); } catch(e) {}
+      // NOTE: no badge call here, deliberately.
+      // Songwriter belongs to the AUTHOR whose character received an approved
+      // suggestion — not to the submitter. DJ belongs to the submitter. Both
+      // are awarded server-side by the ds_song_suggestion_badges trigger when
+      // the author approves. A row inserted here is 'pending' and cannot move
+      // either badge, so any call from this point is at best a no-op; the
+      // previous award_songwriter_badge(userId) call was worse than a no-op,
+      // because it recounted the submitter's own submissions and would
+      // overwrite a genuine author-side songwriter score with the wrong number.
       // Notify the work author
       try {
         var _db2 = db();
