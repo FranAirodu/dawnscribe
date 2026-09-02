@@ -1318,6 +1318,40 @@
         }
         img.src = data.banner_url;
       }
+      /* Platform banners (cosmetic_items, slot='banner') carry an artist name
+         and portfolio URL. Credit them on the profile header the same way
+         banner.html does in the collection grid, so a reader who likes the
+         scene can reach the artist directly. Scroll banners below take
+         precedence — those credit a DawnScribe member, not an outside artist. */
+      if (data.banner_url && !data.active_banner_scroll_id) {
+        (async function() {
+          try {
+            var artRes = await db.from('cosmetic_items')
+              .select('artist_name,artist_url')
+              .eq('slot','banner').eq('image_url', data.banner_url).maybeSingle();
+            var a = artRes.data;
+            if (a && a.artist_name) {
+              var chip = document.getElementById('banner-credit-chip');
+              document.getElementById('banner-credit-label').textContent = 'Art by ' + a.artist_name;
+              if (a.artist_url) {
+                chip.href = a.artist_url;
+                chip.target = '_blank';
+                /* noopener/noreferrer: without them the opened tab can reach
+                   back into this one via window.opener. */
+                chip.rel = 'noopener noreferrer nofollow';
+                chip.title = 'View ' + a.artist_name + "'s portfolio";
+                var ext = document.createElement('i');
+                ext.className = 'ti ti-external-link';
+                chip.appendChild(ext);
+              } else {
+                chip.removeAttribute('href');
+                chip.title = 'Art by ' + a.artist_name;
+              }
+              chip.style.display = 'flex';
+            }
+          } catch(e) { /* credit chip is non-critical */ }
+        })();
+      }
       if (data.active_banner_scroll_id) {
         (async function() {
           try {
