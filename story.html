@@ -56,6 +56,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="storagePaths.js"></script>
   <script src="spoilerUtils.js"></script>
+  <script src="escapeUtils.js"></script>
   <script src="blockUtils.js"></script>
   <script src="translateHint.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
@@ -2334,7 +2335,9 @@
           html += '<div class="top-fan-row">' +
             '<div class="top-fan-rank">' + medal + '</div>' +
             '<div class="top-fan-avatar">' + (f.avatar_url ? '<img src="' + escHtml(f.avatar_url) + '" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
-            '<span class="top-fan-name" onclick="window.location.href=\'profile.html?user=' + encodeURIComponent(f.username || '') + '\'">' + name + '</span>' +
+            (f.username
+              ? '<span class="top-fan-name" style="cursor:pointer;" onclick="window.location.href=' + escHtml(JSON.stringify('profile.html?user=' + encodeURIComponent(f.username))) + '">' + name + '</span>'
+              : '<span class="top-fan-name" title="This profile is unavailable">' + name + '</span>') +
             '<div class="top-fan-stats" title="' + escHtml(statsTitle) + '">🔥 ' + f.embers_total +
               (Number(f.flames) > 0 ? ' · <i class="ti ti-flare" style="color:#f0c040;"></i> ' + f.flames : '') +
             '</div>' +
@@ -3915,8 +3918,12 @@
       strip.innerHTML = ''; banner.style.display = 'block';
       collabs.forEach(function(c) {
         var artist = artistMap[c.artist_id]||{};
-        var artistName = artist.display_name||artist.username||'Artist';
-        var profileHref = artist.username ? 'profile.html?user='+encodeURIComponent(artist.username) : '#';
+        // Short-result guard: story_collabs carries no block filter but profiles
+        // does, so the .in() lookup can come back short. Render honestly rather
+        // than inventing a name wired to a dead link. (DSEscape.userDisplay)
+        var aDisp = window.DSEscape.userDisplay(artist, 'Artist');
+        var artistName = aDisp.name;
+        var profileHref = aDisp.href;
         var avatarInner = artist.avatar_url ? '<img src="'+escHtml(artist.avatar_url)+'" alt=""/>' : escHtml((artistName.charAt(0)||'?').toUpperCase());
         var canDelete = currentSession && (currentSession.user.id===c.artist_id || isOwner);
         var descHtml = c.description ? '<div class="collab-art-desc">'+escHtml(c.description.slice(0,120))+(c.description.length>120?'…':'')+'</div>' : '';
@@ -3926,7 +3933,8 @@
         var delBtn = canDelete ? '<button class="collab-delete-btn" data-cid="'+c.id+'" data-url="'+escHtml(c.image_url)+'"><i class="ti ti-trash"></i> Delete</button>' : '';
         card.innerHTML = '<img src="'+escHtml(c.image_url)+'" alt="Fan art"/>'+pendingBadge+delBtn;
         if(descHtml||inspoHtml) { var infoEl=document.createElement('div'); infoEl.style.cssText='padding:8px 10px 0;'; infoEl.innerHTML=descHtml+inspoHtml; card.appendChild(infoEl); }
-        var footer = document.createElement('a'); footer.className='collab-artist-footer'; footer.href=profileHref;
+        var footer = document.createElement(profileHref ? 'a' : 'span'); footer.className='collab-artist-footer';
+        if (profileHref) { footer.href=profileHref; } else { footer.title='This profile is unavailable'; }
         footer.innerHTML = '<div class="collab-artist-avatar">'+avatarInner+'</div><span class="collab-artist-name">'+escHtml(artistName)+'</span>';
         card.appendChild(footer);
         if(canDelete) { card.querySelector('.collab-delete-btn').addEventListener('click',function(e){ e.stopPropagation(); promptCollabDelete(this.dataset.cid,this.dataset.url); }); }
@@ -3957,12 +3965,17 @@
       document.getElementById('collab-detail-img').src = c.image_url;
       var { data: artist } = await db.from('profiles').select('id,username,display_name,avatar_url').eq('id',c.artist_id).maybeSingle();
       artist = artist||{};
-      var artistName = artist.display_name||artist.username||'Artist';
-      var artistHref = artist.username ? 'profile.html?user='+encodeURIComponent(artist.username) : '#';
+      var dDisp = window.DSEscape.userDisplay(artist, 'Artist');
+      var artistName = dDisp.name;
+      var artistHref = dDisp.href;
       var avHtml = artist.avatar_url ? '<img src="'+escHtml(artist.avatar_url)+'" alt=""/>' : escHtml(artistName.charAt(0).toUpperCase());
       var isAuthorOfWork = workData && c.artist_id===workData.author_id;
       var tag = isAuthorOfWork ? '<span class="collab-tag collab-tag-author">Author</span>' : '<span class="collab-tag collab-tag-artist">Artist</span>';
-      document.getElementById('collab-detail-artist').innerHTML = '<div class="collab-detail-avatar">'+avHtml+'</div><a class="collab-detail-artist-name" href="'+artistHref+'">'+escHtml(artistName)+'</a>'+tag;
+      document.getElementById('collab-detail-artist').innerHTML = '<div class="collab-detail-avatar">'+avHtml+'</div>'
+        + (artistHref
+            ? '<a class="collab-detail-artist-name" href="'+escHtml(artistHref)+'">'+escHtml(artistName)+'</a>'
+            : '<span class="collab-detail-artist-name" title="This profile is unavailable">'+escHtml(artistName)+'</span>')
+        + tag;
       document.getElementById('collab-detail-desc').textContent = c.description||'';
       var inspoEl=document.getElementById('collab-detail-inspo');
       if(c.inspiration){ inspoEl.innerHTML='<i class="ti ti-bulb" style="font-size:11px;"></i> '+escHtml(c.inspiration); inspoEl.style.display='block'; } else { inspoEl.style.display='none'; }
