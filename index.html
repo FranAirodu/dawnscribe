@@ -4633,6 +4633,32 @@ function dsLoadLayoutFromCache() {
           Promise.resolve(db.from('admins').select('id').eq('id', uid).maybeSingle()).catch(function(){ return {}; })
         ]);
 
+        // ── ADMIN LINK (inserted as early as possible) ──────────────
+        // adminRes resolves in the Promise.all above, but this insert used to
+        // live ~200 lines further down, after drain_badge_unlocks and two
+        // serial waves of pending-count queries. Every one of those was
+        // awaited first, so on a cold load the dropdown was fully rendered and
+        // usable for several seconds with no Admin Panel entry — opening the
+        // menu in that window made it look like admin access had been lost.
+        // Nothing here depends on those queries, so it runs the moment the
+        // admins row is known. The pending-count pill still attaches later.
+        (function dsInsertAdminLink(){
+          if (!adminRes || !adminRes.data) return;
+          var menu = document.querySelector('.user-dropdown-menu');
+          if (!menu) return;
+          var signOutBtn = menu.querySelector('.signout-btn');
+          if (!signOutBtn) return;   // insertBefore(null) would silently append
+          if (menu.querySelector('a[href="WhiteRoomUnbreakable.html"]')) return;
+          var divider = document.createElement('div');
+          divider.className = 'user-dropdown-divider';
+          var adminLink = document.createElement('a');
+          adminLink.className = 'user-dropdown-item';
+          adminLink.href = 'WhiteRoomUnbreakable.html';
+          adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>';
+          menu.insertBefore(divider, signOutBtn);
+          menu.insertBefore(adminLink, signOutBtn);
+        })();
+
         // Ember balance
         var emberBalance = (emberRes.data && emberRes.data.balance) || 0;
         document.getElementById('ds-ember-count').textContent = emberBalance.toLocaleString();
@@ -4808,18 +4834,12 @@ function dsLoadLayoutFromCache() {
           }
         }
 
-        // Admin link
+        // Admin link is now inserted immediately after the main Promise.all
+        // (see dsInsertAdminLink above) rather than here — it used to sit at
+        // the end of this chain, behind drain_badge_unlocks and two waves of
+        // pending-count queries, so on a cold load the dropdown rendered
+        // without the Admin Panel entry for several seconds.
         if (adminRes.data) {
-          var menu = document.querySelector('.user-dropdown-menu');
-          var divider = document.createElement('div');
-          divider.className = 'user-dropdown-divider';
-          var adminLink = document.createElement('a');
-          adminLink.className = 'user-dropdown-item';
-          adminLink.href = 'WhiteRoomUnbreakable.html';
-          adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>';
-          var signOutBtn = menu.querySelector('.signout-btn');
-          menu.insertBefore(divider, signOutBtn);
-          menu.insertBefore(adminLink, signOutBtn);
 
           // ── ADMIN PENDING QUEUE ────────────────────────────────────
           // Replaces the old "you have pending requests" email. One RPC
@@ -4864,8 +4884,11 @@ function dsLoadLayoutFromCache() {
               }
               var total = n('reports') + n('contact') + n('titles') + n('feedback')
                         + n('scrolls') + n('loyalty') + n('cosmetics') + n('payouts');
-              if (total > 0) {
-                adminLink.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>'
+              // adminLink is no longer a local var here — the link is created
+              // earlier by dsInsertAdminLink, so look it up in the DOM.
+              var adminLinkEl = document.querySelector('.user-dropdown-menu a[href="WhiteRoomUnbreakable.html"]');
+              if (total > 0 && adminLinkEl) {
+                adminLinkEl.innerHTML = '<i class="ti ti-shield" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Admin Panel</span>'
                   + '<span class="collab-pending-pill"' + (urgent ? ' style="background:#f87171;"' : '') + '>' + total + ' pending</span>';
               }
             } catch(e) { /* never break the homepage over an admin badge */ }
