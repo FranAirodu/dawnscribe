@@ -443,19 +443,26 @@
       var users = result.data || [];
       if (!users.length) { showEmpty('No users found.'); return; }
 
-      // S5: fetch most recent reading_progress per user as a last-active proxy
+      // S5: most recent reading_progress per user as a last-active proxy.
+      // Goes through admin_last_active (SECURITY DEFINER, is_admin()-gated)
+      // rather than reading reading_progress directly. That table's RLS is
+      // auth.uid() = user_id with no admin bypass, so the direct query returned
+      // ONLY the admin's own row and every other user rendered "No reading
+      // activity" forever. RLS returns a short list rather than an error, and
+      // the old empty catch block hid it — the column was silently a lie.
+      // The RPC returns a timestamp per user and nothing else; readers' actual
+      // reading history stays private.
       var userIds = users.map(function(u){ return u.id; });
       var activeMap = {};
-      try {
-        var actRes = await window.db.from('reading_progress')
-          .select('user_id,updated_at')
-          .in('user_id', userIds)
-          .order('updated_at', { ascending: false })
-          .limit(1000); // one per user is enough; cap total fetch
+      var actRes = await window.db.rpc('admin_last_active', { p_user_ids: userIds });
+      if (actRes.error) {
+        console.error('admin-stats.html: admin_last_active failed', actRes.error);
+        showToast('Could not load last-active times — the column below may be incomplete.');
+      } else {
         (actRes.data || []).forEach(function(r){
-          if (!activeMap[r.user_id]) activeMap[r.user_id] = r.updated_at;
+          if (r && r.user_id) activeMap[r.user_id] = r.last_active;
         });
-      } catch(e) {}
+      }
 
       // Chart already managed by loadTab — no need to re-trigger here
 
