@@ -19,6 +19,7 @@
   <!-- blockUtils must load before the inline script: init() calls dsBlock.load()
        synchronously on parse, and both the gallery grid and the comment list
        filter through dsBlock.either(). -->
+<script src="escapeUtils.js"></script>
   <script src="blockUtils.js"></script>
   <style>
     :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--gold:#f59e0b;--green:#34d399;}
@@ -319,7 +320,9 @@
           '<div class="gallery-card-body">' +
             '<div class="gallery-card-artist">' +
               '<div class="gallery-card-avatar">' + avatarHtml(c._artist, 22) + '</div>' +
-              '<a class="gallery-card-name" href="' + esc(ah) + '">' + esc(c._artistName) + '</a>' +
+              (c._artistMissing
+                ? '<span class="gallery-card-name" title="This profile is unavailable">' + esc(c._artistName) + '</span>'
+                : '<a class="gallery-card-name" href="' + esc(ah) + '">' + esc(c._artistName) + '</a>') +
             '</div>' +
             (c.description ? '<div class="gallery-card-desc">' + esc(c.description) + '</div>' : '') +
             '<div class="gallery-card-footer">' +
@@ -406,10 +409,16 @@
 
       // Cache display values on each collab for sorting/search
       allCollabs.forEach(function(c) {
+        // story_collabs has NO block filter but profiles DOES, so a blocked
+        // artist's approved collab stays visible while their profile row drops
+        // out of the .in() above. Render that state honestly instead of
+        // labelling them 'Artist' and linking to a dead profile URL.
         var a = pMap[c.artist_id] || {};
+        var aDisp = window.DSEscape.userDisplay(a, 'Artist');
         c._artist = a;
-        c._artistName = a.display_name || a.username || 'Artist';
-        c._artistHref = a.username ? 'profile.html?user=' + encodeURIComponent(a.username) : '#';
+        c._artistName = aDisp.name;
+        c._artistMissing = aDisp.missing;
+        c._artistHref = aDisp.href || '#';
         c.likes_count = c.likes_count || 0;
       });
 
@@ -451,7 +460,9 @@
       var tag = '<span class="collab-tag collab-tag-artist">Artist</span>';
       document.getElementById('detail-artist-row').innerHTML =
         '<div class="detail-avatar">' + avH + '</div>' +
-        '<a class="detail-artist-name" href="' + esc(c._artistHref) + '">' + esc(c._artistName) + '</a>' +
+        (c._artistMissing
+          ? '<span class="detail-artist-name" title="This profile is unavailable">' + esc(c._artistName) + '</span>'
+          : '<a class="detail-artist-name" href="' + esc(c._artistHref) + '">' + esc(c._artistName) + '</a>') +
         tag;
 
       // Description & inspiration

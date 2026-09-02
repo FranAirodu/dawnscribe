@@ -94,7 +94,57 @@
       .replace(/>/g, '&gt;');
   }
 
+  /* A profile row that came back SHORT, rendered honestly.
+   *
+   * WHY: profiles carries a RESTRICTIVE `NOT ds_blocked_with_me(id)` policy, but
+   * nine content tables do NOT — character_quotes, character_questions,
+   * character_song_suggestions, character_opinions, story_collabs,
+   * artwork_collabs, story_landscapes, scrolls, chapter_polls. So a blocked
+   * user's song suggestion or collab art stays visible (deliberately — it
+   * belongs to the character/work now, and yanking it would punish every other
+   * reader) while their profiles row vanishes from the .in() lookup.
+   *
+   * The old render turned that into a lie: a generic name like 'Artist' or
+   * 'Unknown' wired to `profile.html?user=` with an EMPTY username — a link
+   * that looks live and goes nowhere. PostgREST returns fewer rows, not an
+   * error, so nothing threw and nothing logged.
+   *
+   * Pass the profile row (or a falsy/empty value). Returns:
+   *   { name, href, missing }   href is null when there is no real profile to
+   *                             link to, so callers render a <span>, not an <a>.
+   *
+   * `fallback` is the name for a genuinely absent user; the default is
+   * deliberately bracketed so it reads as a state, not as someone's handle.
+   */
+  function userDisplay(p, fallback) {
+    p = p || {};
+    var handle = p.username ? String(p.username) : '';
+    var name = p.display_name || p.username || (fallback || '[unavailable]');
+    return {
+      name: name,
+      href: handle ? 'profile.html?user=' + encodeURIComponent(handle) : null,
+      missing: !handle
+    };
+  }
+
+  /* The common case: a name that links only when there is somewhere to go.
+   * `cls` and `style` are optional passthroughs for the anchor/span. */
+  function userLink(p, opts) {
+    opts = opts || {};
+    var u = userDisplay(p, opts.fallback);
+    var cls = opts.cls ? ' class="' + esc(opts.cls) + '"' : '';
+    var sty = opts.style ? ' style="' + esc(opts.style) + '"' : '';
+    if (u.missing) {
+      // No href at all — a dead link is worse than plain text.
+      return '<span' + cls + sty + ' title="This profile is unavailable">'
+        + esc(u.name) + '</span>';
+    }
+    return '<a' + cls + sty + ' href="' + esc(u.href) + '">' + esc(u.name) + '</a>';
+  }
+
   global.DSEscape = {
+    userDisplay: userDisplay,
+    userLink: userLink,
     esc: esc,
     attrJson: attrJson,
     safeUrl: safeUrl,
