@@ -629,7 +629,16 @@ function dsApplyAccent(hex) {
                 var a = document.createElement('a');
                 a.className = 'search-preview-item';
                 var isWork = !!item.title;
-                a.href = isWork ? (type==='titles'?'story.html?id=':'artwork.html?id=')+item.id : 'profile.html?user='+(item.username||'');
+                // A profile row with no username would have produced
+                // 'profile.html?user=' — a live-looking link to nothing.
+                if (isWork) {
+                  a.href = (type==='titles'?'story.html?id=':'artwork.html?id=')+item.id;
+                } else if (item.username) {
+                  a.href = 'profile.html?user='+encodeURIComponent(item.username);
+                }
+                // else: no href at all. An <a> without href is inert and
+                // unfocusable, which beats a javascript: URL or a live-looking
+                // 'profile.html?user=' pointing at nothing.
                 var _cu2 = isWork ? dsSafeUrl(item.cover_url) : '';
                 var _au2 = isWork ? '' : dsSafeUrl(item.avatar_url);
                 var coverHtml = _cu2

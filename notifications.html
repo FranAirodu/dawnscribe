@@ -29,6 +29,7 @@
     })();
   </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="escapeUtils.js"></script>
   <script src="spoilerUtils.js"></script>
   <script src="accessibilityPrefs.js"></script>
   <style>
@@ -458,7 +459,13 @@
   // ── RENDER: COMMENT CARD ─────────────────────────────────────────
   function renderCommentCard(cm, cleared){
     var prof = cm.profiles; var work = cm.works;
-    var name = prof ? (prof.display_name||prof.username||'Someone') : 'Someone';
+    // Short-result guard. The content tables behind these cards
+    // (character_song_suggestions, character_opinions, character_quotes,
+    // character_questions, chapter_polls) carry no block filter, but profiles
+    // does — so the .in() profile lookup comes back short for a blocked user
+    // and prof is null. 'Someone' read like a real person with a plain name;
+    // '[unavailable]' says what actually happened.
+    var name = window.DSEscape.userDisplay(prof).name;
     var workTitle = work ? work.title : 'your work';
     var snippet = (cm.content||'').slice(0,90)+(cm.content&&cm.content.length>90?'\u2026':'');
     var isUnread = !cleared[cm.id];
@@ -1102,7 +1109,7 @@
         var {data:frProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',frIds);
         var frMap={};(frProfs||[]).forEach(function(p){frMap[p.id]=p;});
         frRows.forEach(function(fr){
-          var p=frMap[fr.requester_id]||{}; var name=p.display_name||p.username||'Someone';
+          var p=frMap[fr.requester_id]||{}; var name=window.DSEscape.userDisplay(p).name;
           var avH=p.avatar_url?'<img src="'+esc(p.avatar_url)+'"/>':esc(name.charAt(0).toUpperCase());
           var el=document.createElement('div'); el.className='action-card gold-card';
           el.innerHTML='<div class="ac-avatar">'+avH+'</div>'
@@ -1143,7 +1150,7 @@
         var {data:fromProfs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',fromIds);
         var fromMap={};(fromProfs||[]).forEach(function(p){fromMap[p.id]=p;});
         collabItems.forEach(function(c){
-          var p=fromMap[c._fromId]||{}; var name=p.display_name||p.username||'Someone';
+          var p=fromMap[c._fromId]||{}; var name=window.DSEscape.userDisplay(p).name;
           var avH=p.avatar_url?'<img src="'+esc(p.avatar_url)+'"/>':esc(name.charAt(0).toUpperCase());
           var kindLabel=c._kind==='story collab'?'Submitted a story collab for':'Submitted fan art for';
           var el=document.createElement('div'); el.className='action-card teal-card';
@@ -1170,7 +1177,7 @@
           folRows.forEach(function(fl){
             var p=folMap[fl.from_user_id]||{};
             fl.type='new_follower';
-            fl.message=(p.display_name||p.username||'Someone')+' started following you';
+            fl.message=window.DSEscape.userDisplay(p).name+' started following you';
             fl._username=p.username||'';
             socialItems.push(fl);
           });
