@@ -4878,14 +4878,21 @@ function dsLoadLayoutFromCache() {
               // through add(). 'never' means the heartbeat was never written;
               // 'stale' means backups stopped. Both are urgent: the 2026-09-02
               // outage was a week with no backup and no warning anywhere.
-              var bState = c.backup_state;
-              if (bState === 'stale' || bState === 'never') {
+              // Local and offsite are reported separately: "backups stopped"
+              // and "backups run but nothing leaves the building" are
+              // different emergencies with different fixes.
+              function backupChip(state, ageDays, label, hint) {
+                if (state !== 'stale' && state !== 'never') return;
                 urgent = true;
-                var bMsg = bState === 'never'
-                  ? 'No backup has ever reported in'
-                  : 'No backup in ' + esc(String(c.backup_age_days)) + ' days';
-                items.push('<span class="adm-pending-item urgent" title="Check DS_DB_URL first — a stale database password produces no other warning."><b>Backup</b> ' + bMsg + '</span>');
+                var msg = state === 'never'
+                  ? 'never reported in'
+                  : 'none in ' + esc(String(ageDays)) + ' days';
+                items.push('<span class="adm-pending-item urgent" title="' + esc(hint) + '"><b>' + esc(label) + '</b> ' + msg + '</span>');
               }
+              backupChip(c.backup_state, c.backup_age_days, 'Backup',
+                'Check DS_DB_URL first — a stale database password produces no other warning.');
+              backupChip(c.offsite_backup_state, c.offsite_backup_age_days, 'Offsite',
+                'Local backups may still be fine. Check DS_B2_REMOTE and rclone auth — nothing is leaving the building.');
 
               if (!items.length) return;
 
