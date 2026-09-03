@@ -275,14 +275,16 @@
       opacity: 0; transform: translateY(8px); }
     .roll-overlay.revealed .roll-label { animation: rollLabel .5s ease-out .3s forwards; }
     .roll-kicker { font-size: 11px; font-weight: 700; letter-spacing: 1.4px;
-      text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
+      text-transform: uppercase; color: rgba(232,234,240,0.72); margin-bottom: 6px; }
+    /* --roll-name-hex is --roll-hex lightened when the rolled colour is too
+       dark to read on the scrim. Indigo measured 2.34:1 raw. */
     .roll-name { font-family: 'Cinzel', serif; font-size: 24px; font-weight: 700;
-      color: var(--roll-hex); }
-    .roll-sub { font-size: 13px; color: var(--text2); margin-top: 8px; line-height: 1.6;
+      color: var(--roll-name-hex, var(--roll-hex)); }
+    .roll-sub { font-size: 13px; color: rgba(232,234,240,0.86); margin-top: 8px; line-height: 1.6;
       max-width: 300px; margin-left: auto; margin-right: auto; }
-    .roll-dismiss { margin-top: 18px; font-size: 11px; color: var(--text3); }
+    .roll-dismiss { margin-top: 18px; font-size: 11px; color: rgba(232,234,240,0.55); }
     .roll-charging-text { position: absolute; top: 100%; left: 0; right: 0; text-align: center;
-      font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text3); }
+      font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: rgba(232,234,240,0.62); }
     .roll-overlay.revealed .roll-charging-text { display: none; }
 
     @keyframes rollLick {
@@ -929,6 +931,28 @@
     return sanitizeHex(hex || '#2dd4bf');
   }
 
+  /* A rolled colour can be too dark to read as text on the scrim regardless
+     of theme — the flame is fine, the word is not. Mix toward white until it
+     clears a readable luminance, leaving light colours untouched. */
+  function rollNameHex(hex) {
+    hex = sanitizeHex(hex);
+    var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    if (!m) return hex;
+    var rgb = [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)];
+    function lum(c) {
+      var v = c.map(function(x){ x/=255; return x<=0.03928 ? x/12.92 : Math.pow((x+0.055)/1.055,2.4); });
+      return 0.2126*v[0] + 0.7152*v[1] + 0.0722*v[2];
+    }
+    var mix = 0;
+    while (lum(rgb) < 0.30 && mix < 0.75) {
+      mix += 0.05;
+      rgb = [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)].map(function(c){
+        return Math.round(c + (255 - c) * mix);
+      });
+    }
+    return '#' + rgb.map(function(c){ return c.toString(16).padStart(2,'0'); }).join('');
+  }
+
   function dsRollOpen() {
     dsRollClose();
     var ov = document.createElement('div');
@@ -989,7 +1013,9 @@
         /* Non-colour rolls (skin, display) stay in the user's aura all the
            way through. Only the aura roll swaps to the colour just won —
            that swap IS the payoff. */
-        st.el.style.setProperty('--roll-hex', opts.hex ? sanitizeHex(opts.hex) : currentAuraHex());
+        var revealHex = opts.hex ? sanitizeHex(opts.hex) : currentAuraHex();
+        st.el.style.setProperty('--roll-hex', revealHex);
+        st.el.style.setProperty('--roll-name-hex', rollNameHex(revealHex));
         document.getElementById('roll-label').innerHTML =
           '<div class="roll-kicker">' + esc(opts.kicker || 'Unlocked') + '</div>' +
           '<div class="roll-name">' + esc(opts.label || '') + '</div>' +
