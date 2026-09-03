@@ -889,10 +889,21 @@
   var ROLL_MIN_CHARGE = 1200;
   var rollState = null;
 
+  /* The flames burn in whatever aura the user is currently wearing, so the
+     reveal never clashes with the accent colour applied across the rest of
+     the site. Falls back to default teal for anyone who has not rolled. */
+  function currentAuraHex() {
+    var hex = (avatarData && avatarData.accent_color && avatarData.accent_color.hex) ||
+              localStorage.getItem('ds_accent_hex') ||
+              getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    return sanitizeHex(hex || '#2dd4bf');
+  }
+
   function dsRollOpen() {
     dsRollClose();
     var ov = document.createElement('div');
     ov.className = 'roll-overlay charging';
+    ov.style.setProperty('--roll-hex', currentAuraHex());
     var sparks = '';
     for (var i = 0; i < 7; i++) {
       var dx = (i - 3) * 13;
@@ -909,7 +920,13 @@
         '<div class="roll-label" id="roll-label"></div>' +
       '</div>';
     document.body.appendChild(ov);
-    requestAnimationFrame(function(){ ov.classList.add('open'); });
+    /* Forcing a reflow before adding .open is what makes the fade actually
+       run. requestAnimationFrame was used here first and the callback did
+       not fire reliably — the overlay sat at opacity 0, fully built and
+       completely invisible. Reading offsetWidth flushes layout so the
+       browser has a real "before" state to transition from. */
+    void ov.offsetWidth;
+    ov.classList.add('open');
     rollState = { el: ov, t0: Date.now() };
   }
 
@@ -925,11 +942,17 @@
     return new Promise(function(resolve) {
       if (!rollState) { resolve(); return; }
       var st = rollState;
-      var wait = Math.max(0, ROLL_MIN_CHARGE - (Date.now() - st.t0));
+      /* With animations off the charge is a motionless shape, so a full
+         1.2s reads as the page hanging rather than as suspense. */
+      var minCharge = (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)
+        ? 500 : ROLL_MIN_CHARGE;
+      var wait = Math.max(0, minCharge - (Date.now() - st.t0));
       setTimeout(function() {
         if (rollState !== st) { resolve(); return; }
-        var hex = opts.hex ? sanitizeHex(opts.hex) : '#f97316';
-        st.el.style.setProperty('--roll-hex', hex);
+        /* Non-colour rolls (skin, display) stay in the user's aura all the
+           way through. Only the aura roll swaps to the colour just won —
+           that swap IS the payoff. */
+        st.el.style.setProperty('--roll-hex', opts.hex ? sanitizeHex(opts.hex) : currentAuraHex());
         document.getElementById('roll-label').innerHTML =
           '<div class="roll-kicker">' + esc(opts.kicker || 'Unlocked') + '</div>' +
           '<div class="roll-name">' + esc(opts.label || '') + '</div>' +
