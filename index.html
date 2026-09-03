@@ -1806,11 +1806,11 @@
         var workIds = [...new Set(res.data.map(function(r){ return r.work_id; }))];
         var worksRes = await db.from('works').select('id,title,cover_url,author_id,chapters_count,content_rating_gore,content_rating_erotica').in('id', workIds).eq('is_published', true);
         // Apply content filters to reading history too
-        var _rhcf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
+        var _rhcf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
         var workMap = {};
         (worksRes.data||[]).forEach(function(w){
-          if((_rhcf.safe||_rhcf.gore) && w.content_rating_gore===true) return;
-          if((_rhcf.safe||_rhcf.erotica) && w.content_rating_erotica===true) return;
+          if((_rhcf.safe||!_rhcf.gore) && w.content_rating_gore===true) return;
+          if((_rhcf.safe||!_rhcf.erotica) && w.content_rating_erotica===true) return;
           workMap[w.id] = w;
         });
         var authorIds = [...new Set((worksRes.data||[]).map(function(w){ return w.author_id; }).filter(Boolean))];
@@ -2008,13 +2008,13 @@
       var all = chapCmts.concat(artCmts);
       // Never surface comments on unpublished works, from muted/blocked users,
       // or on works the viewer's content filters hide (safe defaults pre-load)
-      var _ccf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
+      var _ccf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
       all = all.filter(function(cm){
         var w = cm._work;
         if (!w || w.is_published !== true) return false;
         if (isHiddenAuthor(w.author_id) || isHiddenAuthor(cm.user_id)) return false;
-        if ((_ccf.safe || _ccf.gore) && w.content_rating_gore === true) return false;
-        if ((_ccf.safe || _ccf.erotica) && w.content_rating_erotica === true) return false;
+        if ((_ccf.safe || !_ccf.gore) && w.content_rating_gore === true) return false;
+        if ((_ccf.safe || !_ccf.erotica) && w.content_rating_erotica === true) return false;
         return true;
       });
       all.sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); });
@@ -2084,11 +2084,11 @@
       var suWorkIds=[...new Set(res.data.map(function(c){return c.work_id;}))];
       var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id,is_published,content_rating_gore,content_rating_erotica').in('id',suWorkIds);
       // Apply content filters (same safe-default logic as other rows)
-      var _ucf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
+      var _ucf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
       var suWorkMap={};(suWorks||[]).forEach(function(w){
         if(!w.is_published) return;
-        if((_ucf.safe||_ucf.gore) && w.content_rating_gore===true) return;
-        if((_ucf.safe||_ucf.erotica) && w.content_rating_erotica===true) return;
+        if((_ucf.safe || !_ucf.gore) && w.content_rating_gore===true) return;
+        if((_ucf.safe || !_ucf.erotica) && w.content_rating_erotica===true) return;
         suWorkMap[w.id]=w;
       });
       res.data=res.data.filter(function(ch){return !!suWorkMap[ch.work_id];});
@@ -2139,9 +2139,9 @@
         var el = document.getElementById('kindling-pick-banner');
         if (!w || !el) return;
         if (isHiddenAuthor(w.author_id)) return;
-        var _kcf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
-        if ((_kcf.safe || _kcf.gore) && w.content_rating_gore === true) return;
-        if ((_kcf.safe || _kcf.erotica) && w.content_rating_erotica === true) return;
+        var _kcf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
+        if ((_kcf.safe || !_kcf.gore) && w.content_rating_gore === true) return;
+        if ((_kcf.safe || !_kcf.erotica) && w.content_rating_erotica === true) return;
         document.getElementById('kindling-pick-title').textContent = w.title;
         var coverEl = document.getElementById('kindling-pick-cover');
         if (w.cover_url) coverEl.innerHTML = '<img loading="lazy" decoding="async" src="' + w.cover_url.replace(/"/g,'&quot;') + '" alt=""/>';
@@ -2157,17 +2157,20 @@
       // Gore/erotica are hidden by default (safe-by-default): only an explicit
       // false on the profile shows them. Null values and logged-out viewers
       // both get the safe default.
-      var myContentFilters = { safe: false, gore: true, erotica: true };
+      var myContentFilters = { safe: true, gore: false, erotica: false };
       var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
       if (uid) {
         try {
           var { data: cfRow } = await dsMyPrivate();
           if (cfRow) {
             if (cfRow.settings_filter_safe !== null && cfRow.settings_filter_safe !== undefined) myContentFilters.safe = !!cfRow.settings_filter_safe;
-            // settings_filter_gore/erotica: true = SHOW (allow), matching settings.html
-            // (toggle ON = show mature). Store as allow flags; block = NOT allowed.
-            myContentFilters.gore = cfRow.settings_filter_gore === false;
-            myContentFilters.erotica = cfRow.settings_filter_erotica === false;
+            // settings_filter_gore/erotica: true = SHOW (allow), matching
+            // settings.html. Stored as ALLOW flags site-wide; a page blocks with
+            // (safe || !allow). Do not store the inverse here — library.html,
+            // following.html and this file all used to invert it locally, which
+            // meant the same variable name meant opposite things per page.
+            myContentFilters.gore = cfRow.settings_filter_gore !== false;
+            myContentFilters.erotica = cfRow.settings_filter_erotica !== false;
             if (cfRow.pref_story_language) myLangPrefs.pref_language = cfRow.pref_story_language;
             if (cfRow.lang_original !== null && cfRow.lang_original !== undefined) myLangPrefs.lang_original = cfRow.lang_original;
             if (cfRow.lang_strict !== null && cfRow.lang_strict !== undefined) myLangPrefs.lang_strict = cfRow.lang_strict;
@@ -2211,8 +2214,8 @@
       // safe=true means master "hide everything sensitive".
       // gore=true means "filter out gore". erotica=true means "filter out erotica".
       function applyContentFilters(q) {
-        var blockGore    = myContentFilters.safe || myContentFilters.gore;
-        var blockErotica = myContentFilters.safe || myContentFilters.erotica;
+        var blockGore    = myContentFilters.safe || !myContentFilters.gore;
+        var blockErotica = myContentFilters.safe || !myContentFilters.erotica;
         // Always exempt the viewer's own works so authors can see their own content
         // regardless of their content filter settings. Works they collabed on
         // (myCollabExemptIds) get the same treatment.
@@ -2298,8 +2301,8 @@
       // exempt), mutes/blocks, blocked tags, and filtered content warnings —
       // same net effect as the query-level filters on rows 2-5.
       function filterDiscoveryItems(items) {
-        var blockGore    = myContentFilters.safe || myContentFilters.gore;
-        var blockErotica = myContentFilters.safe || myContentFilters.erotica;
+        var blockGore    = myContentFilters.safe || !myContentFilters.gore;
+        var blockErotica = myContentFilters.safe || !myContentFilters.erotica;
         var out = (items || []).filter(function(w){
           if (uid && w.author_id === uid) return true;
           if (myCollabExemptIds.has(w.id)) return true; // viewer collabed on this work
@@ -2914,10 +2917,10 @@
           .in('id', listIds).eq('is_published', true);
         if (!works || !works.length) return;
         // Apply content filters so opted-out content doesn't appear in the reading list row
-        var _rlcf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
+        var _rlcf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
         works = works.filter(function(w){
-          if ((_rlcf.safe||_rlcf.gore) && w.content_rating_gore===true) return false;
-          if ((_rlcf.safe||_rlcf.erotica) && w.content_rating_erotica===true) return false;
+          if ((_rlcf.safe || !_rlcf.gore) && w.content_rating_gore===true) return false;
+          if ((_rlcf.safe || !_rlcf.erotica) && w.content_rating_erotica===true) return false;
           return true;
         });
         if (!works.length) return;
@@ -3139,10 +3142,10 @@
             if(w.is_published === false) return;
             if(isHiddenAuthor(w.author_id)) return;
             // Respect viewer content filters (hide-by-default until prefs load)
-            var _cf = window._dsContentFilters || { safe: false, gore: true, erotica: true };
+            var _cf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
             if(!(uid && w.author_id === uid)){
-              if((_cf.safe || _cf.gore) && w.content_rating_gore === true) return;
-              if((_cf.safe || _cf.erotica) && w.content_rating_erotica === true) return;
+              if((_cf.safe || !_cf.gore) && w.content_rating_gore === true) return;
+              if((_cf.safe || !_cf.erotica) && w.content_rating_erotica === true) return;
             }
             var trackId = w.type==='artwork' ? 'track-5' : 'track-4';
             prependCover(trackId, w, w.type==='artwork' ? 'artwork.html?id='+w.id : 'story.html?id='+w.id);
@@ -3168,10 +3171,10 @@
             if(isHiddenAuthor(w.author_id)) return;
             var ageMs = Date.now() - new Date(w.created_at||0).getTime();
             if(!(ageMs >= 0 && ageMs < 48*60*60*1000)) return;
-            var _cf2 = window._dsContentFilters || { safe: false, gore: true, erotica: true };
+            var _cf2 = window._dsContentFilters || { safe: true, gore: false, erotica: false };
             if(!(uid && w.author_id === uid)){
-              if((_cf2.safe || _cf2.gore) && w.content_rating_gore === true) return;
-              if((_cf2.safe || _cf2.erotica) && w.content_rating_erotica === true) return;
+              if((_cf2.safe || !_cf2.gore) && w.content_rating_gore === true) return;
+              if((_cf2.safe || !_cf2.erotica) && w.content_rating_erotica === true) return;
             }
             var trackId2 = w.type==='artwork' ? 'track-5' : 'track-4';
             var track2 = document.getElementById(trackId2);

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t==='light'){t='dim';localStorage.setItem('ds_theme',t);}if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DawnScribe — Rising with the Dawn</title>
   <meta name="description" content="Ranking boards for Sparks, Flames, fresh arrivals and consistency on DawnScribe — plus this month's Kindling vote for new voices." />
@@ -19,7 +19,11 @@
   <script src="accessibilityPrefs.js"></script>
   <style>
     :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#5a5a80;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f0c040;}
-    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--accent:#0d9488;--accent2:#0f766e;--text:#0a0a0f;--text2:#3a3a5c;--text3:#7a7a9a;--border:rgba(0,0,0,0.08);--red:#dc2626;--green:#059669;--gold:#a16207;}
+    /* DIM — a softer dark, not a darker light. Only SURFACES move;
+       every foreground colour is inherited from :root, which is why
+       this theme cannot develop the contrast faults light mode has. */
+    html[data-theme="dim"]{--bg:#1c1c21;--bg2:#24242c;--bg3:#2c2c38;--bg4:#34344c;--border:rgba(255,255,255,0.12);--text2:#9b9bc0;--text3:#9e9eb4;}
+
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;display:flex;flex-direction:column;}
     @keyframes spin{to{transform:rotate(360deg);}}
@@ -155,17 +159,47 @@
 
     // ── Board HTML cache (per session, 2 min TTL) ──
     var BOARD_CACHE_TTL_MS = 2 * 60 * 1000;
+    // ── CONTENT FILTERS ────────────────────────────────────────────
+    // A leaderboard that hides entries stops being a ranking, so rising.html
+    // does NOT filter works out. Instead a mature-content badge shows when a
+    // ranked work is flagged for something the viewer's settings would hide
+    // elsewhere — same approach following.html takes. ALLOW semantics.
+    var riseFilters = { gore: false, erotica: false, safe: true };
+    async function loadRiseFilters() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        var prof = (r && r.data && r.data.length) ? r.data[0] : null;
+        if (!prof) return;               // logged out keeps the restrictive default
+        riseFilters.safe    = prof.settings_filter_safe === true;
+        riseFilters.gore    = prof.settings_filter_gore !== false;
+        riseFilters.erotica = prof.settings_filter_erotica !== false;
+      } catch (e) { /* keep restrictive default */ }
+    }
+    function riseBadge(w) {
+      var warnGore    = w.content_rating_gore === true    && (riseFilters.safe || !riseFilters.gore);
+      var warnErotica = w.content_rating_erotica === true && (riseFilters.safe || !riseFilters.erotica);
+      if (!warnGore && !warnErotica) return '';
+      var label = warnGore && warnErotica ? 'Gore & Erotica' : (warnGore ? 'Gore' : 'Erotica');
+      return '<span title="Flagged for mature content you filter in Settings" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#f87171;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);border-radius:20px;padding:1px 7px;margin-left:6px;"><i class="ti ti-alert-triangle" style="font-size:11px;"></i> ' + label + '</span>';
+    }
+    // The rendered HTML embeds badges that depend on the viewer's filters, so
+    // the cache must key on those too — otherwise a badge rendered under one
+    // filter state survives a settings change.
+    function riseFilterSig() {
+      return (riseFilters.safe?'s':'-') + (riseFilters.gore?'g':'-') + (riseFilters.erotica?'e':'-');
+    }
+
     function boardCacheGet(kind) {
       try {
-        var raw = sessionStorage.getItem('ds_rising_board:' + kind);
+        var raw = sessionStorage.getItem('ds_rising_board:' + kind + ':' + riseFilterSig());
         if (!raw) return null;
         var obj = JSON.parse(raw);
-        if (!obj || (Date.now() - obj.t) > BOARD_CACHE_TTL_MS) { sessionStorage.removeItem('ds_rising_board:' + kind); return null; }
+        if (!obj || (Date.now() - obj.t) > BOARD_CACHE_TTL_MS) { sessionStorage.removeItem('ds_rising_board:' + kind + ':' + riseFilterSig()); return null; }
         return obj.h;
       } catch(e) { return null; }
     }
     function boardCacheSet(kind, htmlStr) {
-      try { sessionStorage.setItem('ds_rising_board:' + kind, JSON.stringify({ t: Date.now(), h: htmlStr })); } catch(e) {}
+      try { sessionStorage.setItem('ds_rising_board:' + kind + ':' + riseFilterSig(), JSON.stringify({ t: Date.now(), h: htmlStr })); } catch(e) {}
     }
 
     function showToast(msg, icon) {
@@ -214,7 +248,7 @@
       if (cached) { el.innerHTML = cached; return; }
       try {
         var q = db.from('works')
-          .select('id,title,cover_url,author_id,celestial_flame_count,spark_count_total,avg_chapter_days,chapters_count,created_at')
+          .select('id,title,cover_url,author_id,celestial_flame_count,spark_count_total,avg_chapter_days,chapters_count,created_at,content_rating_gore,content_rating_erotica')
           .eq('type', 'novel')
           .eq('is_published', true);
 
@@ -261,7 +295,7 @@
           html += '<a class="rank-row" href="story.html?id=' + w.id + '">' +
             '<div class="rank-num' + (rank <= 3 ? ' top3' : '') + '">' + (rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank) + '</div>' +
             coverBlock('rank-cover', w.cover_url, w.title) +
-            '<div class="rank-body"><div class="rank-title">' + escHtml(w.title) + '</div><div class="rank-author">by ' + authorName + '</div></div>' +
+            '<div class="rank-body"><div class="rank-title">' + escHtml(w.title) + riseBadge(w) + '</div><div class="rank-author">by ' + authorName + '</div></div>' +
             '<div class="rank-right"><div class="rank-sparks">' + metricHtml + '</div></div>' +
           '</a>';
         });
@@ -278,7 +312,7 @@
       if (cachedLb) { el.innerHTML = cachedLb; return; }
       try {
         var { data: works, error: wErr } = await db.from('works')
-          .select('id,title,cover_url,author_id,spark_count_week')
+          .select('id,title,cover_url,author_id,spark_count_week,content_rating_gore,content_rating_erotica')
           .eq('type', 'novel')
           .eq('is_published', true)
           .order('spark_count_week', { ascending: false, nullsFirst: false })
@@ -326,7 +360,7 @@
           html += '<a class="rank-row" href="story.html?id=' + w.id + '">' +
             '<div class="rank-num' + (rank <= 3 ? ' top3' : '') + '">' + (rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank) + '</div>' +
             coverBlock('rank-cover', w.cover_url, w.title) +
-            '<div class="rank-body"><div class="rank-title">' + escHtml(w.title) + '</div><div class="rank-author">by ' + authorName + '</div></div>' +
+            '<div class="rank-body"><div class="rank-title">' + escHtml(w.title) + riseBadge(w) + '</div><div class="rank-author">by ' + authorName + '</div></div>' +
             '<div class="rank-right"><div class="rank-sparks"><i class="ti ti-bolt"></i> ' + (w.spark_count_week || 0) + '</div>' + moveHtml + '</div>' +
           '</a>';
         });
@@ -468,6 +502,10 @@
 
     (async function init() {
       currentSession = (await db.auth.getSession()).data.session;
+      // Must resolve BEFORE any board renders — the badge and the cache key
+      // both depend on it, and a board drawn against the defaults would cache
+      // itself under the wrong signature.
+      await loadRiseFilters();
       await loadLeaderboard();
       await loadKindling();
     })();

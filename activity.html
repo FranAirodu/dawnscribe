@@ -3,8 +3,7 @@
 <head>
   <script>
     (function(){
-      var t=localStorage.getItem('ds_theme');
-      if(t==='light'){document.documentElement.setAttribute('data-theme','light');}
+      var t=localStorage.getItem('ds_theme');if(t==='light'){t='dim';localStorage.setItem('ds_theme',t);}if(t){document.documentElement.setAttribute('data-theme',t);}
     })();
   </script>
   <meta charset="UTF-8"/>
@@ -28,10 +27,11 @@
       --border:#2a3347; --text:#e8eaf0; --text2:#9ba3b8; --text3:#5c6480;
       --accent:#2dd4bf; --gold:#f59e0b; --red:#f87171; --pink:#f472b6;
     }
-    [data-theme="light"] {
-      --bg:#f4f5f8; --bg2:#ffffff; --bg3:#eef0f5; --bg4:#e4e7ef;
-      --border:#d0d5e8; --text:#1a1f2e; --text2:#4a5270; --text3:#8890a8;
-    }
+    /* DIM — a softer dark, not a darker light. Only SURFACES move;
+       every foreground colour is inherited from :root, which is why
+       this theme cannot develop the contrast faults light mode has. */
+    html[data-theme="dim"]{--bg:#212329;--bg2:#282d39;--bg3:#303747;--bg4:#373f4f;--border:#3e475b;--text2:#a2a9bd;--text3:#a5aab9;}
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); color: var(--text); font-family: 'Lato', sans-serif; min-height: 100vh; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -150,6 +150,7 @@
     footer .footer-links a { color: var(--text3); text-decoration: none; transition: color 0.2s; }
     footer .footer-links a:hover { color: var(--accent); }
   </style>
+  <script src="accessibilityPrefs.js"></script>
 </head>
 <body>
 
@@ -493,23 +494,50 @@
   }
   function loadMoreComments(){ renderMoreComments(); }
 
+  // ── CONTENT FILTERS ───────────────────────────────────────────────
+  // activity.html previously applied NO content filter at all, so mature works
+  // surfaced in the updates and artwork feeds regardless of the viewer's
+  // settings — including for logged-out visitors. ALLOW semantics, matching
+  // browse/search/library: gore/erotica true = viewer MAY see it.
+  var actContentFilters = { gore: false, erotica: false, safe: true };
+  async function loadActContentFilters() {
+    try {
+      var r = await db.rpc('get_my_private_profile');
+      var prof = (r && r.data && r.data.length) ? r.data[0] : null;
+      if (!prof) return;                 // logged out keeps the restrictive default
+      actContentFilters.safe    = prof.settings_filter_safe === true;
+      actContentFilters.gore    = prof.settings_filter_gore !== false;
+      actContentFilters.erotica = prof.settings_filter_erotica !== false;
+    } catch (e) { /* keep restrictive default */ }
+  }
+  function actPassesFilter(w) {
+    if (!w) return false;
+    if ((actContentFilters.safe || !actContentFilters.gore) && w.content_rating_gore === true) return false;
+    if ((actContentFilters.safe || !actContentFilters.erotica) && w.content_rating_erotica === true) return false;
+    return true;
+  }
+
   // ── LOAD UPDATES ──────────────────────────────────────────────────
   async function loadUpdates(){
     try {
     var [chapRes,artRes]=await Promise.all([
       db.from('chapters').select('id,chapter_number,title,created_at,work_id,author_id').in('status',['published','one-shot']).order('created_at',{ascending:false}).limit(60),
-      db.from('works').select('id,title,cover_url,author_id,created_at,type').eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(40)
+      db.from('works').select('id,title,cover_url,author_id,created_at,type,content_rating_gore,content_rating_erotica').eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(40)
     ]);
+    await loadActContentFilters();
     var chapters=(chapRes.data||[]).filter(function(c){return !isHidden(c.author_id);});
-    var artworks=(artRes.data||[]).filter(function(a){return !isHidden(a.author_id);});
+    var artworks=(artRes.data||[]).filter(function(a){return !isHidden(a.author_id) && actPassesFilter(a);});
 
     var chapWorkIds=chapters.map(function(c){return c.work_id;}).filter(Boolean);
     var allAuthorIds=chapters.map(function(c){return c.author_id;}).concat(artworks.map(function(a){return a.author_id;})).filter(function(id,i,arr){return id&&arr.indexOf(id)===i;});
 
     var worksMap={};
     if(chapWorkIds.length){
-      var wRes=await db.from('works').select('id,title,type,cover_url,author_id').in('id',chapWorkIds);
-      (wRes.data||[]).forEach(function(w){worksMap[w.id]=w;});
+      var wRes=await db.from('works').select('id,title,type,cover_url,author_id,content_rating_gore,content_rating_erotica').in('id',chapWorkIds);
+      (wRes.data||[]).forEach(function(w){ if(actPassesFilter(w)) worksMap[w.id]=w; });
+      // A chapter whose work was filtered out has no worksMap entry, so it
+      // drops out of the feed with it.
+      chapters = chapters.filter(function(c){ return worksMap[c.work_id]; });
     }
     var profsMap={};
     if(allAuthorIds.length){
