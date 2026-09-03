@@ -244,9 +244,23 @@
     .roll-overlay.open { opacity: 1; }
     .roll-stage { position: relative; width: 280px; height: 280px; display: flex;
       align-items: center; justify-content: center; }
-    .roll-core { position: relative; width: 88px; height: 88px; border-radius: 50%;
-      background: radial-gradient(circle at 50% 62%, #ffd08a 0%, var(--roll-hex) 46%, rgba(249,115,22,0) 72%);
-      animation: rollFlicker 1.05s ease-in-out infinite; will-change: transform, opacity; }
+    /* The flame is a drawn shape, not a glowing circle. A radial gradient
+       alone reads as a ball no matter how it animates, and with motion
+       disabled it reads as nothing but a ball. Shape first, motion second —
+       that way every user sees fire whether or not anything moves. */
+    .roll-core { position: relative; width: 132px; height: 156px; display: flex;
+      align-items: flex-end; justify-content: center; }
+    .roll-glow { position: absolute; bottom: 6px; left: 50%; width: 150px; height: 150px;
+      margin-left: -75px; border-radius: 50%; pointer-events: none;
+      background: radial-gradient(circle, var(--roll-hex) 0%, rgba(0,0,0,0) 68%);
+      opacity: .34; animation: rollGlow 2.6s ease-in-out infinite; }
+    .roll-flame { position: relative; width: 132px; height: 156px; overflow: visible; }
+    .roll-flame-outer { fill: var(--roll-hex); opacity: .95;
+      transform-origin: 50% 92%; animation: rollLick 1.15s ease-in-out infinite; }
+    .roll-flame-mid { fill: var(--roll-hex); opacity: .55;
+      transform-origin: 50% 92%; animation: rollLick 0.83s ease-in-out infinite reverse; }
+    .roll-flame-core { fill: #ffd9a0; opacity: .92;
+      transform-origin: 50% 92%; animation: rollLick 0.62s ease-in-out infinite; }
     .roll-ring { position: absolute; inset: 0; margin: auto; width: 88px; height: 88px;
       border-radius: 50%; border: 2px solid var(--roll-hex); opacity: 0; }
     .roll-overlay.charging .roll-ring { animation: rollPulse 1.4s ease-out infinite; }
@@ -271,9 +285,14 @@
       font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text3); }
     .roll-overlay.revealed .roll-charging-text { display: none; }
 
-    @keyframes rollFlicker {
-      0%, 100% { transform: scale(1) translateY(0); opacity: .92; }
-      50%      { transform: scale(1.09) translateY(-3px); opacity: 1; }
+    @keyframes rollLick {
+      0%, 100% { transform: scaleY(1)    scaleX(1)    translateY(0); }
+      30%      { transform: scaleY(1.13) scaleX(0.93) translateY(-4px); }
+      65%      { transform: scaleY(0.94) scaleX(1.06) translateY(1px); }
+    }
+    @keyframes rollGlow {
+      0%, 100% { opacity: .28; }
+      50%      { opacity: .46; }
     }
     @keyframes rollPulse {
       0%   { transform: scale(1); opacity: .55; }
@@ -298,9 +317,15 @@
     }
     /* Motion is decoration here, never information: the reveal still reads
        fine with every animation switched off. */
+    /* Reduced motion strips MOVEMENT, not the picture. The flame keeps its
+       shape and a slow opacity breath (no transform), so these users still
+       see fire rather than a static blob. */
     @media (prefers-reduced-motion: reduce) {
-      .roll-core, .roll-ring, .roll-spark, .roll-burst { animation: none !important; }
+      .roll-ring, .roll-spark, .roll-burst { animation: none !important; }
+      .roll-flame-outer, .roll-flame-mid, .roll-flame-core { animation: none !important; }
       .roll-spark { display: none; }
+      .roll-glow { animation: rollGlow 4s ease-in-out infinite; }
+      .roll-overlay.revealed .roll-core { animation: none !important; }
       .roll-label { opacity: 1 !important; transform: none !important; animation: none !important; }
     }
 
@@ -915,7 +940,14 @@
         sparks +
         '<div class="roll-ring"></div>' +
         '<div class="roll-burst"></div>' +
-        '<div class="roll-core"></div>' +
+        '<div class="roll-core">' +
+          '<div class="roll-glow"></div>' +
+          '<svg class="roll-flame" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+            '<path class="roll-flame-outer" d="M50 6 C50 6 20 40 20 70 C20 95 33 112 50 116 C67 112 80 95 80 70 C80 40 50 6 50 6Z"/>' +
+            '<path class="roll-flame-mid" d="M50 30 C50 30 31 54 31 76 C31 95 39 108 50 111 C61 108 69 95 69 76 C69 54 50 30 50 30Z"/>' +
+            '<path class="roll-flame-core" d="M50 58 C50 58 40 74 40 88 C40 100 44 108 50 110 C56 108 60 100 60 88 C60 74 50 58 50 58Z"/>' +
+          '</svg>' +
+        '</div>' +
         '<div class="roll-charging-text">Stoking the embers</div>' +
         '<div class="roll-label" id="roll-label"></div>' +
       '</div>';
