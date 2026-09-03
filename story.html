@@ -87,6 +87,13 @@
     .hero-banner-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
     .hero-banner-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(10,10,15,0.3) 0%,rgba(10,10,15,0.92) 100%);}
     .hero-banner-blur{position:absolute;inset:0;backdrop-filter:blur(2px);}
+    /* Credit for whichever image the hero is currently showing. Two sources:
+       an approved story_landscape (credits a DawnScribe member, internal link)
+       or the author's banner when it is a platform cosmetic (credits an outside
+       artist, external link). Hidden whenever the current image has no credit. */
+    .hero-credit-chip{position:absolute;bottom:14px;left:14px;background:rgba(10,10,15,0.72);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:5px 11px;display:none;align-items:center;gap:6px;font-size:11px;font-weight:700;color:rgba(255,255,255,0.75);text-decoration:none;z-index:5;transition:all 0.2s;backdrop-filter:blur(4px);}
+    .hero-credit-chip:hover{background:rgba(10,10,15,0.9);color:#fff;border-color:rgba(255,255,255,0.25);}
+    .hero-credit-chip i{font-size:11px;opacity:0.8;}
 
     /* STORY HEADER */
     .story-header-wrap{max-width:1000px;margin:0 auto;padding:0 24px;}
@@ -593,6 +600,7 @@
     <img class="hero-banner-img" id="hero-banner-img" style="display:none;"/>
     <div class="hero-banner-blur"></div>
     <div class="hero-banner-overlay"></div>
+    <a class="hero-credit-chip" id="hero-credit-chip" href="#"><i class="ti ti-palette"></i><span id="hero-credit-label"></span></a>
   </div>
 
   <!-- STORY HEADER -->
@@ -4043,6 +4051,67 @@
     var landscapeTimer = null;
     var heroFallbackUrl = null;
     var landscapeRows = [];
+
+    /* image_url -> {label, href, external}. Rebuilt on every loadLandscapes
+       call. setHeroCredit is called at every point the hero src changes,
+       including the rotation timer and the onerror fallback, so the chip can
+       never credit an image that is no longer on screen. */
+    var heroCredits = {};
+    function setHeroCredit(url) {
+      var chip = document.getElementById('hero-credit-chip');
+      if (!chip) return;
+      var c = url && heroCredits[url];
+      if (!c) { chip.style.display = 'none'; return; }
+      document.getElementById('hero-credit-label').textContent = 'Art by ' + c.label;
+      chip.href = c.href;
+      if (c.external) {
+        chip.target = '_blank';
+        /* noopener/noreferrer: without them the opened tab can reach back into
+           this one via window.opener. */
+        chip.rel = 'noopener noreferrer nofollow';
+        chip.title = 'View ' + c.label + "'s portfolio";
+      } else {
+        chip.removeAttribute('target');
+        chip.removeAttribute('rel');
+        chip.title = 'View ' + c.label + "'s profile";
+      }
+      chip.style.display = 'flex';
+    }
+
+    async function buildHeroCredits(rows, fallbackUrl) {
+      heroCredits = {};
+      try {
+        var ids = [];
+        (rows || []).forEach(function(l){
+          if (l.artist_id && ids.indexOf(l.artist_id) === -1) ids.push(l.artist_id);
+        });
+        if (ids.length) {
+          var pr = await db.from('profiles').select('id,username,display_name').in('id', ids);
+          var byId = {};
+          (pr.data || []).forEach(function(p){ byId[p.id] = p; });
+          (rows || []).forEach(function(l){
+            var p = byId[l.artist_id];
+            var handle = p && (p.username || p.display_name);
+            if (!handle) return;
+            heroCredits[l.image_url] = {
+              label: handle,
+              href: 'profile.html?user=' + encodeURIComponent(handle),
+              external: false
+            };
+          });
+        }
+        if (fallbackUrl && !heroCredits[fallbackUrl]) {
+          var ci = await db.from('cosmetic_items')
+            .select('artist_name,artist_url')
+            .eq('slot','banner').eq('image_url', fallbackUrl).maybeSingle();
+          var a = ci.data;
+          if (a && a.artist_name && a.artist_url) {
+            heroCredits[fallbackUrl] = { label: a.artist_name, href: a.artist_url, external: true };
+          }
+        }
+      } catch(e) { /* credit chip is non-critical */ }
+    }
+
     async function loadLandscapes(workId, fallbackUrl) {
       var bannerImg = document.getElementById('hero-banner-img');
       if (!bannerImg) return;
@@ -4055,6 +4124,7 @@
       } catch(e) {}
       if (landscapeTimer) { clearInterval(landscapeTimer); landscapeTimer = null; }
       var urls = landscapeRows.map(function(l){ return l.image_url; });
+      await buildHeroCredits(landscapeRows, fallbackUrl);
 
       // A landscape row can outlive its storage object (upload deleted, bucket
       // cleaned, bad path). Before this guard, a dead URL meant urls.length was
@@ -4065,12 +4135,15 @@
         if (fallbackUrl && this.src !== fallbackUrl) {
           this.src = fallbackUrl;
           this.style.display = 'block';
+          setHeroCredit(fallbackUrl);
         } else {
           this.style.display = 'none';
+          setHeroCredit(null);
         }
       };
       if (!urls.length) {
-        if (fallbackUrl) { bannerImg.src = fallbackUrl; bannerImg.style.display = 'block'; }
+        if (fallbackUrl) { bannerImg.src = fallbackUrl; bannerImg.style.display = 'block'; setHeroCredit(fallbackUrl); }
+        else { setHeroCredit(null); }
         return;
       }
       bannerImg.style.transition = 'opacity 0.8s ease';
@@ -4084,11 +4157,12 @@
       if (mode === 'single') {
         var pinned = landscapeRows.filter(function(l){ return l.id === pinnedId; })[0];
         bannerImg.src = (pinned || landscapeRows[0]).image_url;
+        setHeroCredit(bannerImg.src);
         return;
       }
 
       // Only one approved -> nothing to rotate
-      if (urls.length === 1) { bannerImg.src = urls[0]; return; }
+      if (urls.length === 1) { bannerImg.src = urls[0]; setHeroCredit(urls[0]); return; }
 
       // Deterministic time-based rotations: every visitor sees the same image
       // for a given clock slot, advancing on schedule. No background job needed.
@@ -4098,6 +4172,7 @@
           ? Math.floor(now.getTime() / 3600000)                       // hours since epoch
           : Math.floor(now.getTime() / 86400000);                     // days since epoch
         bannerImg.src = urls[slot % urls.length];
+        setHeroCredit(urls[slot % urls.length]);
         // Re-evaluate at the next boundary so the page updates without reload.
         var periodMs = (mode === 'rotate_hour') ? 3600000 : 86400000;
         var msToNext = periodMs - (now.getTime() % periodMs);
@@ -4108,10 +4183,11 @@
       // DEFAULT rotate_8s: cross-fade cycle every 8 seconds
       var idx = Math.floor(Math.random() * urls.length);
       bannerImg.src = urls[idx];
+      setHeroCredit(urls[idx]);
       landscapeTimer = setInterval(function(){
         idx = (idx + 1) % urls.length;
         bannerImg.style.opacity = '0';
-        setTimeout(function(){ bannerImg.src = urls[idx]; bannerImg.style.opacity = '1'; }, 800);
+        setTimeout(function(){ bannerImg.src = urls[idx]; setHeroCredit(urls[idx]); bannerImg.style.opacity = '1'; }, 800);
       }, 8000);
     }
 

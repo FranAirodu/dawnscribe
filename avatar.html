@@ -232,6 +232,78 @@
     .loading-state i { display: block; margin-bottom: 8px; font-size: 22px; animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
+    /* ── SHARED ROLL REVEAL ────────────────────────────────────────────
+       One reveal for every random unlock on the page (aura, skin tone,
+       display). Two states: "charging" while the RPC is in flight, then
+       "revealed". --roll-hex is set per reveal so the burst takes the
+       colour of whatever was won; non-colour rolls fall back to ember
+       orange. Everything is transform/opacity so it stays cheap. */
+    .roll-overlay { position: fixed; inset: 0; z-index: 400; display: flex; align-items: center;
+      justify-content: center; background: rgba(6,7,12,0.86); backdrop-filter: blur(3px);
+      opacity: 0; transition: opacity .25s ease; --roll-hex: #f97316; }
+    .roll-overlay.open { opacity: 1; }
+    .roll-stage { position: relative; width: 280px; height: 280px; display: flex;
+      align-items: center; justify-content: center; }
+    .roll-core { position: relative; width: 88px; height: 88px; border-radius: 50%;
+      background: radial-gradient(circle at 50% 62%, #ffd08a 0%, var(--roll-hex) 46%, rgba(249,115,22,0) 72%);
+      animation: rollFlicker 1.05s ease-in-out infinite; will-change: transform, opacity; }
+    .roll-ring { position: absolute; inset: 0; margin: auto; width: 88px; height: 88px;
+      border-radius: 50%; border: 2px solid var(--roll-hex); opacity: 0; }
+    .roll-overlay.charging .roll-ring { animation: rollPulse 1.4s ease-out infinite; }
+    .roll-spark { position: absolute; bottom: 108px; left: 50%; width: 5px; height: 5px;
+      border-radius: 50%; background: var(--roll-hex); opacity: 0;
+      animation: rollRise 1.6s ease-out infinite; }
+    .roll-burst { position: absolute; inset: 0; margin: auto; width: 88px; height: 88px;
+      border-radius: 50%; border: 3px solid var(--roll-hex); opacity: 0; }
+    .roll-overlay.revealed .roll-burst { animation: rollBurst .85s cubic-bezier(.2,.7,.3,1) forwards; }
+    .roll-overlay.revealed .roll-core { animation: rollLand .7s cubic-bezier(.2,.7,.3,1) forwards; }
+    .roll-label { position: absolute; top: 100%; left: 0; right: 0; text-align: center;
+      opacity: 0; transform: translateY(8px); }
+    .roll-overlay.revealed .roll-label { animation: rollLabel .5s ease-out .3s forwards; }
+    .roll-kicker { font-size: 11px; font-weight: 700; letter-spacing: 1.4px;
+      text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
+    .roll-name { font-family: 'Cinzel', serif; font-size: 24px; font-weight: 700;
+      color: var(--roll-hex); }
+    .roll-sub { font-size: 13px; color: var(--text2); margin-top: 8px; line-height: 1.6;
+      max-width: 300px; margin-left: auto; margin-right: auto; }
+    .roll-dismiss { margin-top: 18px; font-size: 11px; color: var(--text3); }
+    .roll-charging-text { position: absolute; top: 100%; left: 0; right: 0; text-align: center;
+      font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text3); }
+    .roll-overlay.revealed .roll-charging-text { display: none; }
+
+    @keyframes rollFlicker {
+      0%, 100% { transform: scale(1) translateY(0); opacity: .92; }
+      50%      { transform: scale(1.09) translateY(-3px); opacity: 1; }
+    }
+    @keyframes rollPulse {
+      0%   { transform: scale(1); opacity: .55; }
+      100% { transform: scale(2.1); opacity: 0; }
+    }
+    @keyframes rollRise {
+      0%   { transform: translate(0, 0) scale(1); opacity: 0; }
+      15%  { opacity: .9; }
+      100% { transform: translate(var(--dx, 0px), -120px) scale(0.2); opacity: 0; }
+    }
+    @keyframes rollBurst {
+      0%   { transform: scale(1); opacity: .9; }
+      100% { transform: scale(3.4); opacity: 0; }
+    }
+    @keyframes rollLand {
+      0%   { transform: scale(1.35); }
+      60%  { transform: scale(0.94); }
+      100% { transform: scale(1); }
+    }
+    @keyframes rollLabel {
+      to { opacity: 1; transform: translateY(0); }
+    }
+    /* Motion is decoration here, never information: the reveal still reads
+       fine with every animation switched off. */
+    @media (prefers-reduced-motion: reduce) {
+      .roll-core, .roll-ring, .roll-spark, .roll-burst { animation: none !important; }
+      .roll-spark { display: none; }
+      .roll-label { opacity: 1 !important; transform: none !important; animation: none !important; }
+    }
+
     /* First-run skin tone picker overlay */
     #firstrun-overlay { position: fixed; inset: 0; z-index: 4000; background: rgba(6,10,14,0.86); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; }
     .firstrun-card { background: var(--panel, #0f1720); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 28px 26px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
@@ -665,21 +737,26 @@
     }
     var ok = await dsModal({ confirm: true, title: 'Random Display Unlock', body: 'Spend <b>10 Embers</b> to unlock one <b>random</b> display option \u2014 a pose, avatar position, or the mirror effect. Whatever you get is yours forever.', icon: 'ti-dice-5', okLabel: 'Roll \u2022 10 Embers' });
     if (!ok) return;
+    dsRollOpen();
     var { data, error } = await db.rpc('roll_display_unlock', { p_user_id: currentUid });
     if (error || !data) {
+      dsRollClose();
       await dsModal({ title: 'Something went wrong', body: 'Could not roll right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
       return;
     }
     if (data.status === 'insufficient_embers') {
+      dsRollClose();
       await dsModal({ title: 'Not enough Embers', body: 'You need <b>' + data.cost + ' Embers</b> for this roll. You currently have <b>' + data.balance + '</b>.', icon: 'ti-flame', error: true });
       return;
     }
     if (data.status === 'all_unlocked') {
+      dsRollClose();
       await dsModal({ title: 'All unlocked!', body: 'You already own every display option. Nice collection!', icon: 'ti-sparkles' });
       renderPoseRow();
       return;
     }
     if (data.status !== 'success') {
+      dsRollClose();
       await dsModal({ title: 'Something went wrong', body: 'Could not roll right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
       return;
     }
@@ -711,7 +788,7 @@
     renderPoseRow();
     renderPreview();
     updateSaveState();
-    await dsModal({ title: 'You unlocked: ' + label + '!', body: 'The <b>' + label + '</b> is now permanently yours. ' + applyMsg + ' Remember to hit <b>Save Avatar</b>.', icon: 'ti-confetti' });
+    await dsRollReveal({ label: label, sub: 'Permanently yours. ' + applyMsg + ' Remember to hit <b>Save Avatar</b>.' });
   }
 
   async function rollSkinUnlock() {
@@ -721,21 +798,26 @@
     }
     var ok = await dsModal({ confirm: true, title: 'Random Skin Unlock', body: 'Spend <b>' + SKIN_UNLOCK_COST + ' Embers</b> to unlock one <b>random</b> skin tone you don\'t own yet. It\'s yours to keep.', icon: 'ti-dice-5', okLabel: 'Roll \u2022 ' + SKIN_UNLOCK_COST + ' Embers' });
     if (!ok) return;
+    dsRollOpen();
     var { data, error } = await db.rpc('roll_skin_unlock', { p_user_id: currentUid });
     if (error || !data) {
+      dsRollClose();
       await dsModal({ title: 'Something went wrong', body: 'Could not roll right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
       return;
     }
     if (data.status === 'insufficient_embers') {
+      dsRollClose();
       await dsModal({ title: 'Not enough Embers', body: 'You need <b>' + data.cost + ' Embers</b> for this roll. You currently have <b>' + data.balance + '</b>.', icon: 'ti-flame', error: true });
       return;
     }
     if (data.status === 'all_unlocked') {
+      dsRollClose();
       await dsModal({ title: 'All unlocked!', body: 'You already own every skin tone. Nice collection!', icon: 'ti-circle-check' });
       renderSkinTones();
       return;
     }
     if (data.status !== 'success') {
+      dsRollClose();
       await dsModal({ title: 'Something went wrong', body: 'Could not roll right now. Please try again later.', icon: 'ti-alert-triangle', error: true });
       return;
     }
@@ -757,7 +839,11 @@
     renderPoseRow();
     renderPreview();
     updateSaveState();
-    await dsModal({ title: 'You unlocked: ' + (data.label || 'a new tone') + '!', body: 'The <b>' + (data.label || 'new') + '</b> skin tone is now permanently yours and applied to your preview. Remember to hit <b>Save Avatar</b>.', icon: 'ti-confetti' });
+    await dsRollReveal({
+      label: data.label || 'A new tone',
+      kicker: 'Skin tone unlocked',
+      sub: 'Permanently yours and applied to your preview. Remember to hit <b>Save Avatar</b>.'
+    });
   }
 
   // ── MODAL (styled replacement for alert/confirm) ────────────────
@@ -788,6 +874,84 @@
       });
       document.body.appendChild(overlay);
       requestAnimationFrame(function(){ overlay.classList.add('open'); });
+    });
+  }
+
+  /* ── SHARED ROLL REVEAL ──────────────────────────────────────────────
+     Used by all three random unlocks so a roll feels the same wherever it
+     happens. dsRollOpen() goes up the moment Embers are committed;
+     dsRollReveal() resolves after the user dismisses; dsRollClose() backs
+     out silently when the RPC fails or there was nothing left to win.
+
+     MIN_CHARGE exists because the RPC often returns in well under 200ms.
+     Without it the reveal is over before the eye registers a roll happened,
+     which is exactly the flatness this replaced. */
+  var ROLL_MIN_CHARGE = 1200;
+  var rollState = null;
+
+  function dsRollOpen() {
+    dsRollClose();
+    var ov = document.createElement('div');
+    ov.className = 'roll-overlay charging';
+    var sparks = '';
+    for (var i = 0; i < 7; i++) {
+      var dx = (i - 3) * 13;
+      sparks += '<div class="roll-spark" style="--dx:' + dx + 'px;' +
+        'animation-delay:' + (i * 0.19).toFixed(2) + 's;"></div>';
+    }
+    ov.innerHTML =
+      '<div class="roll-stage">' +
+        sparks +
+        '<div class="roll-ring"></div>' +
+        '<div class="roll-burst"></div>' +
+        '<div class="roll-core"></div>' +
+        '<div class="roll-charging-text">Stoking the embers</div>' +
+        '<div class="roll-label" id="roll-label"></div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    requestAnimationFrame(function(){ ov.classList.add('open'); });
+    rollState = { el: ov, t0: Date.now() };
+  }
+
+  function dsRollClose() {
+    if (!rollState) return;
+    var el = rollState.el;
+    rollState = null;
+    el.classList.remove('open');
+    setTimeout(function(){ el.remove(); }, 250);
+  }
+
+  function dsRollReveal(opts) {
+    return new Promise(function(resolve) {
+      if (!rollState) { resolve(); return; }
+      var st = rollState;
+      var wait = Math.max(0, ROLL_MIN_CHARGE - (Date.now() - st.t0));
+      setTimeout(function() {
+        if (rollState !== st) { resolve(); return; }
+        var hex = opts.hex ? sanitizeHex(opts.hex) : '#f97316';
+        st.el.style.setProperty('--roll-hex', hex);
+        document.getElementById('roll-label').innerHTML =
+          '<div class="roll-kicker">' + esc(opts.kicker || 'Unlocked') + '</div>' +
+          '<div class="roll-name">' + esc(opts.label || '') + '</div>' +
+          (opts.sub ? '<div class="roll-sub">' + opts.sub + '</div>' : '') +
+          '<div class="roll-dismiss">Click anywhere to continue</div>';
+        st.el.classList.remove('charging');
+        st.el.classList.add('revealed');
+        function done() {
+          st.el.removeEventListener('click', done);
+          document.removeEventListener('keydown', onKey);
+          if (rollState === st) dsRollClose();
+          resolve();
+        }
+        function onKey(e) { if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') done(); }
+        /* Give the burst a beat before the click lands, or a user already
+           mid-click dismisses their own reveal instantly. */
+        setTimeout(function() {
+          if (rollState !== st) return;
+          st.el.addEventListener('click', done);
+          document.addEventListener('keydown', onKey);
+        }, 450);
+      }, wait);
     });
   }
 
@@ -1489,12 +1653,14 @@
     var result = document.getElementById('accent-roll-result');
     btn.disabled = true;
     btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Rolling...';
+    dsRollOpen();
     var { data, error } = await db.rpc('roll_accent_color', { p_user_id: currentUid });
     btn.disabled = false;
     btn.innerHTML = '<i class="ti ti-wand"></i> Roll Aura (10 Embers)';
-    if (error || !data) { showToast('Something went wrong.', 'ti-alert-triangle'); return; }
-    if (data.status === 'insufficient_embers') { showToast('Not enough Embers! You need 10.', 'ti-flame'); return; }
+    if (error || !data) { dsRollClose(); showToast('Something went wrong.', 'ti-alert-triangle'); return; }
+    if (data.status === 'insufficient_embers') { dsRollClose(); showToast('Not enough Embers! You need 10.', 'ti-flame'); return; }
     if (data.status === 'all_unlocked') {
+      dsRollClose();
       result.innerHTML = '<div class="randomizer-result-text">You\'ve unlocked every Dawn Color! More may be added in future updates.</div>';
       result.classList.add('show'); return;
     }
@@ -1509,6 +1675,14 @@
     renderAccentSection();
     // Dispatch ember event for nav pill
     window.dispatchEvent(new CustomEvent('ds-embers-awarded', { detail: { amount: -10 } }));
+    // The aura roll is the one that wins an actual colour, so the burst
+    // takes that colour rather than the default ember orange.
+    await dsRollReveal({
+      hex: data.hex,
+      label: data.label,
+      kicker: 'Aura unlocked',
+      sub: 'Scroll down to pick it as your Dawn Color.'
+    });
   }
 
   async function saveAvatar() {
