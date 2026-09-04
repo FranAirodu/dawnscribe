@@ -505,7 +505,12 @@
   // settings — including for logged-out visitors. ALLOW semantics, matching
   // browse/search/library: gore/erotica true = viewer MAY see it.
   var actContentFilters = { gore: false, erotica: false, safe: true };
+  var _actFiltersLoaded = null;
   async function loadActContentFilters() {
+    // Idempotent: awaited once before any feed renders, and still called by
+    // loadUpdates(). Returns the same promise so the work happens once.
+    if (_actFiltersLoaded) return _actFiltersLoaded;
+    _actFiltersLoaded = (async function(){
     try {
       var r = await db.rpc('get_my_private_profile');
       var prof = (r && r.data && r.data.length) ? r.data[0] : null;
@@ -517,6 +522,8 @@
     try { await DSWarn.init(db); } catch (e) {}
     try { await DSTags.init(db); } catch (e) {}
     try { await loadLangPrefs(); } catch (e) {}
+    })();
+    return _actFiltersLoaded;
   }
   // Language & Region. These three pages applied no language handling at all:
   // a reader with a strict language filter still saw every other language here.
@@ -701,6 +708,10 @@
       var session=sessionRes&&sessionRes.data?sessionRes.data.session:null;
       if(session){ myUid=session.user.id; await dsBlock.load(myUid); }
     } catch(e) {}
+    // Filters must resolve BEFORE any feed renders. This used to be awaited
+    // only inside loadUpdates(), which runs in parallel with the other two,
+    // so Collabs and Comments filtered against unloaded defaults.
+    try { await loadActContentFilters(); } catch(e) {}
     await Promise.all([loadCollabs(),loadComments(),loadUpdates()]).catch(function(){});
     startRealtime();
   });
