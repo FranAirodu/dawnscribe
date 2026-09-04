@@ -321,8 +321,8 @@
       ...(acRes.data||[]).map(function(c){return c.work_id;})
     ].filter(Boolean))];
     if(workIds.length){
-      var {data:works}=await db.from('works').select('id,title,cover_url,author_id,type').in('id',workIds);
-      (works||[]).forEach(function(w){collabWorkMap[w.id]=w;});
+      var {data:works}=await db.from('works').select('id,title,type,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').in('id',workIds);
+      (works||[]).forEach(function(w){ if(actPassesFilter(w)) collabWorkMap[w.id]=w; });
     }
     var userIds=[...new Set([
       ...(scRes.data||[]).map(function(c){return c.author_id;}),
@@ -431,20 +431,23 @@
         (chRes2.data||[]).forEach(function(c){chMap[c.id]=c;});
         var cwIds=[...new Set((chRes2.data||[]).map(function(c){return c.work_id;}).filter(Boolean))];
         if(cwIds.length){
-          var cwRes=await db.from('works').select('id,title,type').in('id',cwIds);
-          (cwRes.data||[]).forEach(function(w){cwMap[w.id]=w;});
+          var cwRes=await db.from('works').select('id,title,type,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').in('id',cwIds);
+          (cwRes.data||[]).forEach(function(w){ if(actPassesFilter(w)) cwMap[w.id]=w; });
         }
       }
       chapRows.forEach(function(r){var ch=chMap[r.chapter_id]||null;r.work_id=ch?ch.work_id:null;});
+      // Drop comments whose parent work was filtered out above.
+      chapRows=chapRows.filter(function(r){ return r.work_id && cwMap[r.work_id]; });
     }
     var awMap={};
     if(artRows.length){
       var awIds=[...new Set(artRows.map(function(r){return r.work_id;}).filter(Boolean))];
       if(awIds.length){
-        var awRes=await db.from('works').select('id,title,type').in('id',awIds);
-        (awRes.data||[]).forEach(function(w){awMap[w.id]=w;});
+        var awRes=await db.from('works').select('id,title,type,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').in('id',awIds);
+        (awRes.data||[]).forEach(function(w){ if(actPassesFilter(w)) awMap[w.id]=w; });
       }
     }
+    artRows=artRows.filter(function(r){ return r.work_id && awMap[r.work_id]; });
     var rows=chapRows.concat(artRows).sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);}).slice(0,50);
     if(!rows.length){
       document.getElementById('comment-list').innerHTML='<div class="empty-state"><i class="ti ti-message-off"></i><p>No comments yet.</p></div>';

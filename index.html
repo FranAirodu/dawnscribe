@@ -2000,7 +2000,7 @@
       if(artCmts.length){
         var awIds=[...new Set(artCmts.map(function(c){return c.work_id;}).filter(Boolean))];
         if(awIds.length){
-          var awRes=await db.from('works').select('id,title,type,cover_url,is_published,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all').in('id',awIds);
+          var awRes=await db.from('works').select('id,title,type,cover_url,is_published,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').in('id',awIds);
           (awRes.data||[]).forEach(function(w){awMap[w.id]=w;});
         }
         artCmts.forEach(function(c){ c._work=awMap[c.work_id]||null; });
@@ -2085,7 +2085,7 @@
       }
       // Fetch works + authors separately
       var suWorkIds=[...new Set(res.data.map(function(c){return c.work_id;}))];
-      var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id,is_published,content_rating_gore,content_rating_erotica,content_warnings,tags_all').in('id',suWorkIds);
+      var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id,is_published,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').in('id',suWorkIds);
       // Apply content filters (same safe-default logic as other rows)
       var _ucf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
       var suWorkMap={};(suWorks||[]).forEach(function(w){
@@ -2271,7 +2271,13 @@
           out = out.filter(function(w){ return !w || w.is_fan_translation !== true; });
         }
         if (myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any') {
-          out = out.filter(function(w){ return !w || w.language === myLangPrefs.pref_language; });
+          // Only judge rows whose language we actually have. Several discovery
+          // RPCs (get_top_rally_works among them) return no language column;
+          // filtering on an undefined field would empty the whole row.
+          out = out.filter(function(w){
+            if (!w || w.language === undefined || w.language === null || w.language === '') return true;
+            return w.language === myLangPrefs.pref_language;
+          });
         }
         return applyLangSort(out);
       }
@@ -2355,7 +2361,7 @@
           if (blockErotica && w.content_rating_erotica === true) return false;
           return true;
         });
-        return applyWarningPrefs(applyMutePrefs(applyTagPrefs(out)));
+        return applyLangPrefs(applyWarningPrefs(applyMutePrefs(applyTagPrefs(out))));
       }
 
       // Row 0: New chapters from followed works
@@ -2486,7 +2492,7 @@
       // Row 2: Featured Novels (12-hour rotating slots 1-7, set by rotate_featured_works() via pg_cron)
       var row2track = document.getElementById('track-2');
       try {
-        var featQ2 = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,tags_all,language,content_warnings,content_rating_gore,content_rating_erotica,featured_slot,is_wildcard')
+        var featQ2 = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,tags_all,language,content_warnings,content_rating_gore,content_rating_erotica,featured_slot,is_wildcard,is_fan_translation')
           .eq('type','novel').eq('is_published',true).not('featured_slot','is',null);
         var featRes2 = await featQ2.order('featured_slot',{ascending:true}).limit(7);
         // Slotted picks now pass through the same gore/erotica filter as every
@@ -2495,7 +2501,7 @@
         if (featList.length < 7) {
           // Backfill: rotation hasn't run yet, or the viewer's filters emptied
           // slots — top up with highest-rated novels so the row always shows 7
-          var fallbackQ = applyLanguageFilters(applyContentFilters(db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,tags_all,language,content_warnings,content_rating_gore,content_rating_erotica').eq('type','novel').eq('is_published',true)));
+          var fallbackQ = applyLanguageFilters(applyContentFilters(db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,tags_all,language,content_warnings,content_rating_gore,content_rating_erotica,is_fan_translation').eq('type','novel').eq('is_published',true)));
           var fallbackRes = await fallbackQ.order('rating',{ascending:false}).limit(20);
           var fbList = applyWarningPrefs(applyMutePrefs(applyLangSort(applyTagPrefs(fallbackRes.data || []))));
           var featSeen = new Set(featList.map(function(w){ return w.id; }));
@@ -2511,9 +2517,10 @@
 
       // Row 3: Featured artwork
       var row3track = document.getElementById('track-3');
-      var featArtQ = db.from('works').select('id,title,cover_url,author_id,tags_main,tags_all,content_warnings,content_rating_gore,content_rating_erotica')
+      var featArtQ = db.from('works').select('id,title,cover_url,author_id,tags_main,tags_all,content_warnings,content_rating_gore,content_rating_erotica,language,is_fan_translation')
         .eq('type','artwork').eq('is_published',true);
       featArtQ = applyContentFilters(featArtQ);
+      featArtQ = applyLanguageFilters(featArtQ);
       var featArtRes = await featArtQ.order('rating',{ascending:false}).limit(30);
       featArtRes.data = applyWarningPrefs(applyMutePrefs(applyTagPrefs(featArtRes.data || [])));
       var r3ProfMap={};if((featArtRes.data||[]).length){var r3AIds=[...new Set(featArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r3AIds.length){var {data:r3Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r3AIds);(r3Profs||[]).forEach(function(p){r3ProfMap[p.id]=p;});}}
@@ -2523,7 +2530,7 @@
 
       // Row 4: Newest novels
       var row4track = document.getElementById('track-4');
-      var newNovQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,tags_all,language,content_warnings,created_at,content_rating_gore,content_rating_erotica')
+      var newNovQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,tags_all,language,content_warnings,created_at,content_rating_gore,content_rating_erotica,is_fan_translation')
         .eq('type','novel').eq('is_published',true);
       newNovQ = applyContentFilters(newNovQ);
       newNovQ = applyLanguageFilters(newNovQ);
@@ -2536,7 +2543,7 @@
 
       // Row 6: One-Shots
       var row6track = document.getElementById('track-6');
-      var oneShotQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,tags_main,tags_all,content_warnings,created_at,content_rating_gore,content_rating_erotica')
+      var oneShotQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,tags_main,tags_all,content_warnings,created_at,content_rating_gore,content_rating_erotica,language,is_fan_translation')
         .eq('type','novel').eq('is_published',true).eq('is_one_shot',true);
       oneShotQ = applyContentFilters(oneShotQ);
       oneShotQ = applyLanguageFilters(oneShotQ);
@@ -2548,9 +2555,10 @@
         var p6=r6ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, postedTime:w.created_at, authorName:p6?(p6.display_name||p6.username||null):null, authorUsername:p6?p6.username:null, contentRatingGore:w.content_rating_gore, contentRatingErotica:w.content_rating_erotica };
       });
       var row5track = document.getElementById('track-5');
-      var newArtQ = db.from('works').select('id,title,cover_url,author_id,created_at,tags_main,tags_all,content_warnings,content_rating_gore,content_rating_erotica')
+      var newArtQ = db.from('works').select('id,title,cover_url,author_id,created_at,tags_main,tags_all,content_warnings,content_rating_gore,content_rating_erotica,language,is_fan_translation')
         .eq('type','artwork').eq('is_published',true);
       newArtQ = applyContentFilters(newArtQ);
+      newArtQ = applyLanguageFilters(newArtQ);
       var newArtRes = await newArtQ.order('created_at',{ascending:false}).limit(30);
       newArtRes.data = applyWarningPrefs(applyMutePrefs(applyTagPrefs(newArtRes.data || [])));
       var r5ProfMap={};if((newArtRes.data||[]).length){var r5AIds=[...new Set(newArtRes.data.map(function(w){return w.author_id;}).filter(Boolean))];if(r5AIds.length){var {data:r5Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r5AIds);(r5Profs||[]).forEach(function(p){r5ProfMap[p.id]=p;});}}
@@ -2616,7 +2624,7 @@
         // Candidate pool: recent + active works of BOTH types. Pull a generous
         // slice ordered by weekly sparks so anything with momentum is included.
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,type,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings,spark_count_week')
+          .select('id,title,cover_url,rating,author_id,chapters_count,type,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings,spark_count_week,language,is_fan_translation')
           .in('type',['novel','artwork']).eq('is_published',true)
           .order('spark_count_week',{ascending:false}).limit(120);
         if (filterFn) works = filterFn(works || []);
@@ -2711,7 +2719,7 @@
         var thirtyAgoDate = thirtyAgoISO.slice(0,10);
 
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,created_at,type,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,created_at,type,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings,language,is_fan_translation')
           .in('type',['novel','artwork']).eq('is_published',true)
           .gte('created_at', thirtyAgoISO).order('created_at',{ascending:false}).limit(120);
         if (filterFn) works = filterFn(works || []);
@@ -2787,7 +2795,7 @@
       if (!track) return;
       try {
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings,language,is_fan_translation')
           .eq('type','novel').eq('is_published',true).order('rating',{ascending:false}).limit(80);
         if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Nothing here yet.</div>'; return; }
@@ -2816,7 +2824,7 @@
       if (!track) return;
       try {
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,spark_count_week,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,spark_count_week,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings,language,is_fan_translation')
           .eq('type','novel').eq('is_published',true).gt('spark_count_week', 0)
           .order('spark_count_week',{ascending:false}).limit(30);
         if (filterFn) works = filterFn(works || []);
@@ -2848,7 +2856,7 @@
         var rallyIds = Object.keys(counts);
         if (!rallyIds.length) { if (section) section.style.display = 'none'; return; }
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings,language,is_fan_translation')
           .eq('type','novel').eq('is_published',true).in('id', rallyIds);
         if (filterFn) works = filterFn(works || []);
         works = (works||[]).sort(function(a,b){ return (counts[b.id]||0) - (counts[a.id]||0); }).slice(0, 20);
@@ -2902,7 +2910,7 @@
         // Overlaps-on-text-column isn't expressible in PostgREST (tags_main is
         // JSON-in-text), so fetch recent published novels and match client-side.
         var { data: pool } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings,language,is_fan_translation')
           .eq('type','novel').eq('is_published',true)
           .order('rating',{ascending:false}).limit(120);
         var matches = (pool||[]).filter(function(w){
@@ -3254,7 +3262,7 @@
             if(!uid) return;
             var fwRes = await db.from('work_follows').select('id').eq('user_id',uid).eq('work_id',ch.work_id).maybeSingle();
             if(!fwRes.data) return;
-            var workRes = await db.from('works').select('id,title,cover_url,author_id,content_warnings,tags_all').eq('id',ch.work_id).maybeSingle();
+            var workRes = await db.from('works').select('id,title,cover_url,author_id,content_warnings,tags_all,language,is_fan_translation').eq('id',ch.work_id).maybeSingle();
             if(!workRes.data) return;
             if(workRes.data.author_id !== uid && window._dsWarnBlocked && window._dsWarnBlocked(workRes.data)) return;
             if(workRes.data.author_id !== uid && window._dsTagBlocked && window._dsTagBlocked(workRes.data)) return;
@@ -3278,7 +3286,7 @@
             if(!uid) return;
             var fwRes2 = await db.from('work_follows').select('id').eq('user_id',uid).eq('work_id',ch.work_id).maybeSingle();
             if(!fwRes2.data) return;
-            var workRes2 = await db.from('works').select('id,title,cover_url,author_id,content_warnings,tags_all').eq('id',ch.work_id).maybeSingle();
+            var workRes2 = await db.from('works').select('id,title,cover_url,author_id,content_warnings,tags_all,language,is_fan_translation').eq('id',ch.work_id).maybeSingle();
             if(!workRes2.data) return;
             if(workRes2.data.author_id !== uid && window._dsWarnBlocked && window._dsWarnBlocked(workRes2.data)) return;
             if(workRes2.data.author_id !== uid && window._dsTagBlocked && window._dsTagBlocked(workRes2.data)) return;
