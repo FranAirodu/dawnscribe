@@ -1897,8 +1897,22 @@
 
       var workMap = {};
       if (workIds.length) {
-        var { data: works } = await db.from('works').select('id, title, cover_url, author_id, type').in('id', [...new Set(workIds)]);
-        (works||[]).forEach(function(w){ workMap[w.id] = w; });
+        var { data: works } = await db.from('works').select('id, title, cover_url, author_id, type, is_published, content_rating_gore, content_rating_erotica, content_warnings, tags_all, language, is_fan_translation').in('id', [...new Set(workIds)]);
+        // This sidebar applied NO filtering of any kind: mature ratings,
+        // content warnings, blocked tags and language all leaked here. A work
+        // left out of workMap renders with an empty title, so the collab rows
+        // that reference it are dropped below rather than shown hollow.
+        var _scf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
+        (works||[]).forEach(function(w){
+          if (!(window._dsUid && w.author_id === window._dsUid)) {
+            if ((_scf.safe || !_scf.gore) && w.content_rating_gore === true) return;
+            if ((_scf.safe || !_scf.erotica) && w.content_rating_erotica === true) return;
+            if (window._dsWarnBlocked && window._dsWarnBlocked(w)) return;
+            if (window._dsTagBlocked && window._dsTagBlocked(w)) return;
+            if (window._dsLangBlocked && window._dsLangBlocked(w)) return;
+          }
+          workMap[w.id] = w;
+        });
       }
       // Also fetch artwork/novel owner profiles
       var ownerIds = Object.values(workMap).map(function(w){ return w.author_id; }).filter(Boolean);
@@ -1914,6 +1928,9 @@
       // Render story collabs (novel × artwork)
       // artwork_collabs.author_id is the artist/submitter; the novelist is the novel's author_id
       (storyCollabs||[]).forEach(function(collab){
+        // Skip rows whose novel or artwork was filtered out above.
+        if (collab.work_id && !workMap[collab.work_id]) return;
+        if (collab.artwork_id && !workMap[collab.artwork_id]) return;
         var novel = workMap[collab.work_id] || {};
         var artwork = workMap[collab.artwork_id] || {};
         var author = profMap[novel.author_id] || {};
@@ -1942,6 +1959,8 @@
 
       // Render artwork collabs (art × novel)
       (artCollabs||[]).forEach(function(collab){
+        // Skip rows whose novel was filtered out above.
+        if (collab.work_id && !workMap[collab.work_id]) return;
         var novel = workMap[collab.work_id] || {};
         var novelOwner = profMap[novel.author_id] || {};
         var artist = profMap[collab.artist_id] || {};
@@ -2184,6 +2203,7 @@
           }
         } catch(e) {}
       }
+      window._dsUid = uid;                          // sidebar fns are out of uid's scope
       window._dsContentFilters = myContentFilters; // realtime handlers read this
       window._dsFilteredWarnings = myFilteredWarnings; // ditto — see the prepend handlers below
       window._dsTagBlocked = function (w) {
