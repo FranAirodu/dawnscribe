@@ -237,11 +237,16 @@
 
   async function loadActivity(userIds){
     if(!userIds.length) return;
+    // Filtered at the query level, so activityMap only ever holds works the
+    // viewer is allowed to see. Because the most-recent-per-author reduce
+    // runs after this, a friend whose newest work is filtered falls through
+    // to their next permitted one rather than showing nothing.
+    var _fp = await dsLoadSearchPrefs();
     var { data } = await Promise.resolve(
-      db.from('works')
+      dsFilterSearchQuery(db.from('works')
         .select('author_id, id, title, type, updated_at')
         .in('author_id', userIds)
-        .in('status', ['published', 'one-shot'])
+        .in('status', ['published', 'one-shot']), _fp)
         .order('updated_at', { ascending: false })
     ).catch(function(){ return { data: null }; });
     if(!data) return;
@@ -798,7 +803,11 @@
     btn.parentNode.replaceChild(span, btn);
   }
 
-  init();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 </script>
 <script src="footer.js"></script>
 <script src="nav.js"></script>
