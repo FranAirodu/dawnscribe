@@ -513,7 +513,30 @@
     } catch (e) { /* keep restrictive default */ }
     try { await DSWarn.init(db); } catch (e) {}
     try { await DSTags.init(db); } catch (e) {}
+    try { await loadLangPrefs(); } catch (e) {}
   }
+  // Language & Region. These three pages applied no language handling at all:
+  // a reader with a strict language filter still saw every other language here.
+  var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
+  async function loadLangPrefs() {
+    try {
+      var r = await db.rpc('get_my_private_profile');
+      var row = (r && !r.error && r.data && r.data.length) ? r.data[0] : null;
+      if (row) {
+        if (row.pref_story_language) myLangPrefs.pref_language = row.pref_story_language;
+        if (row.lang_original !== null && row.lang_original !== undefined) myLangPrefs.lang_original = row.lang_original;
+        if (row.lang_strict   !== null && row.lang_strict   !== undefined) myLangPrefs.lang_strict   = row.lang_strict;
+      }
+    } catch (e) { /* keep permissive default */ }
+  }
+  function langBlocked(w) {
+    if (!w) return false;
+    if (!myLangPrefs.lang_original && w.is_fan_translation === true) return true;
+    if (myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any'
+        && w.language && w.language !== myLangPrefs.pref_language) return true;
+    return false;
+  }
+
   function actPassesFilter(w) {
     if (!w) return false;
     // Content warnings the viewer opted out of. activity.html applied no
@@ -522,6 +545,7 @@
     if (window.DSWarn && DSWarn.isBlocked(w)) return false;
     // Blocked tags. activity.html applied no tag filter at all before this.
     if (window.DSTags && DSTags.isBlocked(w)) return false;
+    if (langBlocked(w)) return false;
     if ((actContentFilters.safe || !actContentFilters.gore) && w.content_rating_gore === true) return false;
     if ((actContentFilters.safe || !actContentFilters.erotica) && w.content_rating_erotica === true) return false;
     return true;
@@ -532,7 +556,7 @@
     try {
     var [chapRes,artRes]=await Promise.all([
       db.from('chapters').select('id,chapter_number,title,created_at,work_id,author_id').in('status',['published','one-shot']).order('created_at',{ascending:false}).limit(60),
-      db.from('works').select('id,title,cover_url,author_id,created_at,type,content_rating_gore,content_rating_erotica,content_warnings,tags_all').eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(40)
+      db.from('works').select('id,title,cover_url,author_id,created_at,type,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').eq('type','artwork').eq('is_published',true).order('created_at',{ascending:false}).limit(40)
     ]);
     await loadActContentFilters();
     var chapters=(chapRes.data||[]).filter(function(c){return !isHidden(c.author_id);});
@@ -543,7 +567,7 @@
 
     var worksMap={};
     if(chapWorkIds.length){
-      var wRes=await db.from('works').select('id,title,type,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all').in('id',chapWorkIds);
+      var wRes=await db.from('works').select('id,title,type,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').in('id',chapWorkIds);
       (wRes.data||[]).forEach(function(w){ if(actPassesFilter(w)) worksMap[w.id]=w; });
       // A chapter whose work was filtered out has no worksMap entry, so it
       // drops out of the feed with it.

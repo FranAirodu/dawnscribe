@@ -178,13 +178,15 @@
       } catch (e) { /* keep restrictive default */ }
       try { await DSWarn.init(db); } catch (e) {}
       try { await DSTags.init(db); } catch (e) {}
+      try { await loadLangPrefs(); } catch (e) {}
     }
     function riseBadge(w) {
       // Content-warning pill rides alongside the mature pill. Same rationale:
       // the board badges rather than hides, so a filtered reader is told
       // before clicking instead of having the ranking silently reshuffled.
       var cwPill = (window.DSWarn ? DSWarn.badge(w) : '') +
-                   (window.DSTags ? DSTags.badge(w) : '');
+                   (window.DSTags ? DSTags.badge(w) : '') +
+                   langBadge(w);
       var warnGore    = w.content_rating_gore === true    && (riseFilters.safe || !riseFilters.gore);
       var warnErotica = w.content_rating_erotica === true && (riseFilters.safe || !riseFilters.erotica);
       if (!warnGore && !warnErotica) return cwPill;
@@ -194,12 +196,43 @@
     // The rendered HTML embeds badges that depend on the viewer's filters, so
     // the cache must key on those too — otherwise a badge rendered under one
     // filter state survives a settings change.
+    // Language & Region. These three pages applied no language handling at all:
+    // a reader with a strict language filter still saw every other language here.
+    var myLangPrefs = { pref_language: 'any', lang_original: true, lang_strict: false };
+    async function loadLangPrefs() {
+      try {
+        var r = await db.rpc('get_my_private_profile');
+        var row = (r && !r.error && r.data && r.data.length) ? r.data[0] : null;
+        if (row) {
+          if (row.pref_story_language) myLangPrefs.pref_language = row.pref_story_language;
+          if (row.lang_original !== null && row.lang_original !== undefined) myLangPrefs.lang_original = row.lang_original;
+          if (row.lang_strict   !== null && row.lang_strict   !== undefined) myLangPrefs.lang_strict   = row.lang_strict;
+        }
+      } catch (e) { /* keep permissive default */ }
+    }
+    function langBlocked(w) {
+      if (!w) return false;
+      if (!myLangPrefs.lang_original && w.is_fan_translation === true) return true;
+      if (myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any'
+          && w.language && w.language !== myLangPrefs.pref_language) return true;
+      return false;
+    }
+    function langBadge(w) {
+      if (!langBlocked(w)) return '';
+      var why = (!myLangPrefs.lang_original && w.is_fan_translation === true)
+        ? 'a fan translation' : 'in ' + (w.language || 'another language');
+      return ' <span title="This work is ' + why + ', which your Language &amp; Region settings filter out" '
+        + 'style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#38bdf8;'
+        + 'background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.32);border-radius:20px;padding:1px 7px;margin-left:4px;">'
+        + '<i class="ti ti-world" aria-hidden="true" style="font-size:11px;"></i> Language</span>';
+    }
     function riseFilterSig() {
       // The warning list is part of the signature for the same reason the
       // mature flags are: the cached HTML embeds badges derived from it.
       var cw = '';
       try { cw = ':' + (window.DSWarn ? DSWarn.active().slice().sort().join('|') : '')
-                    + ':' + (window.DSTags ? DSTags.signature() : ''); } catch (e) {}
+                    + ':' + (window.DSTags ? DSTags.signature() : '')
+                    + ':' + myLangPrefs.pref_language + (myLangPrefs.lang_strict?'S':'-') + (myLangPrefs.lang_original?'T':'-'); } catch (e) {}
       return (riseFilters.safe?'s':'-') + (riseFilters.gore?'g':'-') + (riseFilters.erotica?'e':'-') + cw;
     }
 
@@ -262,7 +295,7 @@
       if (cached) { el.innerHTML = cached; return; }
       try {
         var q = db.from('works')
-          .select('id,title,cover_url,author_id,celestial_flame_count,spark_count_total,avg_chapter_days,chapters_count,created_at,content_rating_gore,content_rating_erotica,content_warnings,tags_all')
+          .select('id,title,cover_url,author_id,celestial_flame_count,spark_count_total,avg_chapter_days,chapters_count,created_at,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation')
           .eq('type', 'novel')
           .eq('is_published', true);
 
@@ -326,7 +359,7 @@
       if (cachedLb) { el.innerHTML = cachedLb; return; }
       try {
         var { data: works, error: wErr } = await db.from('works')
-          .select('id,title,cover_url,author_id,spark_count_week,content_rating_gore,content_rating_erotica,content_warnings,tags_all')
+          .select('id,title,cover_url,author_id,spark_count_week,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation')
           .eq('type', 'novel')
           .eq('is_published', true)
           .order('spark_count_week', { ascending: false, nullsFirst: false })

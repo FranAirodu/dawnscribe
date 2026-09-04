@@ -434,6 +434,15 @@
     function applyLanguageFilters(q) {
       if (!myLangPrefs.lang_original) q = q.neq('is_fan_translation', true);
       if (myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any') q = q.eq('language', myLangPrefs.pref_language);
+      // Soft preference: "your language is shown first". Ordered at the query
+      // level via the pref_lang_rank computed column (0 = matches the viewer's
+      // pref_story_language, 1 = does not), so preferred works lead the whole
+      // result set and pagination stays correct. The old approach sorted only
+      // the rows already fetched, so anything past page one never surfaced.
+      // Must be added BEFORE the caller's own .order() so it sorts first.
+      if (!myLangPrefs.lang_strict && myLangPrefs.pref_language !== 'any') {
+        q = q.order('pref_lang_rank', { ascending: true });
+      }
       return q;
     }
 
