@@ -1218,6 +1218,60 @@
     // status and hidden gender/location to anyone via PostgREST, and could be used
     // as filter oracles. The owner reads them through this SECURITY DEFINER RPC,
     // scoped to auth.uid(). Field names are unchanged, so callers are unchanged.
+    // NOTE: index.html does not load nav.js -- it keeps its own copy of the nav
+    // markup and helpers. This is a duplicate of the block in nav.js; any change
+    // to one must be mirrored into the other.
+    // ── SEARCH PREVIEW FILTERING ─────────────────────────────────────────────────
+    // The nav search dropdown reaches the whole published catalogue, so it is a
+    // discovery surface and must respect the same settings browse and search do:
+    // mature ratings, content warnings, blocked tags and language. It previously
+    // applied none of them.
+    var dsSearchPrefs = null;
+    async function dsLoadSearchPrefs() {
+      if (dsSearchPrefs) return dsSearchPrefs;
+      // Restrictive defaults until the profile loads, so nothing leaks on a slow
+      // network or for a failed read.
+      var p = { safe: true, gore: false, erotica: false, warnings: [], tags: {},
+                lang: 'any', langStrict: false, langOriginal: true, loaded: false };
+      try {
+        var res = await dsMyPrivate();
+        var row = res ? res.data : null;
+        if (row) {
+          p.safe    = row.settings_filter_safe === true;
+          p.gore    = row.settings_filter_gore !== false;
+          p.erotica = row.settings_filter_erotica !== false;
+          p.warnings = Array.isArray(row.filtered_content_warnings) ? row.filtered_content_warnings : [];
+          p.tags = (row.tag_prefs && typeof row.tag_prefs === 'object') ? row.tag_prefs : {};
+          if (row.pref_story_language) p.lang = row.pref_story_language;
+          p.langStrict   = row.lang_strict === true;
+          p.langOriginal = row.lang_original !== false;
+        } else {
+          // Signed out: no preferences exist, so show everything rather than nothing.
+          p = { safe:false, gore:true, erotica:true, warnings:[], tags:{},
+                lang:'any', langStrict:false, langOriginal:true, loaded:true };
+        }
+        p.loaded = true;
+      } catch (e) { /* keep restrictive defaults */ }
+      dsSearchPrefs = p;
+      return p;
+    }
+
+    // Applies every discovery filter to a works query for the search preview.
+    function dsFilterSearchQuery(q, p) {
+      if (p.safe || !p.gore)    q = q.neq('content_rating_gore', true);
+      if (p.safe || !p.erotica) q = q.neq('content_rating_erotica', true);
+      (p.warnings || []).forEach(function (w) {
+        q = q.not('content_warnings', 'cs', JSON.stringify([w]));
+      });
+      Object.keys(p.tags || {}).forEach(function (t) {
+        if (p.tags[t] !== 'blocked') return;
+        q = q.not('tags_all', 'ilike', '%"' + String(t).replace(/"/g, '').replace(/([%_\\])/g, '\\$1') + '"%');
+      });
+      if (!p.langOriginal) q = q.neq('is_fan_translation', true);
+      if (p.langStrict && p.lang !== 'any') q = q.eq('language', p.lang);
+      return q;
+    }
+
     async function dsMyPrivate() {
       try {
         var r = await db.rpc('get_my_private_profile');
@@ -3626,11 +3680,12 @@
       if (!q) { srchClearPreview(previewId); return; }
       srchShowSpinner(previewId);
       try {
-        var { data, error } = await db.from('works')
+        var _sp = await dsLoadSearchPrefs();
+        var { data, error } = await dsFilterSearchQuery(db.from('works')
           .select('id, title, cover_url, type, author_id')
           .ilike('title', '%' + q + '%')
           .eq('type', 'novel')
-          .eq('is_published', true)
+          .eq('is_published', true), _sp)
           .limit(5);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No titles found.'); return; }
         var hasMore = data.length === 5;
@@ -3710,11 +3765,12 @@
       if (!q) { srchClearPreview(previewId); return; }
       srchShowSpinner(previewId);
       try {
-        var { data, error } = await db.from('works')
+        var _sp2 = await dsLoadSearchPrefs();
+        var { data, error } = await dsFilterSearchQuery(db.from('works')
           .select('id, title, cover_url, author_id')
           .ilike('title', '%' + q + '%')
           .eq('type', 'artwork')
-          .eq('is_published', true)
+          .eq('is_published', true), _sp2)
           .limit(5);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No artwork found.'); return; }
         var hasMoreArtwork = data.length === 5;
@@ -3790,11 +3846,12 @@
       if (!q) { srchClearPreview(previewId); return; }
       srchShowSpinner(previewId);
       try {
-        var { data, error } = await db.from('works')
+        var _sp3 = await dsLoadSearchPrefs();
+        var { data, error } = await dsFilterSearchQuery(db.from('works')
           .select('id, title, cover_url')
           .ilike('tags_all', '%' + q + '%')
           .eq('type', 'novel')
-          .eq('is_published', true)
+          .eq('is_published', true), _sp3)
           .limit(5);
         if (error || !data || !data.length) { srchShowEmpty(previewId, 'No novels found with that tag.'); return; }
         var html = '<a class="search-preview-item" href="search.html?type=titles&q=' + encodeURIComponent(q) + '&tagmode=1" style="background:rgba(45,212,191,0.07);border-bottom:1px solid var(--border);">'

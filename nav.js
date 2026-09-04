@@ -53,6 +53,58 @@ async function dsMyPrivate() {
   } catch (e) { return { data: null, error: e }; }
 }
 
+
+// ── SEARCH PREVIEW FILTERING ─────────────────────────────────────────────────
+// The nav search dropdown reaches the whole published catalogue, so it is a
+// discovery surface and must respect the same settings browse and search do:
+// mature ratings, content warnings, blocked tags and language. It previously
+// applied none of them.
+var dsSearchPrefs = null;
+async function dsLoadSearchPrefs() {
+  if (dsSearchPrefs) return dsSearchPrefs;
+  // Restrictive defaults until the profile loads, so nothing leaks on a slow
+  // network or for a failed read.
+  var p = { safe: true, gore: false, erotica: false, warnings: [], tags: {},
+            lang: 'any', langStrict: false, langOriginal: true, loaded: false };
+  try {
+    var res = await dsMyPrivate();
+    var row = res ? res.data : null;
+    if (row) {
+      p.safe    = row.settings_filter_safe === true;
+      p.gore    = row.settings_filter_gore !== false;
+      p.erotica = row.settings_filter_erotica !== false;
+      p.warnings = Array.isArray(row.filtered_content_warnings) ? row.filtered_content_warnings : [];
+      p.tags = (row.tag_prefs && typeof row.tag_prefs === 'object') ? row.tag_prefs : {};
+      if (row.pref_story_language) p.lang = row.pref_story_language;
+      p.langStrict   = row.lang_strict === true;
+      p.langOriginal = row.lang_original !== false;
+    } else {
+      // Signed out: no preferences exist, so show everything rather than nothing.
+      p = { safe:false, gore:true, erotica:true, warnings:[], tags:{},
+            lang:'any', langStrict:false, langOriginal:true, loaded:true };
+    }
+    p.loaded = true;
+  } catch (e) { /* keep restrictive defaults */ }
+  dsSearchPrefs = p;
+  return p;
+}
+
+// Applies every discovery filter to a works query for the search preview.
+function dsFilterSearchQuery(q, p) {
+  if (p.safe || !p.gore)    q = q.neq('content_rating_gore', true);
+  if (p.safe || !p.erotica) q = q.neq('content_rating_erotica', true);
+  (p.warnings || []).forEach(function (w) {
+    q = q.not('content_warnings', 'cs', JSON.stringify([w]));
+  });
+  Object.keys(p.tags || {}).forEach(function (t) {
+    if (p.tags[t] !== 'blocked') return;
+    q = q.not('tags_all', 'ilike', '%"' + String(t).replace(/"/g, '').replace(/([%_\\])/g, '\\$1') + '"%');
+  });
+  if (!p.langOriginal) q = q.neq('is_fan_translation', true);
+  if (p.langStrict && p.lang !== 'any') q = q.eq('language', p.lang);
+  return q;
+}
+
 function dsIsWithinQuietHours(prefRow) {
   if (!prefRow || prefRow.quiet_hours_enabled !== true) return false;
   var start = prefRow.quiet_hours_start || '22:00';
@@ -589,13 +641,16 @@ function dsApplyAccent(hex) {
           try {
             var res;
             if (type === 'titles') {
-              res = await db.from('works').select('id,title,cover_url,author_id').eq('type','novel').eq('is_published',true).ilike('title','%'+dsIlikeEsc(q)+'%').limit(4);
+              var _sp = await dsLoadSearchPrefs();
+              res = await dsFilterSearchQuery(db.from('works').select('id,title,cover_url,author_id').eq('type','novel').eq('is_published',true).ilike('title','%'+dsIlikeEsc(q)+'%'), _sp).limit(4);
             } else if (type === 'authors') {
               res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+dsIlikeEsc(q)+'%').limit(4);
             } else if (type === 'artwork') {
-              res = await db.from('works').select('id,title,cover_url,author_id').eq('type','artwork').eq('is_published',true).ilike('title','%'+dsIlikeEsc(q)+'%').limit(4);
+              var _sp2 = await dsLoadSearchPrefs();
+              res = await dsFilterSearchQuery(db.from('works').select('id,title,cover_url,author_id').eq('type','artwork').eq('is_published',true).ilike('title','%'+dsIlikeEsc(q)+'%'), _sp2).limit(4);
             } else if (type === 'tags') {
-              res = await db.from('works').select('id,title,cover_url,tags_main').eq('type','novel').eq('is_published',true).ilike('tags_all','%'+dsIlikeEsc(q)+'%').limit(5);
+              var _sp3 = await dsLoadSearchPrefs();
+              res = await dsFilterSearchQuery(db.from('works').select('id,title,cover_url,tags_main').eq('type','novel').eq('is_published',true).ilike('tags_all','%'+dsIlikeEsc(q)+'%'), _sp3).limit(5);
             } else {
               res = await db.from('profiles').select('id,username,display_name,avatar_url').ilike('display_name','%'+dsIlikeEsc(q)+'%').limit(4);
             }
