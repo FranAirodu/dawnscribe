@@ -1999,7 +1999,7 @@
       if(artCmts.length){
         var awIds=[...new Set(artCmts.map(function(c){return c.work_id;}).filter(Boolean))];
         if(awIds.length){
-          var awRes=await db.from('works').select('id,title,type,cover_url,is_published,author_id,content_rating_gore,content_rating_erotica').in('id',awIds);
+          var awRes=await db.from('works').select('id,title,type,cover_url,is_published,author_id,content_rating_gore,content_rating_erotica,content_warnings').in('id',awIds);
           (awRes.data||[]).forEach(function(w){awMap[w.id]=w;});
         }
         artCmts.forEach(function(c){ c._work=awMap[c.work_id]||null; });
@@ -2015,6 +2015,7 @@
         if (isHiddenAuthor(w.author_id) || isHiddenAuthor(cm.user_id)) return false;
         if ((_ccf.safe || !_ccf.gore) && w.content_rating_gore === true) return false;
         if ((_ccf.safe || !_ccf.erotica) && w.content_rating_erotica === true) return false;
+        if (window._dsWarnBlocked && window._dsWarnBlocked(w)) return false;
         return true;
       });
       all.sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); });
@@ -2082,13 +2083,14 @@
       }
       // Fetch works + authors separately
       var suWorkIds=[...new Set(res.data.map(function(c){return c.work_id;}))];
-      var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id,is_published,content_rating_gore,content_rating_erotica').in('id',suWorkIds);
+      var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id,is_published,content_rating_gore,content_rating_erotica,content_warnings').in('id',suWorkIds);
       // Apply content filters (same safe-default logic as other rows)
       var _ucf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
       var suWorkMap={};(suWorks||[]).forEach(function(w){
         if(!w.is_published) return;
         if((_ucf.safe || !_ucf.gore) && w.content_rating_gore===true) return;
         if((_ucf.safe || !_ucf.erotica) && w.content_rating_erotica===true) return;
+        if(window._dsWarnBlocked && window._dsWarnBlocked(w)) return;
         suWorkMap[w.id]=w;
       });
       res.data=res.data.filter(function(ch){return !!suWorkMap[ch.work_id];});
@@ -2178,6 +2180,17 @@
         } catch(e) {}
       }
       window._dsContentFilters = myContentFilters; // realtime handlers read this
+      window._dsFilteredWarnings = myFilteredWarnings; // ditto — see the prepend handlers below
+      // Shared predicate for the realtime + sidebar paths, which run outside
+      // the scope that owns applyWarningPrefs.
+      window._dsWarnBlocked = function (w) {
+        var list = window._dsFilteredWarnings || [];
+        if (!list.length || !w) return false;
+        var cw = w.content_warnings;
+        if (typeof cw === 'string') { try { cw = JSON.parse(cw); } catch (e) { return false; } }
+        if (!Array.isArray(cw)) return false;
+        return cw.some(function (x) { return list.indexOf(x) !== -1; });
+      };
 
       // Works the viewer is a collab participant on (approved artwork/story
       // collabs where they're the artist, or listed coauthor). These are
@@ -2325,7 +2338,7 @@
           var chapData=chapRes.data||[];
           if(chapData.length){
             var r0WorkIds=[...new Set(chapData.map(function(c){return c.work_id;}))];
-            var {data:r0Works}=await db.from('works').select('id,title,cover_url,rating,author_id,content_rating_gore,content_rating_erotica').in('id',r0WorkIds);
+            var {data:r0Works}=await db.from('works').select('id,title,cover_url,rating,author_id,content_rating_gore,content_rating_erotica,content_warnings').in('id',r0WorkIds);
             var r0Map={};(r0Works||[]).forEach(function(w){r0Map[w.id]=w;});
             var r0AuthorIds=[...new Set((r0Works||[]).map(function(w){return w.author_id;}).filter(Boolean))];
             var r0ProfMap={};
@@ -2336,7 +2349,11 @@
               if(!r0ProgMap[p.work_id]||p.chapter_number>r0ProgMap[p.work_id]) r0ProgMap[p.work_id]=p.chapter_number;
             });
             chapData.forEach(function(ch){ch.works=r0Map[ch.work_id]||null; ch.readerChapter=r0ProgMap[ch.work_id]||null; var w=r0Map[ch.work_id]; ch.authorProf=w?r0ProfMap[w.author_id]||null:null;});
+            // Row 0 applied no content-warning filter, so a followed work
+            // tagged with something the reader opted out of still surfaced
+            // here even though every other row on the page hid it.
             chapData = chapData.filter(function(ch){ return !ch.works || !isHiddenAuthor(ch.works.author_id); });
+            chapData = chapData.filter(function(ch){ return !ch.works || applyWarningPrefs([ch.works]).length > 0; });
             // One card per work: chapData is newest-first, keep first occurrence
             var seenR0 = new Set();
             chapData = chapData.filter(function(ch){
@@ -2377,7 +2394,7 @@
         var fuIds = (fuRes.data||[]).map(function(r){return r.following_id;});
         if(fuIds.length){
           var artRes = await db.from('works')
-            .select('id,title,cover_url,author_id,created_at,content_rating_gore,content_rating_erotica').eq('type','artwork').in('author_id',fuIds).eq('is_published',true)
+            .select('id,title,cover_url,author_id,created_at,content_rating_gore,content_rating_erotica,content_warnings').eq('type','artwork').in('author_id',fuIds).eq('is_published',true)
             .order('created_at',{ascending:false}).limit(30);
           var r1Items = artRes.data||[];
           // Also include collab artworks where the artist (artwork owner) is someone we follow
@@ -2398,7 +2415,7 @@
             }
             if(collabArtIds.length){
               var collabWorksRes = await db.from('works')
-                .select('id,title,cover_url,author_id,created_at,content_rating_gore,content_rating_erotica').eq('type','artwork').in('id',collabArtIds).eq('is_published',true);
+                .select('id,title,cover_url,author_id,created_at,content_rating_gore,content_rating_erotica,content_warnings').eq('type','artwork').in('id',collabArtIds).eq('is_published',true);
               var existingIds = new Set(r1Items.map(function(w){ return w.id; }));
               (collabWorksRes.data||[]).forEach(function(w){
                 if(!existingIds.has(w.id)){
@@ -2411,6 +2428,7 @@
           } catch(e){}
           r1Items.sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
           r1Items = r1Items.filter(function(w){ return !isHiddenAuthor(w.author_id); });
+          r1Items = applyWarningPrefs(r1Items);
           var r1ProfMap={};
           if(r1Items.length){var r1AIds=[...new Set(r1Items.map(function(w){return w.author_id;}).filter(Boolean))];if(r1AIds.length){var {data:r1Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r1AIds);(r1Profs||[]).forEach(function(p){r1ProfMap[p.id]=p;});}}
           renderCoverRow(row1track, r1Items, function(w){
@@ -3146,6 +3164,10 @@
             if(!(uid && w.author_id === uid)){
               if((_cf.safe || !_cf.gore) && w.content_rating_gore === true) return;
               if((_cf.safe || !_cf.erotica) && w.content_rating_erotica === true) return;
+              // Realtime inserts bypassed the warning filter entirely, so a
+              // work the reader opted out of could appear live on a row that
+              // had correctly filtered it on load.
+              if(window._dsWarnBlocked && window._dsWarnBlocked(w)) return;
             }
             var trackId = w.type==='artwork' ? 'track-5' : 'track-4';
             prependCover(trackId, w, w.type==='artwork' ? 'artwork.html?id='+w.id : 'story.html?id='+w.id);
@@ -3195,8 +3217,9 @@
             if(!uid) return;
             var fwRes = await db.from('work_follows').select('id').eq('user_id',uid).eq('work_id',ch.work_id).maybeSingle();
             if(!fwRes.data) return;
-            var workRes = await db.from('works').select('id,title,cover_url').eq('id',ch.work_id).maybeSingle();
+            var workRes = await db.from('works').select('id,title,cover_url,author_id,content_warnings').eq('id',ch.work_id).maybeSingle();
             if(!workRes.data) return;
+            if(workRes.data.author_id !== uid && window._dsWarnBlocked && window._dsWarnBlocked(workRes.data)) return;
             // One card per work: drop any existing card for this work first
             var track0 = document.getElementById('track-0');
             if (track0) {
@@ -3217,8 +3240,9 @@
             if(!uid) return;
             var fwRes2 = await db.from('work_follows').select('id').eq('user_id',uid).eq('work_id',ch.work_id).maybeSingle();
             if(!fwRes2.data) return;
-            var workRes2 = await db.from('works').select('id,title,cover_url').eq('id',ch.work_id).maybeSingle();
+            var workRes2 = await db.from('works').select('id,title,cover_url,author_id,content_warnings').eq('id',ch.work_id).maybeSingle();
             if(!workRes2.data) return;
+            if(workRes2.data.author_id !== uid && window._dsWarnBlocked && window._dsWarnBlocked(workRes2.data)) return;
             var track0b = document.getElementById('track-0');
             if (track0b) {
               var existing0b = track0b.querySelector('[data-work-id="'+ch.work_id+'"]');

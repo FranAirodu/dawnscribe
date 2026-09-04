@@ -574,6 +574,7 @@
     }
   </style>
   <script src="accessibilityPrefs.js"></script>
+  <script src="contentWarnings.js"></script>
 </head>
 <body>
 
@@ -3490,6 +3491,15 @@
       // Direct links must respect the same gore/erotica filters as browse.
       // Authors/coauthors exempt; "View anyway" remembered per session.
       await maybeShowContentGate(authorIds);
+      // Content-warning gate. Separate from the mature gate above: that one
+      // asks about gore/erotica flags, this one honours the reader's
+      // filtered_content_warnings opt-out list. A work tagged
+      // "Self-Harm / Suicide" with clean ratings used to load with no
+      // interception at all. See contentWarnings.js.
+      try {
+        await DSWarn.init(db);
+        DSWarn.gate(workData, { authorIds: authorIds, viewerId: currentSession ? currentSession.user.id : null });
+      } catch(e) {}
 
       // Load chapters
       var chapResult = await db.from('chapters').select('id,chapter_number,title,word_count,created_at').eq('work_id', workId).in('status',['published','one-shot']).order('chapter_number', { ascending: true });

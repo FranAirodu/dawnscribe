@@ -558,6 +558,7 @@
     .showcase-status-badge.draft{background:rgba(255,255,255,0.07);color:var(--text3);border:1px solid var(--border);}
   </style>
   <script src="accessibilityPrefs.js"></script>
+  <script src="contentWarnings.js"></script>
 </head>
 <body>
   <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
@@ -975,11 +976,14 @@
     // person on purpose. A small warning badge shows instead when a work is
     // flagged gore/erotica and the viewer hasn't opted into that filter.
     function contentWarningBadge(work) {
+      // NOTE: despite the name, the gore/erotica half of this predates real
+      // content warnings. cwPill is the actual content-warning badge.
+      var cwPill = (window.DSWarn ? DSWarn.badge(work) : '');
       var warnGore = work.content_rating_gore && (myContentFilters.safe || !myContentFilters.gore);
       var warnErotica = work.content_rating_erotica && (myContentFilters.safe || !myContentFilters.erotica);
-      if (!warnGore && !warnErotica) return '';
+      if (!warnGore && !warnErotica) return cwPill;
       var label = warnGore && warnErotica ? 'Gore & Erotica' : (warnGore ? 'Gore' : 'Erotica');
-      return '<span title="This story is flagged for mature content you\'ve filtered in Settings" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#f87171;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);border-radius:20px;padding:1px 7px;margin-left:4px;"><i class="ti ti-alert-triangle" style="font-size:11px;"></i> ' + label + '</span>';
+      return '<span title="This story is flagged for mature content you\'ve filtered in Settings" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#f87171;background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);border-radius:20px;padding:1px 7px;margin-left:4px;"><i class="ti ti-alert-triangle" style="font-size:11px;"></i> ' + label + '</span>' + cwPill;
     }
 
     /* ── TABS ───────────────────────────────────────────────────── */
@@ -1872,9 +1876,10 @@
       layout.innerHTML = skeletonCard() + skeletonCard();
       await ensureContentFilters();
       var isOwner = document.body.classList.contains('is-owner');
-      var worksQ = db.from('works').select('id,title,cover_url,status,tags_main,type,synopsis,views,chapters_count,word_count,total_readers,updated_at,avg_chapter_days,content_rating_gore,content_rating_erotica,rating,comments_count,total_reviews').eq('author_id', profileId).order('created_at', { ascending: false });
+      var worksQ = db.from('works').select('id,title,cover_url,status,tags_main,type,synopsis,views,chapters_count,word_count,total_readers,updated_at,avg_chapter_days,content_rating_gore,content_rating_erotica,content_warnings,rating,comments_count,total_reviews').eq('author_id', profileId).order('created_at', { ascending: false });
       if (!isOwner) worksQ = worksQ.eq('is_published', true);
       var result = await worksQ;
+      try { await DSWarn.init(db); } catch(e) {}
       layout.innerHTML = '';
 
       var collabWorkIds = new Set();
