@@ -598,6 +598,7 @@
       animation: skelShimmer 1.4s infinite linear; }
     .scroll-skel-wrap { display: flex; gap: 14px; width: max-content; padding: 8px 48px; }
   </style>
+  <script src="tagPrefs.js"></script>
 </head>
 <body>
 
@@ -1999,7 +2000,7 @@
       if(artCmts.length){
         var awIds=[...new Set(artCmts.map(function(c){return c.work_id;}).filter(Boolean))];
         if(awIds.length){
-          var awRes=await db.from('works').select('id,title,type,cover_url,is_published,author_id,content_rating_gore,content_rating_erotica,content_warnings').in('id',awIds);
+          var awRes=await db.from('works').select('id,title,type,cover_url,is_published,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all').in('id',awIds);
           (awRes.data||[]).forEach(function(w){awMap[w.id]=w;});
         }
         artCmts.forEach(function(c){ c._work=awMap[c.work_id]||null; });
@@ -2016,6 +2017,7 @@
         if ((_ccf.safe || !_ccf.gore) && w.content_rating_gore === true) return false;
         if ((_ccf.safe || !_ccf.erotica) && w.content_rating_erotica === true) return false;
         if (window._dsWarnBlocked && window._dsWarnBlocked(w)) return false;
+        if (window._dsTagBlocked && window._dsTagBlocked(w)) return false;
         return true;
       });
       all.sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); });
@@ -2083,7 +2085,7 @@
       }
       // Fetch works + authors separately
       var suWorkIds=[...new Set(res.data.map(function(c){return c.work_id;}))];
-      var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id,is_published,content_rating_gore,content_rating_erotica,content_warnings').in('id',suWorkIds);
+      var {data:suWorks}=await db.from('works').select('id,title,type,cover_url,author_id,is_published,content_rating_gore,content_rating_erotica,content_warnings,tags_all').in('id',suWorkIds);
       // Apply content filters (same safe-default logic as other rows)
       var _ucf = window._dsContentFilters || { safe: true, gore: false, erotica: false };
       var suWorkMap={};(suWorks||[]).forEach(function(w){
@@ -2091,6 +2093,7 @@
         if((_ucf.safe || !_ucf.gore) && w.content_rating_gore===true) return;
         if((_ucf.safe || !_ucf.erotica) && w.content_rating_erotica===true) return;
         if(window._dsWarnBlocked && window._dsWarnBlocked(w)) return;
+        if(window._dsTagBlocked && window._dsTagBlocked(w)) return;
         suWorkMap[w.id]=w;
       });
       res.data=res.data.filter(function(ch){return !!suWorkMap[ch.work_id];});
@@ -2181,6 +2184,9 @@
       }
       window._dsContentFilters = myContentFilters; // realtime handlers read this
       window._dsFilteredWarnings = myFilteredWarnings; // ditto — see the prepend handlers below
+      window._dsTagBlocked = function (w) {
+        return !!(window.DSTags && DSTags.isBlocked(w));
+      };
       // Shared predicate for the realtime + sidebar paths, which run outside
       // the scope that owns applyWarningPrefs.
       window._dsWarnBlocked = function (w) {
@@ -2263,14 +2269,17 @@
       }
 
       // Tag preferences: hide blocked-tag works, float liked-tag works to the front
+      // Was localStorage-only, so a second device or a cleared cache
+      // silently dropped every blocked tag. DSTags reads the profile first
+      // and keeps localStorage as a fallback cache.
       var myTagPrefs = {};
-      try {
-        var tp = localStorage.getItem('ds_tag_prefs');
-        if (tp) myTagPrefs = JSON.parse(tp) || {};
-      } catch(e) {}
+      try { await DSTags.init(db); myTagPrefs = DSTags.all(); } catch(e) {}
       function applyTagPrefs(items) {
         if (!Object.keys(myTagPrefs).length) return items;
-        function tagsOf(w) { try { return JSON.parse(w.tags_main || '[]'); } catch(e) { return []; } }
+        // tags_all, not tags_main. tags_main is only the first three tags
+        // (publish writes tags.slice(0,3)), so blocking anything the
+        // Settings picker offers beyond a headline genre did nothing here.
+        function tagsOf(w) { return window.DSTags ? DSTags.tagsOf(w) : []; }
         var filtered = items.filter(function(w){
           return !tagsOf(w).some(function(t){ return myTagPrefs[t] === 'blocked'; });
         });
@@ -2338,7 +2347,7 @@
           var chapData=chapRes.data||[];
           if(chapData.length){
             var r0WorkIds=[...new Set(chapData.map(function(c){return c.work_id;}))];
-            var {data:r0Works}=await db.from('works').select('id,title,cover_url,rating,author_id,content_rating_gore,content_rating_erotica,content_warnings').in('id',r0WorkIds);
+            var {data:r0Works}=await db.from('works').select('id,title,cover_url,rating,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all').in('id',r0WorkIds);
             var r0Map={};(r0Works||[]).forEach(function(w){r0Map[w.id]=w;});
             var r0AuthorIds=[...new Set((r0Works||[]).map(function(w){return w.author_id;}).filter(Boolean))];
             var r0ProfMap={};
@@ -2354,6 +2363,7 @@
             // here even though every other row on the page hid it.
             chapData = chapData.filter(function(ch){ return !ch.works || !isHiddenAuthor(ch.works.author_id); });
             chapData = chapData.filter(function(ch){ return !ch.works || applyWarningPrefs([ch.works]).length > 0; });
+            chapData = chapData.filter(function(ch){ return !ch.works || applyTagPrefs([ch.works]).length > 0; });
             // One card per work: chapData is newest-first, keep first occurrence
             var seenR0 = new Set();
             chapData = chapData.filter(function(ch){
@@ -2394,7 +2404,7 @@
         var fuIds = (fuRes.data||[]).map(function(r){return r.following_id;});
         if(fuIds.length){
           var artRes = await db.from('works')
-            .select('id,title,cover_url,author_id,created_at,content_rating_gore,content_rating_erotica,content_warnings').eq('type','artwork').in('author_id',fuIds).eq('is_published',true)
+            .select('id,title,cover_url,author_id,created_at,content_rating_gore,content_rating_erotica,content_warnings,tags_all').eq('type','artwork').in('author_id',fuIds).eq('is_published',true)
             .order('created_at',{ascending:false}).limit(30);
           var r1Items = artRes.data||[];
           // Also include collab artworks where the artist (artwork owner) is someone we follow
@@ -2415,7 +2425,7 @@
             }
             if(collabArtIds.length){
               var collabWorksRes = await db.from('works')
-                .select('id,title,cover_url,author_id,created_at,content_rating_gore,content_rating_erotica,content_warnings').eq('type','artwork').in('id',collabArtIds).eq('is_published',true);
+                .select('id,title,cover_url,author_id,created_at,content_rating_gore,content_rating_erotica,content_warnings,tags_all').eq('type','artwork').in('id',collabArtIds).eq('is_published',true);
               var existingIds = new Set(r1Items.map(function(w){ return w.id; }));
               (collabWorksRes.data||[]).forEach(function(w){
                 if(!existingIds.has(w.id)){
@@ -2429,6 +2439,7 @@
           r1Items.sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
           r1Items = r1Items.filter(function(w){ return !isHiddenAuthor(w.author_id); });
           r1Items = applyWarningPrefs(r1Items);
+          r1Items = applyTagPrefs(r1Items);
           var r1ProfMap={};
           if(r1Items.length){var r1AIds=[...new Set(r1Items.map(function(w){return w.author_id;}).filter(Boolean))];if(r1AIds.length){var {data:r1Profs}=await db.from('profiles').select('id,username,display_name,avatar_url').in('id',r1AIds);(r1Profs||[]).forEach(function(p){r1ProfMap[p.id]=p;});}}
           renderCoverRow(row1track, r1Items, function(w){
@@ -2450,7 +2461,7 @@
       // Row 2: Featured Novels (12-hour rotating slots 1-7, set by rotate_featured_works() via pg_cron)
       var row2track = document.getElementById('track-2');
       try {
-        var featQ2 = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,language,content_warnings,content_rating_gore,content_rating_erotica,featured_slot,is_wildcard')
+        var featQ2 = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,tags_all,language,content_warnings,content_rating_gore,content_rating_erotica,featured_slot,is_wildcard')
           .eq('type','novel').eq('is_published',true).not('featured_slot','is',null);
         var featRes2 = await featQ2.order('featured_slot',{ascending:true}).limit(7);
         // Slotted picks now pass through the same gore/erotica filter as every
@@ -2459,7 +2470,7 @@
         if (featList.length < 7) {
           // Backfill: rotation hasn't run yet, or the viewer's filters emptied
           // slots — top up with highest-rated novels so the row always shows 7
-          var fallbackQ = applyLanguageFilters(applyContentFilters(db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,language,content_warnings,content_rating_gore,content_rating_erotica').eq('type','novel').eq('is_published',true)));
+          var fallbackQ = applyLanguageFilters(applyContentFilters(db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,tags_all,language,content_warnings,content_rating_gore,content_rating_erotica').eq('type','novel').eq('is_published',true)));
           var fallbackRes = await fallbackQ.order('rating',{ascending:false}).limit(20);
           var fbList = applyWarningPrefs(applyMutePrefs(applyLangSort(applyTagPrefs(fallbackRes.data || []))));
           var featSeen = new Set(featList.map(function(w){ return w.id; }));
@@ -2475,7 +2486,7 @@
 
       // Row 3: Featured artwork
       var row3track = document.getElementById('track-3');
-      var featArtQ = db.from('works').select('id,title,cover_url,author_id,tags_main,content_warnings,content_rating_gore,content_rating_erotica')
+      var featArtQ = db.from('works').select('id,title,cover_url,author_id,tags_main,tags_all,content_warnings,content_rating_gore,content_rating_erotica')
         .eq('type','artwork').eq('is_published',true);
       featArtQ = applyContentFilters(featArtQ);
       var featArtRes = await featArtQ.order('rating',{ascending:false}).limit(30);
@@ -2487,7 +2498,7 @@
 
       // Row 4: Newest novels
       var row4track = document.getElementById('track-4');
-      var newNovQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,language,content_warnings,created_at,content_rating_gore,content_rating_erotica')
+      var newNovQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,collab_work_id,tags_main,tags_all,language,content_warnings,created_at,content_rating_gore,content_rating_erotica')
         .eq('type','novel').eq('is_published',true);
       newNovQ = applyContentFilters(newNovQ);
       newNovQ = applyLanguageFilters(newNovQ);
@@ -2500,7 +2511,7 @@
 
       // Row 6: One-Shots
       var row6track = document.getElementById('track-6');
-      var oneShotQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,tags_main,content_warnings,created_at,content_rating_gore,content_rating_erotica')
+      var oneShotQ = db.from('works').select('id,title,cover_url,rating,chapters_count,author_id,tags_main,tags_all,content_warnings,created_at,content_rating_gore,content_rating_erotica')
         .eq('type','novel').eq('is_published',true).eq('is_one_shot',true);
       oneShotQ = applyContentFilters(oneShotQ);
       oneShotQ = applyLanguageFilters(oneShotQ);
@@ -2512,7 +2523,7 @@
         var p6=r6ProfMap[w.author_id]||null; return { id:w.id, title:w.title, cover:w.cover_url, href:'story.html?id='+w.id, rating:parseFloat(w.rating)||0, chaptersCount:w.chapters_count||0, postedTime:w.created_at, authorName:p6?(p6.display_name||p6.username||null):null, authorUsername:p6?p6.username:null, contentRatingGore:w.content_rating_gore, contentRatingErotica:w.content_rating_erotica };
       });
       var row5track = document.getElementById('track-5');
-      var newArtQ = db.from('works').select('id,title,cover_url,author_id,created_at,tags_main,content_warnings,content_rating_gore,content_rating_erotica')
+      var newArtQ = db.from('works').select('id,title,cover_url,author_id,created_at,tags_main,tags_all,content_warnings,content_rating_gore,content_rating_erotica')
         .eq('type','artwork').eq('is_published',true);
       newArtQ = applyContentFilters(newArtQ);
       var newArtRes = await newArtQ.order('created_at',{ascending:false}).limit(30);
@@ -2580,7 +2591,7 @@
         // Candidate pool: recent + active works of BOTH types. Pull a generous
         // slice ordered by weekly sparks so anything with momentum is included.
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,type,content_rating_gore,content_rating_erotica,tags_main,content_warnings,spark_count_week')
+          .select('id,title,cover_url,rating,author_id,chapters_count,type,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings,spark_count_week')
           .in('type',['novel','artwork']).eq('is_published',true)
           .order('spark_count_week',{ascending:false}).limit(120);
         if (filterFn) works = filterFn(works || []);
@@ -2675,7 +2686,7 @@
         var thirtyAgoDate = thirtyAgoISO.slice(0,10);
 
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,created_at,type,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,created_at,type,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
           .in('type',['novel','artwork']).eq('is_published',true)
           .gte('created_at', thirtyAgoISO).order('created_at',{ascending:false}).limit(120);
         if (filterFn) works = filterFn(works || []);
@@ -2751,7 +2762,7 @@
       if (!track) return;
       try {
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
           .eq('type','novel').eq('is_published',true).order('rating',{ascending:false}).limit(80);
         if (filterFn) works = filterFn(works || []);
         if (!works || !works.length) { track.innerHTML = '<div style="padding:8px 48px;color:var(--text3);font-size:12px;">Nothing here yet.</div>'; return; }
@@ -2780,7 +2791,7 @@
       if (!track) return;
       try {
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,spark_count_week,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,spark_count_week,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
           .eq('type','novel').eq('is_published',true).gt('spark_count_week', 0)
           .order('spark_count_week',{ascending:false}).limit(30);
         if (filterFn) works = filterFn(works || []);
@@ -2812,7 +2823,7 @@
         var rallyIds = Object.keys(counts);
         if (!rallyIds.length) { if (section) section.style.display = 'none'; return; }
         var { data: works } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
           .eq('type','novel').eq('is_published',true).in('id', rallyIds);
         if (filterFn) works = filterFn(works || []);
         works = (works||[]).sort(function(a,b){ return (counts[b.id]||0) - (counts[a.id]||0); }).slice(0, 20);
@@ -2847,7 +2858,7 @@
         var prefSeed = null;    // set when seeding from onboarding genre prefs
         if (readIds.length) {
           var seedWorkIds = readIds.slice(0, 3);
-          var { data: seedWorks } = await db.from('works').select('id,title,tags_main').in('id', seedWorkIds);
+          var { data: seedWorks } = await db.from('works').select('id,title,tags_main,tags_all').in('id', seedWorkIds);
           (seedWorks||[]).forEach(function(sw){
             try { JSON.parse(sw.tags_main || '[]').forEach(function(t){ if(allSeedTags.indexOf(t)===-1) allSeedTags.push(t); }); } catch(e) {}
           });
@@ -2866,7 +2877,7 @@
         // Overlaps-on-text-column isn't expressible in PostgREST (tags_main is
         // JSON-in-text), so fetch recent published novels and match client-side.
         var { data: pool } = await db.from('works')
-          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,content_warnings')
+          .select('id,title,cover_url,rating,author_id,chapters_count,content_rating_gore,content_rating_erotica,tags_main,tags_all,content_warnings')
           .eq('type','novel').eq('is_published',true)
           .order('rating',{ascending:false}).limit(120);
         var matches = (pool||[]).filter(function(w){
@@ -3168,6 +3179,7 @@
               // work the reader opted out of could appear live on a row that
               // had correctly filtered it on load.
               if(window._dsWarnBlocked && window._dsWarnBlocked(w)) return;
+              if(window._dsTagBlocked && window._dsTagBlocked(w)) return;
             }
             var trackId = w.type==='artwork' ? 'track-5' : 'track-4';
             prependCover(trackId, w, w.type==='artwork' ? 'artwork.html?id='+w.id : 'story.html?id='+w.id);
@@ -3217,9 +3229,10 @@
             if(!uid) return;
             var fwRes = await db.from('work_follows').select('id').eq('user_id',uid).eq('work_id',ch.work_id).maybeSingle();
             if(!fwRes.data) return;
-            var workRes = await db.from('works').select('id,title,cover_url,author_id,content_warnings').eq('id',ch.work_id).maybeSingle();
+            var workRes = await db.from('works').select('id,title,cover_url,author_id,content_warnings,tags_all').eq('id',ch.work_id).maybeSingle();
             if(!workRes.data) return;
             if(workRes.data.author_id !== uid && window._dsWarnBlocked && window._dsWarnBlocked(workRes.data)) return;
+            if(workRes.data.author_id !== uid && window._dsTagBlocked && window._dsTagBlocked(workRes.data)) return;
             // One card per work: drop any existing card for this work first
             var track0 = document.getElementById('track-0');
             if (track0) {
@@ -3240,9 +3253,10 @@
             if(!uid) return;
             var fwRes2 = await db.from('work_follows').select('id').eq('user_id',uid).eq('work_id',ch.work_id).maybeSingle();
             if(!fwRes2.data) return;
-            var workRes2 = await db.from('works').select('id,title,cover_url,author_id,content_warnings').eq('id',ch.work_id).maybeSingle();
+            var workRes2 = await db.from('works').select('id,title,cover_url,author_id,content_warnings,tags_all').eq('id',ch.work_id).maybeSingle();
             if(!workRes2.data) return;
             if(workRes2.data.author_id !== uid && window._dsWarnBlocked && window._dsWarnBlocked(workRes2.data)) return;
+            if(workRes2.data.author_id !== uid && window._dsTagBlocked && window._dsTagBlocked(workRes2.data)) return;
             var track0b = document.getElementById('track-0');
             if (track0b) {
               var existing0b = track0b.querySelector('[data-work-id="'+ch.work_id+'"]');

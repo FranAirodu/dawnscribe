@@ -97,6 +97,7 @@
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   </style>
   <script src="contentWarnings.js"></script>
+  <script src="tagPrefs.js"></script>
 </head>
 <body>
 
@@ -176,12 +177,14 @@
         riseFilters.erotica = prof.settings_filter_erotica !== false;
       } catch (e) { /* keep restrictive default */ }
       try { await DSWarn.init(db); } catch (e) {}
+      try { await DSTags.init(db); } catch (e) {}
     }
     function riseBadge(w) {
       // Content-warning pill rides alongside the mature pill. Same rationale:
       // the board badges rather than hides, so a filtered reader is told
       // before clicking instead of having the ranking silently reshuffled.
-      var cwPill = (window.DSWarn ? DSWarn.badge(w) : '');
+      var cwPill = (window.DSWarn ? DSWarn.badge(w) : '') +
+                   (window.DSTags ? DSTags.badge(w) : '');
       var warnGore    = w.content_rating_gore === true    && (riseFilters.safe || !riseFilters.gore);
       var warnErotica = w.content_rating_erotica === true && (riseFilters.safe || !riseFilters.erotica);
       if (!warnGore && !warnErotica) return cwPill;
@@ -195,7 +198,8 @@
       // The warning list is part of the signature for the same reason the
       // mature flags are: the cached HTML embeds badges derived from it.
       var cw = '';
-      try { cw = ':' + (window.DSWarn ? DSWarn.active().slice().sort().join('|') : ''); } catch (e) {}
+      try { cw = ':' + (window.DSWarn ? DSWarn.active().slice().sort().join('|') : '')
+                    + ':' + (window.DSTags ? DSTags.signature() : ''); } catch (e) {}
       return (riseFilters.safe?'s':'-') + (riseFilters.gore?'g':'-') + (riseFilters.erotica?'e':'-') + cw;
     }
 
@@ -258,7 +262,7 @@
       if (cached) { el.innerHTML = cached; return; }
       try {
         var q = db.from('works')
-          .select('id,title,cover_url,author_id,celestial_flame_count,spark_count_total,avg_chapter_days,chapters_count,created_at,content_rating_gore,content_rating_erotica,content_warnings')
+          .select('id,title,cover_url,author_id,celestial_flame_count,spark_count_total,avg_chapter_days,chapters_count,created_at,content_rating_gore,content_rating_erotica,content_warnings,tags_all')
           .eq('type', 'novel')
           .eq('is_published', true);
 
@@ -322,7 +326,7 @@
       if (cachedLb) { el.innerHTML = cachedLb; return; }
       try {
         var { data: works, error: wErr } = await db.from('works')
-          .select('id,title,cover_url,author_id,spark_count_week,content_rating_gore,content_rating_erotica,content_warnings')
+          .select('id,title,cover_url,author_id,spark_count_week,content_rating_gore,content_rating_erotica,content_warnings,tags_all')
           .eq('type', 'novel')
           .eq('is_published', true)
           .order('spark_count_week', { ascending: false, nullsFirst: false })

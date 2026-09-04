@@ -126,6 +126,7 @@
     .footer-links a{color:var(--text3);text-decoration:none;transition:color 0.2s;}
     .footer-links a:hover{color:var(--accent);}
   </style>
+  <script src="tagPrefs.js"></script>
 </head>
 <body>
 
@@ -421,7 +422,8 @@
       var allowErotica = myContentFilters.erotica !== false && !myContentFilters.safe;
       if (!allowGore) q = q.or('content_rating_gore.eq.false,content_rating_gore.is.null');
       if (!allowErotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
-      myBlockedTags.forEach(function(tag){ q = q.not('tags_all', 'ilike', '%"' + tag.replace(/"/g,'') + '"%'); });
+      // Was localStorage-only and did not escape ILIKE metacharacters.
+      if (window.DSTags) q = DSTags.applyToQuery(q);
       if (myMutedIds.length) q = q.not('author_id', 'in', '(' + myMutedIds.join(',') + ')');
       myFilteredWarnings.forEach(function(w){ q = q.not('content_warnings', 'cs', JSON.stringify([w])); });
       return q;
@@ -794,13 +796,10 @@
           } catch(e2) {}
         }
       } catch(e){}
-      try {
-        var tp = localStorage.getItem('ds_tag_prefs');
-        if (tp) {
-          var parsed = JSON.parse(tp);
-          myBlockedTags = Object.keys(parsed).filter(function(t){ return parsed[t] === 'blocked'; });
-        }
-      } catch(e){}
+      // Database first, localStorage only as a fallback cache. Reading
+      // localStorage alone meant a second device or a cleared cache
+      // silently dropped every blocked tag.
+      try { await DSTags.init(db); myBlockedTags = DSTags.blockedTags(); } catch(e){}
       var params = getParams();
       state.type = params.type;
       state.query = params.q;

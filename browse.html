@@ -102,6 +102,7 @@
 
     footer{background:var(--bg2);border-top:1px solid var(--border);padding:28px;text-align:center;color:var(--text3);font-size:13px;margin-top:auto;}
   </style>
+  <script src="tagPrefs.js"></script>
 </head>
 <body>
 
@@ -254,11 +255,18 @@
       if (!allowErotica) q = q.or('content_rating_erotica.eq.false,content_rating_erotica.is.null');
       myFilteredWarnings.forEach(function(w){ q = q.not('content_warnings', 'cs', JSON.stringify([w])); });
       if (myMutedIds.length) q = q.not('author_id', 'in', '(' + myMutedIds.join(',') + ')');
+      // browse.html applied NO tag filter at all — the main browsing page
+      // ignored blocked tags entirely. Matches on tags_all; see tagPrefs.js.
+      if (window.DSTags) q = DSTags.applyToQuery(q);
       return q;
     }
     // Client-side equivalent of applyContentFilters, for rows that were fetched
     // by a query which could not filter them (e.g. chapters joined to works).
+    function passesTagPrefs(w) {
+      return !(window.DSTags && DSTags.isBlocked(w));
+    }
     function passesContentFilters(w) {
+      if (!passesTagPrefs(w)) return false;
       var allowGore = myContentFilters.gore && !myContentFilters.safe;
       var allowErotica = myContentFilters.erotica && !myContentFilters.safe;
       if (!allowGore && w.content_rating_gore === true) return false;
@@ -789,6 +797,7 @@
             if (prefRow.lang_strict !== null && prefRow.lang_strict !== undefined) myLangPrefs.lang_strict = prefRow.lang_strict;
             if (Array.isArray(prefRow.filtered_content_warnings)) myFilteredWarnings = prefRow.filtered_content_warnings;
           }
+          try { await DSTags.init(db); } catch(e) {}
           var { data: muteRows } = await db.from('mutes').select('muted_id').eq('muter_id', myUid);
           myMutedIds = (muteRows||[]).map(function(r){ return r.muted_id; });
         }
