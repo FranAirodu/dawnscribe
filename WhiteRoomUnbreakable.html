@@ -405,7 +405,8 @@
     <!-- ── FEATURED WORKS ────────────────────────────────────────── -->
     <div class="section" id="sec-featured" data-tab="content">
       <div class="section-title"><i class="ti ti-star"></i> Featured Works</div>
-      <div class="section-sub">Pin up to 6 work IDs to a "Featured" row on the homepage. Paste a work's Supabase ID into a slot.</div>
+      <div class="section-sub">Pin published novels to the homepage Featured row. Pinned slots are held permanently &mdash; the 12-hourly rotation fills only the slots you leave blank. Paste a work's ID, or clear a slot to hand it back to the rotation.</div>
+      <div class="section-sub" id="featured-rotation-note" style="margin-top:-6px;"></div>
       <div id="featured-slots"></div>
       <div class="btn-row" style="margin-top:8px;">
         <button class="save-btn" id="save-featured-btn"><i class="ti ti-check"></i> Save Featured</button>
@@ -890,17 +891,49 @@
 
     // ── FEATURED WORKS ────────────────────────────────────────────
     async function renderFeaturedSlots() {
-      var res = await db.from('site_settings').select('value').eq('key', 'featured_works').maybeSingle();
-      var saved = (res.data && Array.isArray(res.data.value)) ? res.data.value : ['','','','','',''];
+      /* Reads works.featured_pinned via admin_get_featured_pins().
+         This panel used to write site_settings.featured_works, a key NOTHING
+         read -- the homepage row has always come from works.featured_slot,
+         set by rotate_featured_works() on a 12h cron. Pins were silently
+         discarded. Seven slots because the homepage row renders seven. */
+      var saved = ['','','','','','',''];
+      var titles = ['','','','','','',''];
+      try {
+        var res = await db.rpc('admin_get_featured_pins');
+        (res.data || []).forEach(function(r){
+          var i = (r.slot || 0) - 1;
+          if (i >= 0 && i < 7) { saved[i] = r.work_id || ''; titles[i] = r.title || ''; }
+        });
+      } catch (e) {}
+
+      // Show what the rotation currently holds, so an empty slot is
+      // understood as "rotating" rather than "broken".
+      try {
+        var rot = await db.from('works')
+          .select('title,featured_slot')
+          .not('featured_slot','is',null)
+          .eq('featured_pinned', false)
+          .order('featured_slot');
+        var note = document.getElementById('featured-rotation-note');
+        if (note) {
+          var n = (rot.data || []).length;
+          note.textContent = n
+            ? 'Rotation currently holds ' + n + ' slot' + (n === 1 ? '' : 's') + ': '
+              + rot.data.map(function(r){ return r.title + ' (#' + r.featured_slot + ')'; }).join(', ')
+            : 'The rotation holds no slots right now \u2014 works are on a 30-day cooldown after being featured, so the homepage row backfills with top-rated novels.';
+        }
+      } catch (e) {}
+
       var wrap = document.getElementById('featured-slots');
       wrap.innerHTML = '';
-      for (var i = 0; i < 6; i++) {
+      for (var i = 0; i < 7; i++) {
         (function(idx) {
           var slot = document.createElement('div');
           slot.className = 'featured-slot';
           slot.innerHTML =
             '<div class="slot-num">' + (idx + 1) + '</div>' +
-            '<input class="form-input slot-input" type="text" placeholder="Work ID (leave blank for empty slot)" value="' + escHtml(saved[idx] || '') + '"/>' +
+            '<input class="form-input slot-input" type="text" placeholder="Work ID (blank = leave to rotation)" value="' + escHtml(saved[idx] || '') + '"/>' +
+            (titles[idx] ? '<div class="slot-title" style="font-size:11px;color:var(--text3);padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;">' + escHtml(titles[idx]) + '</div>' : '') +
             '<button class="slot-clear" title="Clear slot"><i class="ti ti-x"></i></button>';
           slot.querySelector('.slot-clear').addEventListener('click', function() {
             slot.querySelector('input').value = '';
@@ -910,13 +943,42 @@
       }
     }
     document.getElementById('save-featured-btn').addEventListener('click', async function() {
+      /* Blank slots must be sent as null, not '': position in the array IS
+         the slot number, so dropping blanks would shift every later pin up
+         one slot. An invalid UUID is also sent as null rather than letting
+         Postgres reject the whole array. */
       var ids = [];
-      document.querySelectorAll('.slot-input').forEach(function(inp) { ids.push(inp.value.trim()); });
+      var malformed = 0;
+      var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      document.querySelectorAll('.slot-input').forEach(function(inp) {
+        var v = inp.value.trim();
+        if (!v) { ids.push(null); return; }
+        if (!UUID_RE.test(v)) { malformed++; ids.push(null); return; }
+        ids.push(v);
+      });
+
       var btn = this;
       btn.textContent = 'Saving...'; btn.disabled = true;
-      var result = await db.from('site_settings').upsert({ key: 'featured_works', value: ids, updated_at: new Date().toISOString() });
-      if (result.error) { showToast('Error: ' + result.error.message, 'ti-x'); }
-      else { showToast('Featured works saved!'); auditLog('Updated featured works slots', 'ti-star'); }
+      try {
+        var result = await db.rpc('admin_set_featured_pins', { p_work_ids: ids });
+        var d = result.data;
+        if (result.error || !d || !d.success) {
+          var why = (d && d.error) || (result.error && result.error.message) || 'unknown';
+          showToast('Could not save: ' + why, 'ti-x');
+        } else {
+          var skipped = (d.skipped || []).length;
+          var msg = d.pinned + ' work' + (d.pinned === 1 ? '' : 's') + ' pinned.';
+          // Report every id the database refused. Silently dropping them is
+          // how the old version hid the fact that pinning did nothing.
+          if (skipped) msg += ' ' + skipped + ' skipped (not a published novel).';
+          if (malformed) msg += ' ' + malformed + ' ignored (not a valid ID).';
+          showToast(msg, skipped || malformed ? 'ti-alert-triangle' : 'ti-check');
+          auditLog('Updated featured works pins (' + d.pinned + ' pinned)', 'ti-star');
+          await renderFeaturedSlots();
+        }
+      } catch (e) {
+        showToast('Could not save: ' + (e.message || 'unknown error'), 'ti-x');
+      }
       btn.innerHTML = '<i class="ti ti-check"></i> Save Featured'; btn.disabled = false;
     });
 
