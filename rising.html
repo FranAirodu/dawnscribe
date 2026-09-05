@@ -98,6 +98,7 @@
   </style>
   <script src="contentWarnings.js"></script>
   <script src="tagPrefs.js"></script>
+  <script src="muteFilter.js"></script>
 </head>
 <body>
 
@@ -304,6 +305,10 @@
           .eq('type', 'novel')
           .eq('is_published', true);
 
+        // Muted authors are dropped server-side. Rising is a discovery
+        // board, so it hides rather than badges — unlike a shelf you built.
+        if (window.DSMute) q = DSMute.filterQuery(q);
+
         if (kind === 'flames') {
           q = q.gt('celestial_flame_count', 0).order('celestial_flame_count', { ascending: false });
         } else if (kind === 'fresh') {
@@ -363,10 +368,12 @@
       var cachedLb = boardCacheGet('sparks');
       if (cachedLb) { el.innerHTML = cachedLb; return; }
       try {
-        var { data: works, error: wErr } = await db.from('works')
+        var lbQ = db.from('works')
           .select('id,title,cover_url,author_id,spark_count_week,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation')
           .eq('type', 'novel')
-          .eq('is_published', true)
+          .eq('is_published', true);
+        if (window.DSMute) lbQ = DSMute.filterQuery(lbQ);
+        var { data: works, error: wErr } = await lbQ
           .order('spark_count_week', { ascending: false, nullsFirst: false })
           .limit(25);
         if (wErr) throw wErr;
@@ -434,7 +441,9 @@
       try {
         var { data: winner } = await db.from('kindling_winners').select('work_id,total_votes').eq('month', lastMonthStart).maybeSingle();
         if (winner) {
-          var { data: ww } = await db.from('works').select('id,title,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').eq('id', winner.work_id).maybeSingle();
+          var wwQ = db.from('works').select('id,title,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').eq('id', winner.work_id);
+          if (window.DSMute) wwQ = DSMute.filterQuery(wwQ);
+          var { data: ww } = await wwQ.maybeSingle();
           if (ww) {
             var { data: wa } = await db.from('profiles').select('display_name,username').eq('id', ww.author_id).maybeSingle();
             var wName = escHtml((wa && (wa.display_name || wa.username)) || 'Unknown');
@@ -457,7 +466,9 @@
           return;
         }
         var workIds = candidates.map(function(c){ return c.work_id; });
-        var { data: works } = await db.from('works').select('id,title,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').in('id', workIds);
+        var candQ = db.from('works').select('id,title,cover_url,author_id,content_rating_gore,content_rating_erotica,content_warnings,tags_all,language,is_fan_translation').in('id', workIds);
+        if (window.DSMute) candQ = DSMute.filterQuery(candQ);
+        var { data: works } = await candQ;
         var workMap = {};
         (works || []).forEach(function(w){ workMap[w.id] = w; });
 

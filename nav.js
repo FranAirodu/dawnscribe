@@ -91,6 +91,11 @@ async function dsLoadSearchPrefs() {
 
 // Applies every discovery filter to a works query for the search preview.
 function dsFilterSearchQuery(q, p) {
+  /* Muted authors. The search preview is the single most-loaded surface on
+     the site, and Settings promises muting hides work from "your feeds and
+     search" — so it belongs here. Server-side via the is_muted_for_me
+     computed column, so muted rows never reach the browser. */
+  if (window.DSMute) q = DSMute.filterQuery(q);
   if (p.safe || !p.gore)    q = q.neq('content_rating_gore', true);
   if (p.safe || !p.erotica) q = q.neq('content_rating_erotica', true);
   (p.warnings || []).forEach(function (w) {
