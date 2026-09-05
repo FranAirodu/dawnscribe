@@ -292,7 +292,8 @@
         </a>
         <a class="stat-card clickable" href="admin-stats.html?tab=works">
           <div class="stat-number" id="stat-works">—</div>
-          <div class="stat-label">Works Posted</div>
+          <div class="stat-label">Published Works</div>
+          <div class="stat-sub" id="stat-works-drafts"></div>
         </a>
         <a class="stat-card clickable" href="admin-stats.html?tab=reports">
           <div class="stat-number" id="stat-reports">—</div>
@@ -674,18 +675,30 @@
     // ── STATS ─────────────────────────────────────────────────────
     async function loadStats() {
       var weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      var [totalUsers, newUsers, bannedUsers, mods, follows, reports, works] = await Promise.all([
-        db.from('profiles').select('id', { count: 'exact', head: true }),
-        db.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', weekAgo),
+      var [totalUsers, newUsers, bannedUsers, mods, follows, reports, works, drafts] = await Promise.all([
+        // Deleted accounts are excluded everywhere on this dashboard, and the
+        // Users tab on admin-stats.html filters the same way -- the card and
+        // the page it links to have to agree, or the dashboard trains you to
+        // distrust it. soft_delete_account() sets deleted_at, so this is the
+        // one condition that catches them.
+        db.from('profiles').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+        db.from('profiles').select('id', { count: 'exact', head: true }).is('deleted_at', null).gte('created_at', weekAgo),
         db.from('profiles').select('id', { count: 'exact', head: true }).eq('account_status', 'banned'),
         db.from('profiles').select('id', { count: 'exact', head: true }).eq('is_moderator', true),
         db.from('follows').select('id', { count: 'exact', head: true }),
         db.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'open'),
-        db.from('works').select('id', { count: 'exact', head: true }).eq('is_published', true)
+        db.from('works').select('id', { count: 'exact', head: true }).eq('is_published', true),
+        // admin-stats.html?tab=works lists EVERY work, drafts included, so the
+        // card used to read 3 and the page it opened showed 4 rows. Rather
+        // than hide drafts on that page (an admin should see them), the card
+        // now says what it counts and shows the draft count underneath.
+        db.from('works').select('id', { count: 'exact', head: true }).eq('is_published', false)
       ]);
       document.getElementById('stat-users').textContent = totalUsers.count ?? '—';
       document.getElementById('stat-users-new').textContent = newUsers.count ? '+' + newUsers.count + ' this week' : '';
       document.getElementById('stat-works').textContent = works.count ?? '—';
+      document.getElementById('stat-works-drafts').textContent =
+        drafts.count ? '+' + drafts.count + ' draft' + (drafts.count === 1 ? '' : 's') : '';
       document.getElementById('stat-reports').textContent = reports.count ?? '0';
       document.getElementById('stat-banned').textContent = bannedUsers.count ?? '—';
       document.getElementById('stat-mods').textContent = mods.count ?? '—';
