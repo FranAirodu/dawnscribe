@@ -2135,9 +2135,21 @@
       btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Sending…';
 
       try {
-        // Saved to the database, which is what the admin review page reads. A
-        // trigger on this table sends the notification email, so there is no
-        // third-party form service in this path any more.
+        // Saved to the database. No third-party form service is involved.
+        //
+        // This is a PULL queue, not a push. Nothing emails anyone when
+        // feedback arrives -- verified 2026-09-04: `feedback` has no triggers
+        // at all (an earlier comment here claimed a trigger sent a
+        // notification email; it never existed). Delivery to admins works
+        // like this instead:
+        //   feedback.status defaults to 'new'
+        //     -> admin_pending_counts() counts status='new'
+        //     -> the admin banner on index.html renders a "feedback item" chip
+        //     -> the chip links to WhiteRoomUnbreakable.html#feedback to review
+        // Deliberate, and consistent with contact_messages, which is also
+        // queue-only by design (CONTACT_TO_EMAIL is intentionally unset).
+        // If feedback ever needs to push, it needs a real trigger calling the
+        // send-email edge function -- do not assume one is already there.
         // NOTE: .insert() resolves with { error } rather than throwing, so the
         // outer catch alone would report success on a failed write.
         var fbRes = await db.from('feedback').insert({
