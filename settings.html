@@ -220,6 +220,7 @@
     /* Quiet hours time pickers. The row's own onclick toggles the feature, so
        the inputs stop propagation (see markup) or picking a time would flip
        the switch. */
+    .visibility-rows{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
     .quiet-hours-times{display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap;}
     .quiet-hours-times label{font-size:12px;font-weight:700;color:var(--text2);display:flex;align-items:center;gap:6px;}
     .quiet-hours-times input[type="time"]{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;outline:none;}
@@ -675,6 +676,33 @@
             </div>
             <div class="field-group"></div>
           </div>
+          <!-- WHO CAN SEE THESE FIELDS -->
+          <div class="field-group" style="margin-top:4px;">
+            <label class="field-label">Who can see these <span class="field-hint" style="text-transform:none;letter-spacing:0;font-weight:400;"> &mdash; hidden fields are withheld entirely, not just greyed out</span></label>
+            <div class="visibility-rows">
+              <div class="toggle-row" id="tr-show_location" onclick="toggleVisibility('show_location')">
+                <div class="toggle-row-left">
+                  <div class="toggle-icon teal"><i class="ti ti-map-pin"></i></div>
+                  <div><div class="toggle-label">Show Location</div><div class="toggle-sub">Off = only you can see your location</div></div>
+                </div>
+                <div class="toggle-switch" id="ts-show_location"></div>
+              </div>
+              <div class="toggle-row" id="tr-show_gender" onclick="toggleVisibility('show_gender')">
+                <div class="toggle-row-left">
+                  <div class="toggle-icon teal"><i class="ti ti-gender-bigender"></i></div>
+                  <div><div class="toggle-label">Show Gender</div><div class="toggle-sub">Off = only you can see your gender</div></div>
+                </div>
+                <div class="toggle-switch" id="ts-show_gender"></div>
+              </div>
+              <div class="toggle-row" id="tr-show_pronouns" onclick="toggleVisibility('show_pronouns')">
+                <div class="toggle-row-left">
+                  <div class="toggle-icon teal"><i class="ti ti-message-2"></i></div>
+                  <div><div class="toggle-label">Show Pronouns</div><div class="toggle-sub">Off = only you can see your pronouns</div></div>
+                </div>
+                <div class="toggle-switch" id="ts-show_pronouns"></div>
+              </div>
+            </div>
+          </div>
           <!-- ROLE PICKER -->
           <div class="field-group" style="margin-top:4px;">
             <label class="field-label" for="field-secondary-email">Account Type <span class="field-hint" style="text-transform:none;letter-spacing:0;font-weight:400;"> — choose everything that applies to you</span></label>
@@ -996,6 +1024,7 @@
       lang_original: true, lang_strict: false, pref_language: 'any',
       default_rating_gore: false, default_rating_erotica: false, quiet_mode: false,
       quiet_hours_enabled: false, quiet_hours_start: '22:00', quiet_hours_end: '08:00', timezone: null,
+      show_location: true, show_gender: true, show_pronouns: true,
       email_enabled: true, email_digest: true, email_payouts: true,
       pref_reduced_motion: false, pref_high_contrast: false
     };
@@ -1139,6 +1168,20 @@
       document.getElementById('ts-quiet_mode').classList.toggle('on', settings.quiet_mode);
       document.getElementById('tr-quiet_mode').classList.toggle('active', settings.quiet_mode);
       markChanged();
+    }
+    function toggleVisibility(key) {
+      settings[key] = !settings[key];
+      renderVisibilityToggles();
+      markChanged();
+    }
+    function renderVisibilityToggles() {
+      ['show_location','show_gender','show_pronouns'].forEach(function(k){
+        var sw = document.getElementById('ts-' + k);
+        var row = document.getElementById('tr-' + k);
+        if (!sw || !row) return;
+        sw.classList.toggle('on', !!settings[k]);
+        row.classList.toggle('active', !!settings[k]);
+      });
     }
     function toggleQuietHours(ev) {
       // The time inputs live inside this row; their own handler stops
@@ -1703,7 +1746,26 @@
       myOriginalUsername = (data.username || '').toLowerCase();
       document.getElementById('field-bio').value = data.bio || '';
       document.getElementById('field-location').value = data.location || '';
-      document.getElementById('field-gender').value = data.gender || '';
+      /* Gender is matched case-insensitively against the option values.
+         One legacy row stored 'Male' while the options are lowercase; a
+         <select> given a value no option has falls silently back to blank,
+         and the next save then wrote that blank over the real answer. The
+         stored values are normalised now, but this keeps any future
+         mismatch from quietly destroying the field again. */
+      (function(){
+        var sel = document.getElementById('field-gender');
+        var want = String(data.gender == null ? '' : data.gender).trim().toLowerCase();
+        if (want === 'non-binary' || want === 'non binary') want = 'nonbinary';
+        var matched = '';
+        for (var i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].value.toLowerCase() === want) { matched = sel.options[i].value; break; }
+        }
+        sel.value = matched;
+      })();
+      settings.show_location = data.show_location !== false;
+      settings.show_gender   = data.show_gender   !== false;
+      settings.show_pronouns = data.show_pronouns !== false;
+      renderVisibilityToggles();
       document.getElementById('field-pronouns').value = data.pronouns || '';
       setRoleButtons(data.role || 'Reader');
     }
@@ -2272,8 +2334,14 @@
         if (un) profileUpdate.username = un;
         profileUpdate.bio = bio;
         profileUpdate.location = loc;
-        if (gen) profileUpdate.gender = gen;
+        /* Blank means "Prefer not to say", which has to be able to CLEAR a
+           previously set value. The old `if (gen)` guard silently skipped the
+           field, so gender was write-once and could never be unset. */
+        profileUpdate.gender = gen || null;
         profileUpdate.pronouns = pronouns || null;
+        profileUpdate.show_location = settings.show_location;
+        profileUpdate.show_gender   = settings.show_gender;
+        profileUpdate.show_pronouns = settings.show_pronouns;
         profileUpdate.filtered_content_warnings = filteredWarnings;
         profileUpdate.role = getSelectedRole();
         // CRITICAL: Never touch account_status or is_moderator here.
@@ -2362,6 +2430,7 @@
     function applyAllSettings() {
       applyTheme(settings.theme);
       renderQuietHours();
+      renderVisibilityToggles();
       document.getElementById('toggle-safe').classList.toggle('on', settings.filter_safe);
       document.getElementById('filter-safe').classList.toggle('active', settings.filter_safe);
       document.getElementById('toggle-gore').classList.toggle('on', settings.filter_gore);
