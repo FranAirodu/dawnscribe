@@ -160,7 +160,7 @@
       <h4><i class="ti ti-photo-check"></i> Image requirements</h4>
       <ul>
         <li><i class="ti ti-check"></i> Banners must be your original artwork — no AI-generated images, traced work, or assets you don't own rights to.</li>
-        <li><i class="ti ti-check"></i> Recommended size: <strong style="color:var(--text);">1920×480 px</strong> (4:1 wide landscape). Minimum <strong style="color:var(--text);">1400×400 px</strong>. Larger is fine — anything wider than 1920 px is scaled down on upload.</li>
+        <li><i class="ti ti-check"></i> Recommended size: <strong style="color:var(--text);">1920×480 px</strong> (4:1 wide landscape). Minimum <strong style="color:var(--text);">1400×400 px</strong>. Larger is fine — anything wider than 1920&nbsp;px is automatically scaled down to 1920&nbsp;px on upload.</li>
         <li><i class="ti ti-check"></i> PNG, JPG or WebP, under <strong style="color:var(--text);">8&nbsp;MB</strong>.</li>
         <li><i class="ti ti-check"></i> Banners span the full width of the window, so the crop changes with screen size — <strong style="color:var(--text);">keep anything essential inside the middle 80% of the height, and away from the far left and right edges</strong>. On a wide monitor the top and bottom are trimmed; on a phone the sides are.</li>
         <li><i class="ti ti-check"></i> A banner is a <strong style="color:var(--text);">backdrop</strong>, not a display piece: it sits behind the profile or story header, softly blurred and darkened towards the bottom. Bold shapes and colour read well; fine linework and small text do not.</li>
@@ -501,25 +501,92 @@
      construction. Filenames are unique per upload rather than upserted:
      `authenticated` has no UPDATE grant on storage.objects, so an upsert
      would fail on the second save of the same banner. */
+  /* Banners are rendered at most the width of the window, so anything wider
+     than TARGET_W is bytes every reader downloads and no reader sees. The
+     upload copy has always promised this downscale; this is it. Aspect ratio
+     is preserved and the encoded type is kept (PNG stays lossless, so line
+     art and flat colour don't pick up JPEG ringing).
+
+     Returns the ORIGINAL file unchanged if it is already narrow enough, or if
+     decode/encode fails for any reason — a failed optimisation must never
+     become a failed upload. */
+  var TARGET_W = 1920;
+
+  function downscaleImage(file) {
+    return new Promise(function (resolve) {
+      var url;
+      var done = function (out) {
+        if (url) { try { URL.revokeObjectURL(url); } catch (e) {} }
+        resolve(out || file);
+      };
+      try {
+        url = URL.createObjectURL(file);
+      } catch (e) { return resolve(file); }
+
+      var img = new Image();
+      img.onerror = function () { done(null); };
+      img.onload = function () {
+        try {
+          var w = img.naturalWidth, h = img.naturalHeight;
+          if (!w || !h || w <= TARGET_W) return done(null);
+
+          var nw = TARGET_W;
+          var nh = Math.max(1, Math.round(h * (TARGET_W / w)));
+          var canvas = document.createElement('canvas');
+          canvas.width = nw; canvas.height = nh;
+          var ctx = canvas.getContext('2d');
+          if (!ctx) return done(null);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, nw, nh);
+
+          canvas.toBlob(function (blob) {
+            if (!blob || blob.size >= file.size) return done(null);
+            try {
+              done(new File([blob], file.name, { type: file.type }));
+            } catch (e) {
+              blob.name = file.name;
+              done(blob);
+            }
+          }, file.type, 0.92);
+        } catch (e) { done(null); }
+      };
+      img.src = url;
+    });
+  }
+
   async function uploadBannerImage(input) {
     var file = input.files && input.files[0];
     input.value = '';
     if (!file) return;
 
+    // Gate on the encoded size BEFORE the downscale, so a pathological file
+    // is never decoded into memory, then gate again on the RESULT so a large
+    // 4K source that shrinks to a sane banner is accepted rather than refused
+    // for a size the user will never actually be storing.
     var MAX = 8 * 1024 * 1024;
+    var HARD_MAX = 32 * 1024 * 1024;
     if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
       showToast('Please choose a PNG, JPEG or WebP image.', true); return;
     }
-    if (file.size > MAX) {
-      showToast('That image is larger than 8 MB. Please use a smaller file.', true); return;
+    if (file.size > HARD_MAX) {
+      showToast('That image is far too large. Please use a file under 32 MB.', true); return;
     }
 
     var drop = document.getElementById('f-image-drop');
     var main = document.getElementById('f-image-drop-main');
     drop.classList.add('busy');
-    main.textContent = 'Uploading…';
+    main.textContent = 'Preparing…';
 
     try {
+      file = await downscaleImage(file);
+
+      if (file.size > MAX) {
+        showToast('That image is larger than 8 MB even after resizing. Please save it at a lower quality.', true);
+        return;
+      }
+
+      main.textContent = 'Uploading…';
       var ext = file.type === 'image/png' ? 'png' : (file.type === 'image/webp' ? 'webp' : 'jpg');
       var path = currentUser.id + '/banner-' + Date.now() + '.' + ext;
       var res = await DSStorage.upload(db, DSStorage.BUCKETS.BANNERS, path, file);
