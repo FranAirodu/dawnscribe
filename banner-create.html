@@ -501,69 +501,21 @@
      construction. Filenames are unique per upload rather than upserted:
      `authenticated` has no UPDATE grant on storage.objects, so an upsert
      would fail on the second save of the same banner. */
-  /* Banners are rendered at most the width of the window, so anything wider
-     than TARGET_W is bytes every reader downloads and no reader sees. The
-     upload copy has always promised this downscale; this is it. Aspect ratio
-     is preserved and the encoded type is kept (PNG stays lossless, so line
-     art and flat colour don't pick up JPEG ringing).
-
-     Returns the ORIGINAL file unchanged if it is already narrow enough, or if
-     decode/encode fails for any reason — a failed optimisation must never
-     become a failed upload. */
-  var TARGET_W = 1920;
-
-  function downscaleImage(file) {
-    return new Promise(function (resolve) {
-      var url;
-      var done = function (out) {
-        if (url) { try { URL.revokeObjectURL(url); } catch (e) {} }
-        resolve(out || file);
-      };
-      try {
-        url = URL.createObjectURL(file);
-      } catch (e) { return resolve(file); }
-
-      var img = new Image();
-      img.onerror = function () { done(null); };
-      img.onload = function () {
-        try {
-          var w = img.naturalWidth, h = img.naturalHeight;
-          if (!w || !h || w <= TARGET_W) return done(null);
-
-          var nw = TARGET_W;
-          var nh = Math.max(1, Math.round(h * (TARGET_W / w)));
-          var canvas = document.createElement('canvas');
-          canvas.width = nw; canvas.height = nh;
-          var ctx = canvas.getContext('2d');
-          if (!ctx) return done(null);
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, nw, nh);
-
-          canvas.toBlob(function (blob) {
-            if (!blob || blob.size >= file.size) return done(null);
-            try {
-              done(new File([blob], file.name, { type: file.type }));
-            } catch (e) {
-              blob.name = file.name;
-              done(blob);
-            }
-          }, file.type, 0.92);
-        } catch (e) { done(null); }
-      };
-      img.src = url;
-    });
-  }
-
   async function uploadBannerImage(input) {
     var file = input.files && input.files[0];
     input.value = '';
     if (!file) return;
 
-    // Gate on the encoded size BEFORE the downscale, so a pathological file
-    // is never decoded into memory, then gate again on the RESULT so a large
-    // 4K source that shrinks to a sane banner is accepted rather than refused
-    // for a size the user will never actually be storing.
+    /* Two-stage size gate.
+
+       storagePaths.js already downscales this bucket to 1920 px and re-encodes
+       to WebP (RESIZE/CONVERT_TO_WEBP for 'banners'), so what gets STORED is
+       almost always a fraction of what was picked. Gating only on the source
+       therefore rejected 4K masters that would have shrunk to ~200 KB.
+
+       So: a hard cap first, purely so a pathological file is never decoded
+       into memory at all; then the real 8 MB limit against the PROCESSED
+       bytes, which is what actually lands in storage. */
     var MAX = 8 * 1024 * 1024;
     var HARD_MAX = 32 * 1024 * 1024;
     if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
@@ -579,7 +531,16 @@
     main.textContent = 'Preparing…';
 
     try {
-      file = await downscaleImage(file);
+      /* Run the bucket's own resize/convert policy here rather than
+         re-implementing it, so there is exactly one definition of what a
+         banner upload does. upload() below is then told not to repeat the
+         work (noResize/noConvert) — it would be a no-op second decode.
+         Both helpers return their input untouched on any failure, so this
+         cannot turn a working upload into a failed one. */
+      if (window.DSStorage) {
+        file = await DSStorage.shrinkIfNeeded(DSStorage.BUCKETS.BANNERS, file);
+        file = await DSStorage.convertToWebpIfWorthwhile(DSStorage.BUCKETS.BANNERS, file);
+      }
 
       if (file.size > MAX) {
         showToast('That image is larger than 8 MB even after resizing. Please save it at a lower quality.', true);
@@ -587,9 +548,12 @@
       }
 
       main.textContent = 'Uploading…';
+      // file.type is the POST-conversion type, so a PNG that became WebP is
+      // stored as .webp and path, bytes and Content-Type all agree.
       var ext = file.type === 'image/png' ? 'png' : (file.type === 'image/webp' ? 'webp' : 'jpg');
       var path = currentUser.id + '/banner-' + Date.now() + '.' + ext;
-      var res = await DSStorage.upload(db, DSStorage.BUCKETS.BANNERS, path, file);
+      var res = await DSStorage.upload(db, DSStorage.BUCKETS.BANNERS, path, file,
+                                      { noResize: true, noConvert: true });
       if (res.error) {
         showToast('Upload failed: ' + (res.error.message || 'please try again.'), true);
         return;
