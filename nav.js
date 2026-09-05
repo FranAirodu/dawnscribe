@@ -91,11 +91,6 @@ async function dsLoadSearchPrefs() {
 
 // Applies every discovery filter to a works query for the search preview.
 function dsFilterSearchQuery(q, p) {
-  /* Muted authors. The search preview is the single most-loaded surface on
-     the site, and Settings promises muting hides work from "your feeds and
-     search" — so it belongs here. Server-side via the is_muted_for_me
-     computed column, so muted rows never reach the browser. */
-  if (window.DSMute) q = DSMute.filterQuery(q);
   if (p.safe || !p.gore)    q = q.neq('content_rating_gore', true);
   if (p.safe || !p.erotica) q = q.neq('content_rating_erotica', true);
   (p.warnings || []).forEach(function (w) {
@@ -1113,7 +1108,69 @@ function dsApplyAccent(hex) {
     setTimeout(function(){ dsWaitForDb(cb, tries + 1); }, 75);
   }
 
+  /* ── MAINTENANCE MODE (sitewide) ────────────────────────────────────
+     The admin panel's copy said "all visitors see a maintenance page
+     instead of the site". Until now only index.html checked it, so the
+     switch stopped nobody: bookmarks, search results and every direct link
+     walked straight into a live site. This runs on every page that loads
+     nav.js, which is all 34 nav-bearing pages.
+
+     Three deliberate ways this refuses to lock the admin out:
+
+     1. NEVER_GATE pages are exempt no matter what. auth.html is the
+        critical one -- a signed-out admin must be able to reach the sign-in
+        page to prove who they are, or the only way out of maintenance mode
+        is the Supabase dashboard. The admin pages are exempt for the same
+        reason: the OFF switch lives on WhiteRoomUnbreakable.html.
+     2. The bypass accepts EITHER an `admins` row OR is_admin(). Those two
+        disagree once MFA is enrolled -- is_admin() additionally demands the
+        session reached aal2, so a password-only session is admin by the
+        table and not by the function. Accepting either can only ever let
+        more people through, never fewer.
+     3. Any error fails OPEN. A failed lookup leaves the site up rather
+        than blacking it out for everyone. */
+  var DS_MAINT_NEVER_GATE = ['auth.html', 'whiteroomunbreakable.html'];
+
+  async function dsCheckMaintenance() {
+    try {
+      var page = (location.pathname.split('/').pop() || 'index.html').toLowerCase();
+      if (DS_MAINT_NEVER_GATE.indexOf(page) !== -1) return;
+      if (page.indexOf('admin-') === 0) return;   // every admin-*.html
+
+      var res = await db.from('site_settings').select('value').eq('key', 'maintenance_mode').maybeSingle();
+      if (res.error) return;                       // fail open
+      var isOn = res.data ? (res.data.value === true || res.data.value === 'true') : false;
+      if (!isOn) return;
+
+      var sess = await db.auth.getSession();
+      if (sess && sess.data && sess.data.session) {
+        // Either definition of admin gets through -- see note 2 above.
+        try {
+          var row = await db.from('admins').select('id').eq('id', sess.data.session.user.id).maybeSingle();
+          if (row.data) return;
+        } catch (e) {}
+        try {
+          var fn = await db.rpc('is_admin');
+          if (fn && fn.data === true) return;
+        } catch (e) {}
+      }
+
+      document.body.innerHTML = [
+        '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;',
+        'height:100vh;background:#0a0a0f;color:#f1f0ff;font-family:Lato,sans-serif;text-align:center;padding:24px;">',
+        '<div style="font-family:Cinzel,serif;font-size:28px;color:#2dd4bf;margin-bottom:16px;">DawnScribe</div>',
+        '<div style="font-size:18px;font-weight:700;margin-bottom:8px;">We\'re doing some maintenance</div>',
+        '<div style="font-size:14px;color:#9b9bc0;max-width:400px;">The site will be back up shortly. Thank you for your patience.</div>',
+        '<a href="auth.html" style="margin-top:22px;font-size:12px;color:#6b6b8f;text-decoration:none;">Sign in</a>',
+        '</div>'
+      ].join('');
+    } catch (e) {
+      /* fail open */
+    }
+  }
+
   dsWaitForDb(function(){
+  dsCheckMaintenance();
   (async function dsInitUserNav() {
     try {
       var session = (await db.auth.getSession()).data.session;
