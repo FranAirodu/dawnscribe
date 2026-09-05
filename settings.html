@@ -216,7 +216,17 @@
         scroll-behavior:auto !important;
       }
     }
-  </style>
+  
+    /* Quiet hours time pickers. The row's own onclick toggles the feature, so
+       the inputs stop propagation (see markup) or picking a time would flip
+       the switch. */
+    .quiet-hours-times{display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap;}
+    .quiet-hours-times label{font-size:12px;font-weight:700;color:var(--text2);display:flex;align-items:center;gap:6px;}
+    .quiet-hours-times input[type="time"]{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;outline:none;}
+    .quiet-hours-times input[type="time"]:focus{border-color:var(--accent);}
+    .quiet-hours-tz{font-size:11px;color:var(--text3);}
+    .quiet-hours-times[aria-disabled="true"]{opacity:0.45;pointer-events:none;}
+</style>
   <script src="accessibilityPrefs.js"></script>
 </head>
 <body>
@@ -458,6 +468,21 @@
             <div><div class="toggle-label">Quiet Mode</div><div class="toggle-sub">Temporarily silences all notifications below without changing your individual settings — turn it off any time to get them back exactly as they were</div></div>
           </div>
           <div class="toggle-switch" id="ts-quiet_mode"></div>
+        </div>
+        <div class="toggle-row" id="tr-quiet_hours_enabled" onclick="toggleQuietHours(event)">
+          <div class="toggle-row-left">
+            <div class="toggle-icon teal"><i class="ti ti-clock"></i></div>
+            <div style="flex:1;">
+              <div class="toggle-label">Quiet Hours</div>
+              <div class="toggle-sub">Silences notifications every day between the times below, in your local time. Notifications that arrive during quiet hours are not delivered later &mdash; they are skipped. Account warnings always come through.</div>
+              <div class="quiet-hours-times" id="quiet-hours-times" onclick="event.stopPropagation();">
+                <label>From <input type="time" id="field-quiet-start" onchange="onQuietHoursTimeChange()"/></label>
+                <label>Until <input type="time" id="field-quiet-end" onchange="onQuietHoursTimeChange()"/></label>
+                <span class="quiet-hours-tz" id="quiet-hours-tz"></span>
+              </div>
+            </div>
+          </div>
+          <div class="toggle-switch" id="ts-quiet_hours_enabled"></div>
         </div>
         <div class="section-divider"></div>
         <div class="toggle-row active" id="tr-notif-follow" onclick="toggleSetting('notif_follow')">
@@ -970,6 +995,7 @@
       privacy_readinglist: true, privacy_activity: true, privacy_dm: true,
       lang_original: true, lang_strict: false, pref_language: 'any',
       default_rating_gore: false, default_rating_erotica: false, quiet_mode: false,
+      quiet_hours_enabled: false, quiet_hours_start: '22:00', quiet_hours_end: '08:00', timezone: null,
       email_enabled: true, email_digest: true, email_payouts: true,
       pref_reduced_motion: false, pref_high_contrast: false
     };
@@ -1113,6 +1139,43 @@
       document.getElementById('ts-quiet_mode').classList.toggle('on', settings.quiet_mode);
       document.getElementById('tr-quiet_mode').classList.toggle('active', settings.quiet_mode);
       markChanged();
+    }
+    function toggleQuietHours(ev) {
+      // The time inputs live inside this row; their own handler stops
+      // propagation, but guard anyway so a stray bubble can't flip the switch.
+      if (ev && ev.target && ev.target.closest && ev.target.closest('.quiet-hours-times')) return;
+      settings.quiet_hours_enabled = !settings.quiet_hours_enabled;
+      renderQuietHours();
+      markChanged();
+    }
+    function onQuietHoursTimeChange() {
+      var s = document.getElementById('field-quiet-start').value;
+      var e = document.getElementById('field-quiet-end').value;
+      if (s) settings.quiet_hours_start = s;
+      if (e) settings.quiet_hours_end = e;
+      renderQuietHours();
+      markChanged();
+    }
+    function renderQuietHours() {
+      var on = !!settings.quiet_hours_enabled;
+      document.getElementById('ts-quiet_hours_enabled').classList.toggle('on', on);
+      document.getElementById('tr-quiet_hours_enabled').classList.toggle('active', on);
+      document.getElementById('field-quiet-start').value = settings.quiet_hours_start || '22:00';
+      document.getElementById('field-quiet-end').value   = settings.quiet_hours_end   || '08:00';
+      var times = document.getElementById('quiet-hours-times');
+      if (times) times.setAttribute('aria-disabled', on ? 'false' : 'true');
+      var tzEl = document.getElementById('quiet-hours-tz');
+      if (tzEl) {
+        var tz = '';
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+        // Equal start and end is a zero-length window; the database treats it
+        // as "off", so say so rather than letting it look active.
+        if (on && settings.quiet_hours_start && settings.quiet_hours_start === settings.quiet_hours_end) {
+          tzEl.textContent = 'Start and end are the same \u2014 quiet hours will not apply.';
+        } else {
+          tzEl.textContent = tz ? ('Times are in ' + tz) : '';
+        }
+      }
     }
     function applyAccessibilityPrefs() {
       document.documentElement.classList.toggle('ds-reduced-motion', !!settings.pref_reduced_motion);
@@ -2112,7 +2175,9 @@
         lang_original: settings.lang_original, lang_strict: settings.lang_strict, pref_language: settings.pref_language,
         default_rating_gore: settings.default_rating_gore, default_rating_erotica: settings.default_rating_erotica,
         pref_reduced_motion: settings.pref_reduced_motion, pref_high_contrast: settings.pref_high_contrast,
-        quiet_mode: settings.quiet_mode
+        quiet_mode: settings.quiet_mode,
+        quiet_hours_enabled: settings.quiet_hours_enabled,
+        quiet_hours_start: settings.quiet_hours_start, quiet_hours_end: settings.quiet_hours_end
       }));
 
       // Re-validate the session right before writing to Supabase. `currentSession`
@@ -2156,6 +2221,16 @@
           pref_reduced_motion: settings.pref_reduced_motion,
           pref_high_contrast: settings.pref_high_contrast,
           quiet_mode: settings.quiet_mode,
+          quiet_hours_enabled: settings.quiet_hours_enabled,
+          quiet_hours_start: settings.quiet_hours_start,
+          quiet_hours_end: settings.quiet_hours_end,
+          // ds_is_quiet_hours() evaluates the window in the RECIPIENT's zone,
+          // so a null timezone would silently mean UTC. Fill it from the
+          // browser when the profile has none; never overwrite an existing one.
+          timezone: (function(){
+            if (settings.timezone) return settings.timezone;
+            try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { return null; }
+          })(),
           email_enabled: settings.email_enabled,
           email_digest: settings.email_digest,
           email_payouts: settings.email_payouts
@@ -2281,11 +2356,12 @@
       if (reading) { try { var r = JSON.parse(reading); Object.assign(settings, { reading_bg: r.bg||'default', reading_font: r.font||'lato', reading_font_override: !!r.font_override, reading_fontsize: r.fontsize||16, reading_lineheight: r.lineheight||18, reading_width: r.width||650 }); } catch(e){} }
 
       var misc = localStorage.getItem('ds_settings_misc');
-      if (misc) { try { var m = JSON.parse(misc); ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_echo','notif_announce','privacy_readinglist','privacy_activity','privacy_dm','lang_original','lang_strict','default_rating_gore','default_rating_erotica','pref_reduced_motion','pref_high_contrast','quiet_mode'].forEach(function(k){ if (m[k]!==undefined) settings[k]=m[k]; }); if (m.pref_language) settings.pref_language=m.pref_language; } catch(e){} }
+      if (misc) { try { var m = JSON.parse(misc); ['autoplay','spoilers','notif_follow','notif_chapter','notif_comment','notif_message','notif_echo','notif_announce','privacy_readinglist','privacy_activity','privacy_dm','lang_original','lang_strict','default_rating_gore','default_rating_erotica','pref_reduced_motion','pref_high_contrast','quiet_mode','quiet_hours_enabled'].forEach(function(k){ if (m[k]!==undefined) settings[k]=m[k]; }); if (m.pref_language) settings.pref_language=m.pref_language; if (m.quiet_hours_start) settings.quiet_hours_start=m.quiet_hours_start; if (m.quiet_hours_end) settings.quiet_hours_end=m.quiet_hours_end; } catch(e){} }
     }
 
     function applyAllSettings() {
       applyTheme(settings.theme);
+      renderQuietHours();
       document.getElementById('toggle-safe').classList.toggle('on', settings.filter_safe);
       document.getElementById('filter-safe').classList.toggle('active', settings.filter_safe);
       document.getElementById('toggle-gore').classList.toggle('on', settings.filter_gore);
@@ -2443,6 +2519,10 @@
           if (res.data.pref_reduced_motion !== null && res.data.pref_reduced_motion !== undefined) settings.pref_reduced_motion = res.data.pref_reduced_motion;
           if (res.data.pref_high_contrast  !== null && res.data.pref_high_contrast  !== undefined) settings.pref_high_contrast  = res.data.pref_high_contrast;
           if (res.data.quiet_mode !== null && res.data.quiet_mode !== undefined) settings.quiet_mode = res.data.quiet_mode;
+          if (res.data.quiet_hours_enabled !== null && res.data.quiet_hours_enabled !== undefined) settings.quiet_hours_enabled = res.data.quiet_hours_enabled;
+          if (res.data.quiet_hours_start) settings.quiet_hours_start = String(res.data.quiet_hours_start).slice(0,5);
+          if (res.data.quiet_hours_end)   settings.quiet_hours_end   = String(res.data.quiet_hours_end).slice(0,5);
+          if (res.data.timezone) settings.timezone = res.data.timezone;
           // Email preferences: DB is the source of truth (also toggled by unsubscribe links)
           if (res.data.email_enabled !== null && res.data.email_enabled !== undefined) settings.email_enabled = res.data.email_enabled;
           if (res.data.email_digest  !== null && res.data.email_digest  !== undefined) settings.email_digest  = res.data.email_digest;
