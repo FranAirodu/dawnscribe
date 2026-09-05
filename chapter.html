@@ -314,6 +314,8 @@
     .cmt-edit-save{color:var(--accent);border-color:var(--accent);}
     .cmt-edit-cancel{color:var(--text2);border-color:var(--border);}
     .comment-actions{display:flex;align-items:center;gap:4px;margin-top:4px;}
+    .comment-report-btn{background:transparent;border:none;color:var(--text3);cursor:pointer;padding:3px 6px;border-radius:5px;font-size:12px;font-family:'Lato',sans-serif;transition:color 0.2s;}
+    .comment-report-btn:hover{color:var(--gold);}
     .replies-list{margin-top:8px;padding-left:16px;border-left:2px solid var(--border);display:flex;flex-direction:column;gap:8px;}
     .reply-card{background:var(--bg3);border-radius:8px;padding:10px 12px;}
     .reply-input-wrap{margin-top:8px;padding-left:16px;display:flex;flex-direction:column;gap:6px;}
@@ -2575,6 +2577,7 @@
           + (canEdit ? '<button class="comment-edit-btn"><i class="ti ti-pencil"></i> Edit</button>' : '')
           + (canDelete ? '<button class="comment-delete-btn"><i class="ti ti-trash"></i></button>' : '')
           + (currentSession && currentSession.user.id !== c.user_id ? '<button class="comment-block-btn"><i class="ti ti-ban"></i></button>' : '')
+          + (currentSession && currentSession.user.id !== c.user_id ? '<button class="comment-report-btn" title="Report this comment"><i class="ti ti-flag"></i></button>' : '')
         + '</div>';
 
       if(currentSession){
@@ -2588,6 +2591,11 @@
         });
       }
       if(canEdit){ wireCommentEdit(card, c, 'chapter_comments', '.comment-body'); }
+      if(currentSession && currentSession.user.id !== c.user_id){
+        card.querySelector('.comment-report-btn').addEventListener('click', function(){
+          openCommentReportModal(c.id, card);
+        });
+      }
       if(currentSession && currentSession.user.id !== c.user_id){
         card.querySelector('.comment-block-btn').addEventListener('click', async function(){
           var blockBtn = card.querySelector('.comment-block-btn');
@@ -4436,6 +4444,64 @@
       showToast('Report submitted. Thank you.', 'ti-check');
     }
 
+    // ── COMMENT REPORTING ─────────────────────────────────────────
+    // content_type 'comment' maps to chapter_comments in the admin panel's
+    // removal handler. Before this existed, every report in the system was
+    // content_type 'work', so the panel's comment branch was unreachable and
+    // there was no way at all to report the thing most likely to need
+    // moderating once real users arrive.
+    var _cmtReportId = null;
+    var _cmtReportCard = null;
+
+    function openCommentReportModal(commentId, card) {
+      if (!currentSession) { showToast('Please sign in to report.', 'ti-info-circle'); return; }
+      _cmtReportId = commentId;
+      _cmtReportCard = card;
+      var sel = document.getElementById('cmt-report-reason');
+      if (sel) sel.value = 'harassment';
+      var ta = document.getElementById('cmt-report-detail');
+      if (ta) ta.value = '';
+      document.getElementById('cmt-report-modal').classList.add('show');
+    }
+    function closeCommentReportModal() {
+      document.getElementById('cmt-report-modal').classList.remove('show');
+      _cmtReportId = null; _cmtReportCard = null;
+    }
+    async function submitCommentReport() {
+      if (!_cmtReportId || !currentSession) { closeCommentReportModal(); return; }
+      var reason = document.getElementById('cmt-report-reason').value;
+      var detail = (document.getElementById('cmt-report-detail').value || '').trim();
+      var cid = _cmtReportId, card = _cmtReportCard;
+      closeCommentReportModal();
+
+      // Same duplicate guard the story/prestige reports use: one report per
+      // person per comment per reason. The DB does not enforce this, so a
+      // determined user could still stack reports -- it is a courtesy check,
+      // not a security boundary.
+      try {
+        var dup = await db.from('reports').select('id')
+          .eq('content_id', cid).eq('reporter_id', currentSession.user.id)
+          .eq('reason', reason).maybeSingle();
+        if (dup.data) { showToast('You already reported this comment.', 'ti-info-circle'); return; }
+      } catch (e) {}
+
+      var res = await db.from('reports').insert({
+        content_id: cid,
+        content_type: 'comment',
+        reason: reason,
+        // description is capped at 1000 chars by reports_description_len_chk.
+        description: detail ? detail.slice(0, 1000) : 'Reader reported this comment.',
+        reporter_id: currentSession.user.id,
+        status: 'open'
+      });
+      if (res.error) { showToast('Could not submit report.', 'ti-x'); return; }
+      if (card) {
+        var btn = card.querySelector('.comment-report-btn');
+        if (btn) { btn.innerHTML = '<i class="ti ti-flag-check"></i>'; btn.disabled = true; btn.style.opacity = '0.5'; }
+      }
+      showToast('Report sent to the team. Thank you.', 'ti-check');
+    }
+
     // ── GIF PICKER ────────────────────────────────────────────────
     // GIPHY_API_KEY is defined at the top of the script
     var _gifContext = null;
@@ -5126,5 +5192,27 @@
 <script src="badgeCelebrate.js"></script>
 <script src="muteFilter.js"></script>
 <script src="nav.js"></script>
+    <div class="flag-modal-overlay" id="cmt-report-modal">
+      <div class="flag-modal">
+        <h3><i class="ti ti-flag"></i> Report this comment</h3>
+        <p>Tell us what's wrong with this comment. Reports go to the moderation team &mdash; the commenter is not told who reported them.</p>
+        <label class="form-label" style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;">Reason</label>
+        <select id="cmt-report-reason" class="cmt-edit-ta" style="margin-bottom:12px;">
+          <option value="harassment">Harassment or abuse</option>
+          <option value="spam">Spam or advertising</option>
+          <option value="hate">Hate speech</option>
+          <option value="sexual_content">Sexual content</option>
+          <option value="spoilers">Unmarked spoilers</option>
+          <option value="other">Something else</option>
+        </select>
+        <textarea id="cmt-report-detail" class="cmt-edit-ta" rows="3" maxlength="1000" placeholder="Anything else we should know? (optional)"></textarea>
+        <div class="flag-modal-note" style="margin-top:14px;">Please only report genuine problems. Reporting someone for disagreeing with you isn't a violation.</div>
+        <div class="flag-modal-btns">
+          <button class="flag-modal-cancel" onclick="closeCommentReportModal()">Cancel</button>
+          <button class="flag-modal-submit" onclick="submitCommentReport()">Send report</button>
+        </div>
+      </div>
+    </div>
+
 </body>
 </html>

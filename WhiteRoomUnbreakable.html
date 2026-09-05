@@ -423,7 +423,7 @@
     <!-- ── CONTENT REPORTS ───────────────────────────────────────── -->
     <div class="section" id="sec-reports" data-tab="moderation">
       <div class="section-title"><i class="ti ti-flag"></i> Content Reports</div>
-      <div class="section-sub">User-submitted reports waiting for review. Dismiss to ignore, Remove to delete the content.</div>
+      <div class="section-sub">User-submitted reports waiting for review. Dismiss to ignore, Remove to delete the content. Prestige farming reports are handled in their own panel above.</div>
       <div style="display:flex;gap:6px;margin-bottom:16px;">
         <button class="report-filter-btn active" data-status="open" onclick="setReportFilter(this,'open')">Open</button>
         <button class="report-filter-btn" data-status="resolved" onclick="setReportFilter(this,'resolved')">Resolved</button>
@@ -1294,7 +1294,14 @@
       offset = offset || 0;
       reportOffset = offset;
       var el = document.getElementById('reports-list');
-      var q = db.from('reports').select('*').order('created_at', { ascending: false }).range(offset, offset + pageSize - 1);
+      /* prestige_farming has its own panel above, which groups by work and
+         highlights repeat offenders. Listing those reports here too meant one
+         report in two places: resolve it in one panel and the other still
+         showed it as open until reloaded, and two admins could act twice on
+         the same report. One report, one place. */
+      var q = db.from('reports').select('*')
+        .neq('reason', 'prestige_farming')
+        .order('created_at', { ascending: false }).range(offset, offset + pageSize - 1);
       if (currentReportStatusFilter !== 'all') q = q.eq('status', currentReportStatusFilter);
       var result = await q;
       if (result.error) {
@@ -1339,10 +1346,23 @@
                           : report.content_type === 'review'  ? 'reviews'
                           : report.content_type === 'work'    ? 'works'
                           : null;
-                if (table) {
-                  var delRes = await db.from(table).delete().eq('id', report.content_id);
-                  if (delRes.error) { showToast('Could not delete content: ' + delRes.error.message, 'ti-x'); return; }
+                /* An unmapped content_type used to fall through: the content
+                   was NOT deleted, the report was resolved anyway, and the
+                   toast said "Content removed". The admin was told the thing
+                   was gone when it was still live. Refuse instead, and leave
+                   the report open so it stays in the queue. */
+                if (!table) {
+                  showToast('Unknown content type "' + (report.content_type || 'none') +
+                            '" — nothing was removed and the report is still open.', 'ti-alert-triangle');
+                  return;
                 }
+                var delRes = await db.from(table).delete().eq('id', report.content_id);
+                if (delRes.error) { showToast('Could not delete content: ' + delRes.error.message, 'ti-x'); return; }
+              } else {
+                // No content_id at all: nothing to remove. Say so rather than
+                // resolving with a success message.
+                showToast('This report has no content ID — nothing to remove.', 'ti-alert-triangle');
+                return;
               }
               { var _w7 = await db.from('reports').update({ status: 'resolved' }).eq('id', report.id);
                 if (_w7 && _w7.error) { console.error('[write] WhiteRoomUnbreakable.html:', _w7.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
