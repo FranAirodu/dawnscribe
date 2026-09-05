@@ -1291,6 +1291,28 @@
         chip.style.display = 'inline-flex';
       } catch(e) {}
     }
+  /* Reduce a banner reference to a comparable bucket-relative path.
+     Accepts an absolute URL or a bare path, in either the cosmetic-assets
+     bucket (platform banners) or the banners bucket (member uploads).
+     Returns '' when nothing recognisable is present, and the caller treats
+     '' as "no match" rather than matching everything. */
+  function dsBannerAssetPath(ref) {
+    if (!ref || typeof ref !== 'string') return '';
+    var v = ref.split('?')[0];
+    if (window.DSStorage && DSStorage.pathFromUrl) {
+      var buckets = [DSStorage.BUCKETS.COSMETIC_ASSETS, DSStorage.BUCKETS.BANNERS];
+      for (var i = 0; i < buckets.length; i++) {
+        var hit = DSStorage.pathFromUrl(buckets[i], v);
+        if (hit) return hit;
+      }
+    }
+    /* Bare path, or DSStorage unavailable: strip any leading bucket segment
+       so a stored path and a parsed URL reduce to the same string. */
+    var s = v.replace(/^\/+/, '');
+    s = s.replace(/^(cosmetic-assets|banners)\//, '');
+    return /^https?:/i.test(s) ? '' : s;
+  }
+
 
     function applyProfileData(data, username, isOwner) {
       if (data.display_name) { document.getElementById('display-name').textContent = data.display_name; }
@@ -1334,10 +1356,36 @@
       if (data.banner_url && !data.active_banner_scroll_id) {
         (async function() {
           try {
-            var artRes = await db.from('cosmetic_items')
+            /* Match on the STORAGE PATH, not the absolute URL.
+               cosmetic_items.image_url and profiles.banner_url are both
+               written as absolute URLs today, so a plain equality check
+               works — but only for as long as the serving host never
+               changes. DSStorage.url() resolves either form, so the banner
+               would keep rendering after a CDN move while this lookup
+               silently stopped matching and every artist credit vanished.
+               Silent failure on an attribution feature is the bad kind.
+
+               So: exact match first (one indexed comparison, the normal
+               path), then fall back to comparing bucket-relative paths. The
+               fallback also picks up any row stored in the opposite form. */
+            var a = null;
+            var exact = await db.from('cosmetic_items')
               .select('artist_name,artist_url')
               .eq('slot','banner').eq('image_url', data.banner_url).maybeSingle();
-            var a = artRes.data;
+            a = exact.data;
+
+            if (!a) {
+              var wantPath = dsBannerAssetPath(data.banner_url);
+              if (wantPath) {
+                var allRes = await db.from('cosmetic_items')
+                  .select('artist_name,artist_url,image_url')
+                  .eq('slot','banner');
+                var rows = (allRes.data || []);
+                for (var bi = 0; bi < rows.length; bi++) {
+                  if (dsBannerAssetPath(rows[bi].image_url) === wantPath) { a = rows[bi]; break; }
+                }
+              }
+            }
             if (a && a.artist_name) {
               var chip = document.getElementById('banner-credit-chip');
               document.getElementById('banner-credit-label').textContent = 'Art by ' + a.artist_name;
