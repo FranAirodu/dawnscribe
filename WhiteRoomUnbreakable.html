@@ -548,7 +548,8 @@
         <span id="econ-page-label" style="font-size:12px;color:var(--text3);"></span>
       </div>
       <div class="econ-note">
-        <b>How to read this.</b> <b>Expected</b> is lifetime earned + received + granted, minus everything spent. <b>Unexplained</b> is the balance minus that figure. A positive number means someone holds more than the records account for; a negative one means the ledger claims more than they hold.<br><br>
+        <b>How to read this.</b> <b>Expected</b> is the sum of every entry in the Ember ledger &mdash; every credit and debit that has ever moved on the account. <b>Unexplained</b> is the balance minus that figure, so it should be <b>zero</b>: the ledger is what produces the balance, and any gap means a balance was changed without a matching ledger entry. A positive number means someone holds more than the ledger accounts for; a negative one means the ledger records more movement than they hold.<br><br>
+        <b>Spent</b> comes from a separate log of purchases and rolls, and is shown for context rather than used in the arithmetic. It predates the ledger, so on older accounts it counts spending the ledger never saw &mdash; which is why it can look far larger than the balance would suggest. The same is true of the lifetime earned / received / granted figures; when those disagree with the ledger an account is flagged as <i>bookkeeping only</i>, at a deliberately low weight, because it says nothing about what the account did.<br><br>
         <b>Risk</b> ranks how much an account is worth looking at. Quill mismatches score highest because Quills are bought with real money; Ember gaps, heavy earning over very few chapters, and holding a withdrawable payout balance all add to it. <b>Why</b> spells out what triggered it.<br><br>
         <b>A flag is a prompt, not a verdict.</b> Most drift is an honest bug rather than cheating — click the username to message the account and ask before assuming anything.<br><br>
         <b>24h / 7d</b> are Embers awarded for reading in that window, and <b>Chapters</b> is how many distinct chapters have ever paid out. A large 24h figure spread over very few chapters is the shape Ember farming takes.
@@ -1319,10 +1320,17 @@
       var btn = this;
       btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Sending…';
       try {
-        // Fetch all user IDs
-        var { data: users, error: usersErr } = await db.from('profiles').select('id');
-        if (usersErr) throw usersErr;
-        if (!users || !users.length) { showToast('No users found', 'ti-alert-triangle'); return; }
+        /* This count is used ONLY for the audit line's "of N accounts" half.
+           The RPC fans out server-side, so the client never needs the ids —
+           but "sent to 12 of 400" says something "sent to 12" does not, and
+           the gap between the two numbers IS the opt-in rate. Without it, a
+           blast that legitimately reaches few people looks broken. */
+        var totalAccounts = null;
+        try {
+          var cnt = await db.from('profiles').select('id', { count: 'exact', head: true }).is('deleted_at', null);
+          totalAccounts = cnt.count;
+        } catch (e) { /* the blast matters more than the denominator */ }
+
         // One server-side call: admin_send_notification fans out to every
         // active user itself, so there are no client batches to half-fail.
         var res = await db.rpc('admin_send_notification', {
@@ -1332,12 +1340,25 @@
         if (res.error || !res.data || !res.data.success) {
           var why = (res.data && res.data.error) || (res.error && res.error.message) || 'unknown';
           showToast('Blast failed: ' + why, 'ti-alert-triangle');
+          /* A failed blast used to still write an audit entry claiming it went
+             out. Log the failure as a failure instead. */
+          auditLog('Notification blast FAILED (' + why + '): "' + msg.slice(0,40) + (msg.length>40?'…':'') + '"', 'ti-alert-triangle');
         } else {
-          showToast('Blast sent to ' + res.data.sent + ' users!', 'ti-bell-ringing');
+          var sent = res.data.sent || 0;
+          var ofTotal = (totalAccounts === null || totalAccounts === undefined)
+            ? '' : ' of ' + totalAccounts + ' account' + (totalAccounts === 1 ? '' : 's');
+          showToast('Blast sent to ' + sent + ' user' + (sent === 1 ? '' : 's') + '!', 'ti-bell-ringing');
+          /* Log what was DELIVERED, not how many accounts exist. The old line
+             recorded users.length, so a blast that reached nobody was recorded
+             as reaching everybody — the permanent record overstated every
+             send. Verified 2026-09-05: toast said 0, audit log said 5. */
+          auditLog('Sent notification blast to ' + sent + ofTotal + ': "' + msg.slice(0,40) + (msg.length>40?'…':'') + '"', 'ti-bell-ringing');
+          if (sent === 0) {
+            showToast('Nobody received it — every account has Site Announcements switched off.', 'ti-info-circle');
+          }
         }
         document.getElementById('blast-message').value = '';
         document.getElementById('blast-chars').textContent = '0/200';
-        auditLog('Sent notification blast to ' + users.length + ' users: "' + msg.slice(0,40) + (msg.length>40?'…':'') + '"', 'ti-bell-ringing');
       } catch(err) {
         showToast('Error: ' + err.message, 'ti-x');
       } finally {
