@@ -1110,8 +1110,12 @@
           var modBtn = document.createElement('button');
           modBtn.className = 'modal-action-btn gold';
           modBtn.innerHTML = '<i class="ti ti-shield"></i> Promote to Moderator';
-          modBtn.addEventListener('click', function() {
-            if (confirm('Promote @' + user.username + ' to Moderator?')) { updateUserModStatus(user, true, 'Promoted to moderator'); }
+          modBtn.addEventListener('click', async function() {
+            if (await showConfirmModal('Promote to moderator?',
+                  'Give <strong>@' + escHtml(user.username) + '</strong> moderator powers?',
+                  'Promote', 'Cancel')) {
+              updateUserModStatus(user, true, 'Promoted to moderator');
+            }
           });
           actionsEl.appendChild(modBtn);
         }
@@ -1119,8 +1123,12 @@
           var demoteBtn = document.createElement('button');
           demoteBtn.className = 'modal-action-btn';
           demoteBtn.innerHTML = '<i class="ti ti-shield-off"></i> Remove Moderator Role';
-          demoteBtn.addEventListener('click', function() {
-            if (confirm('Remove moderator role from @' + user.username + '?')) { updateUserModStatus(user, false, 'Moderator role removed from @' + user.username); }
+          demoteBtn.addEventListener('click', async function() {
+            if (await showConfirmModal('Remove moderator role?',
+                  'Take moderator powers away from <strong>@' + escHtml(user.username) + '</strong>?',
+                  'Remove role', 'Cancel')) {
+              updateUserModStatus(user, false, 'Moderator role removed from @' + user.username);
+            }
           });
           actionsEl.appendChild(demoteBtn);
         }
@@ -1128,8 +1136,10 @@
           var banBtn = document.createElement('button');
           banBtn.className = 'modal-action-btn red';
           banBtn.innerHTML = '<i class="ti ti-ban"></i> Ban User';
-          banBtn.addEventListener('click', function() {
-            if (confirm('Ban @' + user.username + '?\n\nThis will set their account_status to "banned". They will be blocked site-wide from reading/posting.')) {
+          banBtn.addEventListener('click', async function() {
+            if (await showConfirmModal('Ban this account?',
+                  'Ban <strong>@' + escHtml(user.username) + '</strong> site-wide. They will be signed out immediately and blocked from reading and posting. Their work stays published.',
+                  'Ban account', 'Cancel', 'var(--red)')) {
               updateUserStatus(user, 'banned', '@' + user.username + ' has been banned');
             }
           });
@@ -1139,8 +1149,10 @@
           var unbanBtn = document.createElement('button');
           unbanBtn.className = 'modal-action-btn green';
           unbanBtn.innerHTML = '<i class="ti ti-circle-check"></i> Unban User';
-          unbanBtn.addEventListener('click', function() {
-            if (confirm('Unban @' + user.username + '? They will regain full site access.')) {
+          unbanBtn.addEventListener('click', async function() {
+            if (await showConfirmModal('Restore this account?',
+                  'Give <strong>@' + escHtml(user.username) + '</strong> full site access again.',
+                  'Unban', 'Cancel', 'var(--green)')) {
               updateUserStatus(user, 'active', '@' + user.username + ' has been unbanned');
             }
           });
@@ -1262,7 +1274,9 @@
           chip.className = 'tag-chip';
           chip.innerHTML = escHtml(tag.name) + '<button title="Remove tag"><i class="ti ti-x"></i></button>';
           chip.querySelector('button').addEventListener('click', async function() {
-            if (!confirm('Remove tag "' + tag.name + '"?\n\nThis will remove it from the available tag list. Existing works that already have this tag will not be affected.')) return;
+            if (!await showConfirmModal('Remove this tag?',
+                  'Remove <strong>' + escHtml(tag.name) + '</strong> from the tag list. Works that already carry it are unaffected &mdash; it just stops being offered.',
+                  'Remove tag', 'Cancel', 'var(--red)')) return;
             var res = await db.from('tags').delete().eq('id', tag.id);
             if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); return; }
             auditLog('Removed tag: "' + tag.name + '"', 'ti-tag');
@@ -1424,7 +1438,10 @@
           });
           card.querySelector('.remove').addEventListener('click', async function() {
             var contentLabel = report.content_type || 'content';
-            if (confirm('Remove this ' + contentLabel + ' (ID: ' + (report.content_id || '?') + ') and resolve the report? This cannot be undone.')) {
+            if (await showConfirmModal('Remove this ' + escHtml(contentLabel) + '?',
+                  'Permanently delete the reported ' + escHtml(contentLabel) +
+                  ' <code>' + escHtml(report.content_id || '?') + '</code> and resolve the report. This cannot be undone.',
+                  'Delete content', 'Cancel', 'var(--red)')) {
               // Delete the actual content if we know its type
               if (report.content_id) {
                 var table = report.content_type === 'chapter' ? 'chapters'
@@ -1802,7 +1819,9 @@
         // Warn author (send notification + resolve reports)
         card.querySelector('.pf-warn').addEventListener('click', async function() {
           if (!work.author_id) { showToast('No author found.', 'ti-x'); return; }
-          if (!confirm('Send a warning notification to @' + authorName + ' for prestige farming?')) return;
+          if (!await showConfirmModal('Warn this author?',
+                'Send <strong>@' + escHtml(authorName) + '</strong> a warning notification about prestige farming, and resolve the reports.',
+                'Send warning', 'Cancel', 'var(--gold)')) return;
           await db.rpc('admin_send_notification', {
             p_type: 'admin_warning',
             p_user_ids: [work.author_id],
@@ -1819,7 +1838,9 @@
 
         // Delete story + warn author + resolve reports
         card.querySelector('.pf-delete').addEventListener('click', async function() {
-          if (!confirm('DELETE "' + (work.title || 'Untitled') + '" and warn the author? This cannot be undone.')) return;
+          if (!await showConfirmModal('Delete this story?',
+                'Permanently delete <strong>' + escHtml(work.title || 'Untitled') + '</strong> and warn its author. This cannot be undone.',
+                'Delete story', 'Cancel', 'var(--red)')) return;
           // Send warning notification
           if (work.author_id) {
             await db.rpc('admin_send_notification', {
