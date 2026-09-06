@@ -1199,13 +1199,19 @@
     async function loadTagCategories(preferred) {
       var sel = document.getElementById('tag-category-input');
       if (!sel) return;
+      /* Via the tag_categories() RPC, NOT select('category') from tags.
+         PostgREST caps a response at 1000 rows and there are ~1450 tags, so
+         the plain select returned only the first 1000 alphabetically and the
+         picker silently showed 30 of 41 categories — everything past "R"
+         (Romance, Setting, Supernatural, World Features…) was missing. A
+         truncated list that looks complete is the same trap as the hardcoded
+         list this replaced. The RPC distincts in Postgres: 41 rows, no cap. */
       var cats = [];
       try {
-        var res = await db.from('tags').select('category').order('category');
-        var seen = {};
+        var res = await db.rpc('tag_categories');
         (res.data || []).forEach(function(r) {
-          var c = (r.category || '').trim();
-          if (c && !seen[c]) { seen[c] = true; cats.push(c); }
+          var c = ((typeof r === 'string' ? r : r.category) || '').trim();
+          if (c) cats.push(c);
         });
       } catch (e) {}
 
