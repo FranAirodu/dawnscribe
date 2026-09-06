@@ -948,11 +948,15 @@
     async function loadCounts() {
       try {
         var [users, works, reports, banned, mods, follows, workFollows] = await Promise.all([
-          window.db.from('profiles').select('id', { count: 'exact', head: true }),
+          // Deleted accounts are excluded so these badges agree with the lists
+          // they label — loadUsers() filters them out, and the admin dashboard
+          // counts the same way. A badge that disagrees with the rows beneath
+          // it teaches you to distrust both.
+          window.db.from('profiles').select('id', { count: 'exact', head: true }).is('deleted_at', null),
           window.db.from('works').select('id', { count: 'exact', head: true }),
           window.db.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'open'),
-          window.db.from('profiles').select('id', { count: 'exact', head: true }).eq('account_status', 'banned'),
-          window.db.from('profiles').select('id', { count: 'exact', head: true }).eq('is_moderator', true),
+          window.db.from('profiles').select('id', { count: 'exact', head: true }).is('deleted_at', null).eq('account_status', 'banned'),
+          window.db.from('profiles').select('id', { count: 'exact', head: true }).is('deleted_at', null).eq('is_moderator', true),
           window.db.from('follows').select('id', { count: 'exact', head: true }),
           window.db.from('work_follows').select('id', { count: 'exact', head: true })
         ]);
@@ -1009,28 +1013,68 @@
       var barsEl = document.getElementById('chart-bars');
       if (!barsEl) return;
       barsEl.innerHTML = '<div style="color:var(--text3);font-size:11px;padding:18px 0;">Loading…</div>';
-      var now = Date.now();
+      /* Buckets must be MONDAY-aligned. The RPCs group by date_trunc('week'),
+         which in Postgres starts on Monday, and the match below is a string
+         comparison of ISO dates. This used to build buckets by subtracting
+         7 days from "now", so on any day except Monday every bucket key was
+         the wrong weekday and NOTHING ever matched — all twelve bars sat at
+         the 4% minimum and the chart looked like an empty strip regardless of
+         the data. Verified 2026-09-06: three real signups, chart showed none. */
+      function mondayOf(ms) {
+        var d = new Date(ms);
+        d.setUTCHours(0, 0, 0, 0);
+        // getUTCDay(): 0=Sun..6=Sat. Sunday belongs to the week that began six
+        // days earlier, not the one starting tomorrow.
+        var back = (d.getUTCDay() + 6) % 7;
+        d.setUTCDate(d.getUTCDate() - back);
+        return d;
+      }
+      var thisMonday = mondayOf(Date.now());
       var buckets = [];
       for (var i = 11; i >= 0; i--) {
-        var weekEnd = now - i * 7 * 86400000;
-        var label = new Date(weekEnd).toLocaleDateString('en', { month:'short', day:'numeric' });
-        buckets.push({ weekStart: new Date(weekEnd - 7*86400000).toISOString().slice(0,10), label: label, count: 0 });
+        var wk = new Date(thisMonday.getTime() - i * 7 * 86400000);
+        buckets.push({
+          weekStart: wk.toISOString().slice(0, 10),
+          label: wk.toLocaleDateString('en', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+          count: 0
+        });
       }
+
+      var loadFailed = false;
       try {
-        // All three chart types use the same weekly aggregation RPC pattern
+        // All four chart types use the same weekly aggregation RPC pattern
         var rpcName = type === 'signups' ? 'get_signup_counts_by_week'
           : type === 'works'   ? 'get_works_counts_by_week'
           : type === 'follows' ? 'get_follows_counts_by_week'
           : 'get_chapters_counts_by_week';
         var res = await window.db.rpc(rpcName, { p_weeks: 12 });
+        if (res.error) throw res.error;
         (res.data || []).forEach(function(row) {
           var rowWeek = (row.week_start || '').slice(0, 10);
           for (var b = 0; b < buckets.length; b++) {
             if (buckets[b].weekStart === rowWeek) { buckets[b].count = Number(row.count || row.signup_count || 0); break; }
           }
         });
-      } catch(e) { /* keep zeros */ }
-      var maxCount = Math.max(1, Math.max.apply(null, buckets.map(function(b){ return b.count; })));
+      } catch(e) {
+        /* Swallowing this and drawing zeros is what hid the alignment bug for
+           so long: a failed load and a quiet twelve weeks looked identical.
+           Say which one it is. */
+        loadFailed = true;
+        console.warn('Chart load failed (' + type + '):', e && e.message);
+      }
+
+      if (loadFailed) {
+        barsEl.innerHTML = '<div style="color:var(--red);font-size:11px;padding:18px 0;">' +
+          'Couldn\u2019t load this chart. The numbers below are unaffected.</div>';
+        return;
+      }
+
+      var maxCount = Math.max.apply(null, buckets.map(function(b){ return b.count; }));
+      if (maxCount === 0) {
+        barsEl.innerHTML = '<div style="color:var(--text3);font-size:11px;padding:18px 0;">' +
+          'Nothing in the last 12 weeks.</div>';
+        return;
+      }
       barsEl.innerHTML = buckets.map(function(b) {
         var pct = Math.max(4, Math.round((b.count / maxCount) * 100));
         return '<div class="chart-bar-wrap" title="' + b.label + ': ' + b.count + '">' +
