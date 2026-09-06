@@ -455,19 +455,14 @@
     <!-- ── TAG MANAGEMENT ───────────────────────────────────────── -->
     <div class="section" id="sec-tags" data-tab="tools">
       <div class="section-title"><i class="ti ti-tags"></i> Tag / Genre Management</div>
-      <div class="section-sub">Add or remove genre tags that users can apply to their works.</div>
+      <div class="section-sub">Add or remove genre tags that users can apply to their works. Categories are read live from the tags already in the catalogue &mdash; pick one so the new tag files itself alongside the others, or choose &ldquo;New category&hellip;&rdquo; only when you really mean to start one.</div>
       <div class="tags-wrap" id="tags-wrap"></div>
       <div class="tag-add-row">
         <input class="form-input" type="text" id="tag-input" placeholder="New tag name…" maxlength="30"/>
-        <select class="form-select" id="tag-category-input" style="max-width:160px;">
-          <option value="General">General</option>
-          <option value="Genre">Genre</option>
-          <option value="Theme">Theme</option>
-          <option value="Content">Content</option>
-          <option value="Format">Format</option>
-          <option value="Setting">Setting</option>
-          <option value="Character">Character</option>
+        <select class="form-select" id="tag-category-input" style="max-width:220px;">
+          <option value="">Loading categories…</option>
         </select>
+        <input class="form-input" type="text" id="tag-new-category" placeholder="New category name…" maxlength="60" style="max-width:200px;display:none;"/>
         <button class="save-btn" id="add-tag-btn" style="padding:10px 18px;"><i class="ti ti-plus"></i> Add</button>
       </div>
     </div>
@@ -1177,6 +1172,57 @@
 
     // ── TAG MANAGEMENT (DB-backed) ─────────────────────────────────
     var tagSearchFilter = '';
+
+    /* The category dropdown used to be a hardcoded list of seven:
+       General, Genre, Theme, Content, Format, Setting, Character.
+       The catalogue actually holds 41 categories, and only ONE of those
+       seven ('Setting') existed. Adding a tag through this panel therefore
+       created a brand-new single-tag category that publish.html rendered as
+       its own heading, quietly fragmenting the taxonomy — with no way to
+       file a tag into any of the real categories.
+
+       Reading them from the tags themselves means the list cannot drift
+       again: whatever categories exist ARE the options. */
+    async function loadTagCategories(preferred) {
+      var sel = document.getElementById('tag-category-input');
+      if (!sel) return;
+      var cats = [];
+      try {
+        var res = await db.from('tags').select('category').order('category');
+        var seen = {};
+        (res.data || []).forEach(function(r) {
+          var c = (r.category || '').trim();
+          if (c && !seen[c]) { seen[c] = true; cats.push(c); }
+        });
+      } catch (e) {}
+
+      sel.innerHTML = '';
+      if (!cats.length) {
+        // No tags at all yet: the only sensible action is to name a category.
+        sel.innerHTML = '<option value="__new__">New category…</option>';
+      } else {
+        cats.forEach(function(c) {
+          var o = document.createElement('option');
+          o.value = c; o.textContent = c;
+          sel.appendChild(o);
+        });
+        var newOpt = document.createElement('option');
+        newOpt.value = '__new__';
+        newOpt.textContent = 'New category…';
+        sel.appendChild(newOpt);
+      }
+      if (preferred && cats.indexOf(preferred) !== -1) sel.value = preferred;
+      toggleNewCategoryInput();
+    }
+
+    function toggleNewCategoryInput() {
+      var sel = document.getElementById('tag-category-input');
+      var inp = document.getElementById('tag-new-category');
+      if (!sel || !inp) return;
+      var isNew = sel.value === '__new__';
+      inp.style.display = isNew ? '' : 'none';
+      if (isNew) inp.focus(); else inp.value = '';
+    }
     async function loadTags(filter) {
       filter = filter || '';
       tagSearchFilter = filter;
@@ -1187,6 +1233,10 @@
       var result = await q;
       if (result.error) { wrap.innerHTML = '<span style="color:var(--red);">Error loading tags: ' + escHtml(result.error.message) + '</span>'; return; }
       renderTags(result.data || []);
+      // Only refresh the picker on an unfiltered load: a search narrows the
+      // rows, and building the category list from a filtered set would hide
+      // most of the real categories.
+      if (!filter) loadTagCategories(document.getElementById('tag-category-input').value);
     }
     function renderTags(tags) {
       var wrap = document.getElementById('tags-wrap');
@@ -1226,20 +1276,35 @@
       var input = document.getElementById('tag-input');
       var val = input.value.trim();
       if (!val) { showToast('Enter a tag name first', 'ti-alert-triangle'); return; }
-      var btn = this; btn.disabled = true;
-      var cat = document.getElementById('tag-category-input').value || 'General';
+      var btn = this;
+      var sel = document.getElementById('tag-category-input');
+      var cat = sel.value;
+      if (cat === '__new__') {
+        cat = (document.getElementById('tag-new-category').value || '').trim();
+        if (!cat) { showToast('Name the new category, or pick an existing one.', 'ti-alert-triangle'); return; }
+      }
+      /* No 'General' default any more. Falling back to a category that does
+         not exist is exactly how the taxonomy fragmented in the first place;
+         better to make the admin choose. */
+      if (!cat) { showToast('Pick a category first.', 'ti-alert-triangle'); return; }
+      btn.disabled = true;
       var result = await db.from('tags').insert({ name: val, category: cat });
       if (result.error) {
         showToast(result.error.message.includes('unique') ? 'Tag already exists' : 'Error: ' + result.error.message, 'ti-alert-triangle');
       } else {
         input.value = '';
-        auditLog('Added tag: "' + val + '"', 'ti-tag');
-        showToast('Tag added!');
+        document.getElementById('tag-new-category').value = '';
+        auditLog('Added tag: "' + val + '" to category "' + cat + '"', 'ti-tag');
+        showToast('Tag added to ' + cat);
         loadTags(tagSearchFilter);
+        // Reload categories with the one just used preselected, so adding
+        // several tags to the same category does not mean re-picking it.
+        await loadTagCategories(cat);
       }
       btn.disabled = false;
     });
     document.getElementById('tag-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') document.getElementById('add-tag-btn').click(); });
+    document.getElementById('tag-category-input').addEventListener('change', toggleNewCategoryInput);
 
     // ── NOTIFICATION BLAST ────────────────────────────────────────
     document.getElementById('send-blast-btn').addEventListener('click', async function() {
