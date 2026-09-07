@@ -1,6 +1,6 @@
 # DawnScribe — Email System
 
-**Last verified:** 2026-08-11 (against the live DB, not from notes)
+**Last verified:** 2026-09-06 (against the live DB, not from notes)
 
 Goal: **send as few emails as possible.** Resend's free tier is 100/day and
 **Auth SMTP shares that same allowance** — so digest volume can starve signup
@@ -27,7 +27,7 @@ deliberately outside that switch.
 
 ## 1. Daily digest — the volume risk
 
-- **Current state: 1 of 51 notification types is `email_worthy`** — `admin_warning` only.
+- **Current state: 1 of 54 notification types is `email_worthy`** — `admin_warning` only.
   Everything else is in-app only.
 - `email_worthy` defaults to **false**, so a newly added notification type is
   silent until someone explicitly opts it in. Correct direction on a tight quota.
@@ -80,6 +80,10 @@ the allowance, **new users cannot register.** This is the mail that must always 
 ## Knobs, in one place
 
 - `notification_types.email_worthy` — per-type digest opt-in (currently only `admin_warning`)
+- `notification_types.bypass_quiet` — per-type exemption from Quiet Hours (currently
+  only `admin_warning`). Unrelated to email, but it is the other per-type flag and
+  defaults to false the same way: a new type that must always reach the user needs
+  this set at creation or `ds_notify()` will drop it during quiet hours.
 - pg_cron `daily-email-digest` body `cap` — daily digest ceiling (currently 20)
 - `profiles.email_enabled` — user master switch
 - `profiles.email_payouts` — user payout-mail switch
