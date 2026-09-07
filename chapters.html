@@ -1225,6 +1225,19 @@
     if (!session) { window.location.href = 'auth.html'; return; }
     currentSession = session;
 
+    /* Content filters for the "link a novel" picker below. This page is an
+       author tool, so its own queries are deliberately unfiltered — you must
+       be able to see your own drafts, whatever their rating. But lnSearchAny()
+       searches the WHOLE published catalogue, which makes it a reader-facing
+       surface hiding inside an author tool, and it was applying no content
+       filtering at all. Same shape as the nav.js search-preview leak.
+       Failures are swallowed: a filter that cannot load must not break the
+       page an author is trying to publish from. */
+    try { await DSWarn.init(db); } catch (e) {}
+    try { await DSTags.init(db); } catch (e) {}
+    try { await DSMute.init(db); } catch (e) {}
+    try { await lnLoadContentPrefs(); } catch (e) {}
+
     var res = await db.from('works').select('*').eq('id', workId).eq('author_id', currentSession.user.id).maybeSingle();
     if (!res.data) { document.getElementById('work-title-el').textContent = 'Work not found or access denied.'; return; }
     workData = res.data;
@@ -3008,15 +3021,56 @@
     }).join('');
   }
 
+  /* Mirrors dsLoadSearchPrefs() in nav.js. Restrictive until the profile
+     loads, so a slow round-trip shows less rather than more. */
+  var lnPrefs = { safe: true, gore: false, erotica: false, warnings: [] };
+  async function lnLoadContentPrefs() {
+    if (!currentSession) return;
+    var res = await db.from('profiles')
+      .select('settings_filter_safe,settings_filter_gore,settings_filter_erotica,filtered_content_warnings')
+      .eq('id', currentSession.user.id).maybeSingle();
+    var p = res.data;
+    if (!p) { lnPrefs = { safe: false, gore: true, erotica: true, warnings: [] }; return; }
+    lnPrefs.safe     = p.settings_filter_safe === true;
+    lnPrefs.gore     = p.settings_filter_gore !== false;
+    lnPrefs.erotica  = p.settings_filter_erotica !== false;
+    lnPrefs.warnings = Array.isArray(p.filtered_content_warnings) ? p.filtered_content_warnings : [];
+  }
+
+  /* Server-side half: muted authors and mature ratings never leave the DB. */
+  function lnFilterQuery(q) {
+    if (window.DSMute) q = DSMute.filterQuery(q);
+    if (lnPrefs.safe || !lnPrefs.gore)    q = q.neq('content_rating_gore', true);
+    if (lnPrefs.safe || !lnPrefs.erotica) q = q.neq('content_rating_erotica', true);
+    (lnPrefs.warnings || []).forEach(function (w) {
+      q = q.not('content_warnings', 'cs', JSON.stringify([w]));
+    });
+    return q;
+  }
+
+  /* Client-side half, for anything the query cannot express. A missing field
+     counts as KEEP, never hide — an RPC that omits a column must not blank
+     the whole list. */
+  function lnPasses(w) {
+    if (window.DSWarn && DSWarn.isBlocked && DSWarn.isBlocked(w)) return false;
+    if (window.DSTags && DSTags.isBlocked && DSTags.isBlocked(w)) return false;
+    if (window.DSMute && DSMute.isBlocked && DSMute.isBlocked(w)) return false;
+    return true;
+  }
+
   async function lnSearchAny(q) {
     if (!q || q.trim().length < 2) { document.getElementById('ln-friend-results').innerHTML = '<div style="padding:6px;font-size:12px;color:var(--text3);">Type at least 2 characters…</div>'; return; }
     var existIds = lnExisting.map(function(l){ return l.linked_work_id; });
-    var { data: works } = await db.from('works').select('id,title,cover_url,author_id,language')
+    var lnQ = db.from('works')
+      .select('id,title,cover_url,author_id,language,content_rating_gore,content_rating_erotica,content_warnings,tags_all')
       .ilike('title', '%' + escapeLike(q.trim()) + '%')
       .eq('type', 'novel').eq('is_published', true)
-      .neq('id', workId)
-      .limit(10);
-    var filtered = (works || []).filter(function(w){ return existIds.indexOf(w.id) === -1; });
+      .neq('id', workId);
+    lnQ = lnFilterQuery(lnQ);
+    var { data: works } = await lnQ.limit(10);
+    var filtered = (works || []).filter(function(w){
+      return existIds.indexOf(w.id) === -1 && lnPasses(w);
+    });
     var el = document.getElementById('ln-friend-results');
     if (!filtered.length) { el.innerHTML = '<div style="padding:6px;font-size:12px;color:var(--text3);">No stories found.</div>'; return; }
     var aIds = Array.from(new Set(filtered.map(function(w){ return w.author_id; }).filter(Boolean)));
@@ -3140,6 +3194,9 @@
   </div>
 </div>
 
+<script src="contentWarnings.js"></script>
+<script src="tagPrefs.js"></script>
+<script src="muteFilter.js"></script>
 <script src="characterTitles.js"></script>
 <script>
   // ── CHARACTER MANAGER (chapters.html) ────────────────────────
