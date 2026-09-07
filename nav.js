@@ -91,6 +91,15 @@ async function dsLoadSearchPrefs() {
 
 // Applies every discovery filter to a works query for the search preview.
 function dsFilterSearchQuery(q, p) {
+  /* Muted authors. The search preview loads on every page and Settings
+     promises muting hides work from "your feeds and search", so it belongs
+     here. Server-side via the is_muted_for_me computed column, so muted rows
+     never reach the browser.
+
+     NOTE: this line was lost once already, when nav.js was rebuilt from a
+     stale project snapshot for an unrelated fix. If you are editing nav.js,
+     start from the DEPLOYED file, not from a local copy. */
+  if (window.DSMute) q = DSMute.filterQuery(q);
   if (p.safe || !p.gore)    q = q.neq('content_rating_gore', true);
   if (p.safe || !p.erotica) q = q.neq('content_rating_erotica', true);
   (p.warnings || []).forEach(function (w) {
