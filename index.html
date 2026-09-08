@@ -12,16 +12,42 @@
   </script>
   <script>
     (function() {
+      // Early paint only: writes the stored accent before nav.js loads so the
+      // page does not flash the default teal. nav.js then REPLACES this with the
+      // clamped, per-theme version via dsApplyAccent().
+      //
+      // This used to emit the raw hex with no clamp and no light/dim variants,
+      // which silently undid the readability clamp on this page — light mode kept
+      // a 1.86:1 accent. It now applies the same clamp inline. Keep the two in
+      // step, or delete this block and accept the flash.
       var h = localStorage.getItem('ds_accent_hex');
       if (!h) return;
-      var d = h.replace('#','');
-      var r = Math.max(0, parseInt(d.slice(0,2),16) - 30);
-      var g = Math.max(0, parseInt(d.slice(2,4),16) - 30);
-      var b = Math.max(0, parseInt(d.slice(4,6),16) - 30);
-      var h2 = '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
+      function _rgb(x){ x = x.replace('#',''); return { r:parseInt(x.slice(0,2),16), g:parseInt(x.slice(2,4),16), b:parseInt(x.slice(4,6),16) }; }
+      function _hex(c){ return '#' + [c.r,c.g,c.b].map(function(v){ return Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0'); }).join(''); }
+      function _lum(c){ var f=function(v){ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); }; return 0.2126*f(c.r)+0.7152*f(c.g)+0.0722*f(c.b); }
+      function _cr(a,b){ var l1=_lum(a), l2=_lum(b); return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05); }
+      function _clamp(hex, bgHex){
+        var c=_rgb(hex), bg=_rgb(bgHex);
+        if (_cr(c,bg) >= 4.5) return hex;
+        var dark = _lum(bg) > 0.5, best = c;
+        for (var i=1;i<=40;i++){
+          var t=i/40;
+          var cand = dark ? { r:c.r*(1-t), g:c.g*(1-t), b:c.b*(1-t) }
+                          : { r:c.r+(255-c.r)*t, g:c.g+(255-c.g)*t, b:c.b+(255-c.b)*t };
+          best = cand;
+          if (_cr(cand,bg) >= 4.5) break;
+        }
+        return _hex(best);
+      }
+      function _shade(x){ var c=_rgb(x); var up=_lum(c)<0.25; return _hex(up?{r:c.r+20,g:c.g+20,b:c.b+20}:{r:c.r-30,g:c.g-30,b:c.b-30}); }
+      function _trip(x){ var c=_rgb(x); return c.r+', '+c.g+', '+c.b; }
+      var aD=_clamp(h,'#22223a'), aM=_clamp(h,'#34344c'), aL=_clamp(h,'#d8d8e8');
       var s = document.createElement('style');
       s.id = 'ds-accent-override';
-      s.textContent = ':root { --accent: ' + h + ' !important; --accent2: ' + h2 + ' !important; }';
+      s.textContent =
+        ':root { --accent: ' + aD + ' !important; --accent2: ' + _shade(aD) + ' !important; --accent-rgb: ' + _trip(aD) + ' !important; }' +
+        'html[data-theme="dim"] { --accent: ' + aM + ' !important; --accent2: ' + _shade(aM) + ' !important; --accent-rgb: ' + _trip(aM) + ' !important; }' +
+        'html[data-theme="light"] { --accent: ' + aL + ' !important; --accent2: ' + _shade(aL) + ' !important; --accent-rgb: ' + _trip(aL) + ' !important; }';
       document.head.appendChild(s);
     })();
   </script>
@@ -4844,18 +4870,23 @@ function dsLoadLayoutFromCache() {
         try {
           if (accentRes.data && accentRes.data.accent_color && accentRes.data.accent_color.hex) {
             var ac = accentRes.data.accent_color;
-            var _h = ac.hex.replace('#','');
-            var _r = Math.max(0, parseInt(_h.slice(0,2),16) - 30);
-            var _g = Math.max(0, parseInt(_h.slice(2,4),16) - 30);
-            var _b = Math.max(0, parseInt(_h.slice(4,6),16) - 30);
-            var _hex2 = '#' + [_r,_g,_b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
-            var _stroke = ac.stroke ? '.logo, .footer-logo { -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }' : '';
-            var _old = document.getElementById('ds-accent-override');
-            if (_old) _old.remove();
-            var _st = document.createElement('style');
-            _st.id = 'ds-accent-override';
-            _st.textContent = ':root{--accent:'+ac.hex+' !important;--accent2:'+_hex2+' !important;}html' + _stroke;
-            document.head.appendChild(_st);
+            // Defer to nav.js's dsApplyAccent(): it clamps the colour for
+            // readability and emits per-theme values. This block used to write
+            // its own #ds-accent-override from the raw hex, which replaced the
+            // clamped one and left light mode with an unreadable accent.
+            if (typeof window.dsApplyAccent === 'function') {
+              window.dsApplyAccent(ac.hex);
+            }
+            // The logo stroke is this page's own concern, so it stays here — in
+            // a separate element so it cannot clobber the accent override.
+            var _strokeOld = document.getElementById('ds-accent-stroke');
+            if (_strokeOld) _strokeOld.remove();
+            if (ac.stroke) {
+              var _stEl = document.createElement('style');
+              _stEl.id = 'ds-accent-stroke';
+              _stEl.textContent = '.logo, .footer-logo { -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }';
+              document.head.appendChild(_stEl);
+            }
             localStorage.setItem('ds_accent_hex', ac.hex);
           } else {
             localStorage.setItem('ds_accent_hex', '#2dd4bf');

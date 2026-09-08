@@ -207,14 +207,26 @@ function dsApplyAccent(hex) {
       : { r: c.r-30, g: c.g-30, b: c.b-30 });
   }
 
+  // --accent-rgb is the bare "r, g, b" triple for rgba(var(--accent-rgb), a)
+  // tints. It was used in three places in the welcome modal but never defined
+  // anywhere, so those rules were invalid CSS and rendered nothing.
+  function dsRgbTriple(h) {
+    var c = dsHexToRgb(h);
+    return c ? (c.r + ', ' + c.g + ', ' + c.b) : '45, 212, 191';
+  }
+
   var st = document.createElement('style');
   st.id = 'ds-accent-override';
   st.textContent =
-    ':root { --accent: ' + accentDark + ' !important; --accent2: ' + dsShade(accentDark) + ' !important; }' +
-    'html[data-theme="dim"] { --accent: ' + accentDim + ' !important; --accent2: ' + dsShade(accentDim) + ' !important; }' +
-    'html[data-theme="light"] { --accent: ' + accentLight + ' !important; --accent2: ' + dsShade(accentLight) + ' !important; }';
+    ':root { --accent: ' + accentDark + ' !important; --accent2: ' + dsShade(accentDark) + ' !important; --accent-rgb: ' + dsRgbTriple(accentDark) + ' !important; }' +
+    'html[data-theme="dim"] { --accent: ' + accentDim + ' !important; --accent2: ' + dsShade(accentDim) + ' !important; --accent-rgb: ' + dsRgbTriple(accentDim) + ' !important; }' +
+    'html[data-theme="light"] { --accent: ' + accentLight + ' !important; --accent2: ' + dsShade(accentLight) + ' !important; --accent-rgb: ' + dsRgbTriple(accentLight) + ' !important; }';
   document.head.appendChild(st);
 }
+// Pages used to hand-roll their own #ds-accent-override style from the raw
+// stored hex. Those copies had no readability clamp and no per-theme values, so
+// they silently undid this one. Expose the real applier so a page can just call it.
+window.dsApplyAccent = dsApplyAccent;
 (function(){ var c = localStorage.getItem('ds_accent_hex'); if (c) dsApplyAccent(c); })();
 
 (function() {
