@@ -5647,14 +5647,32 @@ function dsLoadLayoutFromCache() {
       var snoozed = parseInt(localStorage.getItem('ds_welcome_snooze_' + uid) || '0', 10);
       if (snoozed && (Date.now() - snoozed) < 24 * 60 * 60 * 1000) return;
       // Bug 3: wrap in try/catch so a failed profile lookup never throws
-      Promise.resolve(
-        db.from('profiles').select('display_name,username').eq('id', uid).maybeSingle()
-      ).then(function(res) {
+      // `date_of_birth`, `onboarding_done` and `welcome_grant_seen` are NOT
+      // readable through a plain select — `authenticated` has no SELECT grant on
+      // date_of_birth, and the three were never in the column list anyway. They
+      // came back undefined, so `!p.date_of_birth` was true for EVERY user and
+      // this modal reappeared forever. get_my_private_profile() is the sanctioned
+      // reader for own-profile private fields; merge it with the public columns.
+      Promise.resolve(Promise.all([
+        db.from('profiles').select('display_name,username').eq('id', uid).maybeSingle(),
+        db.rpc('get_my_private_profile')
+      ])).then(function(both) {
+        var res = both[0];
+        var priv = both[1];
         if (!res || !res.data) return;
         var p = res.data;
+        var pv = (priv && !priv.error && priv.data && priv.data[0]) ? priv.data[0] : {};
+        p.date_of_birth    = pv.date_of_birth;
+        p.onboarding_done  = pv.onboarding_done;
+        p.welcome_grant_seen = pv.welcome_grant_seen;
+        // If the RPC failed we cannot tell whether identity is missing. Treat it
+        // as present rather than forcing an unnecessary DOB write that the
+        // once-per-12-months guard would reject with a 400.
+        window._wPrivReadOk = !!(priv && !priv.error && priv.data);
+        window._wHasDob = !!pv.date_of_birth;
         // OAuth signups skip auth.html's form, so username/DOB can be null —
         // those fields become required here and "Skip for now" is disabled.
-        window._wNeedsIdentity = !p.username || !p.date_of_birth;
+        window._wNeedsIdentity = window._wPrivReadOk ? (!p.username || !p.date_of_birth) : !p.username;
         // welcome_grant_seen is the durable, server-side 'fully onboarded' record —
         // it survives a cleared cache or a new device where the localStorage flag is absent.
         // Backfill the local flag from it so the fast-path check short-circuits next time.
@@ -5756,7 +5774,14 @@ function dsLoadLayoutFromCache() {
         }
         var bio = (document.getElementById('w-bio').value || '').trim();
         var patch = { display_name: name, bio: bio || null };
-        if (identityPatch.username) { patch.username = identityPatch.username; patch.date_of_birth = identityPatch.date_of_birth; }
+        if (identityPatch.username) {
+          patch.username = identityPatch.username;
+          // Only set the DOB when the profile genuinely has none. guard_dob_change()
+          // allows one self-service change per 12 months and raises a check_violation
+          // (HTTP 400) otherwise — re-sending an unchanged DOB used to fail the whole
+          // update and block the user on this step.
+          if (!window._wHasDob) patch.date_of_birth = identityPatch.date_of_birth;
+        }
         db.from('profiles').update(patch).eq('id', uid).then(function(res) {
           // Bug 2: check for error before advancing
           if (res && res.error) {
