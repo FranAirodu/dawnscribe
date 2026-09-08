@@ -136,14 +136,78 @@ function dsApplyAccent(hex) {
   var existing = document.getElementById('ds-accent-override');
   if (existing) existing.remove();
   if (!hex) return;
-  var d = hex.replace('#','');
-  var r = Math.max(0, parseInt(d.slice(0,2),16) - 30);
-  var g = Math.max(0, parseInt(d.slice(2,4),16) - 30);
-  var b = Math.max(0, parseInt(d.slice(4,6),16) - 30);
-  var hex2 = '#' + [r,g,b].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
+
+  /* ── Readability clamp ──────────────────────────────────────────
+     The accent is a user-chosen colour but it carries body-sized text:
+     links, titles, tab labels. A pale pick lands below the 4.5:1 WCAG AA
+     floor and the user has no way to know why their site got hard to read.
+
+     So we keep the HUE they chose and darken (light theme) or lighten
+     (dark/dim themes) only as far as needed to clear the floor against
+     that theme's page background. A colour that already passes is left
+     completely untouched — most picks never move at all.
+
+     Per-theme because the requirement inverts: on a light canvas the
+     accent must be dark enough, on a dark canvas light enough. The same
+     hex cannot satisfy both, which is why each theme gets its own value. */
+
+  function dsHexToRgb(h) {
+    h = String(h || '').replace('#','');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+    return { r: parseInt(h.slice(0,2),16), g: parseInt(h.slice(2,4),16), b: parseInt(h.slice(4,6),16) };
+  }
+  function dsRgbToHex(c) {
+    return '#' + [c.r,c.g,c.b].map(function(v){
+      return Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2,'0');
+    }).join('');
+  }
+  function dsRelLum(c) {
+    var f = function(v){ v /= 255; return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); };
+    return 0.2126*f(c.r) + 0.7152*f(c.g) + 0.0722*f(c.b);
+  }
+  function dsContrast(a, b) {
+    var l1 = dsRelLum(a), l2 = dsRelLum(b);
+    return (Math.max(l1,l2) + 0.05) / (Math.min(l1,l2) + 0.05);
+  }
+  // Scale toward black or white in small steps, preserving hue direction.
+  function dsClampAccent(hexIn, bgHex, target) {
+    var c = dsHexToRgb(hexIn), bg = dsHexToRgb(bgHex);
+    if (!c || !bg) return hexIn;
+    if (dsContrast(c, bg) >= target) return hexIn;   // already fine: do not touch
+    var darken = dsRelLum(bg) > 0.5;                 // light canvas -> darken the accent
+    var best = c;
+    for (var i = 1; i <= 40; i++) {
+      var t = i / 40;
+      var cand = darken
+        ? { r: c.r*(1-t), g: c.g*(1-t), b: c.b*(1-t) }
+        : { r: c.r+(255-c.r)*t, g: c.g+(255-c.g)*t, b: c.b+(255-c.b)*t };
+      best = cand;
+      if (dsContrast(cand, bg) >= target) break;
+    }
+    return dsRgbToHex(best);
+  }
+
+  var AA = 4.5;
+  var accentDark  = dsClampAccent(hex, '#0a0a0f', AA);   // dark  theme page bg
+  var accentDim   = dsClampAccent(hex, '#1c1c21', AA);   // dim   theme page bg
+  var accentLight = dsClampAccent(hex, '#f4f4f8', AA);   // light theme page bg
+
+  // --accent2 stays the "one shade further" companion it always was.
+  function dsShade(h) {
+    var c = dsHexToRgb(h); if (!c) return h;
+    var lighten = dsRelLum(c) < 0.25;                 // very dark accents shade upward
+    return dsRgbToHex(lighten
+      ? { r: c.r+20, g: c.g+20, b: c.b+20 }
+      : { r: c.r-30, g: c.g-30, b: c.b-30 });
+  }
+
   var st = document.createElement('style');
   st.id = 'ds-accent-override';
-  st.textContent = ':root { --accent: ' + hex + ' !important; --accent2: ' + hex2 + ' !important; } html[data-theme="light"] { --accent: ' + hex + ' !important; --accent2: ' + hex2 + ' !important; }';
+  st.textContent =
+    ':root { --accent: ' + accentDark + ' !important; --accent2: ' + dsShade(accentDark) + ' !important; }' +
+    'html[data-theme="dim"] { --accent: ' + accentDim + ' !important; --accent2: ' + dsShade(accentDim) + ' !important; }' +
+    'html[data-theme="light"] { --accent: ' + accentLight + ' !important; --accent2: ' + dsShade(accentLight) + ' !important; }';
   document.head.appendChild(st);
 }
 (function(){ var c = localStorage.getItem('ds_accent_hex'); if (c) dsApplyAccent(c); })();
