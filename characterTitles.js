@@ -988,7 +988,7 @@ window.CharacterTitles = (function() {
 
       var titlesHtml = top3.length
         ? top3.map(function(e, i){
-            var catColor = { personality:'var(--accent)', role:'var(--gold)', dawnscribe:'#a78bfa', relationship:'#f472b6', fan_reaction:'#fb923c', negative:'var(--red)' };
+            var catColor = { personality:'var(--accent)', role:'var(--gold)', dawnscribe:'var(--ct-violet)', relationship:'var(--ct-pink)', fan_reaction:'var(--ct-orange)', negative:'var(--red)' };
             var color = catColor[e.title.category] || 'var(--accent)';
             // If aura voted, blend: border uses aura, text keeps category color
             var borderColor = aura ? aura : color;
