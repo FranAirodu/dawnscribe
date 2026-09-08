@@ -621,22 +621,6 @@ window.CharacterTitles = (function() {
     return map;
   }
 
-
-  // --- Block enforcement (Pass 4) -------------------------------------------
-  // Blocks are enforced in RLS via blocked_no_insert_* RESTRICTIVE policies on
-  // character_questions / _opinions / _quotes / _song_suggestions. The DB is the
-  // authority; this only turns the denial into a message a human understands.
-  // PostgREST returns 42501 for an RLS with-check failure.
-  function ctIsBlockDenial(err) {
-    if (!err) return false;
-    var code = err.code || '';
-    var msg  = (err.message || String(err)).toLowerCase();
-    return code === '42501' || msg.indexOf('row-level security') !== -1;
-  }
-  function ctBlockToast() {
-    ctToast('You can\u2019t contribute to this author\u2019s characters.', 'ti-ban');
-  }
-
   // Submit a song suggestion
   async function submitSongSuggestion(charId, workId, chapterId, userId, youtubeUrl, songTitle, artistName) {
     var vid = ytId(youtubeUrl);
@@ -647,7 +631,6 @@ window.CharacterTitles = (function() {
       user_id: userId, youtube_url: cleanUrl, song_title: songTitle.trim(),
       artist_name: artistName.trim(), status: 'pending'
     });
-    if (ctIsBlockDenial(error)) return { error: 'You can\u2019t contribute to this author\u2019s characters.' };
     return { error: error ? error.message : null };
   }
 
@@ -909,14 +892,14 @@ window.CharacterTitles = (function() {
       if (currentUserSession && !isOwner && char.status !== 'ended') {
         var votedToday = !!fc.voted_today;
         fanBtnHtml = '<button class="ct-fan-vote-btn" data-fan-char="' + esc(char.id) + '"' + (votedToday ? ' disabled' : '') +
-          ' style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:14px;border:1px solid rgba(236,72,153,0.45);background:' + (votedToday ? 'rgba(236,72,153,0.18)' : 'transparent') + ';color:#ec4899;font-size:11px;font-weight:700;cursor:' + (votedToday ? 'default' : 'pointer') + ';font-family:inherit;">' +
+          ' style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:14px;border:1px solid rgba(236,72,153,0.45);background:' + (votedToday ? 'rgba(236,72,153,0.18)' : 'transparent') + ';color: var(--ct-rose);font-size:11px;font-weight:700;cursor:' + (votedToday ? 'default' : 'pointer') + ';font-family:inherit;">' +
           '<i class="ti ti-heart"></i> ' + (votedToday ? 'Voted today' : 'Fan Vote') + '</button>';
       }
       var fanRowHtml =
         '<div class="ct-fan-vote-row" style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;padding:2px 0 6px;">' +
           fanBtnHtml +
           '<span class="ct-fan-counts" data-fan-counts="' + esc(char.id) + '" style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:14px;border:1px solid rgba(236,72,153,0.3);font-size:10.5px;color:var(--text3);">' +
-            '<i class="ti ti-heart" style="color:#ec4899;font-size:10px;"></i> ' +
+            '<i class="ti ti-heart" style="color: var(--ct-rose);font-size:10px;"></i> ' +
             '<strong style="color:var(--text2);">' + (fc.total_votes || 0) + '</strong>&nbsp;all-time \u00b7 ' +
             '<strong style="color:var(--text2);">' + (fc.month_votes || 0) + '</strong>&nbsp;this month' +
           '</span>' +
@@ -953,7 +936,7 @@ window.CharacterTitles = (function() {
         .sort(function(a,b){ return (b.is_featured?1e6:0) + (EXP.quoteVotes[b.id]||0) - ((a.is_featured?1e6:0) + (EXP.quoteVotes[a.id]||0)); });
       var topQuote = charQuotes[0];
       var quoteStripHtml = topQuote
-        ? '<div class="ct-quote-strip"><div class="ct-opinion-label" style="color:#a78bfa;"><i class="ti ti-quote"></i> Quote Wall</div><div class="ct-opinion-body">' + esc('\u201c' + topQuote.quote_text + '\u201d') + '</div></div>'
+        ? '<div class="ct-quote-strip"><div class="ct-opinion-label" style="color: var(--violet);"><i class="ti ti-quote"></i> Quote Wall</div><div class="ct-opinion-body">' + esc('\u201c' + topQuote.quote_text + '\u201d') + '</div></div>'
         : '';
 
       var charFanArt = EXP.fanArt[char.id] || [];
@@ -1118,7 +1101,7 @@ window.CharacterTitles = (function() {
 
       var hasCosmetics = charCosmetics.length > 0;
       var cosmeticTabBtn = (hasCosmetics || (currentUserSession && !isOwner))
-        ? '<button class="ct-flip-trigger ct-flip-cosmetics" title="Character cosmetics" style="color:#f59e0b;border-color:rgba(245,158,11,0.35);"><i class="ti ti-palette"></i>' + (hasCosmetics ? ' ' + charCosmetics.length : '') + '</button>'
+        ? '<button class="ct-flip-trigger ct-flip-cosmetics" title="Character cosmetics" style="color: var(--ct-gold);border-color:rgba(245,158,11,0.35);"><i class="ti ti-palette"></i>' + (hasCosmetics ? ' ' + charCosmetics.length : '') + '</button>'
         : '';
 
       // Flip card structure
@@ -1201,23 +1184,23 @@ window.CharacterTitles = (function() {
             submitFanArtBtnHtml +
             addLandscapeBtnHtml +
             (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
-            (approvedOpinions.length ? '<button class="ct-flip-trigger ct-flip-opinions" title="View reader opinions" style="color:#ec4899;border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-heart"></i> ' + approvedOpinions.length + ' opinion' + (approvedOpinions.length > 1 ? 's' : '') + '</button>' : '') +
+            (approvedOpinions.length ? '<button class="ct-flip-trigger ct-flip-opinions" title="View reader opinions" style="color: var(--ct-rose);border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-heart"></i> ' + approvedOpinions.length + ' opinion' + (approvedOpinions.length > 1 ? 's' : '') + '</button>' : '') +
             // Book Card only: opinions are chapter-scoped everywhere else, so the
             // book card needs its own "share a take" entry (chapter-agnostic).
-            ((isBook && currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-book-take-btn" title="Share your take on this book" style="color:#ec4899;border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-plus"></i> Share a Take</button>' : '') +
+            ((isBook && currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-book-take-btn" title="Share your take on this book" style="color: var(--ct-rose);border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-plus"></i> Share a Take</button>' : '') +
             ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
             (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
             cosmeticTabBtn +
-            (isBook ? '' : '<button class="ct-flip-trigger" data-open="dynamics" style="color:#38bdf8;border-color:rgba(56,189,248,0.35);"><i class="ti ti-arrows-left-right"></i>' + (charDyns.length ? ' ' + charDyns.length : ' Dynamics') + '</button>') +
-            '<button class="ct-flip-trigger" data-open="quotes" style="color:#a78bfa;border-color:rgba(167,139,250,0.35);"><i class="ti ti-quote"></i>' + (charQuotes.length ? ' ' + charQuotes.length : ' Quotes') + ((isOwner && charPendQuotes) ? ' <span class="ct-pend-dot">' + charPendQuotes + '</span>' : '') + '</button>' +
-            (isBook ? '' : '<button class="ct-flip-trigger" data-open="traits" style="color:#34d399;border-color:rgba(52,211,153,0.35);"><i class="ti ti-adjustments-horizontal"></i> Traits</button>') +
+            (isBook ? '' : '<button class="ct-flip-trigger" data-open="dynamics" style="color: var(--ct-sky);border-color:rgba(56,189,248,0.35);"><i class="ti ti-arrows-left-right"></i>' + (charDyns.length ? ' ' + charDyns.length : ' Dynamics') + '</button>') +
+            '<button class="ct-flip-trigger" data-open="quotes" style="color: var(--violet);border-color:rgba(167,139,250,0.35);"><i class="ti ti-quote"></i>' + (charQuotes.length ? ' ' + charQuotes.length : ' Quotes') + ((isOwner && charPendQuotes) ? ' <span class="ct-pend-dot">' + charPendQuotes + '</span>' : '') + '</button>' +
+            (isBook ? '' : '<button class="ct-flip-trigger" data-open="traits" style="color: var(--ct-green);border-color:rgba(52,211,153,0.35);"><i class="ti ti-adjustments-horizontal"></i> Traits</button>') +
             '<button class="ct-flip-trigger" data-open="vibe" style="' + (moodHex ? 'color:'+moodHex+';border-color:'+moodHex+'55;' : '') + '"><i class="ti ti-mood-neutral"></i> Vibe</button>' +
-            '<button class="ct-flip-trigger" data-open="ask" style="color:#fbbf24;border-color:rgba(251,191,36,0.35);"><i class="ti ti-help-circle"></i>' + (charAnsweredQs.length ? ' ' + charAnsweredQs.length : ' Ask') + ((isOwner && charPendQ) ? ' <span class="ct-pend-dot">' + charPendQ + '</span>' : '') + '</button>' +
+            '<button class="ct-flip-trigger" data-open="ask" style="color: var(--ct-amber);border-color:rgba(251,191,36,0.35);"><i class="ti ti-help-circle"></i>' + (charAnsweredQs.length ? ' ' + charAnsweredQs.length : ' Ask') + ((isOwner && charPendQ) ? ' <span class="ct-pend-dot">' + charPendQ + '</span>' : '') + '</button>' +
           '</div>' +
           // BACK — Opinions
           '<div class="ct-flip-back" data-back="opinions" style="display:none;">' +
             '<div class="ct-flip-back-header">' +
-              '<div class="ct-flip-back-name"><i class="ti ti-message-heart" style="color:#ec4899;"></i> ' + (isBook ? 'Reader Takes on this Book' : esc(char.name) + '\u2019s Reader Takes') + '</div>' +
+              '<div class="ct-flip-back-name"><i class="ti ti-message-heart" style="color: var(--ct-rose);"></i> ' + (isBook ? 'Reader Takes on this Book' : esc(char.name) + '\u2019s Reader Takes') + '</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
             '<div class="ct-opinions-back-scroll">' +
@@ -1256,7 +1239,7 @@ window.CharacterTitles = (function() {
           // BACK — Cosmetics
           '<div class="ct-flip-back" data-back="cosmetics" style="display:none;">' +
             '<div class="ct-flip-back-header">' +
-              '<div class="ct-flip-back-name"><i class="ti ti-palette" style="color:#f59e0b;"></i> ' + esc(char.name) + '\u2019s Cosmetics</div>' +
+              '<div class="ct-flip-back-name"><i class="ti ti-palette" style="color: var(--ct-gold);"></i> ' + esc(char.name) + '\u2019s Cosmetics</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
             '<div class="ct-cosmetic-back-scroll">' +
@@ -1268,7 +1251,7 @@ window.CharacterTitles = (function() {
           // BACK — Dynamics
           '<div class="ct-flip-back" data-back="dynamics" style="display:none;">' +
             '<div class="ct-flip-back-header">' +
-              '<div class="ct-flip-back-name"><i class="ti ti-arrows-left-right" style="color:#38bdf8;"></i> ' + esc(char.name) + '\u2019s Dynamics</div>' +
+              '<div class="ct-flip-back-name"><i class="ti ti-arrows-left-right" style="color: var(--ct-sky);"></i> ' + esc(char.name) + '\u2019s Dynamics</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
             '<div class="ct-exp-scroll">' +
@@ -1306,7 +1289,7 @@ window.CharacterTitles = (function() {
           // BACK — Quotes
           '<div class="ct-flip-back" data-back="quotes" style="display:none;">' +
             '<div class="ct-flip-back-header">' +
-              '<div class="ct-flip-back-name"><i class="ti ti-quote" style="color:#a78bfa;"></i> ' + esc(char.name) + '\u2019s Quote Wall</div>' +
+              '<div class="ct-flip-back-name"><i class="ti ti-quote" style="color: var(--violet);"></i> ' + esc(char.name) + '\u2019s Quote Wall</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
             '<div class="ct-exp-scroll">' +
@@ -1330,7 +1313,7 @@ window.CharacterTitles = (function() {
           // BACK — Traits
           '<div class="ct-flip-back" data-back="traits" style="display:none;">' +
             '<div class="ct-flip-back-header">' +
-              '<div class="ct-flip-back-name"><i class="ti ti-adjustments-horizontal" style="color:#34d399;"></i> ' + esc(char.name) + '\u2019s Traits</div>' +
+              '<div class="ct-flip-back-name"><i class="ti ti-adjustments-horizontal" style="color: var(--ct-green);"></i> ' + esc(char.name) + '\u2019s Traits</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
             '<div class="ct-exp-scroll">' +
@@ -1388,12 +1371,12 @@ window.CharacterTitles = (function() {
           // BACK — Ask the Character
           '<div class="ct-flip-back" data-back="ask" style="display:none;">' +
             '<div class="ct-flip-back-header">' +
-              '<div class="ct-flip-back-name"><i class="ti ti-help-circle" style="color:#fbbf24;"></i> ' + (isBook ? 'Ask about this book' : 'Ask ' + esc(char.name)) + '</div>' +
+              '<div class="ct-flip-back-name"><i class="ti ti-help-circle" style="color: var(--ct-amber);"></i> ' + (isBook ? 'Ask about this book' : 'Ask ' + esc(char.name)) + '</div>' +
               '<button class="ct-flip-close" title="Back"><i class="ti ti-arrow-left"></i></button>' +
             '</div>' +
             '<div class="ct-exp-scroll">' +
               (charAnsweredQs.length ? charAnsweredQs.map(function(q){
-                var pinBtn = isOwner ? '<button class="ct-q-pin-btn' + (q.is_pinned ? ' active' : '') + '" data-q-id="' + esc(q.id) + '" title="' + (q.is_pinned ? 'Unpin' : 'Pin to top') + '"><i class="ti ti-pin' + (q.is_pinned ? '-filled' : '') + '"></i></button>' : (q.is_pinned ? '<i class="ti ti-pin" style="color:#fbbf24;font-size:11px;"></i>' : '');
+                var pinBtn = isOwner ? '<button class="ct-q-pin-btn' + (q.is_pinned ? ' active' : '') + '" data-q-id="' + esc(q.id) + '" title="' + (q.is_pinned ? 'Unpin' : 'Pin to top') + '"><i class="ti ti-pin' + (q.is_pinned ? '-filled' : '') + '"></i></button>' : (q.is_pinned ? '<i class="ti ti-pin" style="color: var(--ct-amber);font-size:11px;"></i>' : '');
                 return '<div class="ct-q-row' + (q.is_pinned ? ' pinned' : '') + '"><div class="ct-q-question"><i class="ti ti-help-circle" style="font-size:11px;"></i> ' + esc(q.question) + ' ' + pinBtn + '</div><div class="ct-q-answer" data-q-answer-html="' + esc(q.id) + '"></div></div>';
               }).join('') : '<div class="ct-exp-empty">No answered questions yet' + (currentUserSession && !isOwner ? ' \u2014 ask the first!' : '.') + '</div>') +
               (isOwner ? '<div data-pending-qs-slot="' + esc(char.id) + '"></div>' : '') +
@@ -1459,7 +1442,7 @@ window.CharacterTitles = (function() {
             var { data: fvData, error: fvErr } = await db().rpc('vote_character_fan', { p_character_id: char.id });
             var countsEl = card.querySelector('[data-fan-counts="' + char.id + '"]');
             if (fvData && (fvData.total_votes !== undefined) && countsEl) {
-              countsEl.innerHTML = '<i class="ti ti-heart" style="color:#ec4899;font-size:10px;"></i> ' +
+              countsEl.innerHTML = '<i class="ti ti-heart" style="color: var(--ct-rose);font-size:10px;"></i> ' +
                 '<strong style="color:var(--text2);">' + fvData.total_votes + '</strong> all-time \u00b7 ' +
                 '<strong style="color:var(--text2);">' + fvData.month_votes + '</strong> this month';
             }
@@ -1903,11 +1886,7 @@ window.CharacterTitles = (function() {
         if (!text) { ta.focus(); return; }
         nominateBtn.disabled = true;
         var res = await Promise.resolve(db().from('character_quotes').insert({ character_id: char.id, work_id: workId, user_id: uid, quote_text: text })).catch(function(err){ return { error: err }; });
-        if (res && res.error) {
-          nominateBtn.disabled = false;
-          if (ctIsBlockDenial(res.error)) { ctBlockToast(); return; }
-          ctToast('Could not send \u2014 try again.', 'ti-x'); return;
-        }
+        if (res && res.error) { nominateBtn.disabled = false; ctToast('Could not send \u2014 try again.', 'ti-x'); return; }
         ta.value = '';
         nominateBtn.disabled = false;
         ctToast('Quote sent to the author for approval!', 'ti-quote');
@@ -2015,11 +1994,7 @@ window.CharacterTitles = (function() {
         if (!text) { ta.focus(); return; }
         askBtn.disabled = true;
         var res = await Promise.resolve(db().from('character_questions').insert({ character_id: char.id, work_id: workId, user_id: uid, question: text })).catch(function(err){ return { error: err }; });
-        if (res && res.error) {
-          askBtn.disabled = false;
-          if (ctIsBlockDenial(res.error)) { ctBlockToast(); return; }
-          ctToast('Could not send \u2014 try again.', 'ti-x'); return;
-        }
+        if (res && res.error) { askBtn.disabled = false; ctToast('Could not send \u2014 try again.', 'ti-x'); return; }
         ta.value = '';
         askBtn.disabled = false;
         ctToast('Question sent \u2014 the author will answer in-character!', 'ti-help-circle');
@@ -2162,7 +2137,7 @@ window.CharacterTitles = (function() {
     modal.innerHTML =
       '<div class="ct-song-modal">' +
         '<div class="ct-song-modal-header">' +
-          '<div class="ct-song-modal-title"><i class="ti ti-palette" style="color:#f59e0b;"></i> Submit Cosmetic Art for ' + esc(charName) + '</div>' +
+          '<div class="ct-song-modal-title"><i class="ti ti-palette" style="color: var(--ct-gold);"></i> Submit Cosmetic Art for ' + esc(charName) + '</div>' +
           '<button class="ct-song-modal-close"><i class="ti ti-x"></i></button>' +
         '</div>' +
         '<div class="ct-song-modal-body">' +
@@ -2501,7 +2476,6 @@ window.CharacterTitles = (function() {
     });
     if (error) {
       if (error.code === '23505') return { error: 'You already submitted an opinion for this character this chapter.' };
-      if (ctIsBlockDenial(error)) return { error: 'You can\u2019t contribute to this author\u2019s characters.' };
       return { error: error.message };
     }
     return { ok: true };
@@ -2744,7 +2718,7 @@ window.CharacterTitles = (function() {
 
     var panel = document.createElement('div');
     panel.className = 'ct-pending-cosmetics-panel ct-pending-songs-panel';
-    panel.innerHTML = '<div class="ct-pending-songs-title"><i class="ti ti-palette" style="color:#f59e0b;"></i> Cosmetic Art Awaiting Approval <span class="ct-pending-badge">' + pending.length + '</span></div>';
+    panel.innerHTML = '<div class="ct-pending-songs-title"><i class="ti ti-palette" style="color: var(--ct-gold);"></i> Cosmetic Art Awaiting Approval <span class="ct-pending-badge">' + pending.length + '</span></div>';
 
     pending.forEach(function(cm) {
       var row = document.createElement('div');
