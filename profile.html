@@ -3835,8 +3835,14 @@ async function handleFriendBtn() {
       try {
         var res = await Promise.all([
           q(db.from('ember_spends').select('embers_spent').eq('user_id', uid)),
-          q(db.from('marketplace_purchases').select('quills_paid').eq('buyer_id', uid)),
-          q(db.from('banner_purchases').select('quills_paid').eq('buyer_id', uid)),
+          // marketplace_purchases / banner_purchases are dead tables: nothing in the
+          // database writes them (no function INSERTs, no trigger, and the client
+          // holds SELECT only), so this figure always read 0 no matter what a user
+          // spent. purchase_marketplace_cosmetic() records the spend in
+          // cosmetic_item_owns.quills_spent and purchase_scroll() in
+          // scroll_unlocks.quills_spent — count from those instead.
+          q(db.from('cosmetic_item_owns').select('quills_spent').eq('user_id', uid)),
+          q(db.from('scroll_unlocks').select('quills_spent').eq('user_id', uid)),
           q(db.from('dawn_sparks').select('id', { count: 'exact', head: true }).eq('user_id', uid)),
           q(db.from('celestial_flame_gifts').select('id', { count: 'exact', head: true }).eq('user_id', uid)),
           q(db.from('scribe_flame_votes').select('id', { count: 'exact', head: true }).eq('user_id', uid)),
@@ -3850,7 +3856,7 @@ async function handleFriendBtn() {
 
         var spent = {
           'cw-embers':    sum(res[0], 'embers_spent'),
-          'cw-quills':    sum(res[1], 'quills_paid') + sum(res[2], 'quills_paid'),
+          'cw-quills':    sum(res[1], 'quills_spent') + sum(res[2], 'quills_spent'),
           'cw-sparks':    cnt(res[3]),
           'cw-celestial': cnt(res[4]),
           'cw-scribe':    cnt(res[5]),
