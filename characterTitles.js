@@ -621,6 +621,22 @@ window.CharacterTitles = (function() {
     return map;
   }
 
+
+  // --- Block enforcement (Pass 4) -------------------------------------------
+  // Blocks are enforced in RLS via blocked_no_insert_* RESTRICTIVE policies on
+  // character_questions / _opinions / _quotes / _song_suggestions. The DB is the
+  // authority; this only turns the denial into a message a human understands.
+  // PostgREST returns 42501 for an RLS with-check failure.
+  function ctIsBlockDenial(err) {
+    if (!err) return false;
+    var code = err.code || '';
+    var msg  = (err.message || String(err)).toLowerCase();
+    return code === '42501' || msg.indexOf('row-level security') !== -1;
+  }
+  function ctBlockToast() {
+    ctToast('You can\u2019t contribute to this author\u2019s characters.', 'ti-ban');
+  }
+
   // Submit a song suggestion
   async function submitSongSuggestion(charId, workId, chapterId, userId, youtubeUrl, songTitle, artistName) {
     var vid = ytId(youtubeUrl);
@@ -631,6 +647,7 @@ window.CharacterTitles = (function() {
       user_id: userId, youtube_url: cleanUrl, song_title: songTitle.trim(),
       artist_name: artistName.trim(), status: 'pending'
     });
+    if (ctIsBlockDenial(error)) return { error: 'You can\u2019t contribute to this author\u2019s characters.' };
     return { error: error ? error.message : null };
   }
 
@@ -1886,7 +1903,11 @@ window.CharacterTitles = (function() {
         if (!text) { ta.focus(); return; }
         nominateBtn.disabled = true;
         var res = await Promise.resolve(db().from('character_quotes').insert({ character_id: char.id, work_id: workId, user_id: uid, quote_text: text })).catch(function(err){ return { error: err }; });
-        if (res && res.error) { nominateBtn.disabled = false; ctToast('Could not send \u2014 try again.', 'ti-x'); return; }
+        if (res && res.error) {
+          nominateBtn.disabled = false;
+          if (ctIsBlockDenial(res.error)) { ctBlockToast(); return; }
+          ctToast('Could not send \u2014 try again.', 'ti-x'); return;
+        }
         ta.value = '';
         nominateBtn.disabled = false;
         ctToast('Quote sent to the author for approval!', 'ti-quote');
@@ -1994,7 +2015,11 @@ window.CharacterTitles = (function() {
         if (!text) { ta.focus(); return; }
         askBtn.disabled = true;
         var res = await Promise.resolve(db().from('character_questions').insert({ character_id: char.id, work_id: workId, user_id: uid, question: text })).catch(function(err){ return { error: err }; });
-        if (res && res.error) { askBtn.disabled = false; ctToast('Could not send \u2014 try again.', 'ti-x'); return; }
+        if (res && res.error) {
+          askBtn.disabled = false;
+          if (ctIsBlockDenial(res.error)) { ctBlockToast(); return; }
+          ctToast('Could not send \u2014 try again.', 'ti-x'); return;
+        }
         ta.value = '';
         askBtn.disabled = false;
         ctToast('Question sent \u2014 the author will answer in-character!', 'ti-help-circle');
@@ -2476,6 +2501,7 @@ window.CharacterTitles = (function() {
     });
     if (error) {
       if (error.code === '23505') return { error: 'You already submitted an opinion for this character this chapter.' };
+      if (ctIsBlockDenial(error)) return { error: 'You can\u2019t contribute to this author\u2019s characters.' };
       return { error: error.message };
     }
     return { ok: true };
