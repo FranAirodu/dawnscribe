@@ -307,6 +307,90 @@
            (stamp == null ? Date.now() : stamp);
   }
 
+
+  /* ── Thumbnail derivatives ─────────────────────────────────────────────
+     Grids render full-size images into small tiles. browse.html shows 24
+     covers at a few hundred pixels wide but downloads them at 1600px — about
+     6 MB to paint one screen. Browsers also downscale poorly, so the tiles
+     look softer than they should.
+
+     makeThumb() produces a small WebP alongside the original. It is a SECOND
+     object, not a replacement: the full-size file is what a reader opens, what
+     an artist is paid for, and what a cover page displays. Only grids use the
+     thumb.
+
+     Buckets with no entry get no thumbnail. cosmetic-assets is excluded for
+     the same reason it is excluded from resizing — avatar layers must line up
+     pixel-for-pixel, and a derivative would only ever be wrong. */
+  var THUMB = {
+    'covers':         { maxPx: 400, quality: 0.82 },
+    'collab-art':     { maxPx: 500, quality: 0.82 },
+    'banners':        { maxPx: 600, quality: 0.80 },
+    'comment-images': { maxPx: 320, quality: 0.80 }
+  };
+
+  /* Thumb path for an original path: covers/x/y.png -> covers/x/y.thumb.webp
+     Derived, never stored, so nothing has to persist a second column. */
+  function thumbPath(path) {
+    var p = trimSlashes(path || '');
+    if (!p) return '';
+    var dot = p.lastIndexOf('.');
+    var slash = p.lastIndexOf('/');
+    if (dot > slash && dot !== -1) p = p.slice(0, dot);
+    return p + '.thumb.webp';
+  }
+
+  /* Public URL of the thumb for an original path or URL. */
+  function thumbUrl(db, bucket, pathOrUrl) {
+    if (!pathOrUrl) return '';
+    var p = String(pathOrUrl).indexOf('http') === 0
+      ? pathFromUrl(bucket, pathOrUrl)
+      : pathOrUrl;
+    if (!p) return '';
+    return url(db, bucket, thumbPath(p));
+  }
+
+  /* Build the thumbnail blob. Same failure contract as shrinkIfNeeded and
+     convertToWebpIfWorthwhile: ANY problem returns null and the caller simply
+     skips the thumb. A missing derivative must never fail an upload. */
+  async function makeThumb(bucket, file) {
+    try {
+      var policy = THUMB[bucket];
+      if (!policy || !file) return null;
+      if (!RESIZABLE_TYPES[file.type || '']) return null;
+      if (typeof document === 'undefined' || !global.HTMLCanvasElement) return null;
+      if (!(await canEncodeWebp())) return null;
+
+      var bmp = await loadBitmap(file);
+      var w = bmp.width, h = bmp.height;
+      if (!w || !h) return null;
+
+      // Already thumbnail-sized: a derivative would just duplicate the file.
+      var longest = Math.max(w, h);
+      if (longest <= policy.maxPx) { if (bmp.close) bmp.close(); return null; }
+
+      var scale = policy.maxPx / longest;
+      var nw = Math.max(1, Math.round(w * scale));
+      var nh = Math.max(1, Math.round(h * scale));
+
+      var canvas = document.createElement('canvas');
+      canvas.width = nw; canvas.height = nh;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.imageSmoothingEnabled = true;
+      if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, 0, 0, nw, nh);
+      if (bmp.close) bmp.close();
+
+      return await new Promise(function (resolve) {
+        try { canvas.toBlob(resolve, 'image/webp', policy.quality); }
+        catch (e) { resolve(null); }
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
   /* Upload an object. Returns { error } — a plain shape every call site can
      destructure, regardless of which provider handled the write. */
   async function upload(db, bucket, path, file, opts) {
@@ -329,11 +413,27 @@
       // This is also what makes the extension mismatch harmless: the object is
       // served as image/webp regardless of the '.png' in its path.
       var sendOpts = {};
-      for (var k in opts) { if (k !== 'noResize' && k !== 'noConvert') sendOpts[k] = opts[k]; }
+      for (var k in opts) { if (k !== 'noResize' && k !== 'noConvert' && k !== 'noThumb') sendOpts[k] = opts[k]; }
       if (!sendOpts.contentType && payload && payload.type) sendOpts.contentType = payload.type;
 
       var writePath = trimSlashes(path);
       var res = await db.storage.from(bucket).upload(writePath, payload, sendOpts);
+
+      /* Write a grid-sized derivative next to the original. Best-effort by
+         design: the original is already stored by this point, and a failed
+         thumb must never turn a successful upload into a failure. Readers fall
+         back to the full-size image when the thumb 404s. */
+      if (!res || !res.error) {
+        try {
+          var thumbBlob = opts.noThumb ? null : await makeThumb(bucket, file);
+          if (thumbBlob && thumbBlob.size) {
+            await db.storage.from(bucket).upload(
+              thumbPath(writePath), thumbBlob,
+              { contentType: 'image/webp', upsert: !!sendOpts.upsert }
+            );
+          }
+        } catch (e) { /* thumb is optional */ }
+      }
 
       /* `path` is the path the object was actually written to — persist this.
          `canonicalPath` is the path the bytes deserve by extension. They differ
@@ -411,6 +511,10 @@
     convertToWebpIfWorthwhile: convertToWebpIfWorthwhile,
     canEncodeWebp: canEncodeWebp,
     withExtension: withExtension,
+    thumbPath: thumbPath,
+    thumbUrl: thumbUrl,
+    makeThumb: makeThumb,
+    thumbPolicy: function (bucket) { return THUMB[bucket] || null; },
     resizePolicy: function (bucket) { return RESIZE[bucket] || null; },
     convertPolicy: function (bucket) { return CONVERT_TO_WEBP[bucket] || null; }
   };
