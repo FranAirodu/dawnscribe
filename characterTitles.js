@@ -1047,7 +1047,7 @@ window.CharacterTitles = (function() {
           '<div class="ct-featured-song-thumb"><img src="https://img.youtube.com/vi/' + esc(vid) + '/default.jpg" alt=""/><div class="ct-featured-song-play"><i class="ti ti-player-play"></i></div></div>' +
           '<div class="ct-featured-song-info"><div class="ct-featured-song-title">' + esc(featuredSong.song_title) + '</div>' +
           '<div class="ct-featured-song-artist">' + esc(featuredSong.artist_name || '') + '</div>' +
-          '<div class="ct-featured-song-credit" style="' + (aura ? 'color:'+aura+';' : '') + '">♪ suggested by ' + esc(sugName) + '</div></div>' +
+          '<div class="ct-featured-song-credit" style="' + (aura ? 'color:'+ctReadable(aura)+';' : '') + '">♪ suggested by ' + esc(sugName) + '</div></div>' +
           '</a>';
       }
 
@@ -1183,13 +1183,13 @@ window.CharacterTitles = (function() {
             fanArtHtml +
             submitFanArtBtnHtml +
             addLandscapeBtnHtml +
-            (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
+            (charSongs.length ? '<button class="ct-flip-trigger ct-flip-songs" title="View songs" style="' + (aura ? 'border-color:'+aura+'55;color:'+ctReadable(aura)+';' : '') + '"><i class="ti ti-music"></i> ' + charSongs.length + ' song' + (charSongs.length > 1 ? 's' : '') + '</button>' : '') +
             (approvedOpinions.length ? '<button class="ct-flip-trigger ct-flip-opinions" title="View reader opinions" style="color: var(--ct-rose);border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-heart"></i> ' + approvedOpinions.length + ' opinion' + (approvedOpinions.length > 1 ? 's' : '') + '</button>' : '') +
             // Book Card only: opinions are chapter-scoped everywhere else, so the
             // book card needs its own "share a take" entry (chapter-agnostic).
             ((isBook && currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-book-take-btn" title="Share your take on this book" style="color: var(--ct-rose);border-color:rgba(236,72,153,0.35);"><i class="ti ti-message-plus"></i> Share a Take</button>' : '') +
-            ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
-            (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+aura+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
+            ((currentUserSession && !isOwner) ? '<button class="ct-flip-trigger ct-flip-aura" title="Vote on aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+ctReadable(aura)+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
+            (isOwner ? '<button class="ct-flip-trigger ct-flip-aura" title="View aura" style="' + (aura ? 'border-color:'+aura+'55;color:'+ctReadable(aura)+';' : '') + '"><i class="ti ti-droplet"></i> Aura</button>' : '') +
             cosmeticTabBtn +
             (isBook ? '' : '<button class="ct-flip-trigger" data-open="dynamics" style="color: var(--ct-sky);border-color:rgba(56,189,248,0.35);"><i class="ti ti-arrows-left-right"></i>' + (charDyns.length ? ' ' + charDyns.length : ' Dynamics') + '</button>') +
             '<button class="ct-flip-trigger" data-open="quotes" style="color: var(--violet);border-color:rgba(167,139,250,0.35);"><i class="ti ti-quote"></i>' + (charQuotes.length ? ' ' + charQuotes.length : ' Quotes') + ((isOwner && charPendQuotes) ? ' <span class="ct-pend-dot">' + charPendQuotes + '</span>' : '') + '</button>' +
@@ -2349,6 +2349,62 @@ window.CharacterTitles = (function() {
     { key:'leader_lone', left:'Leader', right:'Lone Wolf' },
     { key:'open_mystery', left:'Open Book', right:'Mystery' }
   ];
+
+
+  /* ── Aura readability ────────────────────────────────────────────────
+     Aura colours are user-voted from a 40-entry palette and get applied as
+     INLINE text colour on song credits and flip triggers. Inline styles beat
+     every stylesheet, so no theme variable can reach them — a dark pick like
+     Bloodstone #b91c1c measured 2.80 on dark, and pale picks fail on light.
+
+     ctReadable() keeps the chosen hue and moves lightness only as far as
+     needed to clear 4.5:1 against the current theme's worst surface. A colour
+     that already passes is returned untouched, so most auras never change.
+     Swatches, dots, bars and borders keep the exact chosen hex — only TEXT
+     is clamped, so the palette still looks like the palette. */
+  function ctHexToRgb(h) {
+    h = String(h || '').replace('#','');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+    return { r: parseInt(h.slice(0,2),16), g: parseInt(h.slice(2,4),16), b: parseInt(h.slice(4,6),16) };
+  }
+  function ctRgbToHex(c) {
+    return '#' + [c.r,c.g,c.b].map(function(v){
+      return Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2,'0');
+    }).join('');
+  }
+  function ctLum(c) {
+    var f = function(v){ v/=255; return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); };
+    return 0.2126*f(c.r) + 0.7152*f(c.g) + 0.0722*f(c.b);
+  }
+  function ctContrast(a,b) {
+    var l1 = ctLum(a), l2 = ctLum(b);
+    return (Math.max(l1,l2)+0.05) / (Math.min(l1,l2)+0.05);
+  }
+  // Worst surface per theme: character cards tint toward the aura/mood colour,
+  // so text can sit on something lighter than --bg. These are the practical floors.
+  function ctWorstSurface() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t === 'light') return '#d8d8e8';
+    if (t === 'dim')   return '#34344c';
+    return '#22223a';
+  }
+  function ctReadable(hex) {
+    var c = ctHexToRgb(hex); if (!c) return hex;
+    var bg = ctHexToRgb(ctWorstSurface()); if (!bg) return hex;
+    if (ctContrast(c, bg) >= 4.5) return hex;
+    var darken = ctLum(bg) > 0.5;
+    var best = c;
+    for (var i = 1; i <= 40; i++) {
+      var t = i/40;
+      var cand = darken
+        ? { r: c.r*(1-t), g: c.g*(1-t), b: c.b*(1-t) }
+        : { r: c.r+(255-c.r)*t, g: c.g+(255-c.g)*t, b: c.b+(255-c.b)*t };
+      best = cand;
+      if (ctContrast(cand, bg) >= 4.5) break;
+    }
+    return ctRgbToHex(best);
+  }
 
   var AURA_PALETTE = [
     // Reds & pinks (8)
