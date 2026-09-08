@@ -189,9 +189,14 @@ function dsApplyAccent(hex) {
   }
 
   var AA = 4.5;
-  var accentDark  = dsClampAccent(hex, '#0a0a0f', AA);   // dark  theme page bg
-  var accentDim   = dsClampAccent(hex, '#1c1c21', AA);   // dim   theme page bg
-  var accentLight = dsClampAccent(hex, '#f4f4f8', AA);   // light theme page bg
+  // Clamp against each theme's WORST surface, not its page background. Accent text
+  // mostly sits inside cards (--bg2/--bg3/--bg4), which are lighter than --bg on a
+  // dark theme and darker than --bg on a light one. Clamping to --bg alone cleared
+  // 4.5 on the page and still failed everywhere it actually appears — measured at
+  // 3.53 against --bg4 on a story page.
+  var accentDark  = dsClampAccent(hex, '#22223a', AA);   // dark : lightest surface
+  var accentDim   = dsClampAccent(hex, '#34344c', AA);   // dim  : lightest surface
+  var accentLight = dsClampAccent(hex, '#d8d8e8', AA);   // light: darkest surface
 
   // --accent2 stays the "one shade further" companion it always was.
   function dsShade(h) {
