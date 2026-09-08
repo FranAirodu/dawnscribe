@@ -2315,13 +2315,11 @@
           quiet_hours_enabled: settings.quiet_hours_enabled,
           quiet_hours_start: settings.quiet_hours_start,
           quiet_hours_end: settings.quiet_hours_end,
-          // ds_is_quiet_hours() evaluates the window in the RECIPIENT's zone,
-          // so a null timezone would silently mean UTC. Fill it from the
-          // browser when the profile has none; never overwrite an existing one.
-          timezone: (function(){
-            if (settings.timezone) return settings.timezone;
-            try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { return null; }
-          })(),
+          // NOTE: `timezone` is deliberately NOT in this payload. `authenticated`
+          // holds no grant on profiles.timezone, and Postgres rejects the WHOLE
+          // update if any named column lacks permission — including it here broke
+          // every save on this page with "permission denied for table profiles".
+          // It is written through set_my_timezone() after the update instead.
           email_enabled: settings.email_enabled,
           email_digest: settings.email_digest,
           email_payouts: settings.email_payouts
@@ -2404,6 +2402,21 @@
           return;
         }
         myOriginalUsername = un.toLowerCase() || myOriginalUsername;
+
+        // Fill the timezone from the browser when the profile has none.
+        // set_my_timezone() validates against pg_timezone_names and only writes
+        // when the value actually changes. Best-effort: a failure here must never
+        // block a settings save that already succeeded.
+        if (!settings.timezone) {
+          try {
+            var browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+            if (browserTz) {
+              var tzRes = await db.rpc('set_my_timezone', { p_tz: browserTz });
+              if (tzRes && !tzRes.error && tzRes.data === true) settings.timezone = browserTz;
+            }
+          } catch (e) {}
+        }
+
         checkProfileCompleteMission();
       }
 
