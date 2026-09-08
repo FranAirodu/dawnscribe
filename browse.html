@@ -332,32 +332,32 @@
        thumbnails existed have no derivative, so onerror swaps back to the
        full-size URL once and clears itself. Nothing needs backfilling and no
        image can end up blank. */
+    /* Covers render full-size for now.
+
+       The .thumb.webp derivatives ARE being written by DSStorage.upload() for
+       every new image, but no existing cover has one — the feature postdates
+       all current content. Pointing tiles at a derivative that 404s meant the
+       browser had to fail the request before falling back, and inside these
+       horizontal carousels `loading="lazy"` defers that request indefinitely,
+       so tiles sat blank instead of showing the cover.
+
+       Switch the src below to DSStorage.thumbUrl(...) once a backfill has
+       generated derivatives for existing covers — most naturally alongside the
+       R2 migration, which has to rewrite these URLs anyway. The fallback
+       function is kept because it is the piece that makes that switch safe. */
     function dsCoverImg(coverUrl, altText, cls) {
       var full = esc(coverUrl);
-      var thumb = full;
-      try {
-        if (window.DSStorage && DSStorage.thumbUrl) {
-          var t = DSStorage.thumbUrl(db, DSStorage.BUCKETS.COVERS, coverUrl);
-          if (t) thumb = esc(t);
-        }
-      } catch (e) {}
-      // The full-size URL rides along in data-full and the fallback lives in a
-      // real function. An inline onerror body would have to carry nested quotes
-      // through an HTML attribute inside a JS string, which is exactly how the
-      // first version of this broke: the escaping produced invalid JS, the
-      // handler threw, and every cover stayed blank instead of falling back.
       return '<img loading="lazy" decoding="async"' + (cls ? ' class="' + cls + '"' : '') +
-             ' src="' + thumb + '" data-full="' + full + '"' +
+             ' src="' + full + '" data-full="' + full + '"' +
              ' alt="' + esc(altText || 'cover') + '" onerror="dsThumbFallback(this)"/>';
     }
 
-    /* Swap a missing thumbnail for the original, once. Covers uploaded before
-       thumbnails existed have no derivative, so this is the normal path for all
-       existing content, not an edge case. */
+    /* Swap a missing thumbnail for the original, once. Unused while covers
+       render full-size, and harmless: it only fires on a load error. */
     window.dsThumbFallback = function (el) {
       if (!el || el.dataset.fb === '1') return;
       el.dataset.fb = '1';
-      if (el.dataset.full) el.src = el.dataset.full;
+      if (el.dataset.full && el.src !== el.dataset.full) el.src = el.dataset.full;
     };
 
     function renderNovelCard(w, profileMap) {
