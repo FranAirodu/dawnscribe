@@ -341,10 +341,24 @@
           if (t) thumb = esc(t);
         }
       } catch (e) {}
+      // The full-size URL rides along in data-full and the fallback lives in a
+      // real function. An inline onerror body would have to carry nested quotes
+      // through an HTML attribute inside a JS string, which is exactly how the
+      // first version of this broke: the escaping produced invalid JS, the
+      // handler threw, and every cover stayed blank instead of falling back.
       return '<img loading="lazy" decoding="async"' + (cls ? ' class="' + cls + '"' : '') +
-             ' src="' + thumb + '" alt="' + esc(altText || 'cover') + '"' +
-             ' onerror="if(this.dataset.fb!==\'1\'){this.dataset.fb=\'1\';this.src=\'' + full + '\';}"/>';
+             ' src="' + thumb + '" data-full="' + full + '"' +
+             ' alt="' + esc(altText || 'cover') + '" onerror="dsThumbFallback(this)"/>';
     }
+
+    /* Swap a missing thumbnail for the original, once. Covers uploaded before
+       thumbnails existed have no derivative, so this is the normal path for all
+       existing content, not an edge case. */
+    window.dsThumbFallback = function (el) {
+      if (!el || el.dataset.fb === '1') return;
+      el.dataset.fb = '1';
+      if (el.dataset.full) el.src = el.dataset.full;
+    };
 
     function renderNovelCard(w, profileMap) {
       var prof = profileMap[w.author_id] || {};
