@@ -623,9 +623,45 @@ window.dsApplyAccent = dsApplyAccent;
     document.getElementById('notifDropdown').classList.remove('open');
     var dd = document.getElementById('user-dropdown'); if(dd) dd.classList.remove('open');
   };
+  
+/* ── Per-account cache isolation ──────────────────────────────────────────
+   Preference caches (theme, content filters, reading prefs, tag prefs) live in
+   localStorage under shared keys with no account in the name. localStorage is
+   per-BROWSER, not per-user, so signing into a second account on the same
+   browser inherited the first account's cached settings — and because these
+   caches are read before (and sometimes instead of) the profile row, the
+   inherited values won and the account's real settings were ignored.
+
+   Observed: a brand-new account showed the Safe content filter ON when its
+   profile row said false, and rendered light mode on most pages while Settings
+   read dark from the database.
+
+   So: stamp the cache with the account that wrote it, and wipe it when the
+   account changes. Non-preference keys (drafts, dismissed banners, scroll
+   positions) are already per-user or harmless, so they are left alone. */
+window.dsScopeCacheToUser = function (uid) {
+  if (!uid) return;
+  try {
+    var STAMP = 'ds_cache_uid';
+    var seen = localStorage.getItem(STAMP);
+    if (seen === uid) return;
+    if (seen) {
+      ['ds_theme','ds_accent_hex','ds_filter_safe','ds_filter_gore','ds_filter_erotica',
+       'ds_reading','ds_settings_misc','ds_tag_prefs','ds_reader_width','ds_reader_size',
+       'ds_reader_lh','ds_sidebar_collapsed','ds_rising_board','ds_row_states',
+       'ds_clean_paste','ds_my_checkin_status']
+        .forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+    }
+    localStorage.setItem(STAMP, uid);
+  } catch (e) { /* private mode / quota: caches just stay as they are */ }
+};
+
   window.dsSignOut = async function() {
     try { await db.auth.signOut(); } catch(e) {}
     localStorage.removeItem('ds_accent_hex');
+    // Drop the cache stamp so the next account in this browser gets a clean slate
+    // rather than inheriting whatever this one had cached.
+    try { localStorage.removeItem('ds_cache_uid'); } catch(e) {}
     window.location.href = 'index.html';
   };
 
@@ -1269,6 +1305,7 @@ window.dsApplyAccent = dsApplyAccent;
   (async function dsInitUserNav() {
     try {
       var session = (await db.auth.getSession()).data.session;
+      if (session && session.user && window.dsScopeCacheToUser) window.dsScopeCacheToUser(session.user.id);
       if (!session) return;
       var loginBtn = document.getElementById('nav-login-btn');
       if(loginBtn) loginBtn.style.display = 'none';

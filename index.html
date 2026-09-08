@@ -1255,6 +1255,40 @@
     // NOTE: index.html does not load nav.js -- it keeps its own copy of the nav
     // markup and helpers. This is a duplicate of the block in nav.js; any change
     // to one must be mirrored into the other.
+  /* ── Per-account cache isolation ──────────────────────────────────────
+     Mirror of dsScopeCacheToUser() in nav.js. index.html deliberately does NOT
+     load nav.js (see the duplicate-nav note above), so without this copy the
+     landing page — the first page most people see — would keep serving the
+     PREVIOUS account's cached theme and content filters until the user clicked
+     through to some other page.
+
+     Any change here must be mirrored into nav.js, and vice versa. */
+  window.dsScopeCacheToUser = window.dsScopeCacheToUser || function (uid) {
+    if (!uid) return;
+    try {
+      var STAMP = 'ds_cache_uid';
+      var seen = localStorage.getItem(STAMP);
+      if (seen === uid) return;
+      if (seen) {
+        ['ds_theme','ds_accent_hex','ds_filter_safe','ds_filter_gore','ds_filter_erotica',
+         'ds_reading','ds_settings_misc','ds_tag_prefs','ds_reader_width','ds_reader_size',
+         'ds_reader_lh','ds_sidebar_collapsed','ds_rising_board','ds_row_states',
+         'ds_clean_paste','ds_my_checkin_status']
+          .forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      }
+      localStorage.setItem(STAMP, uid);
+    } catch (e) {}
+  };
+  (function () {
+    // Run as early as a session is available, before cached prefs are read.
+    try {
+      db.auth.getSession().then(function (r) {
+        var ses = r && r.data ? r.data.session : null;
+        if (ses && ses.user) window.dsScopeCacheToUser(ses.user.id);
+      });
+    } catch (e) {}
+  })();
+
     // ── SEARCH PREVIEW FILTERING ─────────────────────────────────────────────────
     // The nav search dropdown reaches the whole published catalogue, so it is a
     // discovery surface and must respect the same settings browse and search do:
