@@ -464,7 +464,7 @@ window.CharacterTitles = (function() {
     var html = '<div class="ct-results-list">';
     entries.forEach(function(e, i) {
       var pct = total > 0 ? Math.round((e.count / total) * 100) : 0;
-      var catColor = { personality:'var(--accent)', role:'var(--gold)', dawnscribe:'#a78bfa', relationship:'#f472b6', fan_reaction:'#fb923c', negative:'var(--red)' };
+      var catColor = { personality:'var(--accent)', role:'var(--gold)', dawnscribe:'var(--ct-violet)', relationship:'var(--ct-pink)', fan_reaction:'var(--ct-orange)', negative:'var(--red)' };
       var color = catColor[e.title.category] || 'var(--accent)';
       html +=
         '<div class="ct-result-row">' +
