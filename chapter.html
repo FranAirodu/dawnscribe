@@ -137,10 +137,41 @@
     .reader-wrap{width:var(--reader-width) !important;max-width:100% !important;margin:0 auto;padding:40px 24px 40px;transition:margin-right 0.28s cubic-bezier(.4,0,.2,1),width 0.28s cubic-bezier(.4,0,.2,1),max-width 0.28s cubic-bezier(.4,0,.2,1);}
     /* Wide/Full: shrink and shift left to make room for panel */
     body.sp-panel-open .reader-wrap,body.para-panel-active .reader-wrap{margin-right:320px;margin-left:auto;width:calc(var(--reader-width) - 160px) !important;max-width:100% !important;}
-    /* Flash used when arriving from a #sp-comment-<id> deep link (moderation
-       queue links straight to a reported comment). */
-    @keyframes dsCommentFlash{0%{background:transparent;}18%{background:color-mix(in srgb,var(--accent) 22%,transparent);}100%{background:transparent;}}
-    .ds-comment-target{animation:dsCommentFlash 2.4s ease-out 1;border-radius:8px;}
+    /* Marker for a comment arrived at via a #sp-comment-<id> deep link (the
+       moderation queue links straight to a reported comment). A brief flash
+       was not enough: if the thread is long the admin may have to scroll to
+       find it again, and a 2s animation is gone by then. So the marker is
+       PERSISTENT -- tinted background, accent rail, and a label -- and stays
+       until the admin dismisses it. */
+    @keyframes dsCommentFlash{0%{background:color-mix(in srgb,var(--accent) 34%,transparent);}100%{background:color-mix(in srgb,var(--accent) 10%,transparent);}}
+    .ds-comment-target{
+      background:color-mix(in srgb,var(--accent) 10%,transparent) !important;
+      border-left:3px solid var(--accent) !important;
+      border-radius:8px;
+      animation:dsCommentFlash 1.6s ease-out 1;
+      scroll-margin-top:80px;
+      position:relative;
+    }
+    .ds-target-tag{
+      display:flex;align-items:center;gap:6px;
+      font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;
+      color:var(--accent);margin-bottom:6px;
+    }
+    .ds-target-tag button{
+      margin-left:auto;background:none;border:none;color:var(--text3);
+      cursor:pointer;font-size:14px;line-height:1;padding:0 2px;
+    }
+    .ds-target-tag button:hover{color:var(--text);}
+    /* A floating way back to the comment if the admin scrolls away from it. */
+    #ds-jump-back{
+      position:fixed;right:340px;bottom:24px;z-index:200;
+      display:none;align-items:center;gap:7px;
+      background:var(--bg3);border:1px solid var(--accent);border-radius:24px;
+      padding:9px 16px;font-family:Lato,sans-serif;font-size:12px;font-weight:700;
+      color:var(--accent);cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,0.4);
+    }
+    body.panel-open-overlay #ds-jump-back{right:24px;bottom:80px;}
+    @media(max-width:900px){#ds-jump-back{right:24px;bottom:80px;}}
     /* Narrow/Medium: just anchor to the left, panel overlays */
     body.panel-open-overlay .reader-wrap{margin-right:0;margin-left:0 !important;width:var(--reader-width) !important;max-width:100% !important;}
     .chapter-header{margin-bottom:32px;text-align:center;}
@@ -3084,12 +3115,58 @@
       return m ? m[1] : null;
     }
 
+    function dsMarkTargetComment(el) {
+      if (el.querySelector('.ds-target-tag')) return;   // already marked
+      var tag = document.createElement('div');
+      tag.className = 'ds-target-tag';
+      tag.innerHTML = '<i class="ti ti-flag"></i> Reported comment' +
+                      '<button type="button" title="Clear this marker">&times;</button>';
+      tag.querySelector('button').addEventListener('click', function(e) {
+        e.stopPropagation();
+        el.classList.remove('ds-comment-target');
+        tag.remove();
+        var jb = document.getElementById('ds-jump-back');
+        if (jb) jb.remove();
+      });
+      el.insertBefore(tag, el.firstChild);
+    }
+
+    /* Floating "back to the reported comment" button, shown only while the
+       marked comment is off screen. Without it, scrolling through a long
+       thread loses the one comment the admin came to read. */
+    function dsWatchTargetComment(el) {
+      var btn = document.getElementById('ds-jump-back');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'ds-jump-back';
+        btn.type = 'button';
+        /* ti-flag rather than an arrow icon: the Tabler webfont here is a
+           subset, and an icon not already used elsewhere renders as a blank
+           box. */
+        btn.innerHTML = '<i class="ti ti-flag"></i> Back to reported comment';
+        btn.addEventListener('click', function() {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+        document.body.appendChild(btn);
+      }
+      if (!('IntersectionObserver' in window)) return;
+      new IntersectionObserver(function(entries) {
+        entries.forEach(function(en) {
+          if (!document.body.contains(el)) { if (btn.parentNode) btn.remove(); return; }
+          btn.style.display = en.isIntersecting ? 'none' : 'flex';
+        });
+      }, { threshold: 0.15 }).observe(el);
+    }
+
     function dsTryScrollToComment(id, attemptsLeft) {
       var el = document.getElementById('sp-comment-' + id);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        /* Persistent, not a flash: it stays marked until dismissed, so it is
+           still findable after scrolling or re-sorting the thread. */
         el.classList.add('ds-comment-target');
-        setTimeout(function() { el.classList.remove('ds-comment-target'); }, 2600);
+        dsMarkTargetComment(el);
+        dsWatchTargetComment(el);
         dsPendingCommentJump = null;
         return;
       }
@@ -3221,6 +3298,19 @@
       /* If a deep link is waiting, the comment it wants may have just been
          rendered by this pass -- jump now instead of waiting out the poll. */
       if (dsPendingCommentJump) dsTryScrollToComment(dsPendingCommentJump, 4);
+      /* Changing the sort re-renders every comment and would wipe the marker,
+         losing the reported comment in a re-ordered thread. Re-apply it. */
+      else {
+        var keep = dsReadCommentHash();
+        if (keep) {
+          var kept = document.getElementById('sp-comment-' + keep);
+          if (kept && !kept.querySelector('.ds-target-tag')) {
+            kept.classList.add('ds-comment-target');
+            dsMarkTargetComment(kept);
+            dsWatchTargetComment(kept);
+          }
+        }
+      }
       // Wire para jump clicks
       contentDiv.querySelectorAll('[data-para-jump]').forEach(function(el) {
         el.addEventListener('click', function() {
