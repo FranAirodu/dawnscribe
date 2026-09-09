@@ -1589,8 +1589,15 @@
                 '<input type="checkbox" id="rom-notify" checked style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;"/>' +
                 'Send the reporter a notification' +
               '</label>' +
-              '<textarea id="rom-msg" rows="5" style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--text);font-size:13px;font-family:Lato,sans-serif;line-height:1.5;resize:vertical;outline:none;"></textarea>' +
-              '<div style="font-size:11px;color:var(--text3);margin:4px 0 16px;">Edit this freely \u2014 it is sent as written. Leave the box empty and nothing is sent.</div>'
+              /* ds_notify() truncates at 300 characters (297 + an ellipsis)
+                 and does it silently, so a longer reply would be cut mid
+                 sentence with no warning. Cap the box at 300 and show the
+                 count rather than letting the database trim it. */
+              '<textarea id="rom-msg" rows="5" maxlength="300" style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--text);font-size:13px;font-family:Lato,sans-serif;line-height:1.5;resize:vertical;outline:none;"></textarea>' +
+              '<div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--text3);margin:4px 0 16px;">' +
+                '<span>Edit this freely \u2014 it is sent as written. Leave the box empty and nothing is sent.</span>' +
+                '<span id="rom-count" style="white-space:nowrap;"></span>' +
+              '</div>'
               : '<div id="rom-nonotify" style="font-size:11px;color:var(--text3);margin-bottom:16px;"></div>') +
             (needsPhrase ?
               '<div style="font-size:12px;color:var(--text3);margin-bottom:6px;">Type <strong style="color:var(--red);">' + opts.phrase + '</strong> to enable the button:</div>' +
@@ -1608,7 +1615,15 @@
         var phrase = overlay.querySelector('#rom-phrase');
         var confirmBtn = overlay.querySelector('#rom-confirm');
         var noNotify = overlay.querySelector('#rom-nonotify');
-        if (msg) msg.value = opts.defaultMessage || '';
+        var counter = overlay.querySelector('#rom-count');
+        function paintCount() {
+          if (!counter || !msg) return;
+          var n = msg.value.length;
+          counter.textContent = n + '/300';
+          counter.style.color = n >= 300 ? 'var(--red)' : (n >= 270 ? 'var(--gold)' : 'var(--text3)');
+        }
+        if (msg) { msg.value = (opts.defaultMessage || '').slice(0, 300); msg.addEventListener('input', paintCount); }
+        paintCount();
         if (noNotify) noNotify.textContent = 'This reporter\u2019s account is gone, so no notification can be sent.';
 
         function paint() {
