@@ -1670,6 +1670,44 @@
        reporters need the same reply the main queue now sends -- otherwise
        reports routed there would still look ignored. One RPC call for all
        distinct reporters. */
+    /* ── Concurrency: two admins, one report ──────────────────────────
+       Hiding buttons cannot prevent this -- two people can open the same
+       report in the same second, so the guarantee has to come from the
+       database. Every close is conditional on the report still being open,
+       and the caller checks how many rows actually changed. With one admin
+       this is invisible; with two it is the difference between a clean
+       "someone already handled this" and two people acting on one report.
+       Returns: 'closed' | 'taken' (someone else got there first) | 'error'. */
+    async function closeReportIfOpen(reportId, newStatus, fromStatus) {
+      var res = await db.from('reports')
+        .update({ status: newStatus })
+        .eq('id', reportId)
+        .eq('status', fromStatus || 'open')
+        .select('id');
+      if (res.error) {
+        console.error('[write] closeReportIfOpen:', res.error);
+        return 'error';
+      }
+      return (res.data && res.data.length) ? 'closed' : 'taken';
+    }
+
+    /* Claims a report before destructive work begins, so the content is not
+       deleted twice and a second admin is stopped BEFORE anything is lost.
+       'reviewing' finally has a use: it is the held state between claiming
+       and finishing. */
+    async function claimReport(reportId) {
+      return await closeReportIfOpen(reportId, 'reviewing', 'open');
+    }
+    async function releaseReport(reportId) {
+      /* Put a claimed report back if the work failed, so it does not sit in
+         'reviewing' forever with nobody acting on it. */
+      await db.from('reports').update({ status: 'open' })
+        .eq('id', reportId).eq('status', 'reviewing');
+    }
+    function reportTakenToast() {
+      showToast('Another admin already handled this report.', 'ti-info-circle');
+    }
+
     async function notifyReporters(reportsArr, kind, message) {
       if (!message) return;
       var seen = {}, ids = [];
@@ -1836,8 +1874,9 @@
               canNotify: !!report.reporter_id
             });
             if (!outcome) return;
-            { var _w6 = await db.from('reports').update({ status: 'dismissed' }).eq('id', report.id);
-              if (_w6 && _w6.error) { console.error('[write] WhiteRoomUnbreakable.html:', _w6.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); return; } }
+            var dres = await closeReportIfOpen(report.id, 'dismissed');
+            if (dres === 'error') { showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); return; }
+            if (dres === 'taken') { reportTakenToast(); loadReports(0); loadStats(); return; }
             showToast('Report dismissed'); auditLog('Dismissed report #' + report.id, 'ti-check');
             if (outcome.notify) await notifyReporter(report, 'dismissed', outcome.message);
             loadReports(0); loadStats();
@@ -1862,6 +1901,12 @@
               canNotify: !!report.reporter_id
             });
             if (outcome) {
+              /* Claim first: if a second admin is mid-action on this report,
+                 stop here rather than deleting content that may already be
+                 gone (or resolving a report they are still working). */
+              var claim = await claimReport(report.id);
+              if (claim === 'error') { showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); return; }
+              if (claim === 'taken') { reportTakenToast(); loadReports(0); loadStats(); return; }
               // Delete the actual content if we know its type
               if (report.content_id) {
                 var table = report.content_type === 'chapter' ? 'chapters'
@@ -1875,20 +1920,23 @@
                    was gone when it was still live. Refuse instead, and leave
                    the report open so it stays in the queue. */
                 if (!table) {
+                  await releaseReport(report.id);
                   showToast('Unknown content type "' + (report.content_type || 'none') +
                             '" — nothing was removed and the report is still open.', 'ti-alert-triangle');
                   return;
                 }
                 var delRes = await db.from(table).delete().eq('id', report.content_id);
-                if (delRes.error) { showToast('Could not delete content: ' + delRes.error.message, 'ti-x'); return; }
+                if (delRes.error) { await releaseReport(report.id); showToast('Could not delete content: ' + delRes.error.message, 'ti-x'); return; }
               } else {
                 // No content_id at all: nothing to remove. Say so rather than
                 // resolving with a success message.
+                await releaseReport(report.id);
                 showToast('This report has no content ID — nothing to remove.', 'ti-alert-triangle');
                 return;
               }
-              { var _w7 = await db.from('reports').update({ status: 'resolved' }).eq('id', report.id);
-                if (_w7 && _w7.error) { console.error('[write] WhiteRoomUnbreakable.html:', _w7.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
+              /* Content is gone; finish the claim. Conditional on 'reviewing'
+                 so this only closes the claim we took above. */
+              await closeReportIfOpen(report.id, 'resolved', 'reviewing');
               showToast('Content removed & report resolved', 'ti-trash');
               auditLog('Removed ' + contentLabel + ' ' + report.content_id + ' (report #' + report.id + ')', 'ti-trash');
               if (outcome.notify) await notifyReporter(report, 'resolved', outcome.message);
@@ -2245,11 +2293,14 @@
             canNotify: true
           });
           if (!pfOutcome) return;
+          /* Count what this admin actually closed. If every report was
+             already handled elsewhere, say so instead of claiming success. */
+          var pfClosed = 0;
           for (var i = 0; i < reports.length; i++) {
-            { var _w8 = await db.from('reports').update({ status: 'dismissed' }).eq('id', reports[i].id);
-              if (_w8 && _w8.error) { console.error('[write] WhiteRoomUnbreakable.html:', _w8.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
+            if (await closeReportIfOpen(reports[i].id, 'dismissed') === 'closed') pfClosed++;
           }
-          showToast('All reports for this story dismissed.', 'ti-check');
+          if (!pfClosed) { reportTakenToast(); loadPrestigeFarmingReports(); loadStats(); return; }
+          showToast('Dismissed ' + pfClosed + ' of ' + reports.length + ' report(s).', 'ti-check');
           auditLog('Dismissed prestige farming reports for work ' + workId, 'ti-check');
           if (pfOutcome.notify) await notifyReporters(reports, 'dismissed', pfOutcome.message);
           loadPrestigeFarmingReports(); loadStats();
@@ -2266,9 +2317,9 @@
             p_user_ids: [work.author_id],
             p_message: 'Warning: Your story "' + (work.title || 'Untitled') + '" has been flagged by multiple readers as not genuine writing. Posting placeholder or nonsense content to farm prestige medals violates community guidelines. Further violations may result in removal of your account.'
           });
+          var warnClosed = 0;
           for (var i = 0; i < reports.length; i++) {
-            { var _w9 = await db.from('reports').update({ status: 'resolved' }).eq('id', reports[i].id);
-              if (_w9 && _w9.error) { console.error('[write] WhiteRoomUnbreakable.html:', _w9.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
+            if (await closeReportIfOpen(reports[i].id, 'resolved') === 'closed') warnClosed++;
           }
           showToast('Warning sent to @' + authorName, 'ti-alert-triangle');
           auditLog('Warned author @' + authorName + ' for prestige farming on work ' + workId, 'ti-alert-triangle');
@@ -2306,8 +2357,7 @@
             if (_w10 && _w10.error) { console.error('[write] WhiteRoomUnbreakable.html:', _w10.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
           // Resolve all reports
           for (var i = 0; i < reports.length; i++) {
-            { var _w11 = await db.from('reports').update({ status: 'resolved' }).eq('id', reports[i].id);
-              if (_w11 && _w11.error) { console.error('[write] WhiteRoomUnbreakable.html:', _w11.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
+            await closeReportIfOpen(reports[i].id, 'resolved');
           }
           showToast('Story deleted and author warned.', 'ti-trash');
           auditLog('Deleted prestige farming story "' + (work.title||'Untitled') + '" by @' + authorName, 'ti-trash');
