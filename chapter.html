@@ -137,6 +137,10 @@
     .reader-wrap{width:var(--reader-width) !important;max-width:100% !important;margin:0 auto;padding:40px 24px 40px;transition:margin-right 0.28s cubic-bezier(.4,0,.2,1),width 0.28s cubic-bezier(.4,0,.2,1),max-width 0.28s cubic-bezier(.4,0,.2,1);}
     /* Wide/Full: shrink and shift left to make room for panel */
     body.sp-panel-open .reader-wrap,body.para-panel-active .reader-wrap{margin-right:320px;margin-left:auto;width:calc(var(--reader-width) - 160px) !important;max-width:100% !important;}
+    /* Flash used when arriving from a #sp-comment-<id> deep link (moderation
+       queue links straight to a reported comment). */
+    @keyframes dsCommentFlash{0%{background:transparent;}18%{background:color-mix(in srgb,var(--accent) 22%,transparent);}100%{background:transparent;}}
+    .ds-comment-target{animation:dsCommentFlash 2.4s ease-out 1;border-radius:8px;}
     /* Narrow/Medium: just anchor to the left, panel overlays */
     body.panel-open-overlay .reader-wrap{margin-right:0;margin-left:0 !important;width:var(--reader-width) !important;max-width:100% !important;}
     .chapter-header{margin-bottom:32px;text-align:center;}
@@ -3064,6 +3068,54 @@
       setTimeout(function(){ var c = body.querySelector('a[style*="var(--accent)"]'); if(c) c.scrollIntoView({block:'center',behavior:'smooth'}); }, 60);
     }
 
+    /* Deep link to a single comment: chapter.html?id=<chapter>#sp-comment-<id>
+       The moderation queue links here so an admin can read a reported comment
+       in the surrounding conversation. Comments load async into a side panel
+       that is closed by default, so the browser's own hash scrolling can
+       never work: open the panel, then wait for the comment to render. */
+    var dsPendingCommentJump = null;
+
+    function dsReadCommentHash() {
+      var h = (window.location.hash || '').replace(/^#/, '');
+      if (!h) return null;
+      /* Accept both the full element id and a bare uuid, so a hand-written
+         #<uuid> link works too. */
+      var m = h.match(/^(?:sp-comment-)?([0-9a-f-]{36})$/i);
+      return m ? m[1] : null;
+    }
+
+    function dsTryScrollToComment(id, attemptsLeft) {
+      var el = document.getElementById('sp-comment-' + id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ds-comment-target');
+        setTimeout(function() { el.classList.remove('ds-comment-target'); }, 2600);
+        dsPendingCommentJump = null;
+        return;
+      }
+      if (attemptsLeft > 0) {
+        setTimeout(function() { dsTryScrollToComment(id, attemptsLeft - 1); }, 250);
+        return;
+      }
+      /* Say so rather than leaving the admin staring at the top of a thread
+         wondering whether they scrolled past it. The comment may have been
+         deleted, or it may belong to a different chapter. */
+      dsPendingCommentJump = null;
+      if (typeof showToast === 'function') {
+        showToast("That comment isn't in this chapter \u2014 it may have been deleted.", 'ti-alert-triangle');
+      }
+    }
+
+    function dsInitCommentDeepLink() {
+      var id = dsReadCommentHash();
+      if (!id) return;
+      dsPendingCommentJump = id;
+      if (typeof window.spOpen === 'function') window.spOpen('comments');
+      /* ~6s of retries: enough for a slow comments fetch, short enough that a
+         missing comment reports itself rather than hanging. */
+      dsTryScrollToComment(id, 24);
+    }
+
     function spRenderComments() {
       var body = document.getElementById('sp-body');
       if (_spEchoClickHandler) { body.removeEventListener('click', _spEchoClickHandler); _spEchoClickHandler = null; }
@@ -3166,6 +3218,9 @@
       var contentDiv = document.createElement('div');
       contentDiv.innerHTML = html;
       body.appendChild(contentDiv);
+      /* If a deep link is waiting, the comment it wants may have just been
+         rendered by this pass -- jump now instead of waiting out the poll. */
+      if (dsPendingCommentJump) dsTryScrollToComment(dsPendingCommentJump, 4);
       // Wire para jump clicks
       contentDiv.querySelectorAll('[data-para-jump]').forEach(function(el) {
         el.addEventListener('click', function() {
@@ -3982,6 +4037,10 @@
         await CharacterTitles.renderVotingSection(ctSection, chapterData.id, workData.id, currentSession, isOwner);
         if (!ctSection.innerHTML.trim()) ctSection.style.display = 'none';
       }
+      /* Deep link to a reported comment, once the chapter itself is up.
+         Inside the try so a failure here cannot take the chapter down with
+         it -- a broken jump must never stop the page rendering. */
+      dsInitCommentDeepLink();
       } catch(e) {
         console.error('chapter init failed:', e);
         var titleEl = document.getElementById('chapter-title-display');
