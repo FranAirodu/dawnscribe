@@ -657,11 +657,16 @@
 
       allRows = reports.map(function(r) {
         var contentType = (r.content_type || '').toLowerCase();
+        /* reports.content_type is constrained to work / chapter / comment /
+           review, so the old branches for novel, artwork, profile and user
+           were unreachable -- a report cannot carry those values any more.
+           comment and review have no page of their own: a comment lives in
+           a chapter and a review in a story, and judging either needs the
+           surrounding context, so both are reviewed in WhiteRoom where the
+           content preview and deep link live. */
         var href = '';
-        if (contentType === 'work' || contentType === 'novel')      href = 'story.html?id='   + r.content_id;
-        else if (contentType === 'artwork')                          href = 'artwork.html?id=' + r.content_id;
-        else if (contentType === 'chapter')                          href = 'chapter.html?id=' + r.content_id;
-        else if (contentType === 'profile' || contentType === 'user') href = 'profile.html?id=' + r.content_id;
+        if (contentType === 'work')         href = 'story.html?id='   + encodeURIComponent(r.content_id);
+        else if (contentType === 'chapter') href = 'chapter.html?id=' + encodeURIComponent(r.content_id);
         var contentLink = r.content_id
           ? (href ? '<a href="' + href + '" target="_blank" style="color:var(--accent);font-size:11px;text-decoration:none;"><i class="ti ti-external-link"></i> View ' + escHtml(contentType || 'content') + '</a>'
                   : '<span style="font-size:11px;color:var(--text3);">ID: ' + escHtml(r.content_id) + '</span>')
@@ -685,9 +690,15 @@
                   '<span style="color:var(--text3);font-size:11px;margin-left:auto;">' + timeAgo(r.created_at) + '</span>' +
                 '</div>' +
               '</div>' +
+              /* Triage only -- deliberately no Resolve/Dismiss here. The same
+                 reports are actionable in WhiteRoom, and two surfaces that
+                 can both close a report means one report in two places: act
+                 in one and the other still shows it open until reloaded, and
+                 two admins can act twice on the same report. Same reasoning
+                 that pulled prestige-farming reports out of WhiteRoom's main
+                 queue. One report, one place to act. */
               '<div class="row-actions" onclick="event.stopPropagation();">' +
-                '<button class="act-btn success" onclick="resolveReport(\'' + r.id + '\')"><i class="ti ti-check"></i> Resolve</button>' +
-                '<button class="act-btn danger" onclick="dismissReport(\'' + r.id + '\')"><i class="ti ti-x"></i> Dismiss</button>' +
+                '<a class="act-btn" href="WhiteRoomUnbreakable.html#sec-reports" target="_blank" style="text-decoration:none;" title="Review and action this report in WhiteRoom"><i class="ti ti-external-link"></i> Review in WhiteRoom</a>' +
               '</div>' +
             '</div>'
         };
@@ -876,22 +887,10 @@
       applyFilterAndRender();
     }
 
-    // ── S4: REPORT ACTIONS ────────────────────────────────────────
-    async function resolveReport(reportId) {
-      if (!confirm('Mark this report as resolved?')) return;
-      var res = await window.db.from('reports').update({ status: 'resolved' }).eq('id', reportId);
-      if (res.error) { showToast('Error: ' + res.error.message); return; }
-      showToast('Report marked as resolved.');
-      removeReportRow(reportId);
-    }
-
-    async function dismissReport(reportId) {
-      if (!confirm('Dismiss this report? It will be marked as closed with no action.')) return;
-      var res = await window.db.from('reports').update({ status: 'dismissed' }).eq('id', reportId);
-      if (res.error) { showToast('Error: ' + res.error.message); return; }
-      showToast('Report dismissed.');
-      removeReportRow(reportId);
-    }
+    /* resolveReport() and dismissReport() were removed along with the action
+       buttons above -- this panel is triage only and no longer writes to the
+       reports table at all. removeReportRow() below is kept as a harmless
+       client-side helper. */
 
     // S3: remove report row immediately client-side instead of full refetch
     function removeReportRow(reportId) {
