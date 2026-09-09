@@ -763,6 +763,52 @@
       });
     }
 
+    /* Deleting reported content is irreversible and destroys someone else's
+       work, so a single stray click must not be enough. This variant keeps
+       the confirm button disabled until the exact phrase is typed, and
+       shows WHAT is being deleted rather than a bare UUID. Used only for
+       content deletion -- showConfirmModal stays as-is everywhere else. */
+    function showTypedConfirmModal(title, bodyHtml, phrase, confirmLabel) {
+      return new Promise(function(resolve) {
+        var overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        overlay.innerHTML =
+          '<div style="background:var(--bg3);border:1px solid var(--red);border-radius:12px;padding:28px 32px;max-width:470px;width:92%;font-family:Lato,sans-serif;">' +
+            '<div style="font-family:Cinzel,serif;font-size:16px;color:var(--red);margin-bottom:12px;">' +
+              '<i class="ti ti-alert-triangle"></i> ' + title + '</div>' +
+            '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px;" id="tcm-body"></div>' +
+            '<div style="font-size:12px;color:var(--text3);margin-bottom:6px;">Type <strong style="color:var(--red);">' + phrase + '</strong> to enable the delete button:</div>' +
+            '<input id="tcm-input" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;color:var(--text);font-size:13px;font-family:Lato,sans-serif;outline:none;margin-bottom:20px;"/>' +
+            '<div style="display:flex;gap:10px;justify-content:flex-end;">' +
+              '<button id="tcm-cancel" style="padding:8px 18px;border-radius:7px;border:1px solid var(--border);background:var(--bg4);color:var(--text2);cursor:pointer;font-size:13px;">Cancel</button>' +
+              '<button id="tcm-confirm" disabled style="padding:8px 18px;border-radius:7px;border:none;background:var(--bg4);color:var(--text3);cursor:not-allowed;font-size:13px;font-weight:700;">' + confirmLabel + '</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(overlay);
+        overlay.querySelector('#tcm-body').innerHTML = bodyHtml;
+        var input = overlay.querySelector('#tcm-input');
+        var confirmBtn = overlay.querySelector('#tcm-confirm');
+        function done(v) { if (overlay.parentNode) document.body.removeChild(overlay); resolve(v); }
+        input.addEventListener('input', function() {
+          var ok = input.value.trim().toUpperCase() === phrase.toUpperCase();
+          confirmBtn.disabled = !ok;
+          confirmBtn.style.background = ok ? 'var(--red)' : 'var(--bg4)';
+          confirmBtn.style.color = ok ? '#fff' : 'var(--text3)';
+          confirmBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+        });
+        /* Enter inside the field must not submit unless the phrase matches. */
+        input.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && !confirmBtn.disabled) done(true);
+          if (e.key === 'Escape') done(false);
+        });
+        confirmBtn.onclick = function() { if (!confirmBtn.disabled) done(true); };
+        overlay.querySelector('#tcm-cancel').onclick = function() { done(false); };
+        /* Clicking the dark backdrop cancels -- never confirms. */
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) done(false); });
+        setTimeout(function() { input.focus(); }, 30);
+      });
+    }
+
     // ── ANNOUNCEMENT ──────────────────────────────────────────────
     async function loadCurrent() {
       var annResult = await db.from('announcements').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(1);
@@ -1583,10 +1629,18 @@
           });
           card.querySelector('.remove').addEventListener('click', async function() {
             var contentLabel = report.content_type || 'content';
-            if (await showConfirmModal('Remove this ' + escHtml(contentLabel) + '?',
-                  'Permanently delete the reported ' + escHtml(contentLabel) +
-                  ' <code>' + escHtml(report.content_id || '?') + '</code> and resolve the report. This cannot be undone.',
-                  'Delete content', 'Cancel', 'var(--red)')) {
+            /* The old prompt named the content only by UUID, which is not
+               enough to tell whether you are about to delete the thing that
+               was reported or something innocent. Show the actual content,
+               and require the phrase to be typed. */
+            var confirmBody =
+              'You are about to <strong style="color:var(--red);">permanently delete</strong> this ' +
+              escHtml(contentLabel) + '. It cannot be recovered.' +
+              renderReportPreview(report, targets) +
+              '<div style="font-size:11px;color:var(--text3);">The report will be marked resolved.</div>';
+            if (await showTypedConfirmModal(
+                  'Delete this ' + escHtml(contentLabel) + '?',
+                  confirmBody, 'DELETE', 'Delete content')) {
               // Delete the actual content if we know its type
               if (report.content_id) {
                 var table = report.content_type === 'chapter' ? 'chapters'
@@ -1987,9 +2041,16 @@
 
         // Delete story + warn author + resolve reports
         card.querySelector('.pf-delete').addEventListener('click', async function() {
-          if (!await showConfirmModal('Delete this story?',
-                'Permanently delete <strong>' + escHtml(work.title || 'Untitled') + '</strong> and warn its author. This cannot be undone.',
-                'Delete story', 'Cancel', 'var(--red)')) return;
+          /* Same protection as Remove Content in the reports queue: deleting
+             a whole story is irreversible, so require the phrase to be typed
+             rather than accepting a single click. */
+          if (!await showTypedConfirmModal('Delete this story?',
+                'You are about to <strong style="color:var(--red);">permanently delete</strong> ' +
+                '<strong>' + escHtml(work.title || 'Untitled') + '</strong> by @' + escHtml(authorName) +
+                ' and send its author a warning. The story cannot be recovered.' +
+                '<div style="font-size:11px;color:var(--text3);margin-top:8px;">' +
+                escHtml(String(reports.length)) + ' report(s) for this story will be marked resolved.</div>',
+                'DELETE', 'Delete story')) return;
           // Send warning notification
           if (work.author_id) {
             await db.rpc('admin_send_notification', {
