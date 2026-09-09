@@ -27,7 +27,10 @@ deliberately outside that switch.
 
 ## 1. Daily digest — the volume risk
 
-- **Current state: 1 of 54 notification types is `email_worthy`** — `admin_warning` only.
+- **Current state: 1 of 56 notification types is `email_worthy`** — `admin_warning` only.
+  (`report_resolved` and `report_dismissed` were added for report outcomes and are
+  deliberately in-app only: they answer an action the user took, they are not
+  disciplinary, and they have no `pref_column` so they cannot be switched off.)
   Everything else is in-app only.
 - `email_worthy` defaults to **false**, so a newly added notification type is
   silent until someone explicitly opts it in. Correct direction on a tight quota.
