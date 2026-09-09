@@ -184,6 +184,34 @@
     .buy-modal-btn.confirm { background: #f59e0b; color: #1a1208; }
     .buy-modal-btn.confirm:disabled { opacity: 0.5; cursor: not-allowed; }
     .buy-modal-btn.cancel { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+    /* ── Gifting ───────────────────────────────────────────────────────
+       Quills are HELD, not spent, when a gift is offered. Nothing settles
+       until the recipient accepts, so the balance shown must distinguish
+       "you have" from "you can spend". */
+    .buy-modal-btn.gift { background: var(--bg3); color: var(--accent); border: 1px solid var(--accent); }
+    .gift-hold-note { font-size: 11px; color: var(--gold); margin-bottom: 10px; }
+    .gift-field { width: 100%; box-sizing: border-box; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 8px; padding: 9px 11px; color: var(--text); font-size: 13px; font-family: 'Lato', sans-serif; outline: none; }
+    .gift-field:focus { border-color: var(--accent); }
+    .gift-label { font-size: 11px; color: var(--text3); margin: 10px 0 4px; display: block; }
+    .gift-result { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 8px;
+      cursor: pointer; font-size: 13px; color: var(--text2); }
+    .gift-result:hover { background: var(--bg3); }
+    .gift-result.chosen { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--text); }
+    .gift-card { background: var(--bg3); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+    .gift-card.outgoing { border-left-color: var(--text3); }
+    .gift-card h4 { font-family: 'Cinzel', serif; font-size: 14px; color: var(--text); margin-bottom: 3px; }
+    .gift-card .gc-meta { font-size: 11px; color: var(--text3); margin-bottom: 8px; }
+    .gift-card .gc-msg { font-size: 12px; color: var(--text2); font-style: italic; margin-bottom: 10px;
+      white-space: pre-wrap; word-break: break-word; }
+    .gc-btns { display: flex; gap: 8px; }
+    .gc-btn { padding: 7px 14px; border-radius: 7px; font-size: 12px; font-weight: 700; cursor: pointer;
+      border: none; font-family: 'Lato', sans-serif; }
+    .gc-btn.accept { background: #22c55e; color: #052e16; }
+    .gc-btn.decline { background: var(--bg4); color: var(--text2); border: 1px solid var(--border); }
+    #gift-badge { display: none; background: var(--accent); color: #04140d; border-radius: 10px;
+      padding: 1px 6px; font-size: 10px; font-weight: 800; margin-left: 5px; }
     .item-option-name { font-size: 10px; color: var(--text2); text-align: center; line-height: 1.3; }
     .item-option.none .item-option-thumb { color: var(--text3); }
 
@@ -366,7 +394,46 @@
     <div style="font-size:11px;color:var(--text3);margin-bottom:14px;" id="buy-modal-balance-note">You have 0 Quills.</div>
     <div class="buy-modal-btns">
       <button class="buy-modal-btn cancel" onclick="closeBuyModal()">Cancel</button>
+      <button class="buy-modal-btn gift" id="buy-modal-gift-btn" onclick="openGiftModal()">Gift</button>
       <button class="buy-modal-btn confirm" id="buy-modal-confirm-btn" onclick="confirmPurchase()">Purchase</button>
+    </div>
+  </div>
+</div>
+
+<!-- Send a gift. Ownership is checked BEFORE any Quills are held, so nobody
+     ever pays for something the recipient already has. -->
+<div class="buy-modal-overlay" id="gift-modal-overlay">
+  <div class="buy-modal">
+    <h3>Send <span id="gift-item-name">this item</span> as a gift</h3>
+    <p style="margin-bottom:10px;">Your Quills are only held until they accept. If they decline, or don't reply within 14 days, you get them back.</p>
+    <div class="buy-modal-price"><i class="ti ti-feather"></i> <span id="gift-price-amount">0</span> Quills</div>
+    <div id="gift-balance-note" style="font-size:11px;color:var(--text3);margin-bottom:4px;"></div>
+    <div class="gift-hold-note" id="gift-hold-note" style="display:none;"></div>
+
+    <label class="gift-label" for="gift-user-search">Who is it for?</label>
+    <input class="gift-field" id="gift-user-search" autocomplete="off" placeholder="Type a username..." oninput="giftSearchUsers()"/>
+    <div id="gift-user-results" style="max-height:150px;overflow-y:auto;margin-top:6px;"></div>
+
+    <label class="gift-label" for="gift-message">Add a note (optional)</label>
+    <textarea class="gift-field" id="gift-message" rows="2" maxlength="300" placeholder="Happy birthday!" oninput="giftCountMsg()"></textarea>
+    <div style="text-align:right;font-size:10px;color:var(--text3);margin-top:2px;" id="gift-msg-count">0/300</div>
+
+    <div class="buy-modal-btns" style="margin-top:14px;">
+      <button class="buy-modal-btn cancel" onclick="closeGiftModal()">Cancel</button>
+      <button class="buy-modal-btn confirm" id="gift-send-btn" onclick="sendGift()" disabled>Send gift</button>
+    </div>
+  </div>
+</div>
+
+<!-- Gifts waiting for you, and gifts you have sent that are still pending. -->
+<div class="buy-modal-overlay" id="gifts-inbox-overlay">
+  <div class="buy-modal" style="max-width:460px;max-height:85vh;overflow-y:auto;">
+    <h3>Gifts</h3>
+    <div id="gifts-inbox-body" style="margin-top:12px;">
+      <p style="font-size:13px;color:var(--text3);">Loading...</p>
+    </div>
+    <div class="buy-modal-btns" style="margin-top:14px;">
+      <button class="buy-modal-btn cancel" onclick="closeGiftsInbox()">Close</button>
     </div>
   </div>
 </div>
@@ -535,6 +602,11 @@
   var dirty = false;
   var emberBalance = 0;
   var quillBalance = 0;
+  var quillReserved = 0;          // held against pending gift offers
+  var pendingGiftItem = null;     // item being gifted
+  var giftRecipient = null;       // { id, username } chosen in the gift modal
+  var giftSearchTimer = null;
+  function quillAvailable() { return Math.max(0, quillBalance - quillReserved); }
 
   // Placeholder slot shapes moved to avatarRender.js (DSAvatar.SLOT_PLACEHOLDER_SHAPES).
 
@@ -562,7 +634,7 @@
       db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', currentUid),
       db.from('cosmetic_item_owns').select('cosmetic_item_id').eq('user_id', currentUid),
       db.from('user_embers').select('balance').eq('user_id', currentUid).maybeSingle(),
-      db.from('user_quills').select('balance').eq('user_id', currentUid).maybeSingle(),
+      db.from('user_quills').select('balance,reserved').eq('user_id', currentUid).maybeSingle(),
       db.from('reroll_color_palette').select('hex,label'),
       db.from('reroll_color_palette').select('hex,label,rarity_weight').eq('region_type','accent').order('label'),
       db.from('avatar_body_presets').select('*').eq('is_active', true).order('sort_order')
@@ -572,6 +644,11 @@
 
     emberBalance = (embersResult.data && embersResult.data.balance) || 0;
     quillBalance = (quillsResult.data && quillsResult.data.balance) || 0;
+    /* Quills promised to a pending gift are still in `balance` but cannot be
+       spent. Everything that checks affordability must use quillAvailable,
+       never quillBalance, or the database will refuse a purchase the UI said
+       was fine. */
+    quillReserved = (quillsResult.data && quillsResult.data.reserved) || 0;
 
     // Build hex → label map for color name tooltips
     window.hexColorMap = {};
@@ -1932,6 +2009,10 @@
           '<div class="tab-panel" data-tab="gacha">' +
             '<div class="ember-balance-row">' +
               '<div class="ember-balance"><i class="ti ti-flame"></i><span id="ember-balance-amount">0</span><span class="ember-balance-label">Embers available</span></div>' +
+              /* Gifts live here rather than in the nav: this is the tab where
+                 cosmetics are bought, so it is where a gift is relevant. */
+              '<button class="gc-btn decline" style="margin-left:auto;" onclick="openGiftsInbox()">' +
+                '<i class="ti ti-gift"></i> Gifts<span id="gift-badge">0</span></button>' +
             '</div>' +
             '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;">Mystery Item</div>' +
             '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5;">Spend 10 Embers for a random white &amp; teal accessory or clothing item. Rarer items are less likely. Already-owned items cannot be pulled again.</div>' +
@@ -1980,6 +2061,9 @@
     if (avatarData.accent_color && avatarData.accent_color.hex) {
       applyAccentCSS(avatarData.accent_color.hex, !!avatarData.accent_color.stroke);
     }
+    /* Badge the Gifts button if something is waiting. Deliberately not awaited
+       and wrapped so a gift-count failure can never stop the avatar rendering. */
+    try { giftLoadPending(); } catch (e) { console.error('gift badge:', e); }
   }
 
   // ── MARKETPLACE COSMETIC PURCHASE ────────────────────────────────
@@ -1992,12 +2076,255 @@
     document.getElementById('buy-modal-name').textContent = item.name;
     document.getElementById('buy-modal-price-amount').textContent = (item.quill_price || 0).toLocaleString();
     var confirmBtn = document.getElementById('buy-modal-confirm-btn');
-    var insufficient = quillBalance < (item.quill_price || 0);
+    /* Check AVAILABLE, not balance: Quills held for a pending gift are not
+       spendable and purchase_marketplace_cosmetic will refuse them. */
+    var insufficient = quillAvailable() < (item.quill_price || 0);
     confirmBtn.disabled = insufficient;
     confirmBtn.textContent = insufficient ? 'Not enough Quills' : 'Purchase';
-    document.getElementById('buy-modal-balance-note').textContent = 'You have ' + quillBalance.toLocaleString() + ' Quills.';
+    var note = 'You have ' + quillBalance.toLocaleString() + ' Quills.';
+    if (quillReserved > 0) {
+      note += ' ' + quillReserved.toLocaleString() + ' are on hold for gifts, so ' +
+              quillAvailable().toLocaleString() + ' are spendable.';
+    }
+    document.getElementById('buy-modal-balance-note').textContent = note;
+    var giftBtn = document.getElementById('buy-modal-gift-btn');
+    if (giftBtn) giftBtn.style.display = (item.quill_price || 0) > 0 ? '' : 'none';
     document.getElementById('buy-modal-overlay').classList.add('show');
   };
+
+  // ══ GIFTING ═══════════════════════════════════════════════════════
+  // The database holds the Quills; this UI only ever reports what it is told.
+  // Every affordability check uses quillAvailable(), never quillBalance.
+
+  window.openGiftModal = function() {
+    if (!pendingBuyItem) return;
+    pendingGiftItem = pendingBuyItem;
+    giftRecipient = null;
+    document.getElementById('gift-item-name').textContent = pendingGiftItem.name;
+    document.getElementById('gift-price-amount').textContent = (pendingGiftItem.quill_price || 0).toLocaleString();
+    document.getElementById('gift-user-search').value = '';
+    document.getElementById('gift-user-results').innerHTML = '';
+    document.getElementById('gift-message').value = '';
+    giftCountMsg();
+    document.getElementById('gift-balance-note').textContent =
+      'You have ' + quillBalance.toLocaleString() + ' Quills.';
+    var hold = document.getElementById('gift-hold-note');
+    if (quillReserved > 0) {
+      hold.style.display = '';
+      hold.textContent = quillReserved.toLocaleString() + ' Quills are already on hold for other gifts \u2014 ' +
+                         quillAvailable().toLocaleString() + ' available.';
+    } else { hold.style.display = 'none'; }
+    giftRefreshSendBtn();
+    closeBuyModal();
+    document.getElementById('gift-modal-overlay').classList.add('show');
+  };
+
+  window.closeGiftModal = function() {
+    pendingGiftItem = null; giftRecipient = null;
+    document.getElementById('gift-modal-overlay').classList.remove('show');
+  };
+
+  window.giftCountMsg = function() {
+    var v = document.getElementById('gift-message').value || '';
+    document.getElementById('gift-msg-count').textContent = v.length + '/300';
+  };
+
+  function giftRefreshSendBtn() {
+    var btn = document.getElementById('gift-send-btn');
+    var price = (pendingGiftItem && pendingGiftItem.quill_price) || 0;
+    if (!giftRecipient) { btn.disabled = true; btn.textContent = 'Pick someone'; return; }
+    if (quillAvailable() < price) { btn.disabled = true; btn.textContent = 'Not enough Quills'; return; }
+    btn.disabled = false; btn.textContent = 'Send gift';
+  }
+
+  window.giftSearchUsers = function() {
+    clearTimeout(giftSearchTimer);
+    giftRecipient = null; giftRefreshSendBtn();
+    var q = (document.getElementById('gift-user-search').value || '').trim();
+    var box = document.getElementById('gift-user-results');
+    if (q.length < 2) { box.innerHTML = ''; return; }
+    // Debounced: one query after typing stops, not one per keystroke.
+    giftSearchTimer = setTimeout(async function() {
+      var res = await db.from('profiles').select('id,username,display_name')
+        .ilike('username', '%' + q + '%').neq('id', currentUid).limit(8);
+      if (res.error) { box.innerHTML = '<div style="font-size:12px;color:var(--text3);">Search failed.</div>'; return; }
+      var rows = res.data || [];
+      if (!rows.length) { box.innerHTML = '<div style="font-size:12px;color:var(--text3);">No one by that name.</div>'; return; }
+      box.innerHTML = rows.map(function(r) {
+        return '<div class="gift-result" data-id="' + esc(r.id) + '" data-name="' + esc(r.username || '') + '">' +
+               '<i class="ti ti-user"></i> @' + esc(r.username || 'unknown') + '</div>';
+      }).join('');
+      Array.prototype.forEach.call(box.querySelectorAll('.gift-result'), function(el) {
+        el.addEventListener('click', function() {
+          Array.prototype.forEach.call(box.querySelectorAll('.gift-result'), function(o){ o.classList.remove('chosen'); });
+          el.classList.add('chosen');
+          giftRecipient = { id: el.dataset.id, username: el.dataset.name };
+          giftRefreshSendBtn();
+        });
+      });
+    }, 250);
+  };
+
+  window.sendGift = async function() {
+    if (!pendingGiftItem || !giftRecipient) return;
+    var btn = document.getElementById('gift-send-btn');
+    btn.disabled = true; btn.textContent = 'Sending...';
+    try {
+      var res = await db.rpc('gift_cosmetic_offer', {
+        p_recipient_id: giftRecipient.id,
+        p_cosmetic_id: pendingGiftItem.id,
+        p_message: document.getElementById('gift-message').value || null
+      });
+      var d = res.data;
+      if (res.error || !d || d.status !== 'success') {
+        var code = d && d.error;
+        var msg = code === 'recipient_already_owns' ? '@' + giftRecipient.username + ' already owns this \u2014 nothing was charged.'
+          : code === 'blocked' ? 'You cannot send a gift to this person.'
+          : code === 'offer_already_pending' ? 'You already have a pending gift of this item for them.'
+          : code === 'insufficient_available_quills' ? (
+              (d && d.on_hold_from_recent_purchase > 0)
+                ? 'Quills bought in the last ' + (d.hold_days || 3) + ' days cannot be gifted yet.'
+                : 'Not enough available Quills.')
+          : code === 'recipient_unavailable' ? 'That account is not available.'
+          : code === 'cannot_gift_self' ? 'You cannot gift yourself.'
+          : 'Could not send that gift.';
+        showToast(msg, 'ti-x');
+        btn.disabled = false; giftRefreshSendBtn();
+        return;
+      }
+      // Trust the server's numbers rather than adjusting locally.
+      quillReserved = d.reserved || 0;
+      closeGiftModal();
+      showToast('Gift sent to @' + giftRecipient.username + '. Your Quills are on hold until they accept.', 'ti-gift');
+      giftLoadPending();
+    } catch (err) {
+      console.error('gift send:', err);
+      showToast('Something went wrong', 'ti-alert-triangle');
+      btn.disabled = false; giftRefreshSendBtn();
+    }
+  };
+
+  // ── Gifts inbox ──────────────────────────────────────────────────
+  window.openGiftsInbox = function() {
+    document.getElementById('gifts-inbox-overlay').classList.add('show');
+    giftRenderInbox();
+  };
+  window.closeGiftsInbox = function() {
+    document.getElementById('gifts-inbox-overlay').classList.remove('show');
+  };
+
+  async function giftFetch() {
+    var res = await db.from('gift_offers')
+      .select('id,sender_id,recipient_id,cosmetic_item_id,quill_price,message,status,expires_at,created_at')
+      .eq('status', 'pending').order('created_at', { ascending: false });
+    if (res.error) { console.error('gift fetch:', res.error); return { incoming: [], outgoing: [], names: {}, items: {} }; }
+    var rows = res.data || [];
+    var incoming = rows.filter(function(r){ return r.recipient_id === currentUid; });
+    var outgoing = rows.filter(function(r){ return r.sender_id === currentUid; });
+    var people = {}, items = {};
+    rows.forEach(function(r){ people[r.sender_id]=1; people[r.recipient_id]=1; items[r.cosmetic_item_id]=1; });
+    var names = {}, itemNames = {};
+    var pIds = Object.keys(people), iIds = Object.keys(items);
+    if (pIds.length) {
+      var pr = await db.from('profiles').select('id,username').in('id', pIds);
+      (pr.data || []).forEach(function(p){ names[p.id] = p.username; });
+    }
+    if (iIds.length) {
+      var ir = await db.from('cosmetic_items').select('id,name,image_url').in('id', iIds);
+      (ir.data || []).forEach(function(i){ itemNames[i.id] = i; });
+    }
+    return { incoming: incoming, outgoing: outgoing, names: names, items: itemNames };
+  }
+
+  async function giftRenderInbox() {
+    var body = document.getElementById('gifts-inbox-body');
+    body.innerHTML = '<p style="font-size:13px;color:var(--text3);">Loading...</p>';
+    var g = await giftFetch();
+    var html = '';
+    if (g.incoming.length) {
+      html += '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">For you</div>';
+      html += g.incoming.map(function(o) {
+        var item = g.items[o.cosmetic_item_id] || {};
+        var days = Math.max(0, Math.ceil((new Date(o.expires_at) - new Date()) / 86400000));
+        return '<div class="gift-card">' +
+          '<h4>' + esc(item.name || 'A cosmetic') + '</h4>' +
+          '<div class="gc-meta">from @' + esc(g.names[o.sender_id] || 'someone') +
+          ' \u00b7 expires in ' + days + ' day' + (days === 1 ? '' : 's') + '</div>' +
+          (o.message ? '<div class="gc-msg">\u201c' + esc(o.message) + '\u201d</div>' : '') +
+          '<div class="gc-btns">' +
+            '<button class="gc-btn accept" onclick="giftAccept(\'' + esc(o.id) + '\')">Accept</button>' +
+            '<button class="gc-btn decline" onclick="giftDecline(\'' + esc(o.id) + '\')">Decline</button>' +
+          '</div></div>';
+      }).join('');
+    }
+    if (g.outgoing.length) {
+      html += '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin:14px 0 8px;">Waiting on a reply</div>';
+      html += g.outgoing.map(function(o) {
+        var item = g.items[o.cosmetic_item_id] || {};
+        return '<div class="gift-card outgoing">' +
+          '<h4>' + esc(item.name || 'A cosmetic') + '</h4>' +
+          '<div class="gc-meta">for @' + esc(g.names[o.recipient_id] || 'someone') + ' \u00b7 ' +
+          (o.quill_price || 0).toLocaleString() + ' Quills on hold</div>' +
+          '<div class="gc-btns"><button class="gc-btn decline" onclick="giftCancel(\'' + esc(o.id) + '\')">Cancel &amp; release Quills</button></div>' +
+        '</div>';
+      }).join('');
+    }
+    if (!html) html = '<p style="font-size:13px;color:var(--text3);">No gifts waiting. When someone sends you one it shows up here.</p>';
+    body.innerHTML = html;
+  }
+
+  async function giftRefreshBalances() {
+    var q = await db.from('user_quills').select('balance,reserved').eq('user_id', currentUid).maybeSingle();
+    quillBalance = (q.data && q.data.balance) || 0;
+    quillReserved = (q.data && q.data.reserved) || 0;
+    var el = document.getElementById('ds-quill-count');
+    if (el) el.textContent = quillBalance.toLocaleString();
+  }
+
+  window.giftAccept = async function(id) {
+    var res = await db.rpc('gift_offer_accept', { p_offer_id: id });
+    var d = res.data;
+    if (res.error || !d || d.status !== 'success') {
+      var code = d && d.error;
+      showToast(code === 'offer_expired' ? 'That gift expired.'
+        : code === 'already_owned_now' ? 'You already own this one.'
+        : code === 'sender_cannot_cover' ? 'The sender can no longer cover this gift.'
+        : 'Could not accept that gift.', 'ti-x');
+      giftRenderInbox(); giftLoadPending();
+      return;
+    }
+    ownedItemIds.add(d.cosmetic_item_id);
+    showToast('\u201c' + d.name + '\u201d is yours \u2014 unlock it with Embers to wear it.', 'ti-gift');
+    await giftRefreshBalances();
+    giftRenderInbox(); giftLoadPending(); renderItemGrid();
+  };
+
+  window.giftDecline = async function(id) {
+    var res = await db.rpc('gift_offer_decline', { p_offer_id: id });
+    if (res.error || !res.data || res.data.status !== 'success') { showToast('Could not decline that gift.', 'ti-x'); }
+    else { showToast('Gift declined. Their Quills were released.', 'ti-check'); }
+    giftRenderInbox(); giftLoadPending();
+  };
+
+  window.giftCancel = async function(id) {
+    var res = await db.rpc('gift_offer_cancel', { p_offer_id: id });
+    if (res.error || !res.data || res.data.status !== 'success') { showToast('Could not cancel that gift.', 'ti-x'); }
+    else { showToast('Gift cancelled. Your Quills are available again.', 'ti-check'); await giftRefreshBalances(); }
+    giftRenderInbox(); giftLoadPending();
+  };
+
+  // Badge on the Gifts button so an incoming gift is visible without opening it.
+  async function giftLoadPending() {
+    if (!currentUid) return;
+    var res = await db.from('gift_offers').select('id', { count: 'exact', head: true })
+      .eq('status', 'pending').eq('recipient_id', currentUid);
+    var badge = document.getElementById('gift-badge');
+    if (!badge) return;
+    var n = res.count || 0;
+    badge.textContent = n;
+    badge.style.display = n > 0 ? '' : 'none';
+  }
+  window.giftLoadPending = giftLoadPending;
 
   window.closeBuyModal = function() {
     pendingBuyItem = null;
