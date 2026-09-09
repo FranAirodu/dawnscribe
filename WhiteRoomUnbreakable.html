@@ -161,6 +161,15 @@
     .report-type.other{background:rgba(155,155,192,0.1);color:var(--text3);}
     .report-body{font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5;}
     .report-meta{font-size:11px;color:var(--text3);margin-bottom:10px;}
+    /* Reported-content preview: shows WHAT was reported, not just its id. */
+    .report-preview{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent);
+      border-radius:8px;padding:10px 12px;margin-bottom:10px;}
+    .report-preview.missing{border-left-color:var(--text3);color:var(--text3);font-size:12px;font-style:italic;}
+    .rp-head{font-size:12px;font-weight:700;color:var(--text);margin-bottom:5px;}
+    .rp-body{font-size:13px;color:var(--text2);line-height:1.5;white-space:pre-wrap;word-break:break-word;}
+    .rp-img{display:block;max-width:220px;max-height:180px;border-radius:6px;margin-top:8px;border:1px solid var(--border);}
+    .rp-link{display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);text-decoration:none;}
+    .rp-link:hover{text-decoration:underline;}
     .report-actions{display:flex;gap:8px;}
     .report-btn{background:none;border:1px solid var(--border);border-radius:7px;padding:5px 12px;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:4px;transition:all 0.2s;color:var(--text2);}
     .report-btn.dismiss:hover{border-color:var(--green);color:var(--green);}
@@ -1397,6 +1406,114 @@
       document.querySelectorAll('.report-filter-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
       loadReports(0);
     }
+    /* ── Reported content preview ───────────────────────────────────────
+       A report card used to show a bare content ID and nothing else, so
+       there was no way to see WHAT had been reported without querying the
+       database by hand. These helpers fetch the referenced row for every
+       report on the page -- one query per content type, not one per card --
+       and render a preview plus a deep link to the live page. */
+    var REPORT_TARGETS = {
+      work:    { table: 'works',            cols: 'id,title,synopsis,cover_url,author_id' },
+      chapter: { table: 'chapters',         cols: 'id,title,chapter_number,content,work_id,author_id' },
+      comment: { table: 'chapter_comments', cols: 'id,content,image_url,gif_url,chapter_id,user_id' },
+      review:  { table: 'reviews',          cols: 'id,title,content,rating,work_id,user_id' }
+    };
+
+    /* Never emit a src from a DB text field without checking the scheme --
+       data: and javascript: URLs would otherwise render straight into the
+       admin page. */
+    function reportSafeImg(u) {
+      return /^https?:\/\//i.test(u || '') ? u : '';
+    }
+    function reportSnippet(t, n) {
+      t = (t || '').replace(/\s+/g, ' ').trim();
+      if (!t) return '';
+      return t.length > n ? t.slice(0, n) + '\u2026' : t;
+    }
+
+    async function fetchReportTargets(reports) {
+      var byType = {}, people = {};
+      reports.forEach(function(r) {
+        if (r.reporter_id) people[r.reporter_id] = 1;
+        if (!r.content_id || !REPORT_TARGETS[r.content_type]) return;
+        if (!byType[r.content_type]) byType[r.content_type] = [];
+        byType[r.content_type].push(r.content_id);
+      });
+      var rows = {};
+      await Promise.all(Object.keys(byType).map(async function(type) {
+        var spec = REPORT_TARGETS[type];
+        var res = await db.from(spec.table).select(spec.cols).in('id', byType[type]);
+        /* A failed lookup must not blank the whole queue -- the card falls
+           back to "content unavailable" and the report stays actionable. */
+        if (res.error || !res.data) { console.error('[preview] ' + spec.table + ':', res.error); return; }
+        res.data.forEach(function(row) {
+          rows[type + ':' + row.id] = row;
+          var a = row.author_id || row.user_id;
+          if (a) people[a] = 1;
+        });
+      }));
+      var profiles = {};
+      var ids = Object.keys(people);
+      if (ids.length) {
+        var pr = await db.from('profiles').select('id,username,display_name').in('id', ids);
+        (pr.data || []).forEach(function(pf) { profiles[pf.id] = pf; });
+      }
+      return { rows: rows, profiles: profiles };
+    }
+
+    function reportHandle(targets, id) {
+      var pf = targets.profiles[id];
+      return pf && pf.username ? '@' + escHtml(pf.username) : 'unknown user';
+    }
+
+    function renderReportPreview(report, targets) {
+      var type = report.content_type;
+      if (!report.content_id) {
+        return '<div class="report-preview missing">No content ID on this report \u2014 nothing to show.</div>';
+      }
+      if (!REPORT_TARGETS[type]) {
+        return '<div class="report-preview missing">Unknown content type \u201c' + escHtml(type || 'none') +
+               '\u201d \u2014 cannot preview or remove this.</div>';
+      }
+      var row = targets.rows[type + ':' + report.content_id];
+      if (!row) {
+        return '<div class="report-preview missing"><i class="ti ti-circle-off"></i> This ' + escHtml(type) +
+               ' is no longer in the database \u2014 it may already have been deleted.</div>';
+      }
+      var who = reportHandle(targets, row.author_id || row.user_id);
+      var heading = '', body = '', link = '';
+      if (type === 'work') {
+        heading = escHtml(row.title || 'Untitled');
+        body = escHtml(reportSnippet(row.synopsis, 300));
+        link = 'story.html?id=' + encodeURIComponent(row.id);
+      } else if (type === 'chapter') {
+        heading = 'Chapter ' + escHtml(String(row.chapter_number || '?')) + ' \u2014 ' + escHtml(row.title || 'Untitled');
+        body = escHtml(reportSnippet(row.content, 400));
+        link = 'chapter.html?id=' + encodeURIComponent(row.id);
+      } else if (type === 'comment') {
+        heading = 'Comment';
+        body = escHtml(reportSnippet(row.content, 400));
+        /* chapter.html does not read location.hash, so this opens the
+           chapter and its comment thread rather than scrolling to the
+           single comment. Reading the surrounding conversation is usually
+           the point anyway. */
+        link = row.chapter_id ? 'chapter.html?id=' + encodeURIComponent(row.chapter_id) : '';
+      } else {
+        heading = 'Review' + (row.rating ? ' \u00b7 ' + escHtml(String(row.rating)) + '/5' : '');
+        body = escHtml(reportSnippet((row.title ? row.title + ' \u2014 ' : '') + (row.content || ''), 400));
+        link = row.work_id ? 'story.html?id=' + encodeURIComponent(row.work_id) : '';
+      }
+      var img = reportSafeImg(row.image_url) || reportSafeImg(row.gif_url) || reportSafeImg(row.cover_url);
+      return '<div class="report-preview">' +
+        '<div class="rp-head">' + heading + ' \u00b7 by ' + who + '</div>' +
+        (body ? '<div class="rp-body">' + body + '</div>'
+              : '<div class="rp-body" style="color:var(--text3);font-style:italic;">(no text content)</div>') +
+        (img ? '<img class="rp-img" loading="lazy" decoding="async" src="' + escHtml(img) + '" alt="reported image"/>' : '') +
+        (link ? '<a class="rp-link" href="' + escHtml(link) + '" target="_blank" rel="noopener">' +
+                '<i class="ti ti-external-link"></i> Open the ' + escHtml(type) + ' page</a>' : '') +
+      '</div>';
+    }
+
     async function loadReports(offset) {
       offset = offset || 0;
       reportOffset = offset;
@@ -1429,6 +1546,7 @@
         return;
       }
       if (offset === 0) el.innerHTML = '';
+      var targets = await fetchReportTargets(result.data);
       result.data.forEach(function(report) {
         var card = document.createElement('div');
         /* status is one of open / reviewing / resolved / dismissed. Testing for
@@ -1444,7 +1562,8 @@
               (report.status === 'dismissed' ? 'Dismissed' : 'Resolved') + '</span>') +
           '</div>' +
           '<div class="report-body">' + escHtml(report.description || 'No description provided.') + '</div>' +
-          '<div class="report-meta">Reported by user · ' + formatDateTime(report.created_at) + ' · Content ID: <code style="background:var(--bg4);padding:1px 5px;border-radius:3px;">' + escHtml(report.content_id || '—') + '</code></div>' +
+          renderReportPreview(report, targets) +
+          '<div class="report-meta">Reported by ' + reportHandle(targets, report.reporter_id) + ' · ' + formatDateTime(report.created_at) + ' · Content ID: <code style="background:var(--bg4);padding:1px 5px;border-radius:3px;">' + escHtml(report.content_id || '—') + '</code></div>' +
           (isOpen ?
           '<div class="report-actions">' +
             '<button class="report-btn dismiss"><i class="ti ti-check"></i> Dismiss</button>' +
