@@ -2011,8 +2011,14 @@
               '<div class="ember-balance"><i class="ti ti-flame"></i><span id="ember-balance-amount">0</span><span class="ember-balance-label">Embers available</span></div>' +
               /* Gifts live here rather than in the nav: this is the tab where
                  cosmetics are bought, so it is where a gift is relevant. */
-              '<button class="gc-btn decline" style="margin-left:auto;" onclick="openGiftsInbox()">' +
-                '<i class="ti ti-gift"></i> Gifts<span id="gift-badge">0</span></button>' +
+              /* Quill feather deliberately shown on this button: it sits beside
+                 the Ember balance, and without it people read "Gifts" as an
+                 Ember cost. Gifts are always paid in Quills. */
+              '<div style="margin-left:auto;display:flex;align-items:center;gap:6px;">' +
+                '<i class="ti ti-feather" style="color:var(--gold);font-size:15px;" title="Gifts are paid in Quills"></i>' +
+                '<button class="gc-btn decline" onclick="openGiftsInbox()">' +
+                  '<i class="ti ti-gift"></i> Gifts<span id="gift-badge">0</span></button>' +
+              '</div>' +
             '</div>' +
             '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;">Mystery Item</div>' +
             '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5;">Spend 10 Embers for a random white &amp; teal accessory or clothing item. Rarer items are less likely. Already-owned items cannot be pulled again.</div>' +
@@ -2215,25 +2221,46 @@
 
   async function giftFetch() {
     var res = await db.from('gift_offers')
-      .select('id,sender_id,recipient_id,cosmetic_item_id,quill_price,message,status,expires_at,created_at')
+      .select('id,sender_id,recipient_id,item_type,cosmetic_item_id,scroll_id,quill_price,message,status,expires_at,created_at')
       .eq('status', 'pending').order('created_at', { ascending: false });
     if (res.error) { console.error('gift fetch:', res.error); return { incoming: [], outgoing: [], names: {}, items: {} }; }
     var rows = res.data || [];
     var incoming = rows.filter(function(r){ return r.recipient_id === currentUid; });
     var outgoing = rows.filter(function(r){ return r.sender_id === currentUid; });
-    var people = {}, items = {};
-    rows.forEach(function(r){ people[r.sender_id]=1; people[r.recipient_id]=1; items[r.cosmetic_item_id]=1; });
+    /* Gifts are polymorphic: a cosmetic (including banners, which are
+       cosmetic_items with slot=banner) or a scroll. Look each type up in its
+       own table and key the result map by type+id so they cannot collide. */
+    var people = {}, cosIds = {}, scrIds = {};
+    rows.forEach(function(r){
+      people[r.sender_id]=1; people[r.recipient_id]=1;
+      if (r.item_type === 'scroll') { if (r.scroll_id) scrIds[r.scroll_id]=1; }
+      else if (r.cosmetic_item_id) { cosIds[r.cosmetic_item_id]=1; }
+    });
     var names = {}, itemNames = {};
-    var pIds = Object.keys(people), iIds = Object.keys(items);
+    var pIds = Object.keys(people), cIds = Object.keys(cosIds), sIds = Object.keys(scrIds);
     if (pIds.length) {
       var pr = await db.from('profiles').select('id,username').in('id', pIds);
       (pr.data || []).forEach(function(p){ names[p.id] = p.username; });
     }
-    if (iIds.length) {
-      var ir = await db.from('cosmetic_items').select('id,name,image_url').in('id', iIds);
-      (ir.data || []).forEach(function(i){ itemNames[i.id] = i; });
+    if (cIds.length) {
+      var ir = await db.from('cosmetic_items').select('id,name,slot').in('id', cIds);
+      (ir.data || []).forEach(function(i){
+        itemNames['cosmetic:' + i.id] = { name: i.name, kind: (i.slot === 'banner' ? 'Banner' : 'Cosmetic') };
+      });
+    }
+    if (sIds.length) {
+      var sr = await db.from('scrolls').select('id,name,item_count').in('id', sIds);
+      (sr.data || []).forEach(function(i){
+        itemNames['scroll:' + i.id] = { name: i.name, kind: 'Scroll',
+          note: (i.item_count ? i.item_count + ' items to unlock with Embers' : 'Unlock its items with Embers') };
+      });
     }
     return { incoming: incoming, outgoing: outgoing, names: names, items: itemNames };
+  }
+
+  function giftItemOf(g, o) {
+    var key = (o.item_type === 'scroll' ? 'scroll:' + o.scroll_id : 'cosmetic:' + o.cosmetic_item_id);
+    return g.items[key] || {};
   }
 
   async function giftRenderInbox() {
@@ -2244,12 +2271,13 @@
     if (g.incoming.length) {
       html += '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">For you</div>';
       html += g.incoming.map(function(o) {
-        var item = g.items[o.cosmetic_item_id] || {};
+        var item = giftItemOf(g, o);
         var days = Math.max(0, Math.ceil((new Date(o.expires_at) - new Date()) / 86400000));
         return '<div class="gift-card">' +
-          '<h4>' + esc(item.name || 'A cosmetic') + '</h4>' +
-          '<div class="gc-meta">from @' + esc(g.names[o.sender_id] || 'someone') +
+          '<h4>' + esc(item.name || 'A gift') + '</h4>' +
+          '<div class="gc-meta">' + esc(item.kind || 'Item') + ' from @' + esc(g.names[o.sender_id] || 'someone') +
           ' \u00b7 expires in ' + days + ' day' + (days === 1 ? '' : 's') + '</div>' +
+          (item.note ? '<div class="gc-meta" style="color:var(--gold);">' + esc(item.note) + '</div>' : '') +
           (o.message ? '<div class="gc-msg">\u201c' + esc(o.message) + '\u201d</div>' : '') +
           '<div class="gc-btns">' +
             '<button class="gc-btn accept" onclick="giftAccept(\'' + esc(o.id) + '\')">Accept</button>' +
@@ -2260,10 +2288,10 @@
     if (g.outgoing.length) {
       html += '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin:14px 0 8px;">Waiting on a reply</div>';
       html += g.outgoing.map(function(o) {
-        var item = g.items[o.cosmetic_item_id] || {};
+        var item = giftItemOf(g, o);
         return '<div class="gift-card outgoing">' +
-          '<h4>' + esc(item.name || 'A cosmetic') + '</h4>' +
-          '<div class="gc-meta">for @' + esc(g.names[o.recipient_id] || 'someone') + ' \u00b7 ' +
+          '<h4>' + esc(item.name || 'A gift') + '</h4>' +
+          '<div class="gc-meta">' + esc(item.kind || 'Item') + ' for @' + esc(g.names[o.recipient_id] || 'someone') + ' \u00b7 ' +
           (o.quill_price || 0).toLocaleString() + ' Quills on hold</div>' +
           '<div class="gc-btns"><button class="gc-btn decline" onclick="giftCancel(\'' + esc(o.id) + '\')">Cancel &amp; release Quills</button></div>' +
         '</div>';
@@ -2293,8 +2321,14 @@
       giftRenderInbox(); giftLoadPending();
       return;
     }
-    ownedItemIds.add(d.cosmetic_item_id);
-    showToast('\u201c' + d.name + '\u201d is yours \u2014 unlock it with Embers to wear it.', 'ti-gift');
+    if (d.item_type === 'scroll') {
+      /* A scroll grants the container; its items still cost Embers, which is
+         the same as buying one yourself. */
+      showToast('\u201c' + d.name + '\u201d unlocked \u2014 claim its items with Embers in the Marketplace.', 'ti-gift');
+    } else {
+      ownedItemIds.add(d.cosmetic_item_id);
+      showToast('\u201c' + d.name + '\u201d is yours \u2014 unlock it with Embers to wear it.', 'ti-gift');
+    }
     await giftRefreshBalances();
     giftRenderInbox(); giftLoadPending(); renderItemGrid();
   };
