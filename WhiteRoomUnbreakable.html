@@ -427,6 +427,7 @@
       <div style="display:flex;gap:6px;margin-bottom:16px;">
         <button class="report-filter-btn active" data-status="open" onclick="setReportFilter(this,'open')">Open</button>
         <button class="report-filter-btn" data-status="resolved" onclick="setReportFilter(this,'resolved')">Resolved</button>
+        <button class="report-filter-btn" data-status="dismissed" onclick="setReportFilter(this,'dismissed')">Dismissed</button>
         <button class="report-filter-btn" data-status="all" onclick="setReportFilter(this,'all')">All</button>
       </div>
       <div id="reports-list"><div class="no-results"><i class="ti ti-loader" style="animation:spin 1s linear infinite;display:block;margin-bottom:6px;"></i>Loading...</div></div>
@@ -1415,29 +1416,48 @@
         return;
       }
       if (!result.data || result.data.length === 0) {
-        if (offset === 0) el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-mood-happy"></i>No open reports. All clear!</div>';
+        if (offset === 0) {
+          /* The message used to say "No open reports" regardless of filter, so
+             an empty Resolved or Dismissed tab read as though the open queue
+             was clear. Say what was actually searched. */
+          var emptyMsg = currentReportStatusFilter === 'open'      ? 'No open reports. All clear!'
+                       : currentReportStatusFilter === 'resolved'  ? 'No resolved reports.'
+                       : currentReportStatusFilter === 'dismissed' ? 'No dismissed reports.'
+                       : 'No reports yet.';
+          el.innerHTML = '<div class="no-results" style="padding:16px 0;"><i class="ti ti-mood-happy"></i>' + emptyMsg + '</div>';
+        }
         return;
       }
       if (offset === 0) el.innerHTML = '';
       result.data.forEach(function(report) {
         var card = document.createElement('div');
-        card.className = 'report-card' + (report.status === 'resolved' ? ' resolved' : '');
+        /* status is one of open / reviewing / resolved / dismissed. Testing for
+           'resolved' alone meant a dismissed report still rendered its action
+           buttons and could be acted on twice. Anything not 'open' is closed. */
+        var isOpen = (report.status === 'open' || report.status === 'reviewing');
+        card.className = 'report-card' + (isOpen ? '' : ' resolved');
         var typeClass = report.reason === 'spam' ? 'spam' : report.reason === 'other' ? 'other' : '';
         card.innerHTML =
           '<div class="report-header">' +
             '<span class="report-type ' + typeClass + '">' + escHtml(report.reason || 'violation') + '</span>' +
-            (report.status === 'resolved' ? '<span style="font-size:11px;color:var(--text3);">Resolved</span>' : '') +
+            (isOpen ? '' : '<span style="font-size:11px;color:var(--text3);">' +
+              (report.status === 'dismissed' ? 'Dismissed' : 'Resolved') + '</span>') +
           '</div>' +
           '<div class="report-body">' + escHtml(report.description || 'No description provided.') + '</div>' +
           '<div class="report-meta">Reported by user · ' + formatDateTime(report.created_at) + ' · Content ID: <code style="background:var(--bg4);padding:1px 5px;border-radius:3px;">' + escHtml(report.content_id || '—') + '</code></div>' +
-          (report.status !== 'resolved' ?
+          (isOpen ?
           '<div class="report-actions">' +
             '<button class="report-btn dismiss"><i class="ti ti-check"></i> Dismiss</button>' +
             '<button class="report-btn remove"><i class="ti ti-trash"></i> Remove Content</button>' +
           '</div>' : '');
-        if (report.status !== 'resolved') {
+        if (isOpen) {
           card.querySelector('.dismiss').addEventListener('click', async function() {
-            { var _w6 = await db.from('reports').update({ status: 'resolved' }).eq('id', report.id);
+            /* Dismiss means "looked at it, no action needed" and must be
+               distinguishable from "removed the content". Both used to write
+               'resolved', so the two outcomes were indistinguishable in the
+               data and the 'dismissed' status was never used at all.
+               admin-stats.html already wrote 'dismissed' correctly. */
+            { var _w6 = await db.from('reports').update({ status: 'dismissed' }).eq('id', report.id);
               if (_w6 && _w6.error) { console.error('[write] WhiteRoomUnbreakable.html:', _w6.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
             showToast('Report dismissed'); auditLog('Dismissed report #' + report.id, 'ti-check');
             loadReports(0); loadStats();
@@ -1813,8 +1833,12 @@
 
         // Dismiss all reports for this work
         card.querySelector('.pf-dismiss').addEventListener('click', async function() {
+          /* 'dismissed', not 'resolved': no action was taken against the story.
+             Warn Author and Delete Story below keep writing 'resolved' because
+             they did act. This panel filters on status = 'open', so either
+             value removes the card from the queue. */
           for (var i = 0; i < reports.length; i++) {
-            { var _w8 = await db.from('reports').update({ status: 'resolved' }).eq('id', reports[i].id);
+            { var _w8 = await db.from('reports').update({ status: 'dismissed' }).eq('id', reports[i].id);
               if (_w8 && _w8.error) { console.error('[write] WhiteRoomUnbreakable.html:', _w8.error); showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); } }
           }
           showToast('All reports for this story dismissed.', 'ti-check');
