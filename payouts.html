@@ -201,6 +201,31 @@
       <div id="payouts-loading" class="loading-state"><i class="ti ti-loader"></i><p>Loading...</p></div>
       <div id="payouts-list"></div>
 
+      <!-- READER TIPS -->
+      <div class="section-title"><i class="ti ti-coin"></i> Reader tips</div>
+      <div class="intro-card">
+        <h3><i class="ti ti-info-circle"></i> How reader tips work</h3>
+        <ul>
+          <li>A reader can tip your story any amount of Quills. <strong>You keep 90%</strong> and DawnScribe takes 10% — the most generous split on the site, because tips cost us nothing to produce.</li>
+          <li>Tips land in your USD balance and pay out alongside everything else, after the usual hold period.</li>
+          <li>A reader may choose to tip anonymously. When they do, their name is hidden from everyone — <strong>including you</strong>.</li>
+        </ul>
+      </div>
+      <div class="balance-grid" id="tips-summary" style="display:none;margin-bottom:16px;">
+        <div class="balance-card">
+          <div class="balance-label">Quills earned from tips</div>
+          <div class="balance-amount gold" id="tips-earned">0</div>
+          <div class="balance-sub" id="tips-gross">Tipped: 0</div>
+        </div>
+        <div class="balance-card">
+          <div class="balance-label">Readers who tipped</div>
+          <div class="balance-amount" id="tips-people">0</div>
+          <div class="balance-sub" id="tips-count">0 tips</div>
+        </div>
+      </div>
+      <div id="tips-loading" class="loading-state"><i class="ti ti-loader"></i><p>Loading tips...</p></div>
+      <div id="tips-list"></div>
+
       <!-- SALES HISTORY -->
       <div class="section-title"><i class="ti ti-receipt"></i> Sales history</div>
       <div class="intro-card">
@@ -610,6 +635,62 @@
       }).join('');
     }
 
+    // ── READER TIPS ──────────────────────────────────────────────
+    // Both calls are RPCs. creator_tips is not readable by the recipient —
+    // the table policy only exposes tips a user SENT — so these server-side
+    // functions are the only way an author sees their own tips, and they
+    // strip the tipper's identity when the tip was anonymous.
+    async function loadReaderTips() {
+      var loading = document.getElementById('tips-loading');
+      var list    = document.getElementById('tips-list');
+      try {
+        var totRes  = await db.rpc('my_tip_totals_received');
+        var listRes = await db.rpc('list_my_tips_received', { p_limit: 50 });
+
+        loading.style.display = 'none';
+
+        var tot  = totRes.data || {};
+        var tips = listRes.data || [];
+
+        if (!tips.length) {
+          list.innerHTML = '<div class="empty-state"><i class="ti ti-coin-off"></i>' +
+            '<p>No tips yet. When a reader tips one of your stories it will show up here.</p></div>';
+          return;
+        }
+
+        // Totals come from the aggregate, not the visible page, so the summary
+        // is lifetime rather than "last 50 tips".
+        document.getElementById('tips-summary').style.display = '';
+        document.getElementById('tips-earned').textContent = (tot.quill_earned || 0).toLocaleString();
+        document.getElementById('tips-gross').textContent  = 'Tipped: ' + (tot.quill_gross || 0).toLocaleString();
+        document.getElementById('tips-people').textContent = (tot.tipper_count || 0).toLocaleString();
+        document.getElementById('tips-count').textContent  =
+          (tot.tip_count || 0).toLocaleString() + ((tot.tip_count === 1) ? ' tip' : ' tips');
+
+        list.innerHTML = tips.map(function (t) {
+          var who = t.is_anonymous ? 'Anonymous reader' : escHtml(t.display_name || 'Reader');
+          var where = t.work_title ? escHtml(t.work_title) : 'a deleted story';
+          return '<div class="sale-row">' +
+            '<div class="sale-info">' +
+              '<span class="sale-role">Tip</span>' +
+              '<strong>' + who + '</strong>' +
+              '<div class="sale-date">' + fmtDate(t.created_at) + ' \u00b7 on ' + where +
+                ' \u00b7 ' + (t.quill_amount || 0).toLocaleString() + ' Quills tipped</div>' +
+              (t.message
+                ? '<div class="sale-date" style="font-style:italic;">\u201c' + escHtml(t.message) + '\u201d</div>'
+                : '') +
+            '</div>' +
+            '<div class="sale-amount"><i class="ti ti-feather"></i>' +
+              (t.author_share || 0).toLocaleString() + '</div>' +
+          '</div>';
+        }).join('');
+      } catch (e) {
+        loading.style.display = 'none';
+        list.innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i>' +
+          '<p>Could not load tips right now.</p></div>';
+      }
+    }
+
     // ── COSMETIC ROYALTIES ───────────────────────────────────────
     async function loadCosmeticRoyalties() {
       var uid = currentSession.user.id;
@@ -665,7 +746,7 @@
         document.getElementById('main-content').style.display = 'block';
         // Load balance first so _payoutScheduleEnabled is set before connect card renders
         await loadBalance();
-        await Promise.all([loadConnectCard(), loadPendingApprovals(), loadPayoutHistory(), loadSalesHistory(), loadCosmeticRoyalties()]);
+        await Promise.all([loadConnectCard(), loadPendingApprovals(), loadPayoutHistory(), loadReaderTips(), loadSalesHistory(), loadCosmeticRoyalties()]);
         // Handle Stripe redirect back
         await handleConnectReturn();
       } catch(err) {
