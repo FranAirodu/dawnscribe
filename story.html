@@ -56,6 +56,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="storagePaths.js"></script>
   <script src="spoilerUtils.js"></script>
+<script src="tipWidget.js"></script>
   <script src="escapeUtils.js"></script>
   <script src="blockUtils.js"></script>
   <script src="translateHint.js"></script>
@@ -2353,149 +2354,26 @@
       loadTopFans();
     };
 
-    // ── SUPPORT THE AUTHOR (QUILL TIPS) ──────────────────────────
-    // The 90/10 split lives in tip_creator() alone; nothing here recomputes it.
-    var TIP_PRESETS = [50, 100, 500, 1000];
-
+    // ── SUPPORT THE AUTHOR (QUILL TIPS) ──────────────────
+    // Shared panel — see tipWidget.js.
     function renderTipUI() {
+      if (!window.dsTips || !workData) return;
       var sec = document.getElementById('tip-section');
-      if (!sec || !workData) return;
       // Artwork earns through the artwork Ember tip flow, not story tips.
-      if (workData.type === 'artwork') { sec.style.display = 'none'; return; }
-      sec.style.display = 'block';
-
-      var body = document.getElementById('tip-body');
-      var isSelf = currentSession && currentSession.user.id === workData.author_id;
-
-      if (!currentSession) {
-        body.innerHTML = '<div style="color:var(--text2);font-size:14px;">' +
-          '<a href="auth.html" style="color:var(--accent);">Sign in</a> to tip this author with Quills.</div>';
-        loadTipList();
-        return;
-      }
-      if (isSelf) {
-        body.innerHTML = '<div style="color:var(--text2);font-size:14px;">' +
-          'Readers can tip your story here. You keep 90% of every tip.</div>';
-        loadTipList();
-        return;
-      }
-
-      body.innerHTML =
-        '<div style="color:var(--text2);font-size:14px;margin-bottom:12px;">' +
-          'Send the author Quills. They keep 90%.</div>' +
-        '<div id="tip-presets" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;"></div>' +
-        '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
-          '<input id="tip-amount" type="number" min="10" max="100000" step="10" placeholder="Quills" ' +
-            'style="width:110px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);' +
-            'border-radius:8px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:14px;" />' +
-          '<input id="tip-message" type="text" maxlength="280" placeholder="Say something (optional)" ' +
-            'style="flex:1;min-width:180px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);' +
-            'border-radius:8px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:14px;" />' +
-        '</div>' +
-        '<label style="display:flex;align-items:center;gap:7px;margin-top:10px;color:var(--text2);font-size:13px;cursor:pointer;">' +
-          '<input id="tip-anon" type="checkbox" style="cursor:pointer;" /> Tip anonymously' +
-        '</label>' +
-        '<button id="tip-send" style="margin-top:12px;padding:9px 18px;background:var(--accent);border:none;' +
-          'border-radius:8px;color:#fff;font-family:\'Lato\',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">' +
-          '<i class="ti ti-coin"></i> Send tip</button>' +
-        '<div id="tip-error" style="margin-top:10px;color:var(--red);font-size:13px;display:none;"></div>';
-
-      var pre = document.getElementById('tip-presets');
-      TIP_PRESETS.forEach(function (n) {
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = n.toLocaleString();
-        b.style.cssText = 'padding:7px 14px;background:var(--bg);border:1px solid var(--border);' +
-          'border-radius:20px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;cursor:pointer;';
-        b.onclick = function () { document.getElementById('tip-amount').value = n; };
-        pre.appendChild(b);
+      if (workData.type === 'artwork') { if (sec) sec.style.display = 'none'; return; }
+      window.dsTips.mount({
+        sectionEl: sec,
+        bodyEl:    document.getElementById('tip-body'),
+        listEl:    document.getElementById('tip-list'),
+        db:        db,
+        workId:    workData.id,
+        chapterId: null,
+        authorId:  workData.author_id,
+        userId:    currentSession ? currentSession.user.id : null,
+        signedIn:  !!currentSession,
+        escape:    escHtml,
+        onToast:   (typeof showToast === 'function') ? showToast : null
       });
-
-      document.getElementById('tip-send').onclick = sendTip;
-      loadTipList();
-    }
-
-    async function sendTip() {
-      var btn = document.getElementById('tip-send');
-      var err = document.getElementById('tip-error');
-      var amt = parseInt(document.getElementById('tip-amount').value, 10);
-      err.style.display = 'none';
-
-      if (!amt || amt < 10) {
-        err.textContent = 'Minimum tip is 10 Quills.';
-        err.style.display = '';
-        return;
-      }
-
-      btn.disabled = true;
-      btn.innerHTML = '<i class="ti ti-loader-2"></i> Sending...';
-      try {
-        var res = await db.rpc('tip_creator', {
-          p_work_id:    workData.id,
-          p_chapter_id: null,
-          p_quills:     amt,
-          p_message:    document.getElementById('tip-message').value || null,
-          p_anonymous:  !!document.getElementById('tip-anon').checked
-        });
-        if (res.error) throw res.error;
-        var data = res.data;
-        if (!data || !data.ok) throw new Error((data && data.error) || 'Tip failed');
-
-        if (typeof showToast === 'function') showToast('Tip sent — thank you!');
-
-        // nav.js paints the header balance once on load and exposes no
-        // refresher, so set it from the value the RPC returned.
-        var qEl = document.getElementById('ds-quill-count');
-        if (qEl && typeof data.new_balance === 'number') {
-          qEl.textContent = data.new_balance.toLocaleString();
-        }
-
-        document.getElementById('tip-amount').value = '';
-        document.getElementById('tip-message').value = '';
-        document.getElementById('tip-anon').checked = false;
-        loadTipList();
-      } catch (e) {
-        err.textContent = (e && e.message) ? e.message : 'Something went wrong.';
-        err.style.display = '';
-      }
-      btn.disabled = false;
-      btn.innerHTML = '<i class="ti ti-coin"></i> Send tip';
-    }
-
-    async function loadTipList() {
-      var wrap = document.getElementById('tip-list');
-      if (!wrap || !workData) return;
-      try {
-        // RPCs, not table reads: creator_tips is not directly readable, so an
-        // anonymous tipper's id never reaches the browser.
-        var listRes = await db.rpc('list_work_tips', { p_work_id: workData.id, p_limit: 15 });
-        var totRes  = await db.rpc('work_tip_totals', { p_work_id: workData.id });
-        var tips = listRes.data || [];
-        if (!tips.length) { wrap.innerHTML = ''; return; }
-
-        var tot   = totRes.data || {};
-        var count = tot.tip_count   || tips.length;
-        var total = tot.quill_total || 0;
-
-        var html = '<div style="color:var(--text2);font-size:13px;margin-bottom:10px;">' +
-          count.toLocaleString() + (count === 1 ? ' tip' : ' tips') +
-          ' \u00b7 ' + total.toLocaleString() + ' Quills</div>';
-
-        tips.forEach(function (t) {
-          var name = t.is_anonymous
-            ? ('Anonymous' + (t.is_mine ? ' (you)' : ''))
-            : escHtml(t.display_name || 'Reader');
-          html += '<div style="display:flex;gap:10px;align-items:baseline;padding:8px 0;' +
-            'border-top:1px solid var(--border);font-size:14px;">' +
-            '<span style="font-weight:700;' + (t.is_anonymous ? 'color:var(--text2);' : '') + '">' +
-              name + '</span>' +
-            '<span style="color:var(--accent);font-weight:700;">' +
-              (t.quill_amount || 0).toLocaleString() + '</span>' +
-            (t.message ? '<span style="color:var(--text2);">' + escHtml(t.message) + '</span>' : '') +
-            '</div>';
-        });
-        wrap.innerHTML = html;
-      } catch (e) { /* the tip list is never worth breaking the page over */ }
     }
 
     async function loadTopFans() {

@@ -740,6 +740,13 @@
       <button class="profile-tab" data-tab="showcase" id="tab-showcase" onclick="switchTab(this)" style="display:none;"><i class="ti ti-building-store" style="color:var(--gold);"></i> <span style="color:var(--gold);">Creator Shop</span></button>
     </div>
 
+    <!-- SUPPORT THIS CREATOR -->
+    <div class="section" id="tip-section" style="display:none;margin-bottom:16px;">
+      <div class="section-title"><i class="ti ti-coin"></i> Support this creator</div>
+      <div id="tip-body"></div>
+      <div id="tip-list" style="margin-top:16px;"></div>
+    </div>
+
     <!-- WORKS -->
     <div class="tab-panel active" id="panel-works">
       <div id="works-layout"></div>
@@ -1188,6 +1195,7 @@
             loadArtistList(profileData.id);
             loadActivity(profileData.id);
             loadShowcase(profileData.id, true);
+            renderProfileTipUI(profileData.id, session);
             loadCurrencyWallet(session.user.id);
           }
           var uTarget = resolvedUsername || viewingUser || 'user';
@@ -1203,6 +1211,7 @@
             loadActivity(profileData.id);
             loadReadingList(profileData.id);
             loadShowcase(profileData.id, false);
+            renderProfileTipUI(profileData.id, session);
           }
           if (!session) {
             // Logged-out visitor — show Follow button in default state
@@ -3383,6 +3392,53 @@ async function handleFriendBtn() {
     }, 60000);
 
     /* ── HELPERS ────────────────────────────────────────────────── */
+    // ── SUPPORT THIS CREATOR ────────────────────────────
+    // tip_creator() requires a work: earnings, the public tip list and the
+    // author's payouts page are all keyed to one. A profile-level tip is
+    // therefore attributed to the creator's most recently updated published
+    // story, and the panel hides itself entirely for a creator with none.
+    async function renderProfileTipUI(profileId, session) {
+      var sec = document.getElementById('tip-section');
+      if (!sec || !window.dsTips || !profileId) return;
+      try {
+        var res = await db.from('works')
+          .select('id, title, updated_at')
+          .eq('author_id', profileId)
+          .in('status', ['published', 'one-shot'])
+          .neq('type', 'artwork')
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        var work = (res.data && res.data[0]) ? res.data[0] : null;
+        if (!work) { sec.style.display = 'none'; return; }
+
+        window.dsTips.mount({
+          sectionEl: sec,
+          bodyEl:    document.getElementById('tip-body'),
+          listEl:    document.getElementById('tip-list'),
+          db:        db,
+          workId:    work.id,
+          chapterId: null,
+          authorId:  profileId,
+          userId:    session ? session.user.id : null,
+          signedIn:  !!session,
+          escape:    escHtml,
+          onToast:   (typeof showToast === 'function') ? showToast : null
+        });
+
+        // Say which story the tip lands on. Without this the reader has no way
+        // to know their Quills are being credited against a specific work.
+        var body = document.getElementById('tip-body');
+        if (body && session && (!session.user || session.user.id !== profileId)) {
+          var note = document.createElement('div');
+          note.style.cssText = 'margin-top:10px;font-size:12px;color:var(--text3);';
+          note.innerHTML = 'Your tip is credited against <strong>' +
+            escHtml(work.title || 'their latest story') + '</strong>.';
+          body.appendChild(note);
+        }
+      } catch (e) { sec.style.display = 'none'; }
+    }
+
     function escHtml(s) {
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
@@ -4431,6 +4487,7 @@ async function handleFriendBtn() {
 
 <script src="footer.js"></script>
 <script src="spoilerUtils.js"></script>
+<script src="tipWidget.js"></script>
 <script src="badgeCelebrate.js"></script>
 <script src="muteFilter.js"></script>
 <script src="nav.js"></script>
