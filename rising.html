@@ -123,9 +123,9 @@
     <div class="section-block">
       <div class="board-tabs" id="board-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
         <button class="board-tab active" data-board="sparks" onclick="switchBoard('sparks')"><i class="ti ti-bolt"></i> Weekly Sparks</button>
-        <button class="board-tab" data-board="flames" onclick="switchBoard('flames')"><i class="ti ti-flare"></i> Blazing Hearths</button>
         <button class="board-tab" data-board="fresh" onclick="switchBoard('fresh')"><i class="ti ti-sunrise"></i> Fresh Dawns</button>
         <button class="board-tab" data-board="steady" onclick="switchBoard('steady')"><i class="ti ti-clock-bolt"></i> Steadfast Quills</button>
+        <button class="board-tab" data-board="authors" onclick="switchBoard('authors')"><i class="ti ti-feather"></i> Rising Authors</button>
       </div>
       <div class="section-block-title" id="board-title"><i class="ti ti-bolt"></i> Weekly Dawn Ranking</div>
       <div class="section-block-sub" id="board-sub">Ranked by Sparks of Dawn given this week. Resets every Monday.</div>
@@ -277,9 +277,12 @@
     // ── RANKING BOARDS ─────────────────────────────────────────
     var BOARDS = {
       sparks: { icon: 'ti-bolt', title: 'Weekly Dawn Ranking', sub: 'Ranked by Sparks of Dawn given this week. Resets every Monday.' },
-      flames: { icon: 'ti-flare', title: 'Blazing Hearths', sub: 'The most Celestial Flames ever bestowed — the all-time hall of beloved novels.' },
       fresh:  { icon: 'ti-sunrise', title: 'Fresh Dawns', sub: 'Stories published in the last 30 days, ranked by total Sparks. New voices on the rise.' },
-      steady: { icon: 'ti-clock-bolt', title: 'Steadfast Quills', sub: 'The most consistent updaters on DawnScribe — lowest average days between chapters (minimum 5 chapters).' }
+      steady: { icon: 'ti-clock-bolt', title: 'Steadfast Quills', sub: 'The most consistent updaters on DawnScribe — lowest average days between chapters (minimum 5 chapters).' },
+      // Ranks WRITERS rather than works, on Sparks their stories received this
+      // week. Sparks are reader-given and cost Embers (earned by reading) or a
+      // free streak spark — never money.
+      authors: { icon: 'ti-feather', title: 'Rising Authors', sub: 'Writers ranked by Sparks of Dawn their stories received this week. Resets every Monday.' }
     };
     var currentBoard = 'sparks';
 
@@ -293,8 +296,64 @@
       var el = document.getElementById('leaderboard-list');
       el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i></div></div>';
       if (kind === 'sparks') loadLeaderboard();
+      else if (kind === 'authors') loadAuthorBoard();
       else loadGenericBoard(kind);
     };
+
+    // ── RISING AUTHORS ────────────────────────────────────────────
+    // Ranks writers, not works. Sparks are summed server-side because an
+    // author's total spans every story they have — summing in the client
+    // would only ever add up the page of works it happened to fetch.
+    async function loadAuthorBoard() {
+      var el = document.getElementById('leaderboard-list');
+      var cached = boardCacheGet('authors');
+      if (cached) { el.innerHTML = cached; return; }
+      try {
+        var res = await db.rpc('get_author_leaderboard', { p_period: 'week', p_limit: 25 });
+        if (res.error) throw res.error;
+        var rows = res.data || [];
+
+        // Blocked either way, and muted, are dropped rather than badged —
+        // same as the work boards: this is discovery, not a shelf you built.
+        rows = rows.filter(function (r) {
+          if (dsBlock.either(r.author_id)) return false;
+          if (window.DSMute && DSMute.isMutedUser && DSMute.isMutedUser(r.author_id)) return false;
+          return true;
+        });
+
+        if (!rows.length) {
+          var emptyHtml = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-feather"></i></div>' +
+            '<div class="state-body">No author has earned Sparks this week yet \u2014 check back soon!</div></div>';
+          el.innerHTML = emptyHtml;
+          boardCacheSet('authors', emptyHtml);
+          return;
+        }
+
+        var html = '';
+        rows.forEach(function (r, i) {
+          var rank = i + 1;
+          var name = escHtml(r.display_name || r.username || 'Unknown');
+          var works = (r.work_count || 0) + ((r.work_count === 1) ? ' story' : ' stories');
+          var top = r.top_work_title
+            ? ' \u00b7 top: ' + escHtml(r.top_work_title)
+            : '';
+          html += '<a class="rank-row" href="profile.html?u=' + encodeURIComponent(r.username || '') + '">' +
+            '<div class="rank-num' + (rank <= 3 ? ' top3' : '') + '">' +
+              (rank <= 3 ? ['\ud83e\udd47','\ud83e\udd48','\ud83e\udd49'][rank-1] : rank) + '</div>' +
+            coverBlock('rank-cover', r.avatar_url, name) +
+            '<div class="rank-body"><div class="rank-title">' + name + '</div>' +
+              '<div class="rank-author">' + works + top + '</div></div>' +
+            '<div class="rank-right"><div class="rank-sparks">' +
+              '<i class="ti ti-bolt"></i> ' + (r.sparks || 0).toLocaleString() + '</div></div>' +
+          '</a>';
+        });
+        el.innerHTML = html;
+        boardCacheSet('authors', html);
+      } catch (e) {
+        el.innerHTML = '<div class="state-wrap"><div class="state-icon"><i class="ti ti-alert-circle"></i></div>' +
+          '<div class="state-body">Could not load the author board right now.</div></div>';
+      }
+    }
 
     async function loadGenericBoard(kind) {
       var el = document.getElementById('leaderboard-list');
@@ -310,9 +369,7 @@
         // board, so it hides rather than badges — unlike a shelf you built.
         if (window.DSMute) q = DSMute.filterQuery(q);
 
-        if (kind === 'flames') {
-          q = q.gt('celestial_flame_count', 0).order('celestial_flame_count', { ascending: false });
-        } else if (kind === 'fresh') {
+        if (kind === 'fresh') {
           var cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
           q = q.gte('created_at', cutoff).gt('spark_count_total', 0).order('spark_count_total', { ascending: false, nullsFirst: false });
         } else if (kind === 'steady') {
@@ -326,7 +383,6 @@
 
         if (!works.length) {
           var emptyMsg = {
-            flames: 'No Celestial Flames have been bestowed yet.',
             fresh: 'No new stories have earned Sparks in the last 30 days \u2014 check back soon!',
             steady: 'No stories with 5+ chapters and a posting rhythm yet.'
           }[kind] || 'Nothing to rank yet.';
@@ -347,8 +403,7 @@
           var a = authorMap[w.author_id] || {};
           var authorName = escHtml(a.display_name || a.username || 'Unknown');
           var metricHtml = '';
-          if (kind === 'flames') metricHtml = '<i class="ti ti-flare"></i> ' + (w.celestial_flame_count || 0);
-          else if (kind === 'fresh') metricHtml = '<i class="ti ti-bolt"></i> ' + (w.spark_count_total || 0);
+          if (kind === 'fresh') metricHtml = '<i class="ti ti-bolt"></i> ' + (w.spark_count_total || 0);
           else if (kind === 'steady') metricHtml = '<i class="ti ti-clock-bolt"></i> ' + w.avg_chapter_days + 'd/ch';
           html += '<a class="rank-row" href="story.html?id=' + w.id + '">' +
             '<div class="rank-num' + (rank <= 3 ? ' top3' : '') + '">' + (rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank) + '</div>' +
