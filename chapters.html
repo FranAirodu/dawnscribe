@@ -496,6 +496,7 @@
         <button class="tb-extra-btn" id="note-bottom-toggle" onclick="toggleAuthorNote('bottom')"><i class="ti ti-note"></i> Note (Bottom)</button>
         <button class="tb-extra-btn" id="poll-btn" onclick="openPollModal()" disabled title="Save the chapter first to add a poll"><i class="ti ti-chart-bar"></i> Add Poll</button>
         <button class="tb-extra-btn" id="schedule-toggle" onclick="toggleSchedule()"><i class="ti ti-calendar-clock"></i> Schedule</button>
+        <button class="tb-extra-btn" id="ea-toggle" onclick="toggleEarlyAccess()"><i class="ti ti-clock-hour-4"></i> Early Access</button>
         <button class="tb-extra-btn" id="history-btn" onclick="openRevisionHistory()" disabled title="Save the chapter first to view history"><i class="ti ti-history"></i> History</button>
         <button class="tb-extra-btn" id="comments-open-toggle" onclick="toggleChapterComments()"><i class="ti ti-message-circle"></i> Comments: Open</button>
         <button class="tb-extra-btn" id="clean-paste-btn" onclick="toggleCleanPasteMode()" title="When on, pasting strips all formatting (plain text only)"><i class="ti ti-clipboard-text"></i> Clean Paste: On</button>
@@ -521,6 +522,24 @@
           <input type="datetime-local" class="schedule-input" id="schedule-input"/>
           <span style="font-size:11px;color:var(--text3);">Chapter auto-publishes at this time (your local time). Turning scheduling off saves the chapter as a draft.</span>
         </div>
+      </div>
+
+      <!-- EARLY ACCESS -->
+      <div class="field-group" id="ea-wrap" style="display:none;">
+        <label class="field-label"><i class="ti ti-clock-hour-4" style="color:var(--gold);"></i> Early Access</label>
+        <div class="schedule-row">
+          <input type="datetime-local" class="schedule-input" id="ea-free-input"/>
+          <input type="number" class="schedule-input" id="ea-price-input" min="10" max="1000" step="10"
+                 placeholder="Quills" style="width:110px;"/>
+          <button class="tb-extra-btn" id="ea-save-btn" onclick="saveEarlyAccess()"><i class="ti ti-check"></i> Apply</button>
+          <button class="tb-extra-btn" id="ea-clear-btn" onclick="clearEarlyAccess()"><i class="ti ti-x"></i> Remove</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6;">
+          Readers can pay Quills to read this chapter before the free date. <strong>You keep 90%.</strong>
+          Everyone reads it free once the date passes. Chapter 1 always stays free, only the 5 newest
+          chapters are eligible, at most 5 at a time, and no more than 90 days ahead.
+        </div>
+        <div id="ea-status" style="font-size:12px;margin-top:8px;display:none;"></div>
       </div>
 
       <!-- ACTIVE POLLS -->
@@ -892,6 +911,11 @@
     document.getElementById('schedule-wrap').style.display = 'none';
     document.getElementById('schedule-toggle').classList.remove('active');
     document.getElementById('schedule-input').value = '';
+    document.getElementById('ea-wrap').style.display = 'none';
+    document.getElementById('ea-toggle').classList.remove('active');
+    document.getElementById('ea-free-input').value = '';
+    document.getElementById('ea-price-input').value = '';
+    document.getElementById('ea-status').style.display = 'none';
     document.getElementById('chapter-nav-arrows').style.display = 'none';
     correctionReportingOn = false;
     originalCorrectionReporting = false;
@@ -1087,7 +1111,7 @@
 
     // Load chapter content
     // 'content' is no longer readable from the column — fetch it via the RPC.
-    var res = await db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections').eq('id', chapterId).maybeSingle();
+    var res = await db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections,free_at,ea_quill_price').eq('id', chapterId).maybeSingle();
     if (!res.data) { showToast('Could not load chapter', 'ti-alert-triangle'); return; }
     var ch = res.data;
     try {
@@ -1154,6 +1178,11 @@
       document.getElementById('schedule-toggle').classList.remove('active');
       document.getElementById('schedule-input').value = '';
     }
+
+    // ── Early access ──
+    // Unlike scheduling, this is not part of the save payload: it is applied
+    // through set_chapter_early_access(), which owns the eligibility rules.
+    renderEarlyAccessFields(ch);
 
     // ── Prev/next nav ──
     document.getElementById('chapter-nav-arrows').style.display = 'flex';
@@ -1308,7 +1337,7 @@
   }
 
   async function loadChapters() {
-    var res = await db.from('chapters').select('id,chapter_number,title,status,word_count,created_at,updated_at,scheduled_for').eq('work_id', workId).order('chapter_number', { ascending: true });
+    var res = await db.from('chapters').select('id,chapter_number,title,status,word_count,created_at,updated_at,scheduled_for,free_at,ea_quill_price').eq('work_id', workId).order('chapter_number', { ascending: true });
     var list = document.getElementById('chapter-list');
     var chapters = res.data || [];
     chapterCount = chapters.length;
@@ -1346,6 +1375,11 @@
 
       var statusLabel = ch.status === 'published' ? 'Published' : (ch.status === 'scheduled' ? 'Scheduled' : 'Draft');
       var statusClass = ch.status === 'published' ? 'published' : (ch.status === 'scheduled' ? 'scheduled' : 'draft');
+      // Surface early access in the list so an author can see at a glance
+      // which chapters are locked, without opening each one.
+      var eaExtra = (ch.free_at && new Date(ch.free_at) > new Date())
+        ? ' · early access, free ' + new Date(ch.free_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})
+        : '';
       var metaExtra = ch.status === 'scheduled' && ch.scheduled_for
         ? ' · auto-publishes ' + new Date(ch.scheduled_for).toLocaleDateString('en-US',{month:'short',day:'numeric'})
         : '';
@@ -1356,7 +1390,7 @@
           '<input type="checkbox" class="chapter-checkbox" data-id="' + ch.id + '"/>' +
           '<div class="chapter-info">' +
             '<div class="chapter-name">Ch.' + ch.chapter_number + ' — ' + escXml(ch.title || 'Untitled Chapter') + '</div>' +
-            '<div class="chapter-meta">' + (ch.word_count ? ch.word_count.toLocaleString() + ' words · ' : '') + formatDate(ch.created_at) + ' · edited ' + timeAgo(ch.updated_at || ch.created_at) + metaExtra + '</div>' +
+            '<div class="chapter-meta">' + (ch.word_count ? ch.word_count.toLocaleString() + ' words · ' : '') + formatDate(ch.created_at) + ' · edited ' + timeAgo(ch.updated_at || ch.created_at) + metaExtra + eaExtra + '</div>' +
           '</div>' +
         '</div>' +
         '<div class="chapter-row-bottom">' +
@@ -1975,6 +2009,109 @@
   }
 
   // ── SCHEDULE TOGGLE ───────────────────────────────────────────
+  // ── EARLY ACCESS ──────────────────────────────────────────────
+  // Deliberately NOT folded into the chapter save payload. free_at and
+  // ea_quill_price have no UPDATE grant for authenticated, so a direct write
+  // would fail — and that is on purpose: set_chapter_early_access() enforces
+  // the chapter-1 rule, the newest-5 window, the 5-at-once cap and the 90-day
+  // limit, and none of those can be trusted to the client.
+  function renderEarlyAccessFields(ch) {
+    var wrap  = document.getElementById('ea-wrap');
+    var toggl = document.getElementById('ea-toggle');
+    var free  = document.getElementById('ea-free-input');
+    var price = document.getElementById('ea-price-input');
+    var stat  = document.getElementById('ea-status');
+    stat.style.display = 'none';
+
+    if (ch && ch.free_at) {
+      var dt = new Date(ch.free_at);
+      free.value = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      price.value = ch.ea_quill_price || '';
+      wrap.style.display = 'flex';
+      toggl.classList.add('active');
+      if (dt > new Date()) {
+        setEaStatus('In early access until ' + dt.toLocaleString() + '.', 'var(--gold)');
+      } else {
+        setEaStatus('The free date has passed — this chapter is free to everyone now.', 'var(--text3)');
+      }
+    } else {
+      free.value = '';
+      price.value = '';
+      wrap.style.display = 'none';
+      toggl.classList.remove('active');
+    }
+  }
+
+  function setEaStatus(msg, color) {
+    var stat = document.getElementById('ea-status');
+    stat.textContent = msg;
+    stat.style.color = color || 'var(--text2)';
+    stat.style.display = '';
+  }
+
+  function toggleEarlyAccess() {
+    var wrap = document.getElementById('ea-wrap');
+    var toggle = document.getElementById('ea-toggle');
+    var isOpen = wrap.style.display !== 'none';
+    wrap.style.display = isOpen ? 'none' : 'flex';
+    toggle.classList.toggle('active', !isOpen);
+    if (!editingChapterId) {
+      setEaStatus('Save the chapter first, then set early access on it.', 'var(--text3)');
+    }
+  }
+
+  async function saveEarlyAccess() {
+    if (!editingChapterId) {
+      setEaStatus('Save the chapter first, then set early access on it.', 'var(--text3)');
+      return;
+    }
+    var freeVal  = document.getElementById('ea-free-input').value;
+    var priceVal = parseInt(document.getElementById('ea-price-input').value, 10);
+    if (!freeVal) { setEaStatus('Pick the date this chapter becomes free.', 'var(--red)'); return; }
+    if (!priceVal) { setEaStatus('Set a Quill price between 10 and 1,000.', 'var(--red)'); return; }
+
+    var btn = document.getElementById('ea-save-btn');
+    btn.disabled = true;
+    try {
+      var res = await db.rpc('set_chapter_early_access', {
+        p_chapter_id: editingChapterId,
+        // datetime-local has no zone, so it reads as the author's local time.
+        p_free_at:    new Date(freeVal).toISOString(),
+        p_price:      priceVal
+      });
+      if (res.error) throw res.error;
+      var d = res.data;
+      if (!d || !d.ok) { setEaStatus((d && d.error) || 'Could not set early access.', 'var(--red)'); btn.disabled = false; return; }
+
+      showToast('Early access set — free ' + new Date(freeVal).toLocaleDateString(), 'ti-clock-hour-4');
+      setEaStatus('In early access until ' + new Date(freeVal).toLocaleString() +
+                  '. ' + d.locked_now + ' of ' + d.max_locked + ' chapters locked.', 'var(--gold)');
+    } catch (e) {
+      setEaStatus((e && e.message) ? e.message : 'Something went wrong.', 'var(--red)');
+    }
+    btn.disabled = false;
+  }
+
+  async function clearEarlyAccess() {
+    if (!editingChapterId) { setEaStatus('Nothing to remove.', 'var(--text3)'); return; }
+    var btn = document.getElementById('ea-clear-btn');
+    btn.disabled = true;
+    try {
+      var res = await db.rpc('set_chapter_early_access', {
+        p_chapter_id: editingChapterId, p_free_at: null, p_price: null
+      });
+      if (res.error) throw res.error;
+      document.getElementById('ea-free-input').value = '';
+      document.getElementById('ea-price-input').value = '';
+      // Readers who already paid keep their access; the chapter is free now.
+      setEaStatus('Early access removed — this chapter is free to everyone.', 'var(--text3)');
+      showToast('Early access removed', 'ti-check');
+    } catch (e) {
+      setEaStatus((e && e.message) ? e.message : 'Something went wrong.', 'var(--red)');
+    }
+    btn.disabled = false;
+  }
+
   function toggleSchedule() {
     var wrap = document.getElementById('schedule-wrap');
     var toggle = document.getElementById('schedule-toggle');
@@ -2100,7 +2237,7 @@
   // ── DUPLICATE CHAPTER ─────────────────────────────────────────
   async function duplicateChapter() {
     if (!editingChapterId) return;
-    var { data: src } = await db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections').eq('id', editingChapterId).maybeSingle();
+    var { data: src } = await db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections,free_at,ea_quill_price').eq('id', editingChapterId).maybeSingle();
     if (!src) { showToast('Could not load chapter to duplicate.', 'ti-x'); return; }
     try {
       var _dRes = await db.rpc('get_chapter_content', { p_chapter_id: editingChapterId });
