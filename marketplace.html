@@ -338,7 +338,33 @@
     <div class="loading-spinner"><i class="ti ti-loader"></i> Loading scrolls…</div>
   </div>
 
+
+  <!-- ── COMMISSIONS ──────────────────────────────────────────── -->
+  <div class="section-hdr" style="margin-top:44px;">
+    <div class="section-hdr-left">
+      <div class="section-title"><i class="ti ti-palette"></i> Artist Commissions</div>
+      <div class="section-sub">Pay an artist in Quills for custom work. Your Quills are held, not spent, until they deliver.</div>
+    </div>
+    <button class="filter-btn" id="comm-mine-btn" onclick="commOpenOrders()" style="display:none;">
+      <i class="ti ti-inbox"></i> My commissions
+    </button>
+  </div>
+
+  <div id="comm-artist-panel" style="display:none;margin-bottom:20px;"></div>
+
+  <div class="scrolls-grid" id="comm-grid">
+    <div class="loading-spinner"><i class="ti ti-loader"></i> Loading commissions…</div>
+  </div>
+
 </div><!-- /page-wrap -->
+
+<!-- ── COMMISSION MODALS ──────────────────────────────────────── -->
+<div class="modal-overlay" id="comm-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:900;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto;padding:22px;">
+    <div id="comm-modal-body"></div>
+  </div>
+</div>
+
 
 <!-- ── SCROLL DETAIL MODAL ────────────────────────────────────── -->
 <div class="modal-overlay" id="scroll-modal-gift" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:900;align-items:center;justify-content:center;padding:20px;">
@@ -509,9 +535,328 @@
       checkVisitMarketplaceMission();
     }
     await loadScrolls();
+    loadCommissions();
+    loadCommissionRights();
     loadQuillBundles();
     handleStripeRedirect();
   })();
+
+  // ── COMMISSIONS ─────────────────────────────────────────────
+  // Selling rights are earned by donating to the free randomizer:
+  //   banner   -> may sell banners
+  //   wearable -> may sell cosmetics AND take commissions
+  //   both     -> may create scrolls
+  // The gate is enforced in upsert_commission_offer(); this panel only
+  // explains it, so a change in the database is never contradicted here.
+  let commRights = null;
+  let commOffers = [];
+
+  async function loadCommissions() {
+    const grid = document.getElementById('comm-grid');
+    try {
+      const { data: offers, error } = await db.from('commission_offers')
+        .select('id,artist_id,title,description,price_quills,delivery_days,max_slots,example_urls')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(40);
+      if (error) throw error;
+      commOffers = offers || [];
+
+      // Artist names come from a second query rather than a join, since
+      // commission_offers has no FK into profiles.
+      const ids = [...new Set(commOffers.map(o => o.artist_id))];
+      const byId = {};
+      if (ids.length) {
+        const { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', ids);
+        (profs || []).forEach(p => { byId[p.id] = p; });
+      }
+
+      // Blocked and muted artists are dropped, same as the ranking boards.
+      commOffers = commOffers.filter(o => {
+        if (window.dsBlock && dsBlock.either && dsBlock.either(o.artist_id)) return false;
+        if (window.DSMute && DSMute.isMutedUser && DSMute.isMutedUser(o.artist_id)) return false;
+        return true;
+      });
+
+      if (!commOffers.length) {
+        grid.innerHTML = '<div class="loading-spinner" style="opacity:0.7;">' +
+          '<i class="ti ti-palette-off"></i> No open commissions right now.</div>';
+        return;
+      }
+
+      grid.innerHTML = commOffers.map(o => {
+        const p = byId[o.artist_id] || {};
+        const who = esc(p.display_name || p.username || 'Artist');
+        const mine = currentUser && currentUser.id === o.artist_id;
+        return '<div class="scroll-card" style="cursor:default;">' +
+          '<div style="padding:16px;">' +
+            '<div style="font-family:\'Cinzel\',serif;font-size:16px;font-weight:700;margin-bottom:4px;">' +
+              esc(o.title) + '</div>' +
+            '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">by ' + who + '</div>' +
+            (o.description
+              ? '<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:12px;">' +
+                  esc(o.description).slice(0, 220) + '</div>'
+              : '') +
+            '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text3);margin-bottom:12px;">' +
+              '<span><i class="ti ti-feather"></i> ' + o.price_quills.toLocaleString() + ' Quills</span>' +
+              '<span><i class="ti ti-clock"></i> ' + o.delivery_days + ' day' + (o.delivery_days === 1 ? '' : 's') + '</span>' +
+            '</div>' +
+            (mine
+              ? '<div style="font-size:12px;color:var(--text3);">Your listing</div>'
+              : '<button class="filter-btn" onclick="commRequestModal(\'' + o.id + '\')">' +
+                  '<i class="ti ti-brush"></i> Request</button>') +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } catch (e) {
+      grid.innerHTML = '<div class="loading-spinner" style="opacity:0.7;">' +
+        '<i class="ti ti-alert-circle"></i> Could not load commissions.</div>';
+    }
+  }
+
+  async function loadCommissionRights() {
+    if (!currentUser) return;
+    document.getElementById('comm-mine-btn').style.display = '';
+    try {
+      const { data } = await db.rpc('artist_sell_rights');
+      commRights = data || null;
+    } catch (e) { return; }
+    if (!commRights) return;
+
+    const panel = document.getElementById('comm-artist-panel');
+    panel.style.display = '';
+
+    if (commRights.can_commission) {
+      panel.innerHTML =
+        '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;">' +
+          '<div style="font-weight:700;margin-bottom:6px;"><i class="ti ti-palette" style="color:var(--gold);"></i> You can take commissions</div>' +
+          '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;">You keep 75% of every commission. Set a price and a delivery window — miss the window and the buyer is refunded automatically.</div>' +
+          '<button class="filter-btn" onclick="commOfferModal()"><i class="ti ti-plus"></i> New listing</button> ' +
+          '<button class="filter-btn" onclick="commOpenOrders()"><i class="ti ti-inbox"></i> My queue</button>' +
+        '</div>';
+      return;
+    }
+
+    // Not yet eligible — explain the ladder plainly rather than just refusing.
+    panel.innerHTML =
+      '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;">' +
+        '<div style="font-weight:700;margin-bottom:6px;"><i class="ti ti-lock" style="color:var(--text3);"></i> Want to sell your art here?</div>' +
+        '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:10px;">' +
+          'Donate one item to the free randomizer and you unlock selling. It stays free for every reader forever — and a free piece of a set is the best advertisement for the rest of it.' +
+        '</div>' +
+        '<ul style="font-size:13px;color:var(--text2);line-height:1.8;margin:0 0 12px 18px;">' +
+          '<li>' + (commRights.donated_banner ? '<i class="ti ti-circle-check" style="color:var(--accent);"></i>' : '<i class="ti ti-circle" style="color:var(--text3);"></i>') +
+            ' A <strong>banner</strong> unlocks selling banners</li>' +
+          '<li>' + (commRights.donated_wearable ? '<i class="ti ti-circle-check" style="color:var(--accent);"></i>' : '<i class="ti ti-circle" style="color:var(--text3);"></i>') +
+            ' A <strong>wearable cosmetic</strong> unlocks selling cosmetics and taking commissions</li>' +
+          '<li>' + (commRights.can_make_scrolls ? '<i class="ti ti-circle-check" style="color:var(--accent);"></i>' : '<i class="ti ti-circle" style="color:var(--text3);"></i>') +
+            ' <strong>Both</strong> unlocks creating your own Scrolls</li>' +
+        '</ul>' +
+        '<a class="filter-btn" href="cosmetic-create.html"><i class="ti ti-brush"></i> Create an item</a>' +
+      '</div>';
+  }
+
+  function commCloseModal() { document.getElementById('comm-modal').style.display = 'none'; }
+
+  function commShowModal(html) {
+    document.getElementById('comm-modal-body').innerHTML = html;
+    document.getElementById('comm-modal').style.display = 'flex';
+  }
+
+  function commRequestModal(offerId) {
+    if (!currentUser) { showToast('Sign in to request a commission', 'ti-login', true); return; }
+    const o = commOffers.find(x => x.id === offerId);
+    if (!o) return;
+    commShowModal(
+      '<div style="font-family:\'Cinzel\',serif;font-size:18px;font-weight:700;margin-bottom:4px;">' + esc(o.title) + '</div>' +
+      '<div style="font-size:13px;color:var(--text3);margin-bottom:14px;">' +
+        o.price_quills.toLocaleString() + ' Quills · up to ' + o.delivery_days + ' days</div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;">' +
+        'Your Quills are <strong>held, not spent</strong>. The artist has 7 days to accept. If they decline, ' +
+        'never answer, or miss their deadline, the hold is released automatically.</div>' +
+      '<textarea id="comm-brief" rows="5" maxlength="2000" placeholder="Describe what you would like…" ' +
+        'style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;' +
+        'color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;resize:vertical;"></textarea>' +
+      '<div id="comm-err" style="margin-top:10px;color:#ef4444;font-size:13px;display:none;"></div>' +
+      '<div style="display:flex;gap:8px;margin-top:14px;">' +
+        '<button class="filter-btn" onclick="commCloseModal()">Cancel</button>' +
+        '<button class="filter-btn active" id="comm-send" onclick="commSubmitRequest(\'' + o.id + '\')">' +
+          '<i class="ti ti-brush"></i> Request for ' + o.price_quills.toLocaleString() + ' Quills</button>' +
+      '</div>'
+    );
+  }
+
+  async function commSubmitRequest(offerId) {
+    const btn = document.getElementById('comm-send');
+    const err = document.getElementById('comm-err');
+    err.style.display = 'none';
+    btn.disabled = true;
+    try {
+      const res = await db.rpc('request_commission', {
+        p_offer_id: offerId,
+        p_brief: document.getElementById('comm-brief').value || null
+      });
+      if (res.error) throw res.error;
+      if (!res.data || !res.data.ok) throw new Error((res.data && res.data.error) || 'Could not request');
+      commCloseModal();
+      showToast('Request sent — your Quills are held until the artist responds', 'ti-check');
+      loadCurrencies();
+      loadCommissions();
+    } catch (e) {
+      err.textContent = (e && e.message) ? e.message : 'Something went wrong.';
+      err.style.display = '';
+      btn.disabled = false;
+    }
+  }
+
+  function commOfferModal() {
+    commShowModal(
+      '<div style="font-family:\'Cinzel\',serif;font-size:18px;font-weight:700;margin-bottom:12px;">New commission listing</div>' +
+      '<input id="co-title" maxlength="80" placeholder="What you are offering" ' +
+        'style="width:100%;padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
+      '<textarea id="co-desc" rows="4" maxlength="1000" placeholder="Details — style, what you need from the buyer, what they get…" ' +
+        'style="width:100%;padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;resize:vertical;"></textarea>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">' +
+        '<input id="co-price" type="number" min="100" max="20000" step="50" placeholder="Quills" ' +
+          'style="width:110px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
+        '<input id="co-days" type="number" min="1" max="60" placeholder="Days" ' +
+          'style="width:90px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
+        '<input id="co-slots" type="number" min="1" max="20" value="3" placeholder="Slots" ' +
+          'style="width:90px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:12px;">' +
+        'Price 100–20,000 Quills. Days is your delivery window once you accept — it cannot be extended, and ' +
+        'missing it refunds the buyer. Slots caps how many commissions you can have open at once.</div>' +
+      '<div id="co-err" style="color:#ef4444;font-size:13px;display:none;margin-bottom:10px;"></div>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button class="filter-btn" onclick="commCloseModal()">Cancel</button>' +
+        '<button class="filter-btn active" id="co-save" onclick="commSaveOffer()"><i class="ti ti-check"></i> Publish listing</button>' +
+      '</div>'
+    );
+  }
+
+  async function commSaveOffer() {
+    const btn = document.getElementById('co-save');
+    const err = document.getElementById('co-err');
+    err.style.display = 'none';
+    btn.disabled = true;
+    try {
+      const res = await db.rpc('upsert_commission_offer', {
+        p_offer_id: null,
+        p_title: document.getElementById('co-title').value,
+        p_description: document.getElementById('co-desc').value || null,
+        p_price_quills: parseInt(document.getElementById('co-price').value, 10),
+        p_delivery_days: parseInt(document.getElementById('co-days').value, 10),
+        p_max_slots: parseInt(document.getElementById('co-slots').value, 10) || 3,
+        p_example_urls: null,
+        p_is_active: true
+      });
+      if (res.error) throw res.error;
+      if (!res.data || !res.data.ok) throw new Error((res.data && res.data.error) || 'Could not publish');
+      commCloseModal();
+      showToast('Listing published', 'ti-check');
+      loadCommissions();
+    } catch (e) {
+      err.textContent = (e && e.message) ? e.message : 'Something went wrong.';
+      err.style.display = '';
+      btn.disabled = false;
+    }
+  }
+
+  // One inbox for both sides. The RLS policy on commission_orders already
+  // limits rows to the two parties, so a single query covers both roles.
+  async function commOpenOrders() {
+    if (!currentUser) return;
+    commShowModal('<div class="loading-spinner"><i class="ti ti-loader"></i> Loading…</div>');
+    try {
+      const { data: orders, error } = await db.from('commission_orders')
+        .select('id,offer_id,buyer_id,artist_id,price_quills,artist_share,brief,status,respond_by,deadline_at,delivered_url,created_at')
+        .order('created_at', { ascending: false }).limit(50);
+      if (error) throw error;
+
+      if (!orders || !orders.length) {
+        commShowModal('<div style="font-family:\'Cinzel\',serif;font-size:18px;font-weight:700;margin-bottom:10px;">My commissions</div>' +
+          '<div style="font-size:13px;color:var(--text2);">Nothing here yet.</div>' +
+          '<div style="margin-top:14px;"><button class="filter-btn" onclick="commCloseModal()">Close</button></div>');
+        return;
+      }
+
+      const ids = [...new Set(orders.flatMap(o => [o.buyer_id, o.artist_id]))];
+      const byId = {};
+      const { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', ids);
+      (profs || []).forEach(p => { byId[p.id] = p; });
+
+      const label = {
+        requested: 'Awaiting the artist', accepted: 'In progress', delivered: 'Delivered',
+        complete: 'Complete', declined: 'Declined', cancelled: 'Cancelled',
+        expired: 'Expired — refunded', overdue: 'Missed deadline — refunded'
+      };
+
+      let html = '<div style="font-family:\'Cinzel\',serif;font-size:18px;font-weight:700;margin-bottom:12px;">My commissions</div>';
+      orders.forEach(o => {
+        const iAmArtist = o.artist_id === currentUser.id;
+        const other = byId[iAmArtist ? o.buyer_id : o.artist_id] || {};
+        const who = esc(other.display_name || other.username || 'User');
+        let actions = '';
+        if (iAmArtist && o.status === 'requested') {
+          actions = '<button class="filter-btn active" onclick="commRespond(\'' + o.id + '\',true)">Accept</button> ' +
+                    '<button class="filter-btn" onclick="commRespond(\'' + o.id + '\',false)">Decline</button>';
+        } else if (iAmArtist && o.status === 'accepted') {
+          actions = '<button class="filter-btn active" onclick="commDeliverPrompt(\'' + o.id + '\')">Deliver</button>';
+        } else if (!iAmArtist && o.status === 'requested') {
+          actions = '<button class="filter-btn" onclick="commCancel(\'' + o.id + '\')">Cancel</button>';
+        } else if (!iAmArtist && o.status === 'delivered') {
+          actions = '<a class="filter-btn" href="' + esc(o.delivered_url || '#') + '" target="_blank" rel="noopener">View</a> ' +
+                    '<button class="filter-btn active" onclick="commConfirm(\'' + o.id + '\')">Confirm</button>';
+        }
+        html += '<div style="border-top:1px solid var(--border);padding:12px 0;">' +
+          '<div style="font-size:13px;font-weight:700;">' + (iAmArtist ? 'From ' : 'To ') + who + '</div>' +
+          '<div style="font-size:12px;color:var(--text3);margin:3px 0 8px;">' +
+            o.price_quills.toLocaleString() + ' Quills · ' + (label[o.status] || o.status) +
+            (iAmArtist && (o.status === 'complete') ? ' · you earned ' + o.artist_share.toLocaleString() : '') +
+            (o.status === 'accepted' && o.deadline_at ? ' · due ' + new Date(o.deadline_at).toLocaleDateString() : '') +
+          '</div>' +
+          (o.brief ? '<div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:8px;">' + esc(o.brief).slice(0,300) + '</div>' : '') +
+          actions +
+        '</div>';
+      });
+      html += '<div style="margin-top:14px;"><button class="filter-btn" onclick="commCloseModal()">Close</button></div>';
+      commShowModal(html);
+    } catch (e) {
+      commShowModal('<div style="font-size:13px;color:#ef4444;">Could not load your commissions.</div>' +
+        '<div style="margin-top:14px;"><button class="filter-btn" onclick="commCloseModal()">Close</button></div>');
+    }
+  }
+
+  async function commAction(fn, args, msg) {
+    try {
+      const res = await db.rpc(fn, args);
+      if (res.error) throw res.error;
+      if (!res.data || !res.data.ok) throw new Error((res.data && res.data.error) || 'Failed');
+      showToast(msg, 'ti-check');
+      loadCurrencies();
+      commOpenOrders();
+      loadCommissions();
+    } catch (e) {
+      showToast((e && e.message) ? e.message : 'Something went wrong', 'ti-x', true);
+    }
+  }
+
+  function commRespond(id, accept) {
+    commAction('commission_respond', { p_order_id: id, p_accept: accept },
+      accept ? 'Accepted — the clock is running' : 'Declined');
+  }
+  function commCancel(id) {
+    commAction('commission_cancel', { p_order_id: id }, 'Cancelled — your Quills are free again');
+  }
+  function commConfirm(id) {
+    commAction('commission_accept_delivery', { p_order_id: id }, 'Confirmed — the artist has been paid');
+  }
+  function commDeliverPrompt(id) {
+    const url = window.prompt('Paste the link to the finished artwork:');
+    if (!url) return;
+    commAction('commission_deliver', { p_order_id: id, p_url: url }, 'Delivered');
+  }
 
   function handleStripeRedirect() {
     const params = new URLSearchParams(window.location.search);
