@@ -555,7 +555,7 @@
     const grid = document.getElementById('comm-grid');
     try {
       const { data: offers, error } = await db.from('commission_offers')
-        .select('id,artist_id,title,description,price_quills,delivery_days,max_slots,example_urls')
+        .select('id,artist_id,title,description,price_quills,delivery_days,max_slots,revisions_allowed')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(40);
@@ -600,6 +600,8 @@
             '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text3);margin-bottom:12px;">' +
               '<span><i class="ti ti-feather"></i> ' + o.price_quills.toLocaleString() + ' Quills</span>' +
               '<span><i class="ti ti-clock"></i> ' + o.delivery_days + ' day' + (o.delivery_days === 1 ? '' : 's') + '</span>' +
+              '<span><i class="ti ti-rotate"></i> ' + (o.revisions_allowed === 0 ? 'no revisions'
+                : o.revisions_allowed + ' revision' + (o.revisions_allowed === 1 ? '' : 's')) + '</span>' +
             '</div>' +
             (mine
               ? '<div style="font-size:12px;color:var(--text3);">Your listing</div>'
@@ -721,12 +723,15 @@
           'style="width:110px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
         '<input id="co-days" type="number" min="1" max="60" placeholder="Days" ' +
           'style="width:90px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
+        '<input id="co-revs" type="number" min="0" max="5" value="1" placeholder="Revisions" ' +
+          'style="width:110px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
         '<input id="co-slots" type="number" min="1" max="20" value="3" placeholder="Slots" ' +
           'style="width:90px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
       '</div>' +
       '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:12px;">' +
-        'Price 100–20,000 Quills. Days is your delivery window once you accept — it cannot be extended, and ' +
-        'missing it refunds the buyer. Slots caps how many commissions you can have open at once.</div>' +
+        'Price 100–50,000 Quills. Days is your delivery window once you accept — it cannot be extended, and ' +
+        'missing it refunds the buyer. Revisions is how many times the buyer may send it back; the deadline ' +
+        'does not move when they do. Slots caps how many commissions you can have open at once.</div>' +
       '<div id="co-err" style="color:#ef4444;font-size:13px;display:none;margin-bottom:10px;"></div>' +
       '<div style="display:flex;gap:8px;">' +
         '<button class="filter-btn" onclick="commCloseModal()">Cancel</button>' +
@@ -748,7 +753,7 @@
         p_price_quills: parseInt(document.getElementById('co-price').value, 10),
         p_delivery_days: parseInt(document.getElementById('co-days').value, 10),
         p_max_slots: parseInt(document.getElementById('co-slots').value, 10) || 3,
-        p_example_urls: null,
+        p_revisions: parseInt(document.getElementById('co-revs').value, 10),
         p_is_active: true
       });
       if (res.error) throw res.error;
@@ -770,7 +775,7 @@
     commShowModal('<div class="loading-spinner"><i class="ti ti-loader"></i> Loading…</div>');
     try {
       const { data: orders, error } = await db.from('commission_orders')
-        .select('id,offer_id,buyer_id,artist_id,price_quills,artist_share,brief,status,respond_by,deadline_at,delivered_url,created_at')
+        .select('id,offer_id,buyer_id,artist_id,price_quills,artist_share,brief,status,respond_by,deadline_at,delivered_url,preview_url,revisions_allowed,revisions_used,revision_note,created_at')
         .order('created_at', { ascending: false }).limit(50);
       if (error) throw error;
 
@@ -806,8 +811,19 @@
         } else if (!iAmArtist && o.status === 'requested') {
           actions = '<button class="filter-btn" onclick="commCancel(\'' + o.id + '\')">Cancel</button>';
         } else if (!iAmArtist && o.status === 'delivered') {
-          actions = '<a class="filter-btn" href="' + esc(o.delivered_url || '#') + '" target="_blank" rel="noopener">View</a> ' +
-                    '<button class="filter-btn active" onclick="commConfirm(\'' + o.id + '\')">Confirm</button>';
+          // Preview first, final only after confirming — the artist keeps the
+          // full-resolution file until the Quills are released.
+          const left = (o.revisions_allowed || 0) - (o.revisions_used || 0);
+          actions = '<a class="filter-btn" href="' + esc(o.preview_url || o.delivered_url || '#') +
+                      '" target="_blank" rel="noopener"><i class="ti ti-eye"></i> ' +
+                      (o.preview_url ? 'Preview' : 'View') + '</a> ' +
+                    '<button class="filter-btn active" onclick="commConfirm(\'' + o.id + '\')">Confirm &amp; get file</button>' +
+                    (left > 0
+                      ? ' <button class="filter-btn" onclick="commRevisePrompt(\'' + o.id + '\')">Request revision (' + left + ' left)</button>'
+                      : '');
+        } else if (!iAmArtist && o.status === 'complete') {
+          actions = '<a class="filter-btn" href="' + esc(o.delivered_url || '#') + '" target="_blank" rel="noopener">' +
+                    '<i class="ti ti-download"></i> Final file</a>';
         }
         html += '<div style="border-top:1px solid var(--border);padding:12px 0;">' +
           '<div style="font-size:13px;font-weight:700;">' + (iAmArtist ? 'From ' : 'To ') + who + '</div>' +
@@ -817,6 +833,8 @@
             (o.status === 'accepted' && o.deadline_at ? ' · due ' + new Date(o.deadline_at).toLocaleDateString() : '') +
           '</div>' +
           (o.brief ? '<div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:8px;">' + esc(o.brief).slice(0,300) + '</div>' : '') +
+          (o.revision_note ? '<div style="font-size:12px;color:var(--gold);line-height:1.5;margin-bottom:8px;">' +
+             '<i class="ti ti-rotate"></i> Revision asked: ' + esc(o.revision_note).slice(0,300) + '</div>' : '') +
           actions +
         '</div>';
       });
@@ -853,9 +871,43 @@
     commAction('commission_accept_delivery', { p_order_id: id }, 'Confirmed — the artist has been paid');
   }
   function commDeliverPrompt(id) {
-    const url = window.prompt('Paste the link to the finished artwork:');
-    if (!url) return;
-    commAction('commission_deliver', { p_order_id: id, p_url: url }, 'Delivered');
+    commShowModal(
+      '<div style="font-family:\'Cinzel\',serif;font-size:18px;font-weight:700;margin-bottom:10px;">Deliver commission</div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;">' +
+        'The buyer sees the <strong>preview</strong> first and gets the final file once they confirm. ' +
+        '<strong>Watermark your preview before uploading it</strong> — DawnScribe cannot add one for you, ' +
+        'so an unwatermarked preview is a full-resolution copy handed over before you are paid.</div>' +
+      '<input id="cd-preview" placeholder="Watermarked preview link (recommended)" ' +
+        'style="width:100%;padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
+      '<input id="cd-final" placeholder="Final artwork link (required)" ' +
+        'style="width:100%;padding:10px;margin-bottom:6px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
+      '<div id="cd-err" style="color:#ef4444;font-size:13px;display:none;margin:8px 0;"></div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px;">' +
+        '<button class="filter-btn" onclick="commOpenOrders()">Back</button>' +
+        '<button class="filter-btn active" onclick="commDoDeliver(\'' + id + '\')"><i class="ti ti-send"></i> Deliver</button>' +
+      '</div>'
+    );
+  }
+
+  function commDoDeliver(id) {
+    const fin = document.getElementById('cd-final').value;
+    const err = document.getElementById('cd-err');
+    if (!fin || !fin.trim()) {
+      err.textContent = 'A final artwork link is required.';
+      err.style.display = '';
+      return;
+    }
+    commAction('commission_deliver', {
+      p_order_id: id, p_url: fin,
+      p_preview_url: document.getElementById('cd-preview').value || null
+    }, 'Delivered');
+  }
+
+  function commRevisePrompt(id) {
+    const note = window.prompt('What needs changing? (the artist sees this)');
+    if (note === null) return;
+    commAction('commission_request_revision', { p_order_id: id, p_note: note || null },
+      'Revision requested');
   }
 
   function handleStripeRedirect() {
