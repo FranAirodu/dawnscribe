@@ -227,6 +227,31 @@
       <div id="tips-loading" class="loading-state"><i class="ti ti-loader"></i><p>Loading tips...</p></div>
       <div id="tips-list"></div>
 
+      <!-- EARLY ACCESS -->
+      <div class="section-title"><i class="ti ti-clock-hour-4"></i> Early access</div>
+      <div class="intro-card">
+        <h3><i class="ti ti-info-circle"></i> How early access works</h3>
+        <ul>
+          <li>Set a future free date and a Quill price on a chapter. Readers can pay to read it now; everyone else reads it free when the date arrives. <strong>You keep 90%.</strong></li>
+          <li>At most <strong>5 chapters</strong> can be in early access at once, and no more than <strong>90 days</strong> ahead. Nothing is ever locked permanently.</li>
+          <li>The free date is shown to readers, so waiting is always a clear option rather than a dead end.</li>
+        </ul>
+      </div>
+      <div class="balance-grid" id="ea-summary" style="display:none;margin-bottom:16px;">
+        <div class="balance-card">
+          <div class="balance-label">Quills earned from early access</div>
+          <div class="balance-amount gold" id="ea-earned">0</div>
+          <div class="balance-sub" id="ea-gross">Paid by readers: 0</div>
+        </div>
+        <div class="balance-card">
+          <div class="balance-label">Readers who unlocked</div>
+          <div class="balance-amount" id="ea-people">0</div>
+          <div class="balance-sub" id="ea-count">0 unlocks</div>
+        </div>
+      </div>
+      <div id="ea-loading" class="loading-state"><i class="ti ti-loader"></i><p>Loading early access...</p></div>
+      <div id="ea-empty"></div>
+
       <!-- SALES HISTORY -->
       <div class="section-title"><i class="ti ti-receipt"></i> Sales history</div>
       <div class="intro-card">
@@ -692,6 +717,37 @@
       }
     }
 
+    // ── EARLY ACCESS ─────────────────────────────────────────────
+    // Totals only. A per-unlock list would mean naming which readers paid to
+    // skip the queue, which is not something an author needs to know.
+    async function loadEarlyAccess() {
+      var loading = document.getElementById('ea-loading');
+      var empty   = document.getElementById('ea-empty');
+      try {
+        var res = await db.rpc('my_early_access_totals');
+        loading.style.display = 'none';
+        var t = res.data || {};
+
+        if (!t.unlock_count) {
+          empty.innerHTML = '<div class="empty-state"><i class="ti ti-clock-off"></i>' +
+            '<p>No early access unlocks yet. Set a free date and price on a chapter to offer it.</p></div>';
+          return;
+        }
+
+        empty.innerHTML = '';
+        document.getElementById('ea-summary').style.display = '';
+        document.getElementById('ea-earned').textContent = (t.quill_earned || 0).toLocaleString();
+        document.getElementById('ea-gross').textContent  = 'Paid by readers: ' + (t.quill_gross || 0).toLocaleString();
+        document.getElementById('ea-people').textContent = (t.reader_count || 0).toLocaleString();
+        document.getElementById('ea-count').textContent  =
+          (t.unlock_count || 0).toLocaleString() + ((t.unlock_count === 1) ? ' unlock' : ' unlocks');
+      } catch (e) {
+        loading.style.display = 'none';
+        empty.innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i>' +
+          '<p>Could not load early access right now.</p></div>';
+      }
+    }
+
     // ── COSMETIC ROYALTIES ───────────────────────────────────────
     async function loadCosmeticRoyalties() {
       var uid = currentSession.user.id;
@@ -747,7 +803,7 @@
         document.getElementById('main-content').style.display = 'block';
         // Load balance first so _payoutScheduleEnabled is set before connect card renders
         await loadBalance();
-        await Promise.all([loadConnectCard(), loadPendingApprovals(), loadPayoutHistory(), loadReaderTips(), loadSalesHistory(), loadCosmeticRoyalties()]);
+        await Promise.all([loadConnectCard(), loadPendingApprovals(), loadPayoutHistory(), loadReaderTips(), loadEarlyAccess(), loadSalesHistory(), loadCosmeticRoyalties()]);
         // Handle Stripe redirect back
         await handleConnectReturn();
       } catch(err) {

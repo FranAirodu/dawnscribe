@@ -1645,6 +1645,81 @@
       } catch(e) {}
     }
 
+    // ── EARLY ACCESS ─────────────────────────────────────────────
+    // Shown when the server withheld content because free_at is still in the
+    // future. Deliberately leads with the free date: this chapter is coming to
+    // everyone, and paying only buys the wait.
+    function renderEarlyAccessGate(freeAt) {
+      var price = chapterData.ea_quill_price || 0;
+      var days  = Math.max(1, Math.ceil((freeAt - new Date()) / 86400000));
+      var when  = freeAt.toLocaleDateString(undefined,
+                    { year: 'numeric', month: 'long', day: 'numeric' });
+
+      // The container in this document is .reader-wrap; there is no #page-wrap.
+      document.querySelector('.reader-wrap').innerHTML =
+        '<div style="max-width:520px;margin:70px auto;text-align:center;padding:0 20px;">' +
+          '<div style="font-size:40px;color:var(--gold);margin-bottom:14px;"><i class="ti ti-clock-hour-4"></i></div>' +
+          '<div style="font-family:\'Cinzel\',serif;font-size:22px;font-weight:700;margin-bottom:10px;">' +
+            'Early access' +
+          '</div>' +
+          '<div style="color:var(--text2);font-size:14px;line-height:1.6;margin-bottom:8px;">' +
+            'This chapter is free for everyone on <strong style="color:var(--text);">' + when + '</strong>' +
+            ' \u2014 in ' + days + (days === 1 ? ' day' : ' days') + '.' +
+          '</div>' +
+          '<div style="color:var(--text3);font-size:13px;line-height:1.6;margin-bottom:24px;">' +
+            'You can read it now with Quills, or wait and read it free.' +
+          '</div>' +
+          (currentSession
+            ? '<button id="ea-unlock-btn" style="background:var(--accent);color:#0f1117;padding:11px 26px;' +
+                'border:none;border-radius:10px;font-family:\'Lato\',sans-serif;font-weight:700;font-size:14px;' +
+                'cursor:pointer;display:inline-flex;align-items:center;gap:7px;">' +
+                '<i class="ti ti-lock-open"></i> Read now for ' + price.toLocaleString() + ' Quills</button>' +
+              '<div id="ea-error" style="margin-top:12px;color:var(--red);font-size:13px;display:none;"></div>'
+            : '<a href="auth.html" style="background:var(--accent);color:#0f1117;padding:11px 26px;' +
+                'border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;' +
+                'display:inline-flex;align-items:center;gap:7px;">' +
+                '<i class="ti ti-login"></i> Sign in to read early</a>') +
+          '<div style="margin-top:22px;">' +
+            '<a href="story.html?id=' + chapterData.work_id + '" ' +
+              'style="color:var(--text3);font-size:13px;text-decoration:none;">' +
+              '<i class="ti ti-chevron-left"></i> Back to the story</a>' +
+          '</div>' +
+        '</div>';
+
+      var btn = document.getElementById('ea-unlock-btn');
+      if (btn) btn.onclick = unlockChapterEarly;
+    }
+
+    async function unlockChapterEarly() {
+      var btn = document.getElementById('ea-unlock-btn');
+      var err = document.getElementById('ea-error');
+      err.style.display = 'none';
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2"></i> Unlocking...';
+      try {
+        var res = await db.rpc('unlock_chapter_early', { p_chapter_id: chapterData.id });
+        if (res.error) throw res.error;
+        var data = res.data;
+        if (!data || !data.ok) throw new Error((data && data.error) || 'Could not unlock');
+
+        var qEl = document.getElementById('ds-quill-count');
+        if (qEl && typeof data.new_balance === 'number') {
+          qEl.textContent = data.new_balance.toLocaleString();
+        }
+
+        // Reload rather than fetching the content inline: the page has a lot of
+        // state that assumes content was present from the start (pagination,
+        // reading timer, progress) and reproducing that here would drift.
+        location.reload();
+      } catch (e) {
+        err.textContent = (e && e.message) ? e.message : 'Something went wrong.';
+        err.style.display = '';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-lock-open"></i> Read now for ' +
+          (chapterData.ea_quill_price || 0).toLocaleString() + ' Quills';
+      }
+    }
+
     // ── CHAPTER UNLOCK ────────────────────────────────────────────
     function isChapterUnlocked(chapter) {
       if (!chapter || !workData) return false;
@@ -3879,7 +3954,7 @@
       // Load chapter
       // 'content' is deliberately absent: the column grant is revoked and the
       // text comes from get_chapter_content() below.
-      var chapResult = await db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections').eq('id', chapterId).maybeSingle();
+      var chapResult = await db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections,free_at,ea_quill_price').eq('id', chapterId).maybeSingle();
       if (!chapResult.data) { document.getElementById('chapter-title-display').textContent = 'Chapter not found.'; return; }
       chapterData = chapResult.data;
       // Content is fetched through an RPC that re-checks visibility, the age
@@ -4016,7 +4091,18 @@
       if (!chapterData.content) {
         var _skel = document.getElementById('chapter-skeleton');
         if (_skel) _skel.style.display = 'none';
-        document.getElementById('page-wrap').innerHTML =
+
+        // Early access is a different refusal from the sequential-reading gate,
+        // and needs a different screen: a date and a price, not a dead end.
+        var _eaUntil = chapterData.free_at ? new Date(chapterData.free_at) : null;
+        if (_eaUntil && _eaUntil > new Date()) {
+          renderEarlyAccessGate(_eaUntil);
+          return;
+        }
+
+        // Same pre-existing bug: #page-wrap does not exist, so this screen
+        // has never rendered — it threw on null.
+        document.querySelector('.reader-wrap').innerHTML =
           '<div style="max-width:520px;margin:80px auto;text-align:center;padding:0 20px;">' +
             '<div style="font-size:40px;color:var(--text3);margin-bottom:14px;"><i class="ti ti-lock"></i></div>' +
             '<div style="font-family:\'Cinzel\',serif;font-size:22px;font-weight:700;margin-bottom:10px;">Chapter locked</div>' +
