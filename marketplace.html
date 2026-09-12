@@ -463,6 +463,7 @@
     </div>
     <div class="modal-body">
       <p class="modal-desc">Quills are DawnScribe's premium currency. Use them to unlock Scrolls and support artists. <strong>Embers</strong> (earned free by reading) let you claim individual items inside any Scroll you own.</p>
+      <div id="quill-hold-banner" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text2);line-height:1.6;"></div>
       <div class="quill-bundles" id="quill-bundles-grid">
         <!-- Rendered by JS -->
       </div>
@@ -1506,6 +1507,78 @@
   // ── QUILL BUNDLES MODAL ───────────────────────────────────────
   let BUNDLES = [];
 
+  // Bundles the user has already seen the notice for, this page load only.
+  const QUILL_HOLD_ACK = new Set();
+  const QUILL_SMALL_CENTS = 1000;   // matches ds_held_quills()
+
+  // Returns null if nothing will be held, otherwise why.
+  async function quillWillBeHeld(b) {
+    if (b.price_cents > QUILL_SMALL_CENTS) return 'large';
+    try {
+      // Two small bundles in a 3-day window pass freely; a third is held.
+      const { data: recent } = await db.from('quill_purchases')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .eq('status', 'completed')
+        .lte('price_cents', QUILL_SMALL_CENTS)
+        .gte('created_at', new Date(Date.now() - 3 * 864e5).toISOString());
+      return (recent && recent.length >= 2) ? 'third' : null;
+    } catch (e) {
+      return null;  // never block a purchase because a check failed
+    }
+  }
+
+  function quillHoldNotice(b, bundleId, btnEl, why) {
+    const total = (b.quills + (b.bonus_quills || 0)).toLocaleString();
+    const price = '$' + (b.price_cents / 100).toFixed(2);
+    const reason = (why === 'large')
+      ? 'Bundles above $10 have a short holding period.'
+      : 'You have already bought two small bundles in the last three days, so this one is held.';
+
+    commShowModal(
+      '<div style="font-family:\'Cinzel\',serif;font-size:18px;font-weight:700;margin-bottom:10px;">' +
+        'Before you buy</div>' +
+      '<div style="font-size:14px;color:var(--text);margin-bottom:12px;">' +
+        price + ' for <strong>' + total + ' Quills</strong></div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px;">' +
+        reason + ' These Quills land in your balance immediately and you can spend them on ' +
+        '<strong>anything on DawnScribe after 3 days</strong>.' +
+      '</div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px;">' +
+        'Why: a stolen card is usually reported within a few days. The wait means money cannot reach ' +
+        'an author or artist and then be taken back off them. It protects creators, not us — ' +
+        'and it is the reason we can pay out quickly once the wait is over.' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<button class="filter-btn" onclick="commCloseModal()">Cancel</button>' +
+        '<button class="filter-btn active" onclick="quillHoldProceed(\'' + bundleId + '\')">' +
+          'I understand — continue</button>' +
+      '</div>'
+    );
+    window.__quillHoldBtn = btnEl;
+  }
+
+  function quillHoldProceed(bundleId) {
+    QUILL_HOLD_ACK.add(bundleId);
+    commCloseModal();
+    purchaseQuillBundle(bundleId, window.__quillHoldBtn);
+  }
+
+  // Shown on the Quills section so the rule is visible before anyone clicks.
+  async function renderQuillHoldBanner() {
+    const el = document.getElementById('quill-hold-banner');
+    if (!el || !currentUser) return;
+    try {
+      const { data } = await db.rpc('my_quill_hold_status');
+      if (!data || !data.held) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      el.innerHTML = '<i class="ti ti-clock-pause" style="color:var(--gold);"></i> ' +
+        '<strong>' + Number(data.held).toLocaleString() + ' Quills</strong> are waiting out a 3-day hold' +
+        (data.releases_at ? ' (first release ' + new Date(data.releases_at).toLocaleDateString() + ')' : '') +
+        '. You can spend <strong>' + Number(data.spendable).toLocaleString() + '</strong> right now.';
+    } catch (e) { el.style.display = 'none'; }
+  }
+
   async function loadQuillBundles() {
     const { data, error } = await db.from('quill_bundles')
       .select('id, quills, bonus_quills, price_cents, label, is_popular')
@@ -1527,6 +1600,7 @@
       g.innerHTML = '<div class="empty-state" style="grid-column:1/-1;padding:24px;"><i class="ti ti-package-off"></i><p>No Quill bundles available right now.</p></div>';
       return;
     }
+    renderQuillHoldBanner();
     g.innerHTML = BUNDLES.map(b => {
       const total = b.quills + (b.bonus_quills || 0);
       const priceLabel = '$' + (b.price_cents / 100).toFixed(2);
@@ -1542,11 +1616,24 @@
     }).join('');
   }
 
+  // A held bundle is explained BEFORE payment, never discovered afterwards.
+  // Small bundles skip this entirely — the hold does not apply to them, so a
+  // warning would be both untrue and a reason not to buy.
   async function purchaseQuillBundle(bundleId, btnEl) {
     if (!currentUser) {
       showToast('Sign in to buy Quills', 'ti-lock');
       return;
     }
+
+    const b = BUNDLES.find(x => x.id === bundleId);
+    if (b && !QUILL_HOLD_ACK.has(bundleId)) {
+      const willHold = await quillWillBeHeld(b);
+      if (willHold) {
+        quillHoldNotice(b, bundleId, btnEl, willHold);
+        return;
+      }
+    }
+
     const originalHtml = btnEl.innerHTML;
     btnEl.disabled = true;
     btnEl.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Redirecting...';
