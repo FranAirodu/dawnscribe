@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lorebook — card deck prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Lato:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" rel="stylesheet">
+<style>
+  /* Prototype only — palette and faces lifted from marketplace.html so this
+     reads as DawnScribe rather than as a generic demo. No data layer here;
+     every card below is invented sample content. */
+  :root{
+    --bg:#0a0a0f; --bg2:#12121a; --bg3:#1a1a26; --bg4:#22223a;
+    --text:#f1f0ff; --text2:#9b9bc0; --text3:#8a8aa8;
+    --border:rgba(255,255,255,0.07);
+    --accent:#2dd4bf; --gold:#f59e0b; --red:#f87171; --green:#34d399;
+    --card-w:188px; --card-h:262px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(245,158,11,0.07), transparent 60%),
+      radial-gradient(900px 500px at 90% 10%, rgba(45,212,191,0.06), transparent 60%),
+      var(--bg);
+    color:var(--text); font-family:'Lato',sans-serif; padding:34px 26px 90px;
+    min-height:100vh;
+  }
+  .head{max-width:1080px;margin:0 auto 30px;}
+  .head h1{font-family:'Cinzel',serif;font-weight:600;font-size:27px;margin:0 0 7px;letter-spacing:0.3px;}
+  .head p{color:var(--text2);font-size:14px;line-height:1.65;max-width:62ch;margin:0;}
+  .head .note{color:var(--text3);font-size:12.5px;margin-top:10px;}
+
+  .decks{max-width:1080px;margin:0 auto;display:flex;flex-wrap:wrap;gap:34px;}
+
+  /* ── A PILE ────────────────────────────────────────────────────────
+     Cards are absolutely positioned children of .pile and offset with
+     transforms, so the "deck" is real stacking rather than a background
+     image of one. Fanning just changes the transforms. */
+  .pile-wrap{width:var(--card-w);}
+  .pile{
+    position:relative; width:var(--card-w); height:var(--card-h);
+    cursor:pointer; transition:height .32s cubic-bezier(.2,.7,.3,1);
+  }
+  .pile:focus-visible{outline:2px solid var(--accent);outline-offset:6px;border-radius:14px;}
+  .pile-label{
+    margin-top:14px;display:flex;align-items:baseline;gap:8px;
+    font-family:'Cinzel',serif;font-size:15px;color:var(--text);
+  }
+  .pile-label .count{font-family:'Lato',sans-serif;font-size:12px;color:var(--text3);}
+  .pile-hint{font-size:11.5px;color:var(--text3);margin-top:3px;min-height:15px;}
+
+  .card{
+    position:absolute; left:0; top:0; width:var(--card-w); height:var(--card-h);
+    border-radius:13px; background:linear-gradient(160deg,var(--bg3),var(--bg2));
+    border:1px solid var(--border);
+    box-shadow:0 10px 24px rgba(0,0,0,0.45);
+    padding:15px 14px; overflow:hidden;
+    transition:transform .34s cubic-bezier(.2,.7,.3,1), box-shadow .2s, border-color .2s;
+    will-change:transform;
+  }
+  .card:hover{border-color:rgba(245,158,11,0.4);}
+  /* Stacked: tiny offset and rotation per card, newest on top. */
+  .pile:not(.fanned) .card{transform:translate(var(--sx),var(--sy)) rotate(var(--sr));}
+  /* Fanned: laid out down the column, solitaire-style, overlapping so the
+     top of each card (name + portrait strip) stays readable. */
+  .pile.fanned .card{transform:translateY(var(--fy)) rotate(0deg);}
+  .pile.fanned .card:hover{transform:translateY(var(--fy)) translateX(9px) rotate(0deg);}
+
+  .card-topline{height:3px;border-radius:3px;margin:-4px -4px 11px;background:var(--gold);opacity:0.75;}
+  .card.c-society .card-topline{background:var(--accent);}
+  .card.c-org .card-topline{background:#a78bfa;}
+  .card.c-item .card-topline{background:var(--green);}
+  .card-name{font-family:'Cinzel',serif;font-size:15.5px;line-height:1.25;margin-bottom:3px;}
+  .card-role{font-size:11.5px;color:var(--text3);margin-bottom:11px;}
+  .card-portrait{
+    height:74px;border-radius:9px;background:var(--bg4);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--text3);font-size:23px;margin-bottom:11px;
+    border:1px solid var(--border);
+  }
+  .card-stat{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text2);padding:2.5px 0;}
+  .card-stat span:last-child{color:var(--text);}
+  .card-flag{
+    position:absolute;bottom:11px;left:14px;right:14px;
+    font-size:10.5px;color:var(--gold);display:flex;align-items:center;gap:5px;
+  }
+
+  /* ── DETAIL SHEET ─────────────────────────────────────────────── */
+  .sheet-back{
+    position:fixed;inset:0;background:rgba(4,4,8,0.78);z-index:50;
+    display:none;align-items:flex-start;justify-content:center;padding:36px 18px;
+    overflow-y:auto;
+  }
+  .sheet-back.open{display:flex;}
+  .sheet{
+    width:100%;max-width:660px;background:var(--bg2);border:1px solid var(--border);
+    border-radius:16px;padding:26px 26px 30px;
+  }
+  .sheet h2{font-family:'Cinzel',serif;font-size:22px;margin:0 0 4px;}
+  .sheet .sub{color:var(--text3);font-size:13px;margin-bottom:6px;}
+  .private{
+    display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--accent);
+    border:1px solid rgba(45,212,191,0.3);border-radius:20px;padding:4px 11px;margin-bottom:20px;
+  }
+  .grp{margin-top:22px;}
+  .grp-h{
+    font-family:'Cinzel',serif;font-size:13.5px;color:var(--gold);
+    border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:11px;
+  }
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:9px 18px;}
+  .f{font-size:13px;}
+  .f label{display:block;color:var(--text3);font-size:11.5px;margin-bottom:2px;}
+  .f div{color:var(--text);border-bottom:1px dotted var(--border);padding-bottom:3px;min-height:19px;}
+  .f.wide{grid-column:1/-1;}
+  .f.empty div{color:var(--text3);font-style:italic;}
+  .rel{
+    display:flex;align-items:center;gap:10px;background:var(--bg3);
+    border:1px solid var(--border);border-radius:9px;padding:9px 11px;margin-bottom:7px;font-size:13px;
+  }
+  .rel .who{font-weight:700;}
+  .rel .what{color:var(--text2);font-size:12px;}
+  .rel .tie{margin-left:auto;font-size:11px;color:var(--text3);}
+  .close{
+    margin-top:24px;background:var(--bg4);color:var(--text);border:1px solid var(--border);
+    border-radius:9px;padding:9px 16px;font-family:'Lato',sans-serif;font-size:13px;
+    font-weight:700;cursor:pointer;
+  }
+  .close:hover{border-color:var(--accent);}
+
+  @media (max-width:760px){
+    body{padding:24px 16px 70px;}
+    .decks{gap:26px;justify-content:center;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .pile,.card{transition:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <h1>The Lorebook</h1>
+  <p>Every story keeps four decks. Click a deck to spread it, click a card to open it.
+     Nothing in here is ever visible to readers.</p>
+  <div class="note">Prototype. Sample cards from an invented story — no real data, nothing saves.</div>
+</div>
+
+<div class="decks" id="decks"></div>
+
+<div class="sheet-back" id="sheet-back" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<script>
+/* Sample content only. The real thing reads from Supabase; this exists so the
+   stacking, fanning and the shape of a filled-in card can be judged before any
+   schema is written. */
+const DECKS = [
+  {
+    key:'char', cls:'', icon:'ti-user', title:'Characters',
+    hint:'People, and what they will not admit',
+    cards:[
+      {name:'Kaelen Ashfeld', role:'Sellsword · chapters 1–present', glyph:'K',
+       stats:[['Age','34'],['Eyes','grey'],['Height','6\'1"']],
+       flag:'Eye colour differs in ch. 40'},
+      {name:'Maren Vosk', role:'Smuggler · chapters 4–present', glyph:'M',
+       stats:[['Age','29'],['Eyes','brown'],['Height','5\'6"']],
+       flag:'Debt unresolved since ch. 12'},
+      {name:'Brother Aldis', role:'Priest · Healer, Tithe-keeper', glyph:'A',
+       stats:[['Age','58'],['Order','Sept of Dawn'],['Rank','Priest']]},
+      {name:'The Oracle of Vell', role:'Unseen · chapters 6, 22', glyph:'?',
+       stats:[['Age','unknown'],['Status','alive?'],['Seen','twice']]},
+    ]
+  },
+  {
+    key:'soc', cls:'c-society', icon:'ti-map-2', title:'Societies',
+    hint:'Dimension down to establishment',
+    cards:[
+      {name:'Ilvareth', role:'Country · Northern reach', glyph:'⌖',
+       stats:[['Tier','Country'],['Ruler','Queen Sarel'],['Cities','7']]},
+      {name:'Dunhollow', role:'City · Ilvareth', glyph:'⌂',
+       stats:[['Tier','City'],['Population','40,000'],['Currency','marks']]},
+      {name:'The Sundered Coast', role:'Region · two countries', glyph:'≈',
+       stats:[['Tier','Region'],['Climate','storm-bound'],['Calendar','Old Reckoning']]},
+    ]
+  },
+  {
+    key:'org', cls:'c-org', icon:'ti-hierarchy-2', title:'Organisations',
+    hint:'Ranks, roles, tenets, secrets',
+    cards:[
+      {name:'The Sept of Dawn', role:'Church · 6 ranks · 3 countries', glyph:'✦',
+       stats:[['Head','The Radiant'],['Members','~2,000'],['Rivals','2']]},
+      {name:'Vosk Family', role:'Smuggling house · 4 ranks', glyph:'❖',
+       stats:[['Head','Ilsa Vosk'],['Members','31'],['Territory','Dunhollow']]},
+    ]
+  },
+  {
+    key:'item', cls:'c-item', icon:'ti-diamond', title:'Artifacts',
+    hint:'Where a thing is, and who last held it',
+    cards:[
+      {name:'The Grey Edge', role:'Sword · lost ch. 3, found ch. 50', glyph:'†',
+       stats:[['Holder','Kaelen'],['Location','Dunhollow'],['Age','400 yrs']]},
+      {name:'Third Seal', role:'Relic · prophesied ch. 6', glyph:'◎',
+       stats:[['Holder','unknown'],['Location','unknown'],['Status','intact']],
+       flag:'Never mentioned after ch. 6'},
+    ]
+  },
+];
+
+/* The character sheet shown when a card opens. Grouped, because a flat list of
+   sixty fields is a form nobody finishes — and the groups are the prompt: an
+   empty "the lie they believe" is a question, not a blank. */
+const SHEET = {
+  title:'Kaelen Ashfeld',
+  sub:'Sellsword · introduced chapter 1 · alive',
+  groups:[
+    {h:'Basics', fields:[
+      ['Full name','Kaelen Ashfeld'],['Called','Kael, "the grey dog"'],
+      ['Age','34 (29 at ch. 1)'],['Born','Dunhollow, Ilvareth'],
+    ]},
+    {h:'Appearance', fields:[
+      ['Height','6\'1"'],['Build','lean, overworked'],
+      ['Hair','black, cropped short'],['Eyes','grey'],
+      ['Scars','left forearm (ch. 9), throat (before ch. 1)'],
+      ['Resting expression','watchful, unimpressed'],
+      ['Tell when lying','touches the throat scar', true],
+      ['Handedness','left'],
+    ]},
+    {h:'Body and practicals', fields:[
+      ['Allergies','none known'],['Injuries carried','right knee, never healed'],
+      ['Languages','Ilvish, trade cant'],['Literacy','reads slowly, hides it'],
+      ['Always carries','whetstone, his mother\'s ring'],['Bad at','lying to children'],
+    ]},
+    {h:'Psyche', fields:[
+      ['Greatest desire','to stop moving'],
+      ['Says he wants','one more contract, then out'],
+      ['Deepest fear','being needed'],
+      ['The lie he believes','that he does not care what happens to Maren'],
+      ['Trauma','the retreat at Vell — left men behind'],
+      ['Would die for','Maren'],['Would kill for','nothing, and he knows it'],
+      ['At 3am','sharpens a blade that is already sharp'],
+      ['At ten years old','too quiet, too careful'],
+      ['Moral line','will not take work involving children'],
+      ['Under pressure','goes silent and decides alone'],
+      ['Virtues','steady, unsentimental, keeps his word'],
+      ['Vices','withholding, drinks to sleep'],
+      ['Thinks of himself','as already spent'],
+    ]},
+    {h:'Voice', fields:[
+      ['Register','clipped, few words, no explaining'],
+      ['Verbal tic','answers questions with questions'],
+      ['How he apologises','does something, says nothing'],
+      ['Swearing','rarely, and only in trade cant'],
+    ]},
+  ],
+  rels:[
+    {group:'Family', who:'Ilsa Vosk', what:'aunt by marriage — has not spoken since the funeral', tie:'strained'},
+    {group:'Loves', who:'Maren Vosk', what:'thinks he hides it; she knows since ch. 14', tie:'unspoken'},
+    {group:'Allies', who:'Brother Aldis', what:'loyal to the Sept, not to Kaelen — useful, not safe', tie:'conditional'},
+    {group:'Enemies', who:'Captain Dray', what:'blames him for Vell, correctly', tie:'lethal'},
+    {group:'Rivals', who:'Tovan Reed', what:'same contracts, no bad blood yet', tie:'professional'},
+    {group:'Debts', who:'The harbourmaster', what:'owed 80 marks since ch. 8', tie:'owed'},
+    {group:'Wronged', who:'The men at Vell', what:'eleven left behind; four survived', tie:'unpaid'},
+  ]
+};
+
+/* ── BUILD THE PILES ───────────────────────────────────────────────── */
+const wrap = document.getElementById('decks');
+
+DECKS.forEach(deck => {
+  const w = document.createElement('div');
+  w.className = 'pile-wrap';
+
+  const pile = document.createElement('div');
+  pile.className = 'pile';
+  pile.tabIndex = 0;
+  pile.setAttribute('role','button');
+  pile.setAttribute('aria-expanded','false');
+  pile.setAttribute('aria-label', deck.title + ', ' + deck.cards.length + ' cards');
+
+  // Reverse so card 0 renders last and therefore sits on top of the pile.
+  deck.cards.slice().reverse().forEach((c, ri) => {
+    const i = deck.cards.length - 1 - ri;      // original index
+    const el = document.createElement('div');
+    el.className = 'card ' + deck.cls;
+    // Deeper cards sit further down-right and rotate slightly, which is what
+    // makes it read as a physical stack rather than a drop shadow.
+    el.style.setProperty('--sx', (i * 3) + 'px');
+    el.style.setProperty('--sy', (i * 5) + 'px');
+    el.style.setProperty('--sr', ((i % 2 ? 1 : -1) * Math.min(i, 3) * 0.7) + 'deg');
+    el.style.setProperty('--fy', (i * 116) + 'px');
+    el.innerHTML =
+      '<div class="card-topline"></div>'
+      + '<div class="card-name">' + c.name + '</div>'
+      + '<div class="card-role">' + c.role + '</div>'
+      + '<div class="card-portrait">' + c.glyph + '</div>'
+      + c.stats.map(s => '<div class="card-stat"><span>' + s[0] + '</span><span>' + s[1] + '</span></div>').join('')
+      + (c.flag ? '<div class="card-flag"><i class="ti ti-alert-triangle"></i> ' + c.flag + '</div>' : '');
+    el.addEventListener('click', ev => {
+      if (!pile.classList.contains('fanned')) return;   // first click spreads
+      ev.stopPropagation();
+      openSheet(c);
+    });
+    pile.appendChild(el);
+  });
+
+  function toggle() {
+    const open = pile.classList.toggle('fanned');
+    pile.setAttribute('aria-expanded', String(open));
+    // The wrapper has to grow, or a fanned deck overlaps the label below it.
+    pile.style.height = open
+      ? ((deck.cards.length - 1) * 116 + 262) + 'px'
+      : '';
+    hint.textContent = open ? 'Click a card to open it' : deck.hint;
+  }
+  pile.addEventListener('click', toggle);
+  pile.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+  });
+
+  const label = document.createElement('div');
+  label.className = 'pile-label';
+  label.innerHTML = '<i class="ti ' + deck.icon + '"></i> ' + deck.title
+    + '<span class="count">' + deck.cards.length + '</span>';
+
+  const hint = document.createElement('div');
+  hint.className = 'pile-hint';
+  hint.textContent = deck.hint;
+
+  w.append(pile, label, hint);
+  wrap.appendChild(w);
+});
+
+/* ── DETAIL SHEET ──────────────────────────────────────────────────── */
+const back = document.getElementById('sheet-back');
+const sheet = document.getElementById('sheet');
+
+function openSheet(card) {
+  // Kaelen is the only fully written sample; everything else opens the same
+  // shape with its own name so the layout can be judged either way.
+  const relGroups = {};
+  SHEET.rels.forEach(r => { (relGroups[r.group] = relGroups[r.group] || []).push(r); });
+
+  sheet.innerHTML =
+    '<h2 id="sheet-title">' + card.name + '</h2>'
+    + '<div class="sub">' + card.role + '</div>'
+    + '<div class="private"><i class="ti ti-eye-off"></i> Only you can see this card</div>'
+    + SHEET.groups.map(g =>
+        '<div class="grp"><div class="grp-h">' + g.h + '</div><div class="fields">'
+        + g.fields.map(f =>
+            '<div class="f' + (f[2] ? ' wide' : '') + '"><label>' + f[0] + '</label><div>' + f[1] + '</div></div>'
+          ).join('')
+        + '</div></div>'
+      ).join('')
+    + Object.keys(relGroups).map(k =>
+        '<div class="grp"><div class="grp-h">' + k + '</div>'
+        + relGroups[k].map(r =>
+            '<div class="rel"><span class="who">' + r.who + '</span>'
+            + '<span class="what">' + r.what + '</span>'
+            + '<span class="tie">' + r.tie + '</span></div>'
+          ).join('')
+        + '</div>'
+      ).join('')
+    + '<div class="grp"><div class="grp-h">Empty, and waiting</div><div class="fields">'
+    +   '<div class="f empty"><label>What he was promised</label><div>not filled in</div></div>'
+    +   '<div class="f empty"><label>Thoughts on Brother Aldis</label><div>not filled in</div></div>'
+    + '</div></div>'
+    + '<button class="close" onclick="closeSheet()">Close</button>';
+
+  back.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  sheet.scrollIntoView();
+}
+
+function closeSheet() {
+  back.classList.remove('open');
+  document.body.style.overflow = '';
+}
+back.addEventListener('click', e => { if (e.target === back) closeSheet(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+</script>
+</body>
+</html>
