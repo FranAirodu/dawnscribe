@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — The Lorebook</title>
+  <!-- Author-private by definition: every card here is a spoiler. -->
+  <meta name="robots" content="noindex,nofollow" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
+  <script src="accessibilityPrefs.js"></script>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#8a8aa8;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f0c040;--amber:#f59e0b;--card-w:180px;--card-h:250px;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--border:rgba(0,0,0,0.10);--text:#0a0a0f;--text2:#3a3a5c;--text3:#5a5a76;--accent:#0a6b63;--accent2:#075e56;--red:#b01818;--green:#036b4e;--gold:#7d5205;}
+    html[data-theme="dim"]{--bg:#1c1c21;--bg2:#24242c;--bg3:#2c2c38;--bg4:#34344c;--border:rgba(255,255,255,0.12);--text2:#9b9bc0;--text3:#9e9eb4;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;display:flex;flex-direction:column;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:14px;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;flex-shrink:0;}
+    .logo span{color:var(--text);}
+    .nav-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .back-btn.warn{border-color:rgba(245,158,11,0.45);color:var(--amber);}
+
+    .page{max-width:1120px;margin:0 auto;padding:28px 22px 70px;width:100%;}
+    .page-header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+    .page-header i{font-size:25px;color:var(--gold);}
+    .page-title{font-family:'Cinzel',serif;font-size:23px;font-weight:700;}
+    .page-subtitle{font-size:13px;color:var(--text3);margin:3px 0 26px;}
+
+    .picker-card{display:flex;align-items:center;gap:14px;padding:14px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;text-decoration:none;color:inherit;transition:border-color 0.2s;}
+    .picker-card:hover{border-color:var(--accent);}
+    .picker-cover{width:44px;height:62px;border-radius:6px;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text3);overflow:hidden;}
+    .picker-cover img{width:100%;height:100%;object-fit:cover;}
+    .picker-title{font-size:15px;font-weight:700;}
+    .picker-stats{font-size:12px;color:var(--text3);margin-top:3px;}
+
+    .state-wrap{text-align:center;padding:70px 20px;}
+    .state-icon{font-size:40px;color:var(--text3);}
+    .state-title{font-family:'Cinzel',serif;font-size:19px;margin:12px 0 6px;}
+    .state-body{font-size:13.5px;color:var(--text2);max-width:52ch;margin:0 auto;line-height:1.7;}
+    .state-body a{color:var(--accent);}
+
+    .view-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px;}
+    .vt{background:none;border:1px solid var(--border);border-radius:20px;padding:6px 15px;color:var(--text3);font-size:12.5px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;}
+    .vt:hover{border-color:var(--accent);color:var(--accent);}
+    .vt.active{background:rgba(45,212,191,0.1);border-color:var(--accent);color:var(--accent);}
+    .vt .pip{background:var(--amber);color:#1a1a26;border-radius:10px;padding:0 6px;font-size:11px;}
+
+    /* ── DECKS ──────────────────────────────────────────────────── */
+    .decks{display:flex;flex-wrap:wrap;gap:30px;align-items:flex-start;}
+    .pile-wrap{width:var(--card-w);}
+    .pile{position:relative;width:var(--card-w);height:var(--card-h);cursor:pointer;transition:height .3s cubic-bezier(.2,.7,.3,1);}
+    .pile:focus-visible{outline:2px solid var(--accent);outline-offset:6px;border-radius:14px;}
+    .pile-label{margin-top:13px;display:flex;align-items:baseline;gap:8px;font-family:'Cinzel',serif;font-size:15px;}
+    .pile-label .count{font-family:'Lato',sans-serif;font-size:12px;color:var(--text3);}
+    .pile-hint{font-size:11.5px;color:var(--text3);margin-top:3px;min-height:16px;}
+    .pile-add{margin-top:8px;width:100%;background:var(--bg3);border:1px dashed var(--border);border-radius:9px;padding:7px;color:var(--text2);font-size:12px;font-family:'Lato',sans-serif;cursor:pointer;}
+    .pile-add:hover{border-color:var(--accent);color:var(--accent);}
+
+    .card{position:absolute;left:0;top:0;width:var(--card-w);height:var(--card-h);border-radius:13px;background:linear-gradient(160deg,var(--bg3),var(--bg2));border:1px solid var(--border);box-shadow:0 10px 22px rgba(0,0,0,0.42);padding:14px 13px;overflow:hidden;transition:transform .32s cubic-bezier(.2,.7,.3,1),border-color .2s;}
+    .card:hover{border-color:rgba(240,192,64,0.45);}
+    .pile:not(.fanned) .card{transform:translate(var(--sx),var(--sy)) rotate(var(--sr));}
+    .pile.fanned .card{transform:translateY(var(--fy));}
+    .pile.fanned .card:hover{transform:translateY(var(--fy)) translateX(8px);}
+    .card-topline{height:3px;border-radius:3px;margin:-3px -3px 10px;background:var(--gold);opacity:.75;}
+    .card.k-society .card-topline{background:var(--accent);}
+    .card.k-organisation .card-topline{background:#a78bfa;}
+    .card.k-artifact .card-topline{background:var(--green);}
+    .card.k-event .card-topline{background:#60a5fa;}
+    .card-name{font-family:'Cinzel',serif;font-size:15px;line-height:1.25;margin-bottom:3px;}
+    .card-role{font-size:11.5px;color:var(--text3);margin-bottom:10px;min-height:15px;}
+    .card-glyph{height:70px;border-radius:9px;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text3);font-family:'Cinzel',serif;font-size:24px;margin-bottom:10px;border:1px solid var(--border);}
+    .card-stat{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--text2);padding:2px 0;}
+    .card-stat b{color:var(--text);font-weight:400;}
+    .card-flag{position:absolute;bottom:10px;left:13px;right:13px;font-size:10.5px;color:var(--amber);display:flex;align-items:center;gap:5px;}
+    .card-fill{position:absolute;bottom:10px;right:13px;font-size:10.5px;color:var(--text3);}
+
+    /* ── BOARD ──────────────────────────────────────────────────── */
+    .board{position:relative;min-height:520px;background:
+        linear-gradient(var(--border) 1px, transparent 1px) 0 0/34px 34px,
+        linear-gradient(90deg, var(--border) 1px, transparent 1px) 0 0/34px 34px,
+        var(--bg2);
+      border:1px solid var(--border);border-radius:14px;overflow:hidden;touch-action:none;}
+    .board .bcard{position:absolute;width:150px;background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:grab;user-select:none;box-shadow:0 6px 16px rgba(0,0,0,0.35);}
+    .board .bcard.dragging{cursor:grabbing;z-index:20;border-color:var(--accent);}
+    .board .bcard.drop-target{border-color:var(--gold);box-shadow:0 0 0 2px rgba(240,192,64,0.35);}
+    .bcard-name{font-family:'Cinzel',serif;font-size:13.5px;}
+    .bcard-sub{font-size:11px;color:var(--text3);margin-top:2px;}
+    .bcard-ties{font-size:10.5px;color:var(--accent);margin-top:7px;}
+    .board-help{font-size:12.5px;color:var(--text3);margin-bottom:12px;line-height:1.6;}
+
+    /* ── SHEET ──────────────────────────────────────────────────── */
+    .sheet-back{position:fixed;inset:0;background:rgba(4,4,8,0.8);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;}
+    .sheet-back.open{display:flex;}
+    .sheet{width:100%;max-width:700px;background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:24px;}
+    .sheet h2{font-family:'Cinzel',serif;font-size:21px;margin-bottom:3px;}
+    .sheet .sub{color:var(--text3);font-size:13px;}
+    .private{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--accent);border:1px solid rgba(45,212,191,0.3);border-radius:20px;padding:4px 11px;margin:12px 0 4px;}
+    .grp{margin-top:20px;}
+    .grp-h{font-family:'Cinzel',serif;font-size:13.5px;color:var(--gold);border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:baseline;}
+    .grp-h .gcount{font-family:'Lato',sans-serif;font-size:11px;color:var(--text3);font-weight:400;}
+    .fields{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;}
+    .f{font-size:13px;}
+    .f.wide{grid-column:1/-1;}
+    .f label{display:block;color:var(--text3);font-size:11.5px;margin-bottom:3px;}
+    .f .help{font-size:10.5px;color:var(--text3);font-style:italic;margin-bottom:3px;}
+    .f input,.f textarea,.f select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;}
+    .f input:focus,.f textarea:focus{outline:none;border-color:var(--accent);}
+    .f textarea{resize:vertical;min-height:64px;}
+    .f.skipped input,.f.skipped textarea{opacity:.35;}
+    .skip{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text3);margin-top:4px;cursor:pointer;}
+    .skip input{width:auto;}
+
+    .rel{display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:9px 11px;margin-bottom:7px;font-size:13px;flex-wrap:wrap;}
+    .rel .who{font-weight:700;}
+    .rel .what{color:var(--text2);font-size:12px;}
+    .rel .tie{margin-left:auto;font-size:11px;color:var(--text3);}
+
+    .btn{background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:9px;padding:9px 16px;font-family:'Lato',sans-serif;font-size:13px;font-weight:700;cursor:pointer;}
+    .btn:hover{border-color:var(--accent);}
+    .btn.primary{background:var(--accent2);border-color:var(--accent2);color:#f1f0ff;}
+    .btn.ghost{background:transparent;}
+    .btn.danger{border-color:rgba(248,113,113,0.45);color:var(--red);}
+    .sheet-actions{display:flex;gap:9px;margin-top:24px;flex-wrap:wrap;}
+
+    /* ── FINDINGS ───────────────────────────────────────────────── */
+    .finding{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:11px;padding:14px 16px;margin-bottom:11px;}
+    .finding.ai{border-left-color:#a78bfa;}
+    .finding.answered{border-left-color:var(--border);opacity:.62;}
+    .finding-msg{font-size:14px;line-height:1.6;}
+    .finding-meta{font-size:11.5px;color:var(--text3);margin-top:5px;display:flex;gap:12px;flex-wrap:wrap;}
+    .finding-acts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+    .finding-acts .btn{padding:6px 12px;font-size:12px;}
+
+    /* The confirm sits centred INSIDE the finding, so the button a stray
+       second click would land on is never where the first click was. */
+    .confirm{margin-top:12px;background:var(--bg3);border:1px solid rgba(248,113,113,0.35);border-radius:11px;padding:16px;text-align:center;}
+    .confirm-title{font-family:'Cinzel',serif;font-size:15px;margin-bottom:7px;}
+    .confirm-body{font-size:12.5px;color:var(--text2);line-height:1.6;max-width:46ch;margin:0 auto 14px;}
+    .confirm .btn{display:block;margin:0 auto;}
+    .confirm .keep{background:none;border:none;color:var(--text3);font-size:12px;margin-top:10px;cursor:pointer;text-decoration:underline;font-family:'Lato',sans-serif;}
+
+    #lb-toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(120%);background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:12px 18px;font-size:13px;z-index:400;transition:transform .28s;display:flex;gap:8px;align-items:center;}
+    #lb-toast.show{transform:translateX(-50%) translateY(0);}
+
+    @media (max-width:760px){
+      nav{padding:0 14px;}
+      .page{padding:22px 14px 60px;}
+      .fields{grid-template-columns:1fr;}
+      .decks{justify-content:center;}
+    }
+    @media (prefers-reduced-motion:reduce){ .pile,.card,#lb-toast{transition:none;} }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html" class="logo">Dawn<span>Scribe</span></a>
+  <div class="nav-right" id="nav-right">
+    <a class="back-btn" id="nav-back" href="dashboard.html"><i class="ti ti-arrow-left"></i> Your stories</a>
+  </div>
+</nav>
+
+<div class="page" id="page">
+  <div class="state-wrap"><i class="ti ti-loader state-icon" style="animation:spin 1s linear infinite;"></i></div>
+</div>
+
+<div class="sheet-back" id="sheet-back" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<div id="lb-toast"><i class="ti ti-check" id="lb-toast-icon"></i> <span id="lb-toast-msg"></span></div>
+
+<script>
+  var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx';
+  var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  window.db = db;
+</script>
+
+<script>
+/* ── THE LOREBOOK ──────────────────────────────────────────────────────
+   Author-private story notes, included with every author account. The paid
+   tier (Lorekeeper) does not gate anything on this page — it adds findings
+   with source='ai' to the same queue.
+
+   Everything here is owner-only at the database level (lore_* RLS), so this
+   page never needs to decide who may see a card. It only asks.
+*/
+
+var session = null, uid = null, workId = null, work = null;
+var FIELDS = {};        // kind -> [field defs]
+var CARDS = [];         // every card in this work
+var RELATIONS = [];
+var FINDINGS = [];
+var LOREKEEPER = false;
+var view = 'decks';
+
+/* Deck order is deliberate: characters first because that is what an author
+   opens the Lorebook to do, events last because most stories never need one. */
+var DECKS = [
+  { kind:'character',    title:'Characters',    icon:'ti-user',         hint:'People, and what they will not admit' },
+  { kind:'society',      title:'Societies',     icon:'ti-map-2',        hint:'Dimension down to establishment' },
+  { kind:'organisation', title:'Organisations', icon:'ti-hierarchy-2',  hint:'Ranks, roles, tenets, secrets' },
+  { kind:'artifact',     title:'Artifacts',     icon:'ti-diamond',      hint:'Where a thing is, and who held it' },
+  { kind:'event',        title:'Events',        icon:'ti-flag',         hint:'Dated things chapters can point at' }
+];
+
+var REL_GROUPS = [
+  ['family','Family'], ['friends','Friends'], ['allies','Allies'], ['enemies','Enemies'],
+  ['rivals','Rivals'], ['mentors','Mentors and students'], ['loves','Loves'],
+  ['past_loves','Past loves'], ['debts','Debts'], ['wronged','People they have wronged'],
+  ['unaware','Does not know they exist'], ['first_impression','First impressions']
+];
+var REL_LABEL = {};
+REL_GROUPS.forEach(function(g){ REL_LABEL[g[0]] = g[1]; });
+
+/* Three or four "headline" fields per kind, shown on the small card face so a
+   stacked deck is readable without opening anything. */
+var FACE = {
+  character:    ['age','eyes','height'],
+  society:      ['tier','ruler','population'],
+  organisation: ['org_type','head_name','size'],
+  artifact:     ['item_type','holder','location'],
+  event:        ['when','where','who_knows']
+};
+
+/* ── HELPERS ───────────────────────────────────────────────────────── */
+function esc(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function safeUrl(u){
+  var s = String(u||'').trim();
+  if(!s) return '';
+  if(/^https?:\/\//i.test(s)) return s;
+  if(/^\/(?!\/)/.test(s)) return s;
+  return '';
+}
+var toastTimer;
+function toast(msg, icon, bad){
+  var el = document.getElementById('lb-toast');
+  document.getElementById('lb-toast-msg').textContent = msg;
+  document.getElementById('lb-toast-icon').className = 'ti ' + (icon || 'ti-check');
+  el.style.color = bad ? 'var(--red)' : 'var(--text)';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.classList.remove('show'); }, 3400);
+}
+function showState(icon, title, body){
+  document.getElementById('page').innerHTML =
+    '<div class="state-wrap"><i class="ti ' + icon + ' state-icon"></i>'
+    + '<div class="state-title">' + title + '</div>'
+    + '<div class="state-body">' + body + '</div></div>';
+}
+/* A field value is either {v:'…'} or {skipped:true}. The distinction matters:
+   blank means not got to yet, skipped means asked and answered "I do not
+   know" — so a half-finished card and a deliberately sparse one look
+   different, and the fill count below does not nag about skipped fields. */
+function fval(card, key){
+  var d = (card.data || {})[key];
+  if(!d || d.skipped) return '';
+  return d.v == null ? '' : String(d.v);
+}
+function fskipped(card, key){
+  var d = (card.data || {})[key];
+  return !!(d && d.skipped);
+}
+function fillCount(card){
+  var defs = FIELDS[card.kind] || [];
+  var answered = 0;
+  defs.forEach(function(f){
+    var d = (card.data || {})[f.field_key];
+    if(d && (d.skipped || (d.v != null && String(d.v) !== ''))) answered++;
+  });
+  return { answered: answered, total: defs.length };
+}
+function cardById(id){
+  for(var i=0;i<CARDS.length;i++) if(CARDS[i].id === id) return CARDS[i];
+  return null;
+}
+function openFindingsFor(cardId){
+  return FINDINGS.filter(function(f){ return f.card_id === cardId && f.status === 'open'; });
+}
+
+/* ── INIT ──────────────────────────────────────────────────────────── */
+(async function init(){
+  var r = await db.auth.getSession();
+  session = r.data.session;
+  if(!session){
+    showState('ti-lock', 'Sign in to open your Lorebook',
+      'Your Lorebook is private to you. <a href="auth.html">Sign in</a> to continue.');
+    return;
+  }
+  uid = session.user.id;
+  var params = new URLSearchParams(window.location.search);
+  workId = params.get('work');
+  if(workId){ loadWork(); } else { loadPicker(); }
+})();
+
+/* ── WORK PICKER ───────────────────────────────────────────────────── */
+async function loadPicker(){
+  // Promise.resolve wrapper: Supabase query builders implement .then() but
+  // not .catch(), so chaining .catch() directly throws.
+  var res = await Promise.resolve(
+    db.from('works').select('id,title,cover_url,chapters_count,created_at')
+      .eq('author_id', uid).order('created_at', { ascending:false })
+  ).catch(function(){ return { error:true }; });
+
+  if(res.error){
+    showState('ti-plug-x', 'Connection hiccup',
+      'Could not load your stories. <a href="javascript:location.reload()">Try again</a>.');
+    return;
+  }
+  var works = res.data || [];
+  if(!works.length){
+    showState('ti-books-off', 'No stories yet',
+      'A Lorebook belongs to a story. <a href="publish.html">Publish one</a> and its cards will live here.');
+    return;
+  }
+
+  // Card counts for every work in one query, so the picker says something
+  // useful rather than listing bare titles.
+  var counts = {};
+  try{
+    var cRes = await db.from('lore_cards').select('work_id').eq('author_id', uid);
+    (cRes.data || []).forEach(function(c){ counts[c.work_id] = (counts[c.work_id] || 0) + 1; });
+  }catch(e){}
+
+  document.getElementById('page').innerHTML =
+    '<div class="page-header"><i class="ti ti-book-2"></i><div class="page-title">The Lorebook</div></div>'
+    + '<div class="page-subtitle">Pick a story. Nothing in a Lorebook is ever visible to readers.</div>'
+    + works.map(function(w){
+        var u = safeUrl(w.cover_url);
+        var cover = u ? '<img loading="lazy" decoding="async" src="' + esc(u) + '" alt=""/>' : '<i class="ti ti-book"></i>';
+        var n = counts[w.id] || 0;
+        return '<a class="picker-card" href="lorebook.html?work=' + encodeURIComponent(w.id) + '">'
+          + '<div class="picker-cover">' + cover + '</div>'
+          + '<div style="flex:1;min-width:0;">'
+            + '<div class="picker-title">' + esc(w.title) + '</div>'
+            + '<div class="picker-stats">' + (w.chapters_count || 0) + ' chapters &middot; '
+              + (n ? n + ' card' + (n === 1 ? '' : 's') : 'no cards yet') + '</div>'
+          + '</div>'
+          + '<i class="ti ti-chevron-right picker-arrow"></i></a>';
+      }).join('');
+}
+
+/* ── LOAD ONE WORK ─────────────────────────────────────────────────── */
+async function loadWork(){
+  var back = document.getElementById('nav-back');
+  back.href = 'lorebook.html';
+  back.innerHTML = '<i class="ti ti-arrow-left"></i> Your Lorebooks';
+
+  var sum = await db.rpc('my_lorebook', { p_work_id: workId });
+  if(!sum.data || sum.data.ok !== true){
+    showState('ti-lock', 'Not your story',
+      'A Lorebook is only visible to the story\u2019s author. <a href="lorebook.html">Back to your Lorebooks</a>.');
+    return;
+  }
+  LOREKEEPER = sum.data.lorekeeper === true;
+
+  var out = await Promise.all([
+    Promise.resolve(db.from('works').select('id,title').eq('id', workId).maybeSingle()).catch(function(){ return {}; }),
+    Promise.resolve(db.from('lore_fields').select('*').eq('is_active', true)
+      .order('group_order').order('sort_order')).catch(function(){ return {}; }),
+    Promise.resolve(db.from('lore_cards').select('*').eq('work_id', workId)
+      .order('kind').order('sort_order')).catch(function(){ return {}; }),
+    Promise.resolve(db.from('lore_relations').select('*').eq('work_id', workId)).catch(function(){ return {}; }),
+    Promise.resolve(db.from('lore_findings').select('*').eq('work_id', workId)
+      .order('created_at', { ascending:false })).catch(function(){ return {}; })
+  ]);
+
+  work      = out[0].data || { title:'This story' };
+  FIELDS    = {};
+  (out[1].data || []).forEach(function(f){
+    (FIELDS[f.kind] = FIELDS[f.kind] || []).push(f);
+  });
+  CARDS     = out[2].data || [];
+  RELATIONS = out[3].data || [];
+  FINDINGS  = out[4].data || [];
+
+  render();
+}
+
+function render(){
+  var open = FINDINGS.filter(function(f){ return f.status === 'open'; }).length;
+  var html =
+    '<div class="page-header"><i class="ti ti-book-2"></i>'
+    + '<div class="page-title">' + esc(work.title) + '</div></div>'
+    + '<div class="page-subtitle">Your Lorebook. Private to you \u2014 readers never see any of it.</div>'
+    + '<div class="view-tabs">'
+      + tab('decks', 'ti-cards', 'Decks')
+      + tab('board', 'ti-arrows-shuffle', 'Relationships')
+      + tab('checks', 'ti-shield-check', 'Checks', open)
+    + '</div>'
+    + '<div id="view-body"></div>';
+  document.getElementById('page').innerHTML = html;
+  renderView();
+}
+function tab(key, icon, label, pip){
+  return '<button class="vt' + (view === key ? ' active' : '') + '" onclick="setView(\'' + key + '\')">'
+    + '<i class="ti ' + icon + '"></i> ' + label
+    + (pip ? '<span class="pip">' + pip + '</span>' : '') + '</button>';
+}
+function setView(v){ view = v; render(); }
+
+function renderView(){
+  if(view === 'decks')  return renderDecks();
+  if(view === 'board')  return renderBoard();
+  if(view === 'checks') return renderChecks();
+}
+
+/* ── DECKS ─────────────────────────────────────────────────────────── */
+function renderDecks(){
+  var body = document.getElementById('view-body');
+  body.innerHTML = '<div class="decks" id="decks"></div>';
+  var wrap = document.getElementById('decks');
+
+  DECKS.forEach(function(deck){
+    var cards = CARDS.filter(function(c){ return c.kind === deck.kind; });
+    var w = document.createElement('div');
+    w.className = 'pile-wrap';
+
+    var pile = document.createElement('div');
+    pile.className = 'pile';
+    pile.tabIndex = 0;
+    pile.setAttribute('role', 'button');
+    pile.setAttribute('aria-expanded', 'false');
+    pile.setAttribute('aria-label', deck.title + ', ' + cards.length + ' cards');
+
+    if(!cards.length){
+      pile.innerHTML = '<div class="card ' + 'k-' + deck.kind + '" style="transform:none;display:flex;'
+        + 'flex-direction:column;align-items:center;justify-content:center;text-align:center;'
+        + 'border-style:dashed;box-shadow:none;">'
+        + '<i class="ti ' + deck.icon + '" style="font-size:26px;color:var(--text3);margin-bottom:8px;"></i>'
+        + '<div style="font-size:12px;color:var(--text3);padding:0 10px;line-height:1.5;">'
+        + 'Empty deck. The first card is the hardest.</div></div>';
+      pile.style.cursor = 'default';
+      pile.removeAttribute('role');
+    } else {
+      // Reversed so card 0 is appended last and sits on top of the stack.
+      cards.slice().reverse().forEach(function(c, ri){
+        var i = cards.length - 1 - ri;
+        pile.appendChild(buildCardEl(c, deck, i));
+      });
+    }
+
+    function toggle(){
+      if(!cards.length) return;
+      var open = pile.classList.toggle('fanned');
+      pile.setAttribute('aria-expanded', String(open));
+      // Without growing the pile, a fanned deck sits on top of its own label.
+      pile.style.height = open ? ((cards.length - 1) * 112 + 250) + 'px' : '';
+      hint.textContent = open ? 'Click a card to open it' : deck.hint;
+    }
+    pile.addEventListener('click', toggle);
+    pile.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); }
+    });
+
+    var label = document.createElement('div');
+    label.className = 'pile-label';
+    label.innerHTML = '<i class="ti ' + deck.icon + '"></i> ' + deck.title
+      + '<span class="count">' + cards.length + '</span>';
+
+    var hint = document.createElement('div');
+    hint.className = 'pile-hint';
+    hint.textContent = deck.hint;
+
+    var add = document.createElement('button');
+    add.className = 'pile-add';
+    add.innerHTML = '<i class="ti ti-plus"></i> New card';
+    add.addEventListener('click', function(e){ e.stopPropagation(); newCard(deck.kind); });
+
+    w.appendChild(pile); w.appendChild(label); w.appendChild(hint); w.appendChild(add);
+    wrap.appendChild(w);
+  });
+}
+
+function buildCardEl(c, deck, i){
+  var el = document.createElement('div');
+  el.className = 'card k-' + c.kind;
+  el.style.setProperty('--sx', (i * 3) + 'px');
+  el.style.setProperty('--sy', (i * 5) + 'px');
+  el.style.setProperty('--sr', ((i % 2 ? 1 : -1) * Math.min(i, 3) * 0.7) + 'deg');
+  el.style.setProperty('--fy', (i * 112) + 'px');
+
+  var flags = openFindingsFor(c.id);
+  var face = (FACE[c.kind] || []).map(function(key){
+    var def = (FIELDS[c.kind] || []).filter(function(f){ return f.field_key === key; })[0];
+    if(!def) return '';
+    var v = fval(c, key);
+    if(!v) return '';
+    return '<div class="card-stat"><span>' + esc(def.label) + '</span><b>' + esc(v) + '</b></div>';
+  }).join('');
+  var fill = fillCount(c);
+
+  el.innerHTML =
+    '<div class="card-topline"></div>'
+    + '<div class="card-name">' + esc(c.name) + '</div>'
+    + '<div class="card-role">' + esc(c.subtitle || '') + '</div>'
+    + '<div class="card-glyph">' + esc(c.name.trim().charAt(0).toUpperCase() || '?') + '</div>'
+    + face
+    + (flags.length
+        ? '<div class="card-flag"><i class="ti ti-alert-triangle"></i> '
+          + flags.length + ' to look at</div>'
+        : '<div class="card-fill">' + fill.answered + '/' + fill.total + '</div>');
+
+  el.addEventListener('click', function(ev){
+    // First click on a stacked deck spreads it; only a fanned card opens.
+    var pile = el.parentElement;
+    if(pile && !pile.classList.contains('fanned')) return;
+    ev.stopPropagation();
+    openCard(c.id);
+  });
+  return el;
+}
+
+async function newCard(kind){
+  var name = window.prompt('Name for the new ' + kind + ' card:');
+  if(name === null) return;
+  name = name.trim();
+  if(!name){ toast('A card needs a name', 'ti-alert-triangle', true); return; }
+  var res = await db.from('lore_cards')
+    .insert({ work_id: workId, author_id: uid, kind: kind, name: name, data: {} })
+    .select().maybeSingle();
+  if(res.error || !res.data){
+    toast(res.error ? res.error.message : 'Could not create the card', 'ti-x', true);
+    return;
+  }
+  CARDS.push(res.data);
+  render();
+  openCard(res.data.id);
+}
+
+/* ── CARD SHEET ────────────────────────────────────────────────────── */
+var EDIT_ID = null;
+
+function openCard(id){
+  var c = cardById(id);
+  if(!c) return;
+  EDIT_ID = id;
+  var defs = FIELDS[c.kind] || [];
+
+  // Group the definitions, keeping the database's group_order/sort_order.
+  var groups = [], seen = {};
+  defs.forEach(function(f){
+    if(!seen[f.group_key]){
+      seen[f.group_key] = { key:f.group_key, label:f.group_label, fields:[] };
+      groups.push(seen[f.group_key]);
+    }
+    seen[f.group_key].fields.push(f);
+  });
+
+  var fill = fillCount(c);
+  var flags = openFindingsFor(c.id);
+
+  var html =
+    '<h2 id="sheet-title">' + esc(c.name) + '</h2>'
+    + '<div class="sub">' + esc(c.subtitle || DECKS.filter(function(d){ return d.kind === c.kind; })[0].title) + '</div>'
+    + '<div class="private"><i class="ti ti-eye-off"></i> Only you can see this card</div>'
+    + '<div style="font-size:11.5px;color:var(--text3);">' + fill.answered + ' of ' + fill.total
+      + ' questions answered</div>'
+    + (flags.length
+        ? '<div class="finding" style="margin-top:14px;">'
+          + '<div class="finding-msg"><i class="ti ti-alert-triangle" style="color:var(--amber);"></i> '
+          + flags.length + ' thing' + (flags.length === 1 ? '' : 's') + ' to look at on this card</div>'
+          + '<div class="finding-acts"><button class="btn ghost" onclick="closeSheet();setView(\'checks\')">'
+          + 'Open checks</button></div></div>'
+        : '')
+    + '<div class="grp"><div class="grp-h">The card itself</div><div class="fields">'
+      + '<div class="f"><label>Name</label><input id="lb-name" maxlength="120" value="' + esc(c.name) + '"/></div>'
+      + '<div class="f"><label>One line under the name</label>'
+        + '<input id="lb-subtitle" maxlength="160" value="' + esc(c.subtitle || '') + '"/></div>'
+    + '</div></div>'
+    + groups.map(function(g){
+        var answered = g.fields.filter(function(f){
+          var d = (c.data || {})[f.field_key];
+          return d && (d.skipped || (d.v != null && String(d.v) !== ''));
+        }).length;
+        return '<div class="grp"><div class="grp-h">' + esc(g.label)
+          + '<span class="gcount">' + answered + '/' + g.fields.length + '</span></div>'
+          + '<div class="fields">' + g.fields.map(function(f){ return fieldHtml(c, f); }).join('') + '</div></div>';
+      }).join('')
+    + (c.kind === 'character' ? relSection(c) : '')
+    + '<div class="sheet-actions">'
+      + '<button class="btn primary" onclick="saveCard()"><i class="ti ti-check"></i> Save card</button>'
+      + '<button class="btn ghost" onclick="closeSheet()">Close</button>'
+      + '<button class="btn danger" style="margin-left:auto;" onclick="deleteCardAsk()">Delete card</button>'
+    + '</div>'
+    + '<div id="lb-del"></div>';
+
+  document.getElementById('sheet').innerHTML = html;
+  document.getElementById('sheet-back').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function fieldHtml(c, f){
+  var v = fval(c, f.field_key);
+  var skipped = fskipped(c, f.field_key);
+  var wide = (f.input_type === 'long');
+  var id = 'fld-' + f.field_key;
+  var input;
+
+  if(f.input_type === 'long'){
+    input = '<textarea id="' + id + '" rows="3">' + esc(v) + '</textarea>';
+  } else if(f.options){
+    // A datalist, not a <select>: the options are the commonest answers in
+    // order as a shortcut, and anything else can still be typed. A closed
+    // dropdown would tell an author their character is not allowed to exist.
+    var opts = (Array.isArray(f.options) ? f.options : []).map(function(o){
+      return '<option value="' + esc(o) + '"></option>';
+    }).join('');
+    input = '<input id="' + id + '" list="dl-' + esc(f.field_key) + '" value="' + esc(v) + '" '
+      + 'placeholder="Start typing, or pick one"/>'
+      + '<datalist id="dl-' + esc(f.field_key) + '">' + opts + '</datalist>';
+  } else if(f.input_type === 'number'){
+    input = '<input id="' + id + '" type="number" value="' + esc(v) + '"/>';
+  } else {
+    input = '<input id="' + id + '" value="' + esc(v) + '"/>';
+  }
+
+  return '<div class="f' + (wide ? ' wide' : '') + (skipped ? ' skipped' : '') + '" id="wrap-' + esc(f.field_key) + '">'
+    + '<label>' + esc(f.label) + (f.allow_skip ? '' : ' <span style="color:var(--red);">*</span>') + '</label>'
+    + (f.help ? '<div class="help">' + esc(f.help) + '</div>' : '')
+    + input
+    + (f.allow_skip
+        ? '<label class="skip"><input type="checkbox" id="skip-' + esc(f.field_key) + '"'
+          + (skipped ? ' checked' : '') + ' onchange="toggleSkip(\'' + esc(f.field_key) + '\')"/> '
+          + 'I do not know yet \u2014 stop asking</label>'
+        : '')
+    + '</div>';
+}
+
+function toggleSkip(key){
+  var wrap = document.getElementById('wrap-' + key);
+  var box = document.getElementById('skip-' + key);
+  if(wrap && box) wrap.classList.toggle('skipped', box.checked);
+}
+
+function relSection(c){
+  var mine = RELATIONS.filter(function(r){
+    return r.from_card_id === c.id || r.to_card_id === c.id;
+  });
+  var byGroup = {};
+  mine.forEach(function(r){ (byGroup[r.group_key] = byGroup[r.group_key] || []).push(r); });
+
+  var blocks = Object.keys(byGroup).map(function(k){
+    return '<div class="grp"><div class="grp-h">' + esc(REL_LABEL[k] || k) + '</div>'
+      + byGroup[k].map(function(r){
+          var otherId = r.from_card_id === c.id ? r.to_card_id : r.from_card_id;
+          var other = cardById(otherId);
+          return '<div class="rel">'
+            + '<span class="who">' + esc(other ? other.name : 'a card that no longer exists') + '</span>'
+            + '<span class="what">' + esc(r.what_now || 'nothing written yet') + '</span>'
+            + (r.tie_label ? '<span class="tie">' + esc(r.tie_label) + '</span>' : '')
+            + '<button class="btn ghost" style="padding:4px 10px;font-size:11.5px;" '
+            + 'onclick="openRelation(\'' + r.id + '\')">Open</button>'
+            + '</div>';
+        }).join('')
+      + '</div>';
+  }).join('');
+
+  return blocks
+    + '<div class="grp"><div class="grp-h">Relationships</div>'
+    + '<div style="font-size:12.5px;color:var(--text2);line-height:1.6;">'
+    + 'Drag two cards together on the Relationships board to start one. '
+    + 'What you write in the middle \u2014 how it started, what it is now, what would end it \u2014 '
+    + 'shows on both cards; the note you write here does not.</div>'
+    + '<div class="finding-acts"><button class="btn ghost" onclick="closeSheet();setView(\'board\')">'
+    + '<i class="ti ti-arrows-shuffle"></i> Open the board</button></div></div>';
+}
+
+async function saveCard(){
+  var c = cardById(EDIT_ID);
+  if(!c) return;
+  var defs = FIELDS[c.kind] || [];
+  var data = {};
+  var missing = null;
+
+  defs.forEach(function(f){
+    var box = document.getElementById('skip-' + f.field_key);
+    var el  = document.getElementById('fld-' + f.field_key);
+    if(box && box.checked){ data[f.field_key] = { skipped:true }; return; }
+    var v = el ? String(el.value).trim() : '';
+    if(v !== '') data[f.field_key] = { v: v };
+    else if(!f.allow_skip && !missing) missing = f.label;
+  });
+
+  var name = String(document.getElementById('lb-name').value || '').trim();
+  if(!name){ toast('A card needs a name', 'ti-alert-triangle', true); return; }
+  if(missing){ toast(missing + ' is needed', 'ti-alert-triangle', true); return; }
+
+  var res = await db.from('lore_cards').update({
+    name: name,
+    subtitle: String(document.getElementById('lb-subtitle').value || '').trim() || null,
+    data: data
+  }).eq('id', c.id).select().maybeSingle();
+
+  if(res.error || !res.data){
+    toast(res.error ? res.error.message : 'Could not save', 'ti-x', true);
+    return;
+  }
+  for(var i=0;i<CARDS.length;i++) if(CARDS[i].id === c.id) CARDS[i] = res.data;
+  toast('Card saved');
+  closeSheet();
+  render();
+}
+
+/* Deleting a card takes relationships and findings with it (ON DELETE
+   CASCADE), so it gets the same centred confirm as a dismissed check. */
+function deleteCardAsk(){
+  var c = cardById(EDIT_ID);
+  var ties = RELATIONS.filter(function(r){
+    return r.from_card_id === c.id || r.to_card_id === c.id;
+  }).length;
+  document.getElementById('lb-del').innerHTML =
+    '<div class="confirm">'
+    + '<div class="confirm-title">Delete ' + esc(c.name) + '?</div>'
+    + '<div class="confirm-body">This cannot be undone'
+    + (ties ? ', and it removes ' + ties + ' relationship' + (ties === 1 ? '' : 's') + ' from the other cards too' : '')
+    + '.</div>'
+    + '<button class="btn danger" id="lb-del-go" disabled onclick="deleteCard()">Yes, delete it</button>'
+    + '<button class="keep" onclick="document.getElementById(\'lb-del\').innerHTML=\'\'">Keep the card</button>'
+    + '</div>';
+  armConfirm('lb-del-go', 'Yes, delete it');
+}
+
+async function deleteCard(){
+  var c = cardById(EDIT_ID);
+  var res = await db.from('lore_cards').delete().eq('id', c.id);
+  if(res.error){ toast(res.error.message, 'ti-x', true); return; }
+  CARDS = CARDS.filter(function(x){ return x.id !== c.id; });
+  RELATIONS = RELATIONS.filter(function(r){
+    return r.from_card_id !== c.id && r.to_card_id !== c.id;
+  });
+  toast('Card deleted');
+  closeSheet();
+  render();
+}
+
+function closeSheet(){
+  document.getElementById('sheet-back').classList.remove('open');
+  document.body.style.overflow = '';
+  EDIT_ID = null;
+}
+document.getElementById('sheet-back').addEventListener('click', function(e){
+  if(e.target === this) closeSheet();
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') closeSheet();
+});
+
+/* A destructive button that is dead for a moment cannot be reached by the
+   second half of a double-click, and the countdown says why it is waiting. */
+function armConfirm(id, label){
+  var btn = document.getElementById(id);
+  if(!btn) return;
+  var left = 2;
+  btn.textContent = label + ' (' + left + ')';
+  var t = setInterval(function(){
+    left--;
+    if(left <= 0){
+      clearInterval(t);
+      btn.disabled = false;
+      btn.textContent = label;
+      btn.focus();
+    } else {
+      btn.textContent = label + ' (' + left + ')';
+    }
+  }, 500);
+}
+
+/* ── RELATIONSHIP BOARD ────────────────────────────────────────────── */
+function renderBoard(){
+  var chars = CARDS.filter(function(c){ return c.kind === 'character'; });
+  var body = document.getElementById('view-body');
+
+  if(chars.length < 2){
+    body.innerHTML = '<div class="board-help">Relationships need two character cards. '
+      + 'Add another and they can be dragged together here.</div>'
+      + '<div class="state-wrap"><i class="ti ti-arrows-shuffle state-icon"></i>'
+      + '<div class="state-title">Not enough cards yet</div>'
+      + '<div class="state-body">Make a second character in the Characters deck, then come back.</div></div>';
+    return;
+  }
+
+  body.innerHTML =
+    '<div class="board-help">Drag a card onto another to write what is between them. '
+    + 'Positions are saved, so a family left of a rival stays that way.</div>'
+    + '<div class="board" id="board"></div>';
+  var board = document.getElementById('board');
+
+  chars.forEach(function(c, i){
+    var el = document.createElement('div');
+    el.className = 'bcard';
+    el.dataset.id = c.id;
+    // Cards with no saved position land on a grid rather than on each other.
+    var x = (c.pos_x == null) ? 20 + (i % 5) * 170 : c.pos_x;
+    var y = (c.pos_y == null) ? 20 + Math.floor(i / 5) * 130 : c.pos_y;
+    el.style.left = x + 'px';
+    el.style.top  = y + 'px';
+    var ties = RELATIONS.filter(function(r){
+      return r.from_card_id === c.id || r.to_card_id === c.id;
+    }).length;
+    el.innerHTML =
+      '<div class="bcard-name">' + esc(c.name) + '</div>'
+      + '<div class="bcard-sub">' + esc(c.subtitle || '') + '</div>'
+      + (ties ? '<div class="bcard-ties">' + ties + ' tie' + (ties === 1 ? '' : 's') + '</div>' : '');
+    board.appendChild(el);
+    makeDraggable(el, board);
+  });
+}
+
+function makeDraggable(el, board){
+  var startX = 0, startY = 0, origX = 0, origY = 0, moved = false, target = null;
+
+  el.addEventListener('pointerdown', function(e){
+    if(e.button !== 0 && e.pointerType === 'mouse') return;
+    el.setPointerCapture(e.pointerId);
+    startX = e.clientX; startY = e.clientY;
+    origX = parseInt(el.style.left, 10) || 0;
+    origY = parseInt(el.style.top, 10) || 0;
+    moved = false;
+    el.classList.add('dragging');
+  });
+
+  el.addEventListener('pointermove', function(e){
+    if(!el.classList.contains('dragging')) return;
+    var dx = e.clientX - startX, dy = e.clientY - startY;
+    if(Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+    var nx = Math.max(0, Math.min(board.clientWidth - el.offsetWidth, origX + dx));
+    var ny = Math.max(0, Math.min(Math.max(board.clientHeight, 520) - el.offsetHeight, origY + dy));
+    el.style.left = nx + 'px';
+    el.style.top  = ny + 'px';
+
+    // Overlap test against the other cards, so the drop target is whatever
+    // the card is actually sitting on rather than whatever is under the
+    // cursor (which is usually the dragged card itself).
+    var prev = target;
+    target = null;
+    var a = el.getBoundingClientRect();
+    Array.prototype.forEach.call(board.children, function(other){
+      if(other === el) return;
+      var b = other.getBoundingClientRect();
+      var overlap = !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+      other.classList.toggle('drop-target', overlap && !target);
+      if(overlap && !target) target = other;
+    });
+    if(prev && prev !== target) prev.classList.remove('drop-target');
+  });
+
+  function finish(e){
+    if(!el.classList.contains('dragging')) return;
+    el.classList.remove('dragging');
+    Array.prototype.forEach.call(board.children, function(o){ o.classList.remove('drop-target'); });
+
+    if(!moved){ openCard(el.dataset.id); target = null; return; }
+
+    var x = parseInt(el.style.left, 10) || 0;
+    var y = parseInt(el.style.top, 10) || 0;
+    savePos(el.dataset.id, x, y);
+
+    if(target){
+      var a = el.dataset.id, b = target.dataset.id;
+      target = null;
+      openRelationFor(a, b);
+    }
+  }
+  el.addEventListener('pointerup', finish);
+  el.addEventListener('pointercancel', finish);
+}
+
+async function savePos(id, x, y){
+  var c = cardById(id);
+  if(c){ c.pos_x = x; c.pos_y = y; }
+  var res = await db.from('lore_cards').update({ pos_x:x, pos_y:y }).eq('id', id);
+  if(res.error) console.warn('savePos:', res.error.message);
+}
+
+/* ── RELATIONSHIP EDITOR ───────────────────────────────────────────── */
+var REL_A = null, REL_B = null, REL_ID = null;
+
+function openRelation(id){
+  var r = RELATIONS.filter(function(x){ return x.id === id; })[0];
+  if(!r) return;
+  openRelationFor(r.from_card_id, r.to_card_id, r);
+}
+
+function openRelationFor(aId, bId, existing){
+  var a = cardById(aId), b = cardById(bId);
+  if(!a || !b) return;
+
+  // One row per pair per group, so an existing relationship must be found
+  // in either direction before offering to make a second one.
+  var found = existing || RELATIONS.filter(function(r){
+    return (r.from_card_id === aId && r.to_card_id === bId)
+        || (r.from_card_id === bId && r.to_card_id === aId);
+  })[0] || null;
+
+  REL_A = aId; REL_B = bId; REL_ID = found ? found.id : null;
+  // The row's own direction decides which note belongs to which card.
+  var aIsFrom = !found || found.from_card_id === aId;
+
+  var groupOpts = REL_GROUPS.map(function(g){
+    var sel = found && found.group_key === g[0] ? ' selected' : '';
+    return '<option value="' + g[0] + '"' + sel + '>' + esc(g[1]) + '</option>';
+  }).join('');
+
+  document.getElementById('sheet').innerHTML =
+    '<h2 id="sheet-title">' + esc(a.name) + ' &amp; ' + esc(b.name) + '</h2>'
+    + '<div class="sub">' + (found ? 'Edit what is between them' : 'A new relationship') + '</div>'
+    + '<div class="private"><i class="ti ti-eye-off"></i> Only you can see this</div>'
+    + '<div class="grp"><div class="grp-h">Between them</div>'
+    + '<div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;line-height:1.6;">'
+    + 'These three answers appear on both cards.</div>'
+    + '<div class="fields">'
+      + '<div class="f"><label>This is</label><select id="rel-group">' + groupOpts + '</select></div>'
+      + '<div class="f"><label>In a word</label><input id="rel-tie" maxlength="60" placeholder="strained, unspoken, lethal" value="'
+        + esc(found ? (found.tie_label || '') : '') + '"/></div>'
+      + '<div class="f wide"><label>How it started</label><textarea id="rel-started" rows="2">'
+        + esc(found ? (found.how_started || '') : '') + '</textarea></div>'
+      + '<div class="f wide"><label>What it is now</label><textarea id="rel-now" rows="2">'
+        + esc(found ? (found.what_now || '') : '') + '</textarea></div>'
+      + '<div class="f wide"><label>What would end it</label><textarea id="rel-end" rows="2">'
+        + esc(found ? (found.what_would_end || '') : '') + '</textarea></div>'
+    + '</div></div>'
+    + '<div class="grp"><div class="grp-h">Their own side of it</div>'
+    + '<div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;line-height:1.6;">'
+    + 'Private to each card. One of them is usually wrong about the other.</div>'
+    + '<div class="fields">'
+      + '<div class="f wide"><label>What ' + esc(a.name) + ' thinks of ' + esc(b.name) + '</label>'
+        + '<textarea id="rel-a-note" rows="2">'
+        + esc(found ? ((aIsFrom ? found.from_note : found.to_note) || '') : '') + '</textarea></div>'
+      + '<div class="f wide"><label>What ' + esc(b.name) + ' thinks of ' + esc(a.name) + '</label>'
+        + '<textarea id="rel-b-note" rows="2">'
+        + esc(found ? ((aIsFrom ? found.to_note : found.from_note) || '') : '') + '</textarea></div>'
+    + '</div></div>'
+    + '<div class="sheet-actions">'
+      + '<button class="btn primary" onclick="saveRelation()"><i class="ti ti-check"></i> Save</button>'
+      + '<button class="btn ghost" onclick="closeSheet()">Close</button>'
+      + (found ? '<button class="btn danger" style="margin-left:auto;" onclick="deleteRelationAsk()">Remove the tie</button>' : '')
+    + '</div>'
+    + '<div id="lb-del"></div>';
+
+  document.getElementById('sheet-back').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+async function saveRelation(){
+  var payload = {
+    work_id: workId,
+    author_id: uid,
+    from_card_id: REL_A,
+    to_card_id: REL_B,
+    group_key: document.getElementById('rel-group').value,
+    tie_label: document.getElementById('rel-tie').value.trim() || null,
+    how_started: document.getElementById('rel-started').value.trim() || null,
+    what_now: document.getElementById('rel-now').value.trim() || null,
+    what_would_end: document.getElementById('rel-end').value.trim() || null,
+    from_note: document.getElementById('rel-a-note').value.trim() || null,
+    to_note: document.getElementById('rel-b-note').value.trim() || null
+  };
+
+  var res;
+  if(REL_ID){
+    // The stored row may run B->A; the notes were rendered in that direction,
+    // so they are sent back the same way rather than being swapped.
+    var existing = RELATIONS.filter(function(r){ return r.id === REL_ID; })[0];
+    if(existing && existing.from_card_id !== REL_A){
+      payload.from_card_id = existing.from_card_id;
+      payload.to_card_id = existing.to_card_id;
+      var t = payload.from_note; payload.from_note = payload.to_note; payload.to_note = t;
+    }
+    res = await db.from('lore_relations').update(payload).eq('id', REL_ID).select().maybeSingle();
+  } else {
+    res = await db.from('lore_relations').insert(payload).select().maybeSingle();
+  }
+
+  if(res.error || !res.data){
+    var msg = res.error ? res.error.message : 'Could not save';
+    // The unique index on the pair is the likeliest failure, and "duplicate
+    // key value violates unique constraint" means nothing to an author.
+    if(/duplicate|unique/i.test(msg)){
+      msg = 'These two already have a relationship in that group \u2014 open it instead.';
+    }
+    toast(msg, 'ti-x', true);
+    return;
+  }
+
+  if(REL_ID){
+    for(var i=0;i<RELATIONS.length;i++) if(RELATIONS[i].id === REL_ID) RELATIONS[i] = res.data;
+  } else {
+    RELATIONS.push(res.data);
+  }
+  toast('Saved');
+  closeSheet();
+  render();
+}
+
+function deleteRelationAsk(){
+  document.getElementById('lb-del').innerHTML =
+    '<div class="confirm">'
+    + '<div class="confirm-title">Remove this tie?</div>'
+    + '<div class="confirm-body">Everything written between these two is lost. '
+    + 'The cards themselves stay.</div>'
+    + '<button class="btn danger" id="lb-rel-go" disabled onclick="deleteRelation()">Yes, remove it</button>'
+    + '<button class="keep" onclick="document.getElementById(\'lb-del\').innerHTML=\'\'">Keep it</button>'
+    + '</div>';
+  armConfirm('lb-rel-go', 'Yes, remove it');
+}
+
+async function deleteRelation(){
+  var res = await db.from('lore_relations').delete().eq('id', REL_ID);
+  if(res.error){ toast(res.error.message, 'ti-x', true); return; }
+  RELATIONS = RELATIONS.filter(function(r){ return r.id !== REL_ID; });
+  toast('Tie removed');
+  closeSheet();
+  render();
+}
+
+/* ── CHECKS ────────────────────────────────────────────────────────── */
+function renderChecks(){
+  var body = document.getElementById('view-body');
+  var open = FINDINGS.filter(function(f){ return f.status === 'open'; });
+  var answered = FINDINGS.filter(function(f){ return f.status !== 'open'; });
+
+  var intro =
+    '<div class="board-help">'
+    + 'Checks compare your chapters against your cards. They run when you publish or save a chapter, '
+    + 'and they are never right about everything \u2014 a flag is as often a deliberate choice as a mistake.'
+    + '</div>';
+
+  // Lorekeeper is not a lock on this page: the rule-based checks are part of
+  // the Lorebook. The membership adds the prose read, so it is offered here
+  // as an extra rather than as a paywall over what is already working.
+  var pitch = LOREKEEPER
+    ? '<div class="finding ai" style="border-left-color:#a78bfa;">'
+      + '<div class="finding-msg"><i class="ti ti-eye"></i> Lorekeeper is reading your drafts. '
+      + 'Anything it notices appears here alongside the card checks.</div></div>'
+    : '<div class="finding" style="border-left-color:#a78bfa;">'
+      + '<div class="finding-msg"><i class="ti ti-book-2"></i> '
+      + 'Card checks are part of your Lorebook and always run. Lorekeeper adds a beta reader that reads '
+      + 'the prose itself \u2014 loose threads, characters drifting, the same beat written three times.</div>'
+      + '<div class="finding-acts"><a class="btn ghost" href="marketplace.html">See Lorekeeper</a></div></div>';
+
+  if(!FINDINGS.length){
+    body.innerHTML = intro + pitch
+      + '<div class="state-wrap"><i class="ti ti-shield-check state-icon" style="color:var(--green);"></i>'
+      + '<div class="state-title">Nothing to look at</div>'
+      + '<div class="state-body">No contradictions between your chapters and your cards. '
+      + 'Fill in more of a card and the checks get sharper.</div></div>';
+    return;
+  }
+
+  body.innerHTML = intro + pitch
+    + open.map(findingHtml).join('')
+    + (answered.length
+        ? '<div class="grp"><div class="grp-h">Already answered'
+          + '<span class="gcount">' + answered.length + '</span></div>'
+          + answered.map(findingHtml).join('') + '</div>'
+        : '');
+}
+
+function findingHtml(f){
+  var card = f.card_id ? cardById(f.card_id) : null;
+  var answered = f.status !== 'open';
+  var statusWord = {
+    ignored_once: 'ignored here',
+    accepted: 'part of the story now',
+    dismissed: 'check switched off',
+    resolved: 'fixed'
+  }[f.status];
+
+  return '<div class="finding' + (f.source === 'ai' ? ' ai' : '') + (answered ? ' answered' : '') + '" id="fnd-' + f.id + '">'
+    + '<div class="finding-msg">' + esc(f.message) + '</div>'
+    + '<div class="finding-meta">'
+      + '<span><i class="ti ' + (f.source === 'ai' ? 'ti-eye' : 'ti-shield-check') + '"></i> '
+        + (f.source === 'ai' ? 'Lorekeeper' : 'Card check') + '</span>'
+      + (card ? '<span><i class="ti ti-cards"></i> ' + esc(card.name) + '</span>' : '')
+      + (answered ? '<span><i class="ti ti-check"></i> ' + statusWord + '</span>' : '')
+    + '</div>'
+    + (answered
+        ? '<div class="finding-acts"><button class="btn ghost" onclick="respond(\'' + f.id + '\',\'reopen\')">'
+          + 'Put it back</button></div>'
+        : '<div class="finding-acts">'
+          + '<button class="btn" onclick="respond(\'' + f.id + '\',\'resolve\')"><i class="ti ti-check"></i> Fixed it</button>'
+          + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'ignore_once\')">Ignore once</button>'
+          + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'accept\')">That is the story now</button>'
+          + '<button class="btn danger" onclick="dismissAsk(\'' + f.id + '\')">The check is wrong</button>'
+          + '</div>')
+    + '<div id="cnf-' + f.id + '"></div>'
+    + '</div>';
+}
+
+/* "The check is wrong" is the only answer that cannot be undone by writing,
+   so it asks twice — and the second button is centred in a box below, well
+   away from where the first click landed, and dead for a beat. */
+function dismissAsk(id){
+  var f = FINDINGS.filter(function(x){ return x.id === id; })[0];
+  if(!f) return;
+  document.getElementById('cnf-' + id).innerHTML =
+    '<div class="confirm">'
+    + '<div class="confirm-title">Never raise this again?</div>'
+    + '<div class="confirm-body">' + esc(f.message) + '<br><br>'
+    + 'This switches the check off for good. If it is only deliberate in this one place, '
+    + '<b>Ignore once</b> keeps it watching everywhere else.</div>'
+    + '<button class="btn danger" id="cnf-go-' + id + '" disabled onclick="respond(\'' + id + '\',\'dismiss\')">'
+    + 'Yes, the check is wrong</button>'
+    + '<button class="keep" onclick="document.getElementById(\'cnf-' + id + '\').innerHTML=\'\'">Keep the check</button>'
+    + '</div>';
+  armConfirm('cnf-go-' + id, 'Yes, the check is wrong');
+}
+
+async function respond(id, action){
+  var res = await db.rpc('lore_finding_respond', { p_finding_id: id, p_action: action });
+  if(res.error || !res.data || res.data.ok !== true){
+    toast((res.data && res.data.error) || (res.error && res.error.message) || 'Could not do that', 'ti-x', true);
+    return;
+  }
+  for(var i=0;i<FINDINGS.length;i++){
+    if(FINDINGS[i].id === id) FINDINGS[i].status = res.data.status;
+  }
+  toast({
+    open: 'Back in the queue',
+    resolved: 'Marked fixed',
+    ignored_once: 'Ignored here only',
+    accepted: 'The card will not argue about it again',
+    dismissed: 'Check switched off'
+  }[res.data.status] || 'Done');
+  render();
+}
+</script>
+<script src="footer.js"></script>
+</body>
+</html>
