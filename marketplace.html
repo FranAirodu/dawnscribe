@@ -1774,7 +1774,10 @@
         + '<div style="font-size:13px;color:var(--text2);margin-top:7px;line-height:1.6;">' + when + '</div>'
         + '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:15px;">'
         +   (LB_STATUS.is_recurring
-              ? '<button class="filter-btn" onclick="lorebookPortal(this)"><i class="ti ti-credit-card"></i> Manage billing</button>'
+              ? (LB_STATUS.cancel_at_period_end
+                  ? '<button class="filter-btn active" onclick="lorebookCancel(this,true)"><i class="ti ti-rotate"></i> Keep it going</button>'
+                  : '<button class="filter-btn" onclick="lorebookCancel(this,false)"><i class="ti ti-x"></i> Cancel renewal</button>')
+                + '<button class="filter-btn" onclick="lorebookPortal(this)" style="opacity:0.8;"><i class="ti ti-credit-card"></i> Payment details</button>'
               : '<button class="filter-btn" onclick="openLorebookModal()"><i class="ti ti-plus"></i> Add more time</button>')
         + '</div>';
     } else {
@@ -1839,8 +1842,9 @@
     body.innerHTML =
       '<div style="font-family:\'Cinzel\',serif;font-size:18px;color:var(--text);margin-bottom:4px;">Choose how to pay</div>'
       + '<div style="font-size:12.5px;color:var(--text2);margin-bottom:16px;line-height:1.55;">'
-      +   'A monthly subscription renews until you cancel. A pass is a single payment that simply runs out — '
-      +   'there is nothing to cancel and no card kept on file.'
+      +   'A monthly subscription renews until you cancel — one click, any time, and you keep the month '
+      +   'you have paid for. A pass is a single payment that simply runs out: nothing to cancel and no '
+      +   'card kept for it. DawnScribe never sees or stores your card either way — Stripe handles that.'
       + '</div>'
       + cards
       + '<div style="font-size:11.5px;color:var(--text3);margin-top:4px;line-height:1.55;">'
@@ -1913,6 +1917,38 @@
   // Cancelling and card changes happen in Stripe's portal. DawnScribe holding
   // its own "cancelled" flag would keep billing anyone whose cancellation
   // failed to reach Stripe.
+  // One click, no forms, no confirmation maze. Cancelling stops the NEXT
+  // charge and nothing else — the month already paid for stays.
+  async function lorebookCancel(btnEl, resume) {
+    const original = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Working…';
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      if (!session) { showToast('Please sign in again', 'ti-lock', true); btnEl.disabled = false; btnEl.innerHTML = original; return; }
+      const resp = await fetch(SUPABASE_URL + '/functions/v1/lorebook-cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: JSON.stringify({ resume: !!resume })
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.ok) {
+        showToast(result.error || 'Could not change that', 'ti-x', true);
+        btnEl.disabled = false; btnEl.innerHTML = original;
+        return;
+      }
+      showToast(resume
+        ? 'Your Lorebook will keep renewing.'
+        : 'Cancelled. You keep everything until ' + lbDate(result.period_end) + ' — no further charges.',
+        'ti-check');
+      await loadLorebook();
+    } catch (err) {
+      console.error('Lorebook cancel:', err);
+      showToast('Something went wrong', 'ti-alert-triangle', true);
+      btnEl.disabled = false; btnEl.innerHTML = original;
+    }
+  }
+
   async function lorebookPortal(btnEl) {
     const original = btnEl.innerHTML;
     btnEl.disabled = true;
