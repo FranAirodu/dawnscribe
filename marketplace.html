@@ -313,6 +313,13 @@
 <!-- ── MAIN ───────────────────────────────────────────────────── -->
 <div class="page-wrap">
 
+  <!-- ── THE LOREBOOK ─────────────────────────────────────────────
+       Author-only. Hidden entirely for readers and artists: the gate is
+       ds_is_author() in the database, and this block only asks. Never
+       rendered optimistically — an unstyled "authors only" pitch shown to
+       a reader is a worse first impression than no pitch at all. -->
+  <div id="lorebook-block" style="display:none;margin-bottom:32px;"></div>
+
   <!-- Filter Bar -->
   <div class="filter-bar">
     <span class="filter-label">Show:</span>
@@ -475,6 +482,13 @@
 </div>
 
 <!-- ── TOAST ──────────────────────────────────────────────────── -->
+<!-- ── LOREBOOK PLAN MODAL ─────────────────────────────────────── -->
+<div class="modal-overlay" id="lorebook-modal" onclick="closeLorebookModal(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:905;align-items:center;justify-content:center;padding:20px;">
+  <div class="modal" id="lorebook-modal-inner" style="max-width:560px;width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;max-height:88vh;overflow-y:auto;">
+    <div id="lorebook-modal-body"></div>
+  </div>
+</div>
+
 <div id="mp-toast"><i class="ti ti-check" id="mp-toast-icon"></i> <span id="mp-toast-msg"></span></div>
 
 <script>
@@ -539,6 +553,7 @@
     loadCommissions();
     loadCommissionRights();
     loadQuillBundles();
+    loadLorebook();
     handleStripeRedirect();
   })();
 
@@ -913,6 +928,27 @@
 
   function handleStripeRedirect() {
     const params = new URLSearchParams(window.location.search);
+
+    // Lorebook returns on its own parameter. The webhook may not have landed
+    // yet, so the block is re-read a couple of times rather than once.
+    const lb = params.get('lorebook');
+    if (lb) {
+      if (lb === 'success') {
+        showToast('Payment received — setting up your Lorebook…', 'ti-check');
+        let tries = 0;
+        const poll = setInterval(async () => {
+          tries++;
+          await loadLorebook();
+          if ((LB_STATUS && LB_STATUS.active) || tries >= 4) clearInterval(poll);
+        }, 1500);
+      } else if (lb === 'cancelled') {
+        showToast('Checkout cancelled — no charge was made.', 'ti-x');
+      }
+      params.delete('lorebook');
+      window.history.replaceState({}, '',
+        window.location.pathname + (params.toString() ? '?' + params.toString() : ''));
+    }
+
     const status = params.get('quill_purchase');
     if (!status) return;
     if (status === 'success') {
@@ -1672,6 +1708,236 @@
 
   function openQuillModal() { document.getElementById('quill-modal').classList.add('open'); }
   function closeQuillModal(e) { if (e.target === document.getElementById('quill-modal')) document.getElementById('quill-modal').classList.remove('open'); }
+
+  // ── THE LOREBOOK ──────────────────────────────────────────────
+  // Three ways to pay, one price list. Plans live in lorebook_plans, so the
+  // amounts below are never hardcoded here — a price change is a row edit.
+  //
+  //   monthly   recurring card subscription, renews until cancelled
+  //   pass_30   one payment, 30 days, nothing to cancel
+  //   pass_365  one payment, 365 days
+  //
+  // Quills buy PASSES ONLY. A recurring plan paid in Quills would promise a
+  // renewal we cannot collect on, so subscribe_lorebook_with_quills()
+  // refuses it and the UI does not offer it.
+  //
+  // Eligibility is asked of the database (ds_is_author), never inferred from
+  // the profile text here — two places deciding who is an author is how they
+  // come to disagree.
+  let LB_PLANS = [];
+  let LB_STATUS = null;
+
+  async function loadLorebook() {
+    if (!currentUser) return;              // signed out: nothing to sell
+    try {
+      const [planRes, statusRes] = await Promise.all([
+        db.from('lorebook_plans')
+          .select('code,label,blurb,kind,duration_days,price_cents,quill_price')
+          .eq('is_active', true).order('sort_order'),
+        db.rpc('my_lorebook_status'),
+      ]);
+      LB_PLANS = planRes.data || [];
+      LB_STATUS = statusRes.data || null;
+      if (!LB_STATUS || LB_STATUS.ok !== true) return;
+      if (!LB_STATUS.is_author) return;    // readers and artists never see it
+      renderLorebook();
+    } catch (err) {
+      console.warn('Lorebook:', err);      // never break the marketplace over it
+    }
+  }
+
+  function lbDate(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString(undefined,
+      { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
+  function renderLorebook() {
+    const box = document.getElementById('lorebook-block');
+    const active = LB_STATUS.active === true;
+
+    let inner;
+    if (active) {
+      const end = LB_STATUS.renews_at;
+      // Three genuinely different states, and saying the wrong one is a
+      // billing complaint: renewing, ending on a date, or never expiring.
+      const when = !end
+        ? 'This never expires.'
+        : (LB_STATUS.is_recurring && !LB_STATUS.cancel_at_period_end)
+          ? 'Renews on ' + esc(lbDate(end)) + '.'
+          : 'Active until ' + esc(lbDate(end)) + '.';
+
+      inner =
+        '<div style="font-family:\'Cinzel\',serif;font-size:19px;color:var(--text);display:flex;align-items:center;gap:9px;">'
+        +   '<i class="ti ti-book-2" style="color:var(--gold);"></i> Your Lorebook is active'
+        + '</div>'
+        + '<div style="font-size:13px;color:var(--text2);margin-top:7px;line-height:1.6;">' + when + '</div>'
+        + '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:15px;">'
+        +   (LB_STATUS.is_recurring
+              ? '<button class="filter-btn" onclick="lorebookPortal(this)"><i class="ti ti-credit-card"></i> Manage billing</button>'
+              : '<button class="filter-btn" onclick="openLorebookModal()"><i class="ti ti-plus"></i> Add more time</button>')
+        + '</div>';
+    } else {
+      inner =
+        '<div style="font-family:\'Cinzel\',serif;font-size:21px;color:var(--text);display:flex;align-items:center;gap:9px;">'
+        +   '<i class="ti ti-book-2" style="color:var(--gold);"></i> The Lorebook'
+        + '</div>'
+        + '<div style="font-size:13px;color:var(--text2);margin-top:8px;line-height:1.65;max-width:640px;">'
+        +   'A monthly membership for authors. Pay by card monthly, buy a one-off pass, or pay in Quills.'
+        + '</div>'
+        + '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;align-items:center;">'
+        +   '<button class="buy-quills-btn" onclick="openLorebookModal()"><i class="ti ti-book-2"></i> See plans</button>'
+        +   '<span style="font-size:12px;color:var(--text3);">Cancel any time. No effect on your stories or readers.</span>'
+        + '</div>';
+    }
+
+    box.innerHTML =
+      '<div style="background:linear-gradient(135deg,rgba(245,158,11,0.09),rgba(45,212,191,0.05));'
+      + 'border:1px solid rgba(245,158,11,0.26);border-radius:14px;padding:22px 24px;">' + inner + '</div>';
+    box.style.display = 'block';
+  }
+
+  function openLorebookModal() {
+    const body = document.getElementById('lorebook-modal-body');
+    const spendable = LB_STATUS ? (LB_STATUS.spendable || 0) : 0;
+
+    const cards = LB_PLANS.map(p => {
+      const price = '$' + (p.price_cents / 100).toFixed(2);
+      const recurring = p.kind === 'recurring';
+      const sub = recurring ? 'per month, renews automatically'
+            : (p.duration_days ? p.duration_days + ' days, one payment' : 'one payment, never expires');
+
+      // Quills are offered only when the plan accepts them AND the author can
+      // actually afford it from SPENDABLE Quills — freshly bought Quills are
+      // still held for fraud, and a button that fails on click is worse than
+      // one that explains why it is greyed out.
+      let quillBtn = '';
+      if (p.quill_price) {
+        const afford = spendable >= p.quill_price;
+        quillBtn = afford
+          ? '<button class="filter-btn" onclick="lorebookPayQuills(\'' + esc(p.code) + '\', this)">'
+            + '<i class="ti ti-feather"></i> ' + p.quill_price.toLocaleString() + ' Quills</button>'
+          : '<button class="filter-btn" disabled title="You have ' + spendable.toLocaleString()
+            + ' spendable Quills" style="opacity:0.45;cursor:not-allowed;">'
+            + '<i class="ti ti-feather"></i> ' + p.quill_price.toLocaleString() + ' Quills</button>';
+      }
+
+      return '<div style="border:1px solid var(--border);background:var(--bg3);border-radius:11px;padding:15px 16px;margin-bottom:11px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;">'
+        +   '<div style="font-weight:700;color:var(--text);font-size:15px;">' + esc(p.label) + '</div>'
+        +   '<div style="font-family:\'Cinzel\',serif;font-size:18px;color:var(--gold);">' + price + '</div>'
+        + '</div>'
+        + '<div style="font-size:12px;color:var(--text3);margin-top:3px;">' + esc(sub) + '</div>'
+        + (p.blurb ? '<div style="font-size:12.5px;color:var(--text2);margin-top:7px;line-height:1.55;">' + esc(p.blurb) + '</div>' : '')
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
+        +   '<button class="filter-btn active" onclick="lorebookCheckout(\'' + esc(p.code) + '\', this)">'
+        +     '<i class="ti ti-credit-card"></i> ' + (recurring ? 'Subscribe' : 'Pay ' + price) + '</button>'
+        +   quillBtn
+        + '</div></div>';
+    }).join('');
+
+    body.innerHTML =
+      '<div style="font-family:\'Cinzel\',serif;font-size:18px;color:var(--text);margin-bottom:4px;">Choose how to pay</div>'
+      + '<div style="font-size:12.5px;color:var(--text2);margin-bottom:16px;line-height:1.55;">'
+      +   'A monthly subscription renews until you cancel. A pass is a single payment that simply runs out — '
+      +   'there is nothing to cancel and no card kept on file.'
+      + '</div>'
+      + cards
+      + '<div style="font-size:11.5px;color:var(--text3);margin-top:4px;line-height:1.55;">'
+      +   'You have ' + spendable.toLocaleString() + ' spendable Quills. Quills bought in the last few days '
+      +   'are held before they can be spent.'
+      + '</div>'
+      + '<button class="filter-btn" onclick="closeLorebookModal(null,true)" style="margin-top:14px;">Close</button>';
+
+    const m = document.getElementById('lorebook-modal');
+    m.style.display = 'flex';
+  }
+
+  function closeLorebookModal(e, force) {
+    const m = document.getElementById('lorebook-modal');
+    if (force || !e || e.target === m) m.style.display = 'none';
+  }
+
+  async function lorebookCheckout(planCode, btnEl) {
+    const original = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Redirecting…';
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      if (!session) {
+        showToast('Your session expired — please sign in again', 'ti-lock', true);
+        btnEl.disabled = false; btnEl.innerHTML = original;
+        return;
+      }
+      const resp = await fetch(SUPABASE_URL + '/functions/v1/create-lorebook-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: JSON.stringify({ plan_code: planCode })
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.ok) {
+        showToast(result.error || 'Could not start checkout', 'ti-x', true);
+        btnEl.disabled = false; btnEl.innerHTML = original;
+        return;
+      }
+      window.location.href = result.url;
+    } catch (err) {
+      console.error('Lorebook checkout:', err);
+      showToast('Something went wrong', 'ti-alert-triangle', true);
+      btnEl.disabled = false; btnEl.innerHTML = original;
+    }
+  }
+
+  async function lorebookPayQuills(planCode, btnEl) {
+    const original = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Working…';
+    try {
+      const { data, error } = await db.rpc('subscribe_lorebook_with_quills', { p_plan_code: planCode });
+      if (error || !data || data.ok !== true) {
+        showToast((data && data.error) || (error && error.message) || 'Could not complete that', 'ti-x', true);
+        btnEl.disabled = false; btnEl.innerHTML = original;
+        return;
+      }
+      showToast('Lorebook active until ' + lbDate(data.period_end), 'ti-check');
+      closeLorebookModal(null, true);
+      await loadCurrencies();
+      await loadLorebook();
+    } catch (err) {
+      console.error('Lorebook quills:', err);
+      showToast('Something went wrong', 'ti-alert-triangle', true);
+      btnEl.disabled = false; btnEl.innerHTML = original;
+    }
+  }
+
+  // Cancelling and card changes happen in Stripe's portal. DawnScribe holding
+  // its own "cancelled" flag would keep billing anyone whose cancellation
+  // failed to reach Stripe.
+  async function lorebookPortal(btnEl) {
+    const original = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Opening…';
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      if (!session) { showToast('Please sign in again', 'ti-lock', true); btnEl.disabled = false; btnEl.innerHTML = original; return; }
+      const resp = await fetch(SUPABASE_URL + '/functions/v1/lorebook-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: '{}'
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.ok) {
+        showToast(result.error || 'Could not open billing', 'ti-x', true);
+        btnEl.disabled = false; btnEl.innerHTML = original;
+        return;
+      }
+      window.location.href = result.url;
+    } catch (err) {
+      console.error('Lorebook portal:', err);
+      showToast('Something went wrong', 'ti-alert-triangle', true);
+      btnEl.disabled = false; btnEl.innerHTML = original;
+    }
+  }
 
   // ── TOAST ─────────────────────────────────────────────────────
   let toastTimer;
