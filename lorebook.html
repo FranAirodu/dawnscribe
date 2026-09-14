@@ -311,6 +311,10 @@ function fillCount(card){
   });
   return { answered: answered, total: defs.length };
 }
+function deckTitle(kind){
+  for(var i=0;i<DECKS.length;i++) if(DECKS[i].kind === kind) return DECKS[i].title;
+  return kind || 'Card';
+}
 function cardById(id){
   for(var i=0;i<CARDS.length;i++) if(CARDS[i].id === id) return CARDS[i];
   return null;
@@ -346,7 +350,13 @@ function openFindingsFor(cardId){
             if(b.data && b.data.ok){
               var grew = !CREDIT || b.data.chapters_remaining > (CREDIT.chapters_remaining || 0);
               CREDIT = b.data;
-              if(grew){ toast('Block added \u2014 50 chapters or 150,000 words.', 'ti-check'); render(); break; }
+              if(grew){
+                toast('Block added \u2014 50 chapters or 150,000 words.', 'ti-check');
+                // Only repaint if the work has finished loading; render() reads
+                // work.title, and on a slow connection this poll can win.
+                if(work) render();
+                break;
+              }
             }
           } catch(e){}
         }
@@ -636,7 +646,7 @@ function openCard(id){
 
   var html =
     '<h2 id="sheet-title">' + esc(c.name) + '</h2>'
-    + '<div class="sub">' + esc(c.subtitle || DECKS.filter(function(d){ return d.kind === c.kind; })[0].title) + '</div>'
+    + '<div class="sub">' + esc(c.subtitle || deckTitle(c.kind)) + '</div>'
     + '<div class="private"><i class="ti ti-eye-off"></i> Only you can see this card</div>'
     + '<div style="font-size:11.5px;color:var(--text3);">' + fill.answered + ' of ' + fill.total
       + ' questions answered</div>'
@@ -721,7 +731,10 @@ function fieldHtml(c, f){
       + '</div>';
 
   } else if(f.input_type === 'pairs'){
-    var labels = Array.isArray(f.options) ? f.options : ['', ''];
+    // Defaults matter: a pairs field saved without options would otherwise
+    // crash the whole card editor on labels[0].toLowerCase().
+    var labels = (Array.isArray(f.options) && f.options.length >= 2)
+      ? f.options : ['Item', 'Detail'];
     var rows = flist(c, f.field_key);
     input = '<div id="pairs-' + key + '">'
       + rows.map(function(r, i){ return pairRowHtml(f.field_key, r, i, labels); }).join('')
@@ -885,8 +898,17 @@ async function saveCard(){
   var c = cardById(EDIT_ID);
   if(!c) return;
   var defs = FIELDS[c.kind] || [];
-  var data = {};
   var missing = null;
+
+  // Start from what is already stored and only overwrite the keys this form
+  // actually rendered. Anything under a renamed or retired field key is
+  // carried through untouched instead of being wiped by a save.
+  var rendered = {};
+  defs.forEach(function(f){ rendered[f.field_key] = true; });
+  var data = {};
+  Object.keys(c.data || {}).forEach(function(k){
+    if(!rendered[k]) data[k] = c.data[k];
+  });
 
   defs.forEach(function(f){
     var box = document.getElementById('skip-' + f.field_key);
@@ -932,6 +954,9 @@ async function saveCard(){
         var vEl = row.querySelector('.was-v'), uEl = row.querySelector('.was-until');
         return { v: vEl ? vEl.value.trim() : '', until: uEl ? uEl.value.replace(/\D/g, '') : '' };
       }).filter(function(x){ return x.v; }) : [];
+      // A blank current value with a filled-in past is meaningful, so the
+      // entry is created rather than dropped.
+      if(!entry && (since || was.length)) entry = { v: '' };
       if(entry && since) entry.since = since;
       if(entry && was.length) entry.was = was;
     }
