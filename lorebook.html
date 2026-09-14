@@ -398,6 +398,7 @@ function render(){
       + tab('decks', 'ti-cards', 'Decks')
       + tab('board', 'ti-arrows-shuffle', 'Relationships')
       + tab('checks', 'ti-shield-check', 'Checks', open)
+      + tab('export', 'ti-download', 'Export')
     + '</div>'
     + '<div id="view-body"></div>';
   document.getElementById('page').innerHTML = html;
@@ -414,6 +415,7 @@ function renderView(){
   if(view === 'decks')  return renderDecks();
   if(view === 'board')  return renderBoard();
   if(view === 'checks') return renderChecks();
+  if(view === 'export') return renderExport();
 }
 
 /* ── DECKS ─────────────────────────────────────────────────────────── */
@@ -1121,6 +1123,91 @@ function dismissAsk(id){
     + '<button class="keep" onclick="document.getElementById(\'cnf-' + id + '\').innerHTML=\'\'">Keep the check</button>'
     + '</div>';
   armConfirm('cnf-go-' + id, 'Yes, the check is wrong');
+}
+
+/* ── EXPORT ─────────────────────────────────────────────────────────
+   A Lorekeeper perk. The membership check here decides what the page SHOWS;
+   the real gate is in the edge function, because a hidden button is not a
+   gate. */
+function renderExport(){
+  var body = document.getElementById('view-body');
+
+  if(!LOREKEEPER){
+    body.innerHTML =
+      '<div class="board-help">A clean manuscript of this story — title page, chapters in order, '
+      + 'author notes and site furniture stripped out. EPUB reads anywhere; DOCX is what editors '
+      + 'ask for, because they can track changes in it.</div>'
+      + '<div class="finding" style="border-left-color:#a78bfa;">'
+      + '<div class="finding-msg"><i class="ti ti-download"></i> Manuscript export comes with Lorekeeper. '
+      + 'Everything that protects your work stays included — your cards and the card checks are '
+      + 'part of your Lorebook either way.</div>'
+      + '<div class="finding-acts"><a class="btn ghost" href="marketplace.html">See Lorekeeper</a></div></div>';
+    return;
+  }
+
+  body.innerHTML =
+    '<div class="board-help">A clean manuscript: title page, chapters in order, author notes and '
+    + 'content warnings stripped. Only published chapters are included — drafts and scheduled '
+    + 'chapters would leave holes in a manuscript that reads as finished.</div>'
+    + '<div class="finding" style="border-left-color:var(--accent);">'
+    + '<div class="finding-msg"><b>EPUB</b> — reads on any e-reader, phone or tablet. '
+    + 'Good for proofreading your own book the way a reader would.</div>'
+    + '<div class="finding-acts"><button class="btn primary" onclick="exportManuscript(\'epub\', this)">'
+    + '<i class="ti ti-download"></i> Download EPUB</button></div></div>'
+    + '<div class="finding" style="border-left-color:var(--accent);">'
+    + '<div class="finding-msg"><b>DOCX</b> — double-spaced 12pt Times, one-inch margins, chapters '
+    + 'starting on a new page. Standard manuscript format.</div>'
+    + '<div class="finding-acts"><button class="btn primary" onclick="exportManuscript(\'docx\', this)">'
+    + '<i class="ti ti-download"></i> Download DOCX</button></div></div>';
+}
+
+async function exportManuscript(format, btn){
+  var original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Building\u2026';
+  var url = null;
+  try {
+    var sess = await db.auth.getSession();
+    var token = sess.data.session ? sess.data.session.access_token : null;
+    if(!token){ toast('Please sign in again', 'ti-lock', true); return; }
+
+    var resp = await fetch(SUPABASE_URL + '/functions/v1/export-manuscript', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ work_id: workId, format: format })
+    });
+
+    // A failure comes back as JSON, a success as file bytes — so the
+    // content type decides how to read the body. Reading it as a blob either
+    // way would hand the author a .epub containing an error message.
+    var ctype = resp.headers.get('Content-Type') || '';
+    if(!resp.ok || ctype.indexOf('application/json') === 0){
+      var err = await resp.json().catch(function(){ return {}; });
+      toast(err.error || 'Could not build the file', 'ti-x', true);
+      return;
+    }
+
+    var blob = await resp.blob();
+    url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (work.title || 'manuscript').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) + '.' + format;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    var n = resp.headers.get('X-Chapter-Count');
+    toast(n ? n + ' chapter' + (n === '1' ? '' : 's') + ' exported' : 'Manuscript ready');
+  } catch(e){
+    console.error('exportManuscript:', e);
+    toast('Something went wrong', 'ti-alert-triangle', true);
+  } finally {
+    // Revoked on a delay: revoking immediately can cancel the download in
+    // some browsers before it has actually started.
+    if(url) setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
 }
 
 /* The checks read every chapter of the work, so this is on a button rather
