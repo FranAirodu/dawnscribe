@@ -1032,7 +1032,12 @@ function renderChecks(){
   var answered = FINDINGS.filter(function(f){ return f.status !== 'open'; });
 
   var intro =
-    '<div class="board-help">'
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">'
+    + '<button class="btn" id="run-checks" onclick="runChecks(this)">'
+    + '<i class="ti ti-refresh"></i> Run the checks now</button>'
+    + '<span style="font-size:12px;color:var(--text3);">They also run overnight on anything you have edited.</span>'
+    + '</div>'
+    + '<div class="board-help">'
     + 'Checks compare your chapters against your cards. They run when you publish or save a chapter, '
     + 'and they are never right about everything \u2014 a flag is as often a deliberate choice as a mistake.'
     + '</div>';
@@ -1116,6 +1121,42 @@ function dismissAsk(id){
     + '<button class="keep" onclick="document.getElementById(\'cnf-' + id + '\').innerHTML=\'\'">Keep the check</button>'
     + '</div>';
   armConfirm('cnf-go-' + id, 'Yes, the check is wrong');
+}
+
+/* The checks read every chapter of the work, so this is on a button rather
+   than on every page load. The nightly sweep covers authors who never press
+   it; pressing it is for the moment right after fixing something. */
+async function runChecks(btn){
+  var original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Reading your chapters\u2026';
+  try {
+    var res = await db.rpc('run_lore_checks', { p_work_id: workId });
+    if(res.error || !res.data || res.data.ok !== true){
+      toast((res.data && res.data.error) || (res.error && res.error.message) || 'Could not run the checks', 'ti-x', true);
+      btn.disabled = false; btn.innerHTML = original;
+      return;
+    }
+    var n = parseInt(res.data.new_findings, 10) || 0;
+    var ch = parseInt(res.data.chapters_checked, 10) || 0;
+    toast(ch === 0
+      ? 'No chapters to read yet'
+      : (n === 0
+          ? 'Read ' + ch + ' chapter' + (ch === 1 ? '' : 's') + ' \u2014 nothing new'
+          : n + ' new thing' + (n === 1 ? '' : 's') + ' to look at'),
+      n ? 'ti-alert-triangle' : 'ti-check');
+
+    // Re-read the queue rather than trusting the count: answered findings
+    // stay answered, and the page should show exactly what the table holds.
+    var fRes = await Promise.resolve(db.from('lore_findings').select('*')
+      .eq('work_id', workId).order('created_at', { ascending:false })).catch(function(){ return {}; });
+    FINDINGS = fRes.data || FINDINGS;
+    render();
+  } catch(e){
+    console.error('runChecks:', e);
+    toast('Something went wrong', 'ti-alert-triangle', true);
+    btn.disabled = false; btn.innerHTML = original;
+  }
 }
 
 async function respond(id, action){

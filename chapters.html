@@ -366,6 +366,9 @@
 <nav>
   <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
   <a class="back-btn" id="back-btn" href="profile.html"><i class="ti ti-arrow-left"></i> Back to Profile</a>
+  <!-- Filled in once the work loads; hidden until then so it never points
+       at a Lorebook for a work the author does not own. -->
+  <a class="back-btn" id="lorebook-link" href="#" style="display:none;margin-left:auto;"><i class="ti ti-book-2"></i> <span id="lorebook-link-label">Lorebook</span></a>
 </nav>
 
 <div class="page-wrap">
@@ -1271,6 +1274,28 @@
     var res = await db.from('works').select('*').eq('id', workId).eq('author_id', currentSession.user.id).maybeSingle();
     if (!res.data) { document.getElementById('work-title-el').textContent = 'Work not found or access denied.'; return; }
     workData = res.data;
+
+    /* Lorebook link. The open-finding count is read here rather than on the
+       Lorebook page because this is where an author is when a contradiction
+       matters -- mid-chapter. Failure is silent: a missing count must never
+       stop a chapter being written. */
+    (async function dsLorebookLink(){
+      try {
+        var link = document.getElementById('lorebook-link');
+        if (!link) return;
+        link.href = 'lorebook.html?work=' + encodeURIComponent(workId);
+        link.style.display = 'flex';
+        var lb = await db.rpc('my_lorebook', { p_work_id: workId });
+        var open = lb && lb.data && lb.data.ok ? (parseInt(lb.data.open_findings, 10) || 0) : 0;
+        if (open > 0) {
+          link.classList.add('warn');
+          link.style.borderColor = 'rgba(245,158,11,0.45)';
+          link.style.color = '#f59e0b';
+          document.getElementById('lorebook-link-label').textContent =
+            'Lorebook \u2014 ' + open + ' to look at';
+        }
+      } catch (e) {}
+    })();
 
     try {
       var { data: prefRow } = await dsMyPrivate();
