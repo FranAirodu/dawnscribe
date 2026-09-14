@@ -199,6 +199,9 @@ var CARDS = [];         // every card in this work
 var RELATIONS = [];
 var FINDINGS = [];
 var LOREKEEPER = false;
+var CHAPTERS = [];
+var CREDIT = null;      // { chapters_remaining, words_remaining, ... }
+var QUOTES = {};        // chapter_id -> what a read would cost
 var view = 'decks';
 
 /* Deck order is deliberate: characters first because that is what an author
@@ -301,6 +304,33 @@ function openFindingsFor(cardId){
   uid = session.user.id;
   var params = new URLSearchParams(window.location.search);
   workId = params.get('work');
+
+  // Returning from a block checkout. The webhook may not have landed yet, so
+  // the balance is polled briefly rather than read once.
+  var blocks = params.get('blocks');
+  if(blocks){
+    if(blocks === 'success'){
+      view = 'reader';
+      setTimeout(async function(){
+        for(var i = 0; i < 4; i++){
+          await new Promise(function(r){ setTimeout(r, 1500); });
+          try {
+            var b = await db.rpc('my_lorekeeper_balance');
+            if(b.data && b.data.ok){
+              var grew = !CREDIT || b.data.chapters_remaining > (CREDIT.chapters_remaining || 0);
+              CREDIT = b.data;
+              if(grew){ toast('Block added \u2014 50 chapters or 150,000 words.', 'ti-check'); render(); break; }
+            }
+          } catch(e){}
+        }
+      }, 0);
+    } else if(blocks === 'cancelled'){
+      setTimeout(function(){ toast('Checkout cancelled \u2014 no charge was made.', 'ti-x'); }, 400);
+    }
+    params.delete('blocks');
+    window.history.replaceState({}, '',
+      window.location.pathname + (params.toString() ? '?' + params.toString() : ''));
+  }
   if(workId){ loadWork(); } else { loadPicker(); }
 })();
 
@@ -385,6 +415,17 @@ async function loadWork(){
   RELATIONS = out[3].data || [];
   FINDINGS  = out[4].data || [];
 
+  // Chapter list and credit balance: needed by the Beta reader tab, and
+  // cheap enough to fetch with everything else rather than on tab switch.
+  try {
+    var chRes = await Promise.resolve(db.from('chapters')
+      .select('id,chapter_number,title,word_count,status')
+      .eq('work_id', workId).order('chapter_number')).catch(function(){ return {}; });
+    CHAPTERS = chRes.data || [];
+    var balRes = await db.rpc('my_lorekeeper_balance');
+    CREDIT = (balRes.data && balRes.data.ok) ? balRes.data : null;
+  } catch(e) { console.warn('reader state:', e); }
+
   render();
 }
 
@@ -398,6 +439,7 @@ function render(){
       + tab('decks', 'ti-cards', 'Decks')
       + tab('board', 'ti-arrows-shuffle', 'Relationships')
       + tab('checks', 'ti-shield-check', 'Checks', open)
+      + tab('reader', 'ti-eye', 'Beta reader')
       + tab('export', 'ti-download', 'Export')
     + '</div>'
     + '<div id="view-body"></div>';
@@ -415,6 +457,7 @@ function renderView(){
   if(view === 'decks')  return renderDecks();
   if(view === 'board')  return renderBoard();
   if(view === 'checks') return renderChecks();
+  if(view === 'reader') return renderReader();
   if(view === 'export') return renderExport();
 }
 
@@ -1129,6 +1172,203 @@ function dismissAsk(id){
    A Lorekeeper perk. The membership check here decides what the page SHOWS;
    the real gate is in the edge function, because a hidden button is not a
    gate. */
+/* ── BETA READER ───────────────────────────────────────────────────────
+   The paid half. Everything about cost is shown BEFORE the button is
+   pressed: how much is left, what this chapter would use, and whether it
+   is free. Nobody should ever learn the price after paying it. */
+function renderReader(){
+  var body = document.getElementById('view-body');
+  var ch = (CREDIT && CREDIT.chapters_remaining) || 0;
+  var wd = (CREDIT && CREDIT.words_remaining) || 0;
+  var hasCredit = ch > 0 && wd > 0;
+
+  var intro =
+    '<div class="board-help">A beta reader that has read the whole thing. It tells you what it '
+    + 'noticed \u2014 loose threads, characters drifting, the same beat written three times. '
+    + 'It never writes for you, and it never touches your draft.</div>';
+
+  // The balance panel. Both numbers matter: a block runs out on whichever
+  // hits zero first, so showing only one would mislead.
+  var balance =
+    '<div class="finding" style="border-left-color:var(--gold);">'
+    + '<div class="finding-msg">'
+    +   (hasCredit
+          ? '<b>' + ch + ' chapter' + (ch === 1 ? '' : 's') + '</b> and <b>'
+            + wd.toLocaleString() + ' words</b> left to read.'
+          : '<b>Nothing left to read with.</b> A block is $5 or 700 Quills: '
+            + '50 chapters or 150,000 words, whichever you use up first. It never expires.')
+    + '</div>'
+    + '<div class="finding-meta"><span><i class="ti ti-infinity"></i> Blocks never expire</span>'
+    +   (CREDIT && CREDIT.lifetime_blocks
+          ? '<span><i class="ti ti-receipt"></i> ' + CREDIT.lifetime_blocks + ' bought so far</span>' : '')
+    + '</div>'
+    + '<div class="finding-acts">'
+    +   '<button class="btn primary" onclick="buyBlockCard(this)"><i class="ti ti-credit-card"></i> Buy a block \u2014 $5</button>'
+    +   '<button class="btn" onclick="buyBlockQuills(this)"><i class="ti ti-feather"></i> 700 Quills</button>'
+    + '</div></div>';
+
+  if(!CHAPTERS.length){
+    body.innerHTML = intro + balance
+      + '<div class="state-wrap"><i class="ti ti-book-off state-icon"></i>'
+      + '<div class="state-title">No chapters yet</div>'
+      + '<div class="state-body">The beta reader reads chapters. Write one and it will show up here.</div></div>';
+    return;
+  }
+
+  // Chapters, newest first: a serial author is almost always asking about
+  // what they just wrote.
+  var rows = CHAPTERS.slice().reverse().map(function(c){
+    var q = QUOTES[c.id];
+    var label = 'Chapter ' + c.chapter_number + (c.title ? ' \u2014 ' + esc(c.title) : '');
+    var cost = q
+      ? (q.ok === false
+          ? esc(q.error || 'Cannot read this one')
+          : (q.free ? 'Free \u2014 ' + (q.reason === 'already_read'
+                        ? 'already read, findings are still on file'
+                        : 'read this week')
+                    : q.words.toLocaleString() + ' words of your block'))
+      : (c.word_count ? Number(c.word_count).toLocaleString() + ' words' : '');
+
+    var disabled = q && (q.ok === false || q.affordable === false);
+    return '<div class="finding" style="border-left-color:'
+      + (q && q.free ? 'var(--green)' : 'var(--border)') + ';">'
+      + '<div class="finding-msg">' + label + '</div>'
+      + '<div class="finding-meta"><span>' + cost + '</span>'
+      +   (c.status !== 'published' ? '<span><i class="ti ti-pencil"></i> ' + esc(c.status) + '</span>' : '')
+      + '</div>'
+      + '<div class="finding-acts">'
+      +   '<button class="btn' + (disabled ? '' : ' primary') + '" ' + (disabled ? 'disabled style="opacity:.45;"' : '')
+      +     ' onclick="askForRead(\'' + c.id + '\', this)"><i class="ti ti-eye"></i> Ask for a read</button>'
+      + '</div></div>';
+  }).join('');
+
+  body.innerHTML = intro + balance
+    + '<div class="grp"><div class="grp-h">Your chapters'
+    + '<span class="gcount">' + CHAPTERS.length + '</span></div>'
+    + '<div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;line-height:1.6;">'
+    + 'A chapter you have already had read is free to read again \u2014 and if nothing in it changed, '
+    + 'the reader is not even asked, because the findings on file are still right.'
+    + '</div>' + rows + '</div>';
+}
+
+/* Quotes are fetched per chapter rather than up front: one RPC per chapter on
+   a 300-chapter novel would be 300 round trips for numbers the author has not
+   asked about yet. */
+async function askForRead(chapterId, btn){
+  var original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Reading\u2026';
+  try {
+    // Quote first, so the refusal cases (too long, out of credit) are shown
+    // without a pointless server round trip through the reader.
+    var q = await db.rpc('lorekeeper_quote_read', { p_chapter_id: chapterId });
+    if(q.data) QUOTES[chapterId] = q.data;
+    if(q.data && q.data.ok === false){
+      toast(q.data.error || 'Cannot read that chapter', 'ti-x', true);
+      render();
+      return;
+    }
+    if(q.data && q.data.affordable === false){
+      toast('Not enough left in your block for this chapter.', 'ti-wallet', true);
+      render();
+      return;
+    }
+
+    var sess = await db.auth.getSession();
+    var token = sess.data.session ? sess.data.session.access_token : null;
+    if(!token){ toast('Please sign in again', 'ti-lock', true); btn.disabled=false; btn.innerHTML=original; return; }
+
+    var resp = await fetch(SUPABASE_URL + '/functions/v1/lorekeeper-read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ chapter_id: chapterId })
+    });
+    var result = await resp.json();
+
+    if(!resp.ok || !result.ok){
+      toast(result.error || 'The beta reader could not run', 'ti-x', true);
+      btn.disabled = false; btn.innerHTML = original;
+      return;
+    }
+
+    // Per-chapter outcome, not just the overall call: a run can succeed as a
+    // request and still have refused this chapter.
+    var r = (result.results || [])[0] || {};
+    if(r.ok === false){
+      toast(r.error || 'That chapter could not be read', 'ti-alert-triangle', true);
+    } else if(r.unchanged){
+      toast('Nothing changed since the last read \u2014 findings are unchanged, nothing charged.', 'ti-check');
+    } else if((r.findings || 0) === 0){
+      toast('Read it and noticed nothing worth raising.', 'ti-check');
+    } else {
+      toast(r.findings + ' thing' + (r.findings === 1 ? '' : 's') + ' to look at.', 'ti-alert-triangle');
+    }
+
+    if(result.balance) {
+      CREDIT = Object.assign({}, CREDIT || {}, result.balance);
+    }
+    // Re-read the queue so the Checks tab and the card faces both update.
+    var fRes = await Promise.resolve(db.from('lore_findings').select('*')
+      .eq('work_id', workId).order('created_at', { ascending:false })).catch(function(){ return {}; });
+    FINDINGS = fRes.data || FINDINGS;
+    QUOTES[chapterId] = null;
+    render();
+  } catch(e){
+    console.error('askForRead:', e);
+    toast('Something went wrong', 'ti-alert-triangle', true);
+    btn.disabled = false; btn.innerHTML = original;
+  }
+}
+
+async function buyBlockCard(btn){
+  var original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Redirecting\u2026';
+  try {
+    var sess = await db.auth.getSession();
+    var token = sess.data.session ? sess.data.session.access_token : null;
+    if(!token){ toast('Please sign in again', 'ti-lock', true); btn.disabled=false; btn.innerHTML=original; return; }
+    var resp = await fetch(SUPABASE_URL + '/functions/v1/create-block-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ blocks: 1 })
+    });
+    var result = await resp.json();
+    if(!resp.ok || !result.ok){
+      toast(result.error || 'Could not start checkout', 'ti-x', true);
+      btn.disabled = false; btn.innerHTML = original;
+      return;
+    }
+    window.location.href = result.url;
+  } catch(e){
+    console.error('buyBlockCard:', e);
+    toast('Something went wrong', 'ti-alert-triangle', true);
+    btn.disabled = false; btn.innerHTML = original;
+  }
+}
+
+async function buyBlockQuills(btn){
+  var original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Working\u2026';
+  try {
+    var res = await db.rpc('buy_lorekeeper_block_with_quills');
+    if(res.error || !res.data || res.data.ok !== true){
+      toast((res.data && res.data.error) || (res.error && res.error.message) || 'Could not buy a block', 'ti-x', true);
+      btn.disabled = false; btn.innerHTML = original;
+      return;
+    }
+    toast('Block added \u2014 50 chapters or 150,000 words.', 'ti-check');
+    var balRes = await db.rpc('my_lorekeeper_balance');
+    if(balRes.data && balRes.data.ok) CREDIT = balRes.data;
+    render();
+  } catch(e){
+    console.error('buyBlockQuills:', e);
+    toast('Something went wrong', 'ti-alert-triangle', true);
+    btn.disabled = false; btn.innerHTML = original;
+  }
+}
+
 function renderExport(){
   var body = document.getElementById('view-body');
 
