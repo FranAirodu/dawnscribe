@@ -594,7 +594,13 @@
       .glossary-save-btn{background:rgba(45,212,191,0.12);}
       .glossary-save-btn:hover{background:rgba(45,212,191,0.22);}
     }
-  </style>
+  
+    /* Lorebook button glows in the aura colour while lore notes are waiting. */
+    @keyframes dsLoreGlow{0%,100%{box-shadow:0 0 0 1px rgba(var(--accent-rgb,45,212,191),.55),0 0 10px rgba(var(--accent-rgb,45,212,191),.35);}50%{box-shadow:0 0 0 1px rgba(var(--accent-rgb,45,212,191),.85),0 0 18px rgba(var(--accent-rgb,45,212,191),.6);}}
+    .lore-glow{border-color:var(--accent) !important;color:var(--accent) !important;animation:dsLoreGlow 2.4s ease-in-out infinite;}
+    .lore-glow .lore-pip{display:inline-block;background:var(--accent);color:var(--bg);border-radius:999px;font-size:10px;font-weight:800;padding:0 6px;margin-left:4px;line-height:16px;}
+    @media (prefers-reduced-motion: reduce){.lore-glow{animation:none;box-shadow:0 0 0 1px rgba(var(--accent-rgb,45,212,191),.7),0 0 14px rgba(var(--accent-rgb,45,212,191),.5);}}
+</style>
   <script src="accessibilityPrefs.js"></script>
   <script src="contentWarnings.js"></script>
 </head>
@@ -3323,6 +3329,21 @@
       // Lorebook is author-private; the owner bar is already owner-only, so no
       // extra gate is needed here.
       document.getElementById('lorebook-btn').href = 'lorebook.html?work=' + workId;
+      // Glow while lore notes are waiting to be applied. Owner-only table,
+      // so this read only ever returns the author's own notes.
+      (async function(){
+        try {
+          var r = await db.from('lore_notes').select('id', { count: 'exact', head: true })
+            .eq('work_id', workId).eq('status', 'open');
+          var n = (r && r.count) || 0;
+          if (n > 0) {
+            var b = document.getElementById('lorebook-btn');
+            b.classList.add('lore-glow');
+            b.title = n + ' lore note' + (n === 1 ? '' : 's') + ' waiting';
+            b.insertAdjacentHTML('beforeend', '<span class="lore-pip">' + n + '</span>');
+          }
+        } catch (e) {}
+      })();
       document.getElementById('edit-story-btn').href = 'publish.html?edit=' + workId;
       document.getElementById('delete-story-btn').addEventListener('click', openDeleteModal);
     }
