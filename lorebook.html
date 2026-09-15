@@ -132,6 +132,28 @@
     .tl-btn,.tl-open{background:none;border:none;color:var(--accent);font-size:11.5px;font-family:'Lato',sans-serif;cursor:pointer;padding:2px 0;display:inline-flex;align-items:center;gap:5px;}
     .tl-open{color:var(--text3);margin-top:6px;}
     .tl-open:hover{color:var(--accent);}
+    .tl-q{font-size:12px;font-weight:700;color:var(--text2);margin:2px 0 7px;}
+    .tl-sub{font-size:11.5px;color:var(--text2);margin:8px 0 5px;}
+    .tl-chk{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text3);cursor:pointer;white-space:nowrap;}
+    .tl-yn{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+    .tl-yn button{background:none;border:none;color:var(--text3);font-size:11.5px;font-weight:700;padding:4px 12px;cursor:pointer;font-family:'Lato',sans-serif;}
+    .tl-yn button.on{background:var(--accent2);color:#fff;}
+    .tl-no{background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;margin-left:auto;font-family:'Lato',sans-serif;}
+    .tl-no:hover{color:var(--red);}
+    .reveal-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+    .reveal-btn{background:none;border:1px dashed var(--border);border-radius:14px;color:var(--text3);font-size:11.5px;padding:3px 10px;cursor:pointer;font-family:'Lato',sans-serif;}
+    .reveal-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .f.child{border-left:2px solid var(--border);padding-left:10px;}
+    .measure{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+    .measure input{width:74px;flex:0 0 auto;}
+    .measure span{font-size:11.5px;color:var(--text3);}
+    .note-card{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:11px;padding:13px 15px;margin-bottom:10px;}
+    .note-card.done{opacity:.6;border-left-color:var(--border);}
+    .note-meta{font-size:11px;color:var(--text3);margin-bottom:5px;}
+    .note-body{font-size:13.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;}
+    .note-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center;}
+    .note-acts .btn{padding:6px 12px;font-size:12px;}
+    .note-acts select{background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:12px;max-width:220px;}
     .skip{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text3);margin-top:4px;cursor:pointer;}
     .skip input{width:auto;}
 
@@ -217,6 +239,8 @@ var FIELDS = {};        // kind -> [field defs]
 var CARDS = [];         // every card in this work
 var RELATIONS = [];
 var FINDINGS = [];
+var NOTES = [];
+var NOTES_SHOW_DONE = false;
 var LOREKEEPER = false;
 var CHAPTERS = [];
 var CREDIT = null;      // { chapters_remaining, words_remaining, ... }
@@ -305,11 +329,17 @@ function fskipped(card, key){
 function fillCount(card){
   var defs = FIELDS[card.kind] || [];
   var answered = 0;
+  var total = 0;
   defs.forEach(function(f){
     var d = (card.data || {})[f.field_key];
-    if(d && (d.skipped || (d.v != null && String(d.v) !== ''))) answered++;
+    var has = d && (d.skipped || (d.v != null && String(d.v) !== ''));
+    // Follow-up questions only count once they apply, so a card is never
+    // "incomplete" for a question that was never going to be asked.
+    if(f.reveal_under && !has) return;
+    total++;
+    if(has) answered++;
   });
-  return { answered: answered, total: defs.length };
+  return { answered: answered, total: total };
 }
 function deckTitle(kind){
   for(var i=0;i<DECKS.length;i++) if(DECKS[i].kind === kind) return DECKS[i].title;
@@ -335,6 +365,7 @@ function openFindingsFor(cardId){
   uid = session.user.id;
   var params = new URLSearchParams(window.location.search);
   workId = params.get('work');
+  if(params.get('view') === 'notes') view = 'notes';
 
   // Returning from a block checkout. The webhook may not have landed yet, so
   // the balance is polled briefly rather than read once.
@@ -440,7 +471,9 @@ async function loadWork(){
       .order('kind').order('sort_order')).catch(function(){ return {}; }),
     Promise.resolve(db.from('lore_relations').select('*').eq('work_id', workId)).catch(function(){ return {}; }),
     Promise.resolve(db.from('lore_findings').select('*').eq('work_id', workId)
-      .order('created_at', { ascending:false })).catch(function(){ return {}; })
+      .order('created_at', { ascending:false })).catch(function(){ return {}; }),
+    Promise.resolve(db.from('lore_notes').select('*').eq('work_id', workId)
+      .order('created_at', { ascending:false }).limit(300)).catch(function(){ return {}; })
   ]);
 
   work      = out[0].data || { title:'This story' };
@@ -452,6 +485,7 @@ async function loadWork(){
   CARDS     = out[2].data || [];
   RELATIONS = out[3].data || [];
   FINDINGS  = out[4].data || [];
+  NOTES     = out[5].data || [];
 
   // Chapter list and credit balance: needed by the Beta reader tab, and
   // cheap enough to fetch with everything else rather than on tab switch.
@@ -476,6 +510,7 @@ function render(){
     + '<div class="view-tabs">'
       + tab('decks', 'ti-cards', 'Decks')
       + tab('board', 'ti-arrows-shuffle', 'Relationships')
+      + tab('notes', 'ti-notebook', 'Notes', NOTES.filter(function(n){ return n.status === 'open'; }).length)
       + tab('checks', 'ti-shield-check', 'Checks', open)
       + tab('reader', 'ti-eye', 'Beta reader')
       + tab('export', 'ti-download', 'Export')
@@ -494,6 +529,7 @@ function setView(v){ view = v; render(); }
 function renderView(){
   if(view === 'decks')  return renderDecks();
   if(view === 'board')  return renderBoard();
+  if(view === 'notes')  return renderNotes();
   if(view === 'checks') return renderChecks();
   if(view === 'reader') return renderReader();
   if(view === 'export') return renderExport();
@@ -622,6 +658,14 @@ async function newCard(kind){
   openCard(res.data.id);
 }
 
+var SUBTITLE_HELP = {
+  character:    'Shows under the name on the card \u2014 e.g. "Sellsword, chapters 1 onward"',
+  society:      'What makes this society stand out \u2014 e.g. "A city of scholars", "Always sick", "Famous for their horses"',
+  organisation: 'What they are known for \u2014 e.g. "Smugglers who run the docks"',
+  artifact:     'What it is known as \u2014 e.g. "The sword that cannot be sheathed"',
+  event:        'The short version \u2014 e.g. "The night the river burned"'
+};
+
 /* ── CARD SHEET ────────────────────────────────────────────────────── */
 var EDIT_ID = null;
 
@@ -660,7 +704,7 @@ function openCard(id){
     + '<div class="grp"><div class="grp-h">The card itself</div><div class="fields">'
       + '<div class="f"><label>Name</label><input id="lb-name" maxlength="120" value="' + esc(c.name) + '"/></div>'
       + '<div class="f"><label>Subtitle</label>'
-        + '<div class="help">Shows under the name on the card \u2014 e.g. "Sellsword, chapters 1 onward"</div>'
+        + '<div class="help">' + esc(SUBTITLE_HELP[c.kind] || SUBTITLE_HELP.character) + '</div>'
         + '<input id="lb-subtitle" maxlength="160" value="' + esc(c.subtitle || '') + '"/></div>'
     + '</div></div>'
     + groups.map(function(g){
@@ -681,6 +725,7 @@ function openCard(id){
     + '<div id="lb-del"></div>';
 
   document.getElementById('sheet').innerHTML = html;
+  syncReveals();
   document.getElementById('sheet-back').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
@@ -742,6 +787,17 @@ function fieldHtml(c, f){
       + '<button type="button" class="btn ghost" style="padding:6px 12px;font-size:12px;margin-top:6px;" '
       +   'onclick="addPair(\'' + key + '\')"><i class="ti ti-plus"></i> Add ' + esc(labels[0].toLowerCase()) + '</button>';
 
+  } else if(f.input_type === 'height' || f.input_type === 'weight'){
+    input = measureHtml(f, raw);
+
+  } else if(f.input_type === 'chapter' && f.before_ch1){
+    var pre = (v === BEFORE_CH1);
+    input = '<div class="measure">'
+      + '<input id="' + id + '" value="' + esc(pre ? '' : v) + '" placeholder="#"' + (pre ? ' disabled' : '') + '/>'
+      + '<label class="tl-chk"><input type="checkbox" id="pre-' + key + '"' + (pre ? ' checked' : '')
+      +   ' onchange="preCh1(\'' + key + '\', \'fld-\')"/> ' + esc(f.label.replace(/ in chapter$/i, '')) + ' before chapter 1</label>'
+      + '</div>';
+
   } else if(f.input_type === 'long'){
     input = '<textarea id="' + id + '" rows="3">' + esc(v) + '</textarea>';
 
@@ -763,30 +819,27 @@ function fieldHtml(c, f){
     input = '<input id="' + id + '" value="' + esc(v) + '"/>';
   }
 
-  // Timeline control, only on fields that plausibly change mid-story. Hidden
-  // until asked for, so a card does not look like a spreadsheet.
-  var tl = '';
-  if(f.timeline){
-    var was = Array.isArray(raw.was) ? raw.was : [];
-    var open = was.length > 0 || (raw.since != null && raw.since !== '');
-    tl = '<div class="tl" id="tl-' + key + '"' + (open ? '' : ' style="display:none;"') + '>'
-      + '<div class="tl-row"><span class="tl-lbl">True from chapter</span>'
-      +   '<input class="tl-in" id="since-' + key + '" value="' + esc(raw.since == null ? '' : raw.since) + '" '
-      +     'placeholder="start"/></div>'
-      + '<div id="was-' + key + '">'
-      +   was.map(function(w, i){ return wasRowHtml(f.field_key, w, i); }).join('')
-      + '</div>'
-      + '<button type="button" class="tl-btn" onclick="addWas(\'' + key + '\')">'
-      +   '<i class="ti ti-plus"></i> what it was before</button>'
-      + '</div>'
-      + (open ? '' : '<button type="button" class="tl-open" onclick="openTl(\'' + key + '\')">'
-          + '<i class="ti ti-history"></i> this changes during the story</button>');
-  }
+  // "Does it change?" — asked on every question where the answer can move.
+  // Hidden behind one small button so the question itself stays clean.
+  var tl = f.timeline ? timelineHtml(f, raw) : '';
 
-  return '<div class="f' + (wide ? ' wide' : '') + (skipped ? ' skipped' : '') + '" id="wrap-' + key + '">'
+  // Secondary questions that live behind a button under this one.
+  var kids = (FIELDS[c.kind] || []).filter(function(k){ return k.reveal_under === f.field_key && k.reveal_mode === 'button'; });
+  var reveal = kids.length
+    ? '<div class="reveal-btns" id="rb-' + key + '">' + kids.map(function(k){
+        return '<button type="button" class="reveal-btn" id="rbtn-' + esc(k.field_key) + '" onclick="revealField(\'' + esc(k.field_key) + '\')">'
+          + '<i class="ti ti-plus"></i> ' + esc(k.label) + '</button>';
+      }).join('') + '</div>'
+    : '';
+
+  return '<div class="f' + (wide ? ' wide' : '') + (skipped ? ' skipped' : '') + (f.reveal_under ? ' child' : '') + '" id="wrap-' + key + '"'
+    + (f.reveal_under ? ' data-under="' + esc(f.reveal_under) + '" data-mode="' + esc(f.reveal_mode || 'button') + '"'
+        + ' data-has="' + ((raw.v != null && String(raw.v) !== '') || skipped ? '1' : '') + '"' : '')
+    + '>'
     + '<label>' + esc(f.label) + (f.allow_skip ? '' : ' <span style="color:var(--red);">*</span>') + '</label>'
     + (f.help ? '<div class="help">' + esc(f.help) + '</div>' : '')
     + input
+    + reveal
     + tl
     + (f.allow_skip
         ? '<label class="skip"><input type="checkbox" id="skip-' + key + '"'
@@ -835,25 +888,186 @@ function addPair(key){
   wrap.insertAdjacentHTML('beforeend', pairRowHtml(key, ['', ''], wrap.children.length, def));
 }
 
-function wasRowHtml(key, w, i){
+var BEFORE_CH1 = 'Before chapter 1';
+
+function timelineHtml(f, raw){
+  var key = esc(f.field_key);
+  var was = Array.isArray(raw.was) ? raw.was : [];
+  var log = Array.isArray(raw.log) ? raw.log : [];
+  var hasSince = raw.since != null && raw.since !== '';
+  var open = was.length > 0 || hasSince || log.length > 0;
+  var pre = hasSince && String(raw.since) === '0';
+  return (open ? '' : '<button type="button" class="tl-open" id="tlo-' + key + '" onclick="openTl(\'' + key + '\')">'
+      + '<i class="ti ti-history"></i> Does it change?</button>')
+    + '<div class="tl" id="tl-' + key + '"' + (open ? '' : ' style="display:none;"') + '>'
+    +   '<div class="tl-row"><span class="tl-q">Does it change? Yes</span>'
+    +     '<button type="button" class="tl-no" onclick="closeTl(\'' + key + '\')">No, it never changes</button></div>'
+    +   '<div class="tl-row"><span class="tl-lbl">In what chapter?</span>'
+    +     '<input class="tl-in" id="since-' + key + '" value="' + esc(pre || !hasSince ? '' : raw.since) + '" placeholder="#"' + (pre ? ' disabled' : '') + '/>'
+    +     '<label class="tl-chk"><input type="checkbox" id="presince-' + key + '"' + (pre ? ' checked' : '')
+    +       ' onchange="preCh1(\'' + key + '\', \'since-\')"/> Before chapter 1</label></div>'
+    +   '<div class="tl-sub">What was it before?</div>'
+    +   '<div id="was-' + key + '">' + was.map(function(w){ return wasRowHtml(f.field_key, w); }).join('') + '</div>'
+    +   '<button type="button" class="tl-btn" onclick="addWas(\'' + key + '\')"><i class="ti ti-plus"></i> Add what it was before</button>'
+    +   '<div class="tl-row" style="margin-top:10px;"><span class="tl-lbl">Does it change per chapter?</span>'
+    +     '<span class="tl-yn"><button type="button" id="logno-' + key + '" class="' + (log.length ? '' : 'on') + '" onclick="setLog(\'' + key + '\', false)">No</button>'
+    +     '<button type="button" id="logyes-' + key + '" class="' + (log.length ? 'on' : '') + '" onclick="setLog(\'' + key + '\', true)">Yes</button></span></div>'
+    +   '<div id="logwrap-' + key + '"' + (log.length ? '' : ' style="display:none;"') + '>'
+    +     '<div class="tl-sub">One line for each chapter it changes in \u2014 the newest line at or before a chapter is what the checks use.</div>'
+    +     '<div id="log-' + key + '">' + log.map(function(e){ return logRowHtml(e); }).join('') + '</div>'
+    +     '<button type="button" class="tl-btn" onclick="addLog(\'' + key + '\')"><i class="ti ti-plus"></i> Add a chapter</button>'
+    +   '</div>'
+    + '</div>';
+}
+function wasRowHtml(key, w){
+  var pre = w && String(w.until) === '0';
   return '<div class="tl-row was-row">'
     + '<input class="was-v" value="' + esc(w && w.v != null ? w.v : '') + '" placeholder="what it was"/>'
     + '<span class="tl-lbl">until ch.</span>'
-    + '<input class="tl-in was-until" value="' + esc(w && w.until != null ? w.until : '') + '" placeholder="#"/>'
+    + '<input class="tl-in was-until" value="' + esc(w && w.until != null && !pre ? w.until : '') + '" placeholder="#"/>'
+    + '<button type="button" onclick="this.parentElement.remove()" aria-label="Remove">'
+    + '<i class="ti ti-x"></i></button></div>';
+}
+function logRowHtml(e){
+  return '<div class="tl-row log-row">'
+    + '<span class="tl-lbl">ch.</span>'
+    + '<input class="tl-in log-ch" value="' + esc(e && e.ch != null ? e.ch : '') + '" placeholder="#"/>'
+    + '<input class="log-v" value="' + esc(e && e.v != null ? e.v : '') + '" placeholder="what it is in that chapter"/>'
     + '<button type="button" onclick="this.parentElement.remove()" aria-label="Remove">'
     + '<i class="ti ti-x"></i></button></div>';
 }
 function addWas(key){
   var wrap = document.getElementById('was-' + key);
-  if(!wrap) return;
-  wrap.insertAdjacentHTML('beforeend', wasRowHtml(key, {}, wrap.children.length));
+  if(wrap) wrap.insertAdjacentHTML('beforeend', wasRowHtml(key, {}));
+}
+function addLog(key){
+  var wrap = document.getElementById('log-' + key);
+  if(wrap) wrap.insertAdjacentHTML('beforeend', logRowHtml({}));
+}
+function setLog(key, on){
+  var w = document.getElementById('logwrap-' + key);
+  if(w) w.style.display = on ? '' : 'none';
+  var y = document.getElementById('logyes-' + key), n = document.getElementById('logno-' + key);
+  if(y) y.classList.toggle('on', on);
+  if(n) n.classList.toggle('on', !on);
+  if(on){ var l = document.getElementById('log-' + key); if(l && !l.children.length) addLog(key); }
 }
 function openTl(key){
   var el = document.getElementById('tl-' + key);
   if(el) el.style.display = '';
-  var btn = document.querySelector('#wrap-' + key + ' .tl-open');
-  if(btn) btn.remove();
+  var btn = document.getElementById('tlo-' + key);
+  if(btn) btn.style.display = 'none';
 }
+// "No" clears everything the timeline held, so a mistaken Yes leaves nothing behind.
+function closeTl(key){
+  var el = document.getElementById('tl-' + key);
+  if(!el) return;
+  el.querySelectorAll('input').forEach(function(i){ if(i.type === 'checkbox') i.checked = false; else { i.value = ''; i.disabled = false; } });
+  ['was-', 'log-'].forEach(function(p){ var w = document.getElementById(p + key); if(w) w.innerHTML = ''; });
+  setLog(key, false);
+  el.style.display = 'none';
+  var btn = document.getElementById('tlo-' + key);
+  if(btn) btn.style.display = '';
+}
+function preCh1(key, prefix){
+  var box = document.getElementById((prefix === 'since-' ? 'presince-' : 'pre-') + key);
+  var inp = document.getElementById(prefix + key);
+  if(!box || !inp) return;
+  inp.disabled = box.checked;
+  if(box.checked) inp.value = '';
+}
+
+/* Height and weight: type either unit, the other fills itself in. Stored as
+   one readable string ("180 cm (5 ft 11 in)") so the checks and the beta
+   reader read it like any other answer, plus the metric number. */
+function measureHtml(f, raw){
+  var key = esc(f.field_key);
+  if(f.input_type === 'height'){
+    var cm = raw.cm != null ? Number(raw.cm) : parseHeightCm(raw.v);
+    var ft = '', inch = '';
+    if(cm){ var tot = Math.round(cm / 2.54); ft = Math.floor(tot / 12); inch = tot % 12; }
+    return '<div class="measure">'
+      + '<input type="number" min="0" id="hft-' + key + '" value="' + esc(ft) + '" oninput="syncHeight(\'' + key + '\',\'imp\')"/><span>ft</span>'
+      + '<input type="number" min="0" max="11" id="hin-' + key + '" value="' + esc(inch) + '" oninput="syncHeight(\'' + key + '\',\'imp\')"/><span>in</span>'
+      + '<span style="margin:0 4px;">or</span>'
+      + '<input type="number" min="0" id="hcm-' + key + '" value="' + esc(cm ? Math.round(cm) : '') + '" oninput="syncHeight(\'' + key + '\',\'cm\')"/><span>cm</span>'
+      + '</div>';
+  }
+  var kg = raw.kg != null ? Number(raw.kg) : parseWeightKg(raw.v);
+  return '<div class="measure">'
+    + '<input type="number" min="0" id="wlb-' + key + '" value="' + esc(kg ? Math.round(kg * 2.20462) : '') + '" oninput="syncWeight(\'' + key + '\',\'lb\')"/><span>lb</span>'
+    + '<span style="margin:0 4px;">or</span>'
+    + '<input type="number" min="0" id="wkg-' + key + '" value="' + esc(kg ? Math.round(kg) : '') + '" oninput="syncWeight(\'' + key + '\',\'kg\')"/><span>kg</span>'
+    + '</div>';
+}
+function parseHeightCm(v){
+  if(v == null) return null;
+  var t = String(v).toLowerCase();
+  var m = t.match(/([\d.]+)\s*cm/); if(m) return parseFloat(m[1]);
+  m = t.match(/([\d.]+)\s*m\b/); if(m) return parseFloat(m[1]) * 100;
+  m = t.match(/(\d+)\s*(?:ft|foot|feet|')\s*(\d+)?/);
+  if(m) return (parseInt(m[1], 10) * 12 + (parseInt(m[2] || '0', 10))) * 2.54;
+  return null;
+}
+function parseWeightKg(v){
+  if(v == null) return null;
+  var t = String(v).toLowerCase();
+  var m = t.match(/([\d.]+)\s*kg/); if(m) return parseFloat(m[1]);
+  m = t.match(/([\d.]+)\s*(?:lb|lbs|pound)/); if(m) return parseFloat(m[1]) / 2.20462;
+  m = t.match(/(\d+)\s*st(?:one)?\s*(\d+)?/); if(m) return (parseInt(m[1],10) * 14 + parseInt(m[2] || '0',10)) / 2.20462;
+  return null;
+}
+function syncHeight(key, from){
+  var ft = document.getElementById('hft-' + key), inch = document.getElementById('hin-' + key), cm = document.getElementById('hcm-' + key);
+  if(from === 'cm'){
+    var c = parseFloat(cm.value);
+    if(!c){ ft.value = ''; inch.value = ''; return; }
+    var tot = Math.round(c / 2.54); ft.value = Math.floor(tot / 12); inch.value = tot % 12;
+  } else {
+    var f = parseInt(ft.value || '0', 10), i = parseInt(inch.value || '0', 10);
+    cm.value = (f || i) ? Math.round((f * 12 + i) * 2.54) : '';
+  }
+}
+function syncWeight(key, from){
+  var lb = document.getElementById('wlb-' + key), kg = document.getElementById('wkg-' + key);
+  if(from === 'kg'){ var k = parseFloat(kg.value); lb.value = k ? Math.round(k * 2.20462) : ''; }
+  else { var l = parseFloat(lb.value); kg.value = l ? Math.round(l / 2.20462) : ''; }
+}
+
+/* Follow-up questions. "button": behind a small button under the parent,
+   shown straight away if it already has an answer. "yes": shown when the
+   parent answer is Yes. "many": shown when the parent list has 2+ entries. */
+function revealField(key){
+  var w = document.getElementById('wrap-' + key);
+  if(w){ w.setAttribute('data-open', '1'); w.style.display = ''; }
+  var b = document.getElementById('rbtn-' + key);
+  if(b) b.style.display = 'none';
+  var inp = w && w.querySelector('input,textarea');
+  if(inp) inp.focus();
+}
+function syncReveals(){
+  document.querySelectorAll('#sheet .f[data-under]').forEach(function(w){
+    var parent = w.getAttribute('data-under'), mode = w.getAttribute('data-mode');
+    var key = w.id.replace(/^wrap-/, '');
+    var show;
+    if(mode === 'yes'){
+      var pe = document.getElementById('fld-' + parent);
+      show = !!(pe && /^\s*yes\s*$/i.test(pe.value)) || (w.getAttribute('data-has') === '1' && !pe);
+    } else if(mode === 'many'){
+      var chips = document.getElementById('chips-' + parent);
+      show = !!(chips && chips.children.length >= 2);
+    } else {
+      show = w.getAttribute('data-has') === '1' || w.getAttribute('data-open') === '1';
+      var b = document.getElementById('rbtn-' + key);
+      if(b) b.style.display = show ? 'none' : '';
+    }
+    w.style.display = show ? '' : 'none';
+  });
+}
+document.addEventListener('input', function(e){ if(e.target.closest && e.target.closest('#sheet')) syncReveals(); });
+document.addEventListener('change', function(e){ if(e.target.closest && e.target.closest('#sheet')) syncReveals(); });
+document.addEventListener('click', function(e){ if(e.target.closest && e.target.closest('#sheet')) setTimeout(syncReveals, 0); });
+document.addEventListener('keyup', function(e){ if(e.key === 'Enter' && e.target.closest && e.target.closest('#sheet')) syncReveals(); });
 
 function toggleSkip(key){
   var wrap = document.getElementById('wrap-' + key);
@@ -938,17 +1152,47 @@ async function saveCard(){
       }).filter(function(r){ return r[0] || r[1]; }) : [];
       if(rows.length) entry = { v: rows };
 
+    } else if(f.input_type === 'height'){
+      var cmv = parseFloat((document.getElementById('hcm-' + f.field_key) || {}).value);
+      if(cmv > 0){
+        var tot = Math.round(cmv / 2.54);
+        entry = { v: Math.round(cmv) + ' cm (' + Math.floor(tot / 12) + ' ft ' + (tot % 12) + ' in)', cm: Math.round(cmv) };
+      }
+
+    } else if(f.input_type === 'weight'){
+      var kgv = parseFloat((document.getElementById('wkg-' + f.field_key) || {}).value);
+      var lbv = parseFloat((document.getElementById('wlb-' + f.field_key) || {}).value);
+      if(!(kgv > 0) && lbv > 0) kgv = lbv / 2.20462;
+      if(kgv > 0) entry = { v: Math.round(kgv) + ' kg (' + Math.round(kgv * 2.20462) + ' lb)', kg: Math.round(kgv) };
+
     } else {
+      var pre1 = f.before_ch1 && document.getElementById('pre-' + f.field_key);
       var el = document.getElementById('fld-' + f.field_key);
-      var v = el ? String(el.value).trim() : '';
+      var v = (pre1 && pre1.checked) ? BEFORE_CH1 : (el ? String(el.value).trim() : '');
       if(v !== '') entry = { v: v };
+    }
+
+    // A follow-up question that is not showing (Religious? No) is not saved,
+    // but anything already on file under it is kept rather than wiped.
+    var wrapEl = document.getElementById('wrap-' + f.field_key);
+    if(f.reveal_under && wrapEl && wrapEl.style.display === 'none' && f.reveal_mode !== 'button'){
+      if(c.data && c.data[f.field_key]) data[f.field_key] = c.data[f.field_key];
+      return;
     }
 
     // Timeline: the chapter the current value became true, plus what it was
     // before. Only attached when the author actually filled it in.
     if(f.timeline){
       var sinceEl = document.getElementById('since-' + f.field_key);
-      var since = sinceEl ? String(sinceEl.value).replace(/\D/g, '') : '';
+      var preSince = document.getElementById('presince-' + f.field_key);
+      var since = (preSince && preSince.checked) ? '0' : (sinceEl ? String(sinceEl.value).replace(/\D/g, '') : '');
+      var logWrap = document.getElementById('logwrap-' + f.field_key);
+      var logBox = document.getElementById('log-' + f.field_key);
+      var log = (logWrap && logWrap.style.display !== 'none' && logBox) ? Array.prototype.map.call(logBox.children, function(row){
+        var chEl = row.querySelector('.log-ch'), vEl = row.querySelector('.log-v');
+        return { ch: chEl ? chEl.value.replace(/\D/g, '') : '', v: vEl ? vEl.value.trim() : '' };
+      }).filter(function(x){ return x.ch !== '' && x.v; })
+        .sort(function(a, b){ return Number(a.ch) - Number(b.ch); }) : [];
       var wasWrap = document.getElementById('was-' + f.field_key);
       var was = wasWrap ? Array.prototype.map.call(wasWrap.children, function(row){
         var vEl = row.querySelector('.was-v'), uEl = row.querySelector('.was-until');
@@ -956,9 +1200,10 @@ async function saveCard(){
       }).filter(function(x){ return x.v; }) : [];
       // A blank current value with a filled-in past is meaningful, so the
       // entry is created rather than dropped.
-      if(!entry && (since || was.length)) entry = { v: '' };
+      if(!entry && (since || was.length || log.length)) entry = { v: '' };
       if(entry && since) entry.since = since;
       if(entry && was.length) entry.was = was;
+      if(entry && log.length) entry.log = log;
     }
 
     if(entry) data[f.field_key] = entry;
@@ -1598,6 +1843,59 @@ async function buyBlockQuills(btn){
     toast('Something went wrong', 'ti-alert-triangle', true);
     btn.disabled = false; btn.innerHTML = original;
   }
+}
+
+/* ── NOTES INBOX ─────────────────────────────────────────────────────
+   Jotted from the chapter editor while writing. A note is a reminder,
+   not a card edit: the author opens the card, changes it, marks it done. */
+function renderNotes(){
+  var body = document.getElementById('view-body');
+  var open = NOTES.filter(function(n){ return n.status === 'open'; });
+  var done = NOTES.filter(function(n){ return n.status !== 'open'; });
+  var list = NOTES_SHOW_DONE ? done : open;
+  var cardOpts = CARDS.slice().sort(function(a, b){ return String(a.name).localeCompare(String(b.name)); })
+    .map(function(c){ return '<option value="' + esc(c.id) + '">' + esc(c.name) + ' \u2014 ' + esc(deckTitle(c.kind)) + '</option>'; }).join('');
+
+  body.innerHTML =
+    '<div class="board-help">Notes you jot in the chapter editor land here. Open the card it is about, '
+    + 'update it, then mark the note done. Notes are free and private \u2014 nobody else sees them.</div>'
+    + '<div class="note-acts" style="margin:0 0 14px;">'
+    +   '<button class="btn' + (NOTES_SHOW_DONE ? ' ghost' : '') + '" onclick="NOTES_SHOW_DONE=false;renderView()">Waiting (' + open.length + ')</button>'
+    +   '<button class="btn' + (NOTES_SHOW_DONE ? '' : ' ghost') + '" onclick="NOTES_SHOW_DONE=true;renderView()">Done (' + done.length + ')</button>'
+    + '</div>'
+    + (list.length ? list.map(function(n){
+        var meta = (n.chapter_number ? 'Chapter ' + n.chapter_number : 'No chapter') + ' \u00b7 '
+          + new Date(n.created_at).toLocaleDateString()
+          + (n.status === 'applied' ? ' \u00b7 applied' : n.status === 'dismissed' ? ' \u00b7 dismissed' : '');
+        return '<div class="note-card' + (n.status === 'open' ? '' : ' done') + '">'
+          + '<div class="note-meta">' + esc(meta) + '</div>'
+          + '<div class="note-body">' + esc(n.body) + '</div>'
+          + '<div class="note-acts">'
+          + (n.status === 'open'
+              ? (CARDS.length
+                  ? '<select id="nc-' + esc(n.id) + '" aria-label="Card this note is about"><option value="">Which card is this about?</option>' + cardOpts + '</select>'
+                    + '<button class="btn ghost" onclick="noteOpenCard(\'' + esc(n.id) + '\')"><i class="ti ti-cards"></i> Open card</button>'
+                  : '<button class="btn ghost" onclick="setView(\'decks\')"><i class="ti ti-plus"></i> Make a card first</button>')
+                + '<button class="btn" onclick="noteSet(\'' + esc(n.id) + '\', \'applied\')"><i class="ti ti-check"></i> Done</button>'
+                + '<button class="btn ghost" onclick="noteSet(\'' + esc(n.id) + '\', \'dismissed\')">Dismiss</button>'
+              : '<button class="btn ghost" onclick="noteSet(\'' + esc(n.id) + '\', \'open\')"><i class="ti ti-arrow-back-up"></i> Move back to waiting</button>')
+          + '</div></div>';
+      }).join('')
+      : '<div class="board-help" style="text-align:center;padding:30px 0;">'
+        + (NOTES_SHOW_DONE ? 'Nothing done yet.' : 'No notes waiting. Use the <b>Lore notes</b> button in the chapter editor to jot one while you write.')
+        + '</div>');
+}
+function noteOpenCard(id){
+  var sel = document.getElementById('nc-' + id);
+  if(!sel || !sel.value){ toast('Pick the card this note is about', 'ti-alert-triangle', true); return; }
+  openCard(sel.value);
+}
+async function noteSet(id, status){
+  var res = await db.from('lore_notes').update({ status: status }).eq('id', id).select().maybeSingle();
+  if(res.error || !res.data){ toast(res.error ? res.error.message : 'Could not update that note', 'ti-x', true); return; }
+  for(var i=0;i<NOTES.length;i++) if(NOTES[i].id === id) NOTES[i] = res.data;
+  toast(status === 'applied' ? 'Marked done' : status === 'dismissed' ? 'Note dismissed' : 'Moved back to waiting');
+  render();
 }
 
 function renderExport(){

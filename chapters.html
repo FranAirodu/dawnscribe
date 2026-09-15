@@ -359,7 +359,34 @@
       .link-type-pill.active{background:rgba(45,212,191,0.08);}
       .linked-tag{background:rgba(45,212,191,0.1); border:1px solid rgba(45,212,191,0.25);}
     }
-  </style>
+  
+    /* ── LORE NOTES DRAWER ── jot a change while writing; applied to cards in the Lorebook */
+    .ln-fab{position:fixed;right:20px;bottom:20px;z-index:900;display:none;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:10px 16px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 6px 22px rgba(0,0,0,0.35);transition:border-color .2s,color .2s;}
+    .ln-fab:hover,.ln-fab:focus-visible{border-color:var(--accent);color:var(--accent);}
+    .ln-fab .ln-pip{background:var(--accent2);color:#fff;border-radius:999px;font-size:10.5px;padding:1px 7px;}
+    .ln-drawer{position:fixed;top:0;right:0;height:100%;width:min(380px,100vw);z-index:950;background:var(--bg2);border-left:1px solid var(--border);box-shadow:-10px 0 30px rgba(0,0,0,0.35);transform:translateX(105%);transition:transform .25s ease;display:flex;flex-direction:column;}
+    .ln-drawer.open{transform:translateX(0);}
+    .ln-head{display:flex;align-items:center;gap:8px;padding:16px 18px;border-bottom:1px solid var(--border);font-family:'Cinzel',serif;font-weight:700;font-size:15px;}
+    .ln-head button{margin-left:auto;background:none;border:1px solid var(--border);border-radius:7px;width:30px;height:30px;color:var(--text2);cursor:pointer;}
+    .ln-body{padding:14px 18px;overflow-y:auto;flex:1;}
+    .ln-help{font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;}
+    .ln-chap{font-size:11px;color:var(--text3);margin-bottom:6px;}
+    .ln-text{width:100%;box-sizing:border-box;min-height:96px;resize:vertical;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 12px;color:var(--text);font-family:'Lato',sans-serif;font-size:13.5px;line-height:1.6;}
+    .ln-text:focus{outline:none;border-color:var(--accent);}
+    .ln-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
+    .ln-save{background:var(--accent2);border:none;border-radius:8px;padding:8px 16px;color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;font-family:'Lato',sans-serif;}
+    .ln-save:disabled{opacity:.5;cursor:not-allowed;}
+    .ln-kbd{font-size:10.5px;color:var(--text3);}
+    .ln-list-h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin:18px 0 8px;display:flex;align-items:center;}
+    .ln-list-h a{margin-left:auto;text-transform:none;letter-spacing:0;color:var(--accent);font-weight:700;text-decoration:none;}
+    .ln-note{background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:9px 11px;margin-bottom:8px;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word;position:relative;}
+    .ln-note .ln-meta{display:block;font-size:10.5px;color:var(--text3);margin-bottom:3px;white-space:normal;}
+    .ln-note button{position:absolute;top:6px;right:6px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;}
+    .ln-note button:hover{color:var(--red);}
+    .ln-empty{font-size:12px;color:var(--text3);}
+    body.focus-mode .ln-fab{opacity:.55;}
+    body.focus-mode .ln-fab:hover{opacity:1;}
+</style>
 </head>
 <body>
 
@@ -1286,6 +1313,7 @@
         link.href = 'lorebook.html?work=' + encodeURIComponent(workId);
         link.style.display = 'flex';
         var lb = await db.rpc('my_lorebook', { p_work_id: workId });
+        if (lb && lb.data && lb.data.ok && typeof lnInit === 'function') lnInit();
         var open = lb && lb.data && lb.data.ok ? (parseInt(lb.data.open_findings, 10) || 0) : 0;
         if (open > 0) {
           link.classList.add('warn');
@@ -3829,5 +3857,102 @@
     if (editingChapterId) updateAutosaveIndicator('pending');
   }
 </script>
+
+  <!-- LORE NOTES: free for every author. Notes land in the Lorebook's Notes inbox. -->
+  <button class="ln-fab" id="ln-fab" type="button" onclick="lnToggle()" aria-controls="ln-drawer" aria-expanded="false"><i class="ti ti-notebook"></i> Lore notes <span class="ln-pip" id="ln-pip" style="display:none;"></span></button>
+  <aside class="ln-drawer" id="ln-drawer" aria-label="Lore notes" aria-hidden="true">
+    <div class="ln-head"><i class="ti ti-notebook" style="color:var(--accent);"></i> Lore notes<button type="button" onclick="lnToggle(false)" aria-label="Close notes"><i class="ti ti-x"></i></button></div>
+    <div class="ln-body">
+      <div class="ln-help">Something changed while you were writing? Jot it here without leaving the chapter. Your notes wait in your Lorebook until you update the cards. Only you can see them.</div>
+      <div class="ln-chap" id="ln-chap"></div>
+      <textarea class="ln-text" id="ln-text" maxlength="4000" placeholder="e.g. Kaelen cut his hair short. The sword now belongs to Mira."></textarea>
+      <div class="ln-row"><button class="ln-save" id="ln-save" type="button" onclick="lnSave()"><i class="ti ti-check"></i> Save note</button><span class="ln-kbd">Ctrl + Enter</span></div>
+      <div class="ln-list-h">Waiting in your Lorebook <a id="ln-inbox-link" href="#">Open inbox <i class="ti ti-arrow-right"></i></a></div>
+      <div id="ln-list"><div class="ln-empty">Loading…</div></div>
+    </div>
+  </aside>
+  <script>
+  (function(){
+    var LN_NOTES = [];
+    function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function chapterLabel(){
+      if (typeof editingChapterId === 'undefined' || !editingChapterId) return 'This note is for the new chapter you are writing.';
+      var ch = (typeof allChapters !== 'undefined' ? allChapters : []).find(function(c){ return c.id === editingChapterId; });
+      return ch ? 'This note will be filed under Chapter ' + ch.chapter_number + '.' : 'This note will be filed under this chapter.';
+    }
+    function renderList(){
+      var box = document.getElementById('ln-list');
+      var pip = document.getElementById('ln-pip');
+      if (pip) { pip.textContent = LN_NOTES.length; pip.style.display = LN_NOTES.length ? '' : 'none'; }
+      if (!box) return;
+      if (!LN_NOTES.length) { box.innerHTML = '<div class="ln-empty">No notes waiting.</div>'; return; }
+      box.innerHTML = LN_NOTES.map(function(n){
+        var when = n.chapter_number ? 'Chapter ' + n.chapter_number : 'No chapter';
+        return '<div class="ln-note"><span class="ln-meta">' + esc(when) + ' \u00b7 ' + esc(new Date(n.created_at).toLocaleDateString()) + '</span>'
+          + esc(n.body)
+          + '<button type="button" aria-label="Dismiss note" title="Dismiss (you can still find it in the Lorebook)" data-id="' + esc(n.id) + '" onclick="lnDismiss(this.getAttribute(\'data-id\'))"><i class="ti ti-x"></i></button></div>';
+      }).join('');
+    }
+    async function load(){
+      try {
+        var r = await db.from('lore_notes').select('id,body,chapter_number,created_at')
+          .eq('work_id', workId).eq('status', 'open').order('created_at', { ascending:false }).limit(30);
+        LN_NOTES = (r && r.data) || [];
+      } catch(e) { LN_NOTES = []; }
+      renderList();
+    }
+    window.lnInit = function(){
+      var fab = document.getElementById('ln-fab');
+      if (!fab || !workId) return;
+      fab.style.display = 'flex';
+      var link = document.getElementById('ln-inbox-link');
+      if (link) link.href = 'lorebook.html?work=' + encodeURIComponent(workId) + '&view=notes';
+      document.getElementById('ln-text').addEventListener('keydown', function(e){
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); lnSave(); }
+        e.stopPropagation(); // keep editor shortcuts from firing while typing a note
+      });
+      document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape' && document.getElementById('ln-drawer').classList.contains('open')) { lnToggle(false); e.stopPropagation(); }
+      }, true);
+      load();
+    };
+    window.lnToggle = function(force){
+      var d = document.getElementById('ln-drawer'), fab = document.getElementById('ln-fab');
+      var open = typeof force === 'boolean' ? force : !d.classList.contains('open');
+      d.classList.toggle('open', open);
+      d.setAttribute('aria-hidden', open ? 'false' : 'true');
+      fab.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) { document.getElementById('ln-chap').textContent = chapterLabel(); setTimeout(function(){ document.getElementById('ln-text').focus(); }, 60); }
+    };
+    window.lnSave = async function(){
+      var ta = document.getElementById('ln-text'), btn = document.getElementById('ln-save');
+      var body = String(ta.value || '').trim();
+      if (!body) return;
+      btn.disabled = true;
+      try {
+        var sess = await db.auth.getSession();
+        var uid = sess && sess.data && sess.data.session ? sess.data.session.user.id : null;
+        var row = { work_id: workId, author_id: uid, body: body };
+        if (typeof editingChapterId !== 'undefined' && editingChapterId) row.chapter_id = editingChapterId;
+        var r = await db.from('lore_notes').insert(row).select('id,body,chapter_number,created_at').single();
+        if (r.error) throw r.error;
+        LN_NOTES.unshift(r.data);
+        ta.value = '';
+        renderList();
+        showToast('Note saved to your Lorebook', 'ti-notebook');
+      } catch(e) {
+        console.error('[write] chapters.html lore note:', e);
+        showToast("Couldn't save that note \u2014 please try again.", 'ti-alert-triangle');
+      }
+      btn.disabled = false;
+    };
+    window.lnDismiss = async function(id){
+      var r = await db.from('lore_notes').update({ status: 'dismissed' }).eq('id', id);
+      if (r.error) { showToast("Couldn't dismiss that note.", 'ti-alert-triangle'); return; }
+      LN_NOTES = LN_NOTES.filter(function(n){ return n.id !== id; });
+      renderList();
+    };
+  })();
+  </script>
 </body>
 </html>
