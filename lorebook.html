@@ -148,6 +148,20 @@
     .measure{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
     .measure input{width:74px;flex:0 0 auto;}
     .measure span{font-size:11.5px;color:var(--text3);}
+    .notes-how{background:rgba(var(--accent-rgb),0.06);border:1px solid rgba(var(--accent-rgb),0.25);border-radius:11px;padding:12px 16px;margin-bottom:16px;font-size:12.5px;color:var(--text2);line-height:1.6;}
+    .notes-how-h{font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+    .notes-how-h i{color:var(--accent);}
+    .notes-how ol{margin:0;padding-left:20px;}
+    .notes-how b{color:var(--text);}
+    .note-undo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;color:var(--text2);}
+    .note-undo .btn{margin-left:auto;padding:5px 11px;font-size:12px;}
+    .note-sep{font-size:11px;color:var(--text3);margin:0 2px;}
+    .note-acts .btn.on{border-color:var(--accent);color:var(--accent);}
+    .note-acts .btn:disabled{opacity:.45;cursor:not-allowed;}
+    .note-pin{background:rgba(var(--accent-rgb),0.07);border:1px solid rgba(var(--accent-rgb),0.35);border-left:3px solid var(--accent);border-radius:11px;padding:11px 14px;margin:14px 0 4px;}
+    .note-pin-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+    .note-pin-tip{font-size:11.5px;color:var(--text2);margin-top:6px;line-height:1.55;}
+    .note-pin-tip b{color:var(--text);}
     .note-card{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:11px;padding:13px 15px;margin-bottom:10px;}
     .note-card.done{opacity:.6;border-left-color:var(--border);}
     .note-meta{font-size:11px;color:var(--text3);margin-bottom:5px;}
@@ -693,6 +707,7 @@ function openCard(id){
     '<h2 id="sheet-title">' + esc(c.name) + '</h2>'
     + '<div class="sub">' + esc(c.subtitle || deckTitle(c.kind)) + '</div>'
     + '<div class="private"><i class="ti ti-eye-off"></i> Only you can see this card</div>'
+    + pendingNoteBanner()
     + '<div style="font-size:11.5px;color:var(--text3);">' + fill.answered + ' of ' + fill.total
       + ' questions answered</div>'
     + (flags.length
@@ -1226,9 +1241,16 @@ async function saveCard(){
     return;
   }
   for(var i=0;i<CARDS.length;i++) if(CARDS[i].id === c.id) CARDS[i] = res.data;
-  toast('Card saved');
+  var fromNote = PENDING_NOTE;
   closeSheet();
-  render();
+  if(fromNote){
+    var ok = await noteSet(fromNote, 'applied', true);
+    toast(ok ? 'Card saved — note moved to Done' : 'Card saved');
+    if(!ok) render();
+  } else {
+    toast('Card saved');
+    render();
+  }
 }
 
 /* Deleting a card takes relationships and findings with it (ON DELETE
@@ -1267,6 +1289,7 @@ function closeSheet(){
   document.getElementById('sheet-back').classList.remove('open');
   document.body.style.overflow = '';
   EDIT_ID = null;
+  PENDING_NOTE = null;
 }
 document.getElementById('sheet-back').addEventListener('click', function(e){
   if(e.target === this) closeSheet();
@@ -1847,8 +1870,12 @@ async function buyBlockQuills(btn){
 }
 
 /* ── NOTES INBOX ─────────────────────────────────────────────────────
-   Jotted from the chapter editor while writing. A note is a reminder,
-   not a card edit: the author opens the card, changes it, marks it done. */
+   Jotted from the chapter editor while writing. A note never edits a card
+   by itself: the author opens the card, changes the answer, saves — and
+   saving from a note marks that note done automatically. */
+var PENDING_NOTE = null;     // note being worked on in the card sheet
+var NOTE_JUST_DONE = null;   // {id, prev} for the inline Undo bar
+
 function renderNotes(){
   var body = document.getElementById('view-body');
   var open = NOTES.filter(function(n){ return n.status === 'open'; });
@@ -1856,29 +1883,45 @@ function renderNotes(){
   var list = NOTES_SHOW_DONE ? done : open;
   var cardOpts = CARDS.slice().sort(function(a, b){ return String(a.name).localeCompare(String(b.name)); })
     .map(function(c){ return '<option value="' + esc(c.id) + '">' + esc(c.name) + ' \u2014 ' + esc(deckTitle(c.kind)) + '</option>'; }).join('');
+  var justDone = NOTE_JUST_DONE && NOTES.filter(function(n){ return n.id === NOTE_JUST_DONE.id; })[0];
 
   body.innerHTML =
-    '<div class="board-help">Notes you jot in the chapter editor land here. Open the card it is about, '
-    + 'update it, then mark the note done. Notes are free and private \u2014 nobody else sees them.</div>'
+    '<div class="notes-how">'
+    +   '<div class="notes-how-h"><i class="ti ti-info-circle"></i> Notes are reminders \u2014 they do not change your cards on their own</div>'
+    +   '<ol>'
+    +     '<li><b>Pick the card</b> the note is about from the dropdown.</li>'
+    +     '<li><b>Open card</b> and change the answer yourself. The note stays pinned at the top while you edit.</li>'
+    +     '<li>If it changed partway through the story (new hair, lost a sword), use <b>Does it change?</b> under that question and enter the chapter.</li>'
+    +     '<li><b>Save card.</b> The note is marked done for you. Nothing to change? Press <b>Done</b> or <b>Dismiss</b> here instead.</li>'
+    +   '</ol>'
+    + '</div>'
+    + (justDone
+        ? '<div class="note-undo"><i class="ti ti-circle-check" style="color:var(--green);"></i> '
+          + (justDone.status === 'dismissed' ? 'Note dismissed' : 'Note moved to Done')
+          + ' \u2014 \u201c' + esc(String(justDone.body).slice(0, 60)) + (String(justDone.body).length > 60 ? '\u2026' : '') + '\u201d'
+          + '<button class="btn ghost" onclick="noteUndo()"><i class="ti ti-arrow-back-up"></i> Undo</button></div>'
+        : '')
     + '<div class="note-acts" style="margin:0 0 14px;">'
-    +   '<button class="btn' + (NOTES_SHOW_DONE ? ' ghost' : '') + '" onclick="NOTES_SHOW_DONE=false;renderView()">Waiting (' + open.length + ')</button>'
-    +   '<button class="btn' + (NOTES_SHOW_DONE ? '' : ' ghost') + '" onclick="NOTES_SHOW_DONE=true;renderView()">Done (' + done.length + ')</button>'
+    +   '<button class="btn' + (NOTES_SHOW_DONE ? ' ghost' : ' on') + '" onclick="NOTES_SHOW_DONE=false;NOTE_JUST_DONE=null;renderView()">Waiting (' + open.length + ')</button>'
+    +   '<button class="btn' + (NOTES_SHOW_DONE ? ' on' : ' ghost') + '" onclick="NOTES_SHOW_DONE=true;NOTE_JUST_DONE=null;renderView()">Done (' + done.length + ')</button>'
     + '</div>'
     + (list.length ? list.map(function(n){
-        var meta = (n.chapter_number ? 'Chapter ' + n.chapter_number : 'No chapter') + ' \u00b7 '
+        var meta = (n.chapter_number ? 'Chapter ' + n.chapter_number : 'Written before the chapter was first saved') + ' \u00b7 '
           + new Date(n.created_at).toLocaleDateString()
-          + (n.status === 'applied' ? ' \u00b7 applied' : n.status === 'dismissed' ? ' \u00b7 dismissed' : '');
-        return '<div class="note-card' + (n.status === 'open' ? '' : ' done') + '">'
+          + (n.status === 'applied' ? ' \u00b7 done' : n.status === 'dismissed' ? ' \u00b7 dismissed' : '');
+        return '<div class="note-card' + (n.status === 'open' ? '' : ' done') + '" id="note-' + esc(n.id) + '">'
           + '<div class="note-meta">' + esc(meta) + '</div>'
           + '<div class="note-body">' + esc(n.body) + '</div>'
           + '<div class="note-acts">'
           + (n.status === 'open'
               ? (CARDS.length
-                  ? '<select id="nc-' + esc(n.id) + '" aria-label="Card this note is about"><option value="">Which card is this about?</option>' + cardOpts + '</select>'
-                    + '<button class="btn ghost" onclick="noteOpenCard(\'' + esc(n.id) + '\')"><i class="ti ti-cards"></i> Open card</button>'
+                  ? '<select id="nc-' + esc(n.id) + '" aria-label="Pick the card to update" onchange="noteCardPicked(\'' + esc(n.id) + '\')">'
+                    + '<option value="">1. Pick the card to update\u2026</option>' + cardOpts + '</select>'
+                    + '<button class="btn" id="nob-' + esc(n.id) + '" disabled onclick="noteOpenCard(\'' + esc(n.id) + '\')"><i class="ti ti-cards"></i> 2. Open card</button>'
                   : '<button class="btn ghost" onclick="setView(\'decks\')"><i class="ti ti-plus"></i> Make a card first</button>')
-                + '<button class="btn" onclick="noteSet(\'' + esc(n.id) + '\', \'applied\')"><i class="ti ti-check"></i> Done</button>'
-                + '<button class="btn ghost" onclick="noteSet(\'' + esc(n.id) + '\', \'dismissed\')">Dismiss</button>'
+                + '<span class="note-sep">or</span>'
+                + '<button class="btn ghost" title="Already handled, or nothing to change" onclick="noteSet(\'' + esc(n.id) + '\', \'applied\')"><i class="ti ti-check"></i> Done</button>'
+                + '<button class="btn ghost" title="Not needed after all" onclick="noteSet(\'' + esc(n.id) + '\', \'dismissed\')">Dismiss</button>'
               : '<button class="btn ghost" onclick="noteSet(\'' + esc(n.id) + '\', \'open\')"><i class="ti ti-arrow-back-up"></i> Move back to waiting</button>')
           + '</div></div>';
       }).join('')
@@ -1886,17 +1929,41 @@ function renderNotes(){
         + (NOTES_SHOW_DONE ? 'Nothing done yet.' : 'No notes waiting. Use the <b>Lore notes</b> button in the chapter editor to jot one while you write.')
         + '</div>');
 }
+function noteCardPicked(id){
+  var sel = document.getElementById('nc-' + id), b = document.getElementById('nob-' + id);
+  if(b) b.disabled = !(sel && sel.value);
+}
 function noteOpenCard(id){
   var sel = document.getElementById('nc-' + id);
-  if(!sel || !sel.value){ toast('Pick the card this note is about', 'ti-alert-triangle', true); return; }
+  if(!sel || !sel.value){ toast('Pick the card this note is about first', 'ti-alert-triangle', true); return; }
+  PENDING_NOTE = id;
   openCard(sel.value);
 }
-async function noteSet(id, status){
+// Shown pinned at the top of the card sheet while working from a note.
+function pendingNoteBanner(){
+  var n = PENDING_NOTE && NOTES.filter(function(x){ return x.id === PENDING_NOTE; })[0];
+  if(!n) return '';
+  return '<div class="note-pin"><div class="note-pin-h"><i class="ti ti-notebook"></i> Your note'
+    + (n.chapter_number ? ' \u00b7 Chapter ' + n.chapter_number : '') + '</div>'
+    + '<div class="note-body">' + esc(n.body) + '</div>'
+    + '<div class="note-pin-tip">Find the question below and change the answer. If it changed partway through the story, '
+    + 'press <b>Does it change?</b> under it. When you press <b>Save card</b>, this note is marked done.</div></div>';
+}
+async function noteSet(id, status, quiet){
+  var before = NOTES.filter(function(n){ return n.id === id; })[0];
+  var prev = before ? before.status : 'open';
   var res = await db.from('lore_notes').update({ status: status }).eq('id', id).select().maybeSingle();
-  if(res.error || !res.data){ toast(res.error ? res.error.message : 'Could not update that note', 'ti-x', true); return; }
+  if(res.error || !res.data){ toast(res.error ? res.error.message : 'Could not update that note', 'ti-x', true); return false; }
   for(var i=0;i<NOTES.length;i++) if(NOTES[i].id === id) NOTES[i] = res.data;
-  toast(status === 'applied' ? 'Marked done' : status === 'dismissed' ? 'Note dismissed' : 'Moved back to waiting');
+  NOTE_JUST_DONE = (status === 'open') ? null : { id: id, prev: prev };
+  if(!quiet) toast(status === 'applied' ? 'Note moved to Done' : status === 'dismissed' ? 'Note dismissed' : 'Moved back to waiting');
   render();
+  return true;
+}
+function noteUndo(){
+  if(!NOTE_JUST_DONE) return;
+  var j = NOTE_JUST_DONE; NOTE_JUST_DONE = null;
+  noteSet(j.id, j.prev || 'open');
 }
 
 function renderExport(){
