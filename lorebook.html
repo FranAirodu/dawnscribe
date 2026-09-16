@@ -151,6 +151,13 @@
     .tl-row{display:flex;align-items:center;gap:7px;margin-bottom:6px;}
     .tl-lbl{font-size:11px;color:var(--text3);white-space:nowrap;}
     .tl-in{width:70px;flex:0 0 auto;}
+    .f .tl-row input.tl-in,.f .chip-add input.tl-in{width:70px;flex:0 0 auto;padding:6px 8px;}
+    .f input[type=checkbox]{width:auto;flex:0 0 auto;padding:0;margin:0;accent-color:var(--accent);}
+    .f .tl-row .log-v,.f .tl-row .was-v{flex:1;min-width:0;}
+    .chip-when{font-size:10.5px;color:var(--accent);background:rgba(var(--accent-rgb),0.12);border-radius:10px;padding:1px 7px;white-space:nowrap;}
+    .chip-add.timed{flex-wrap:wrap;align-items:center;}
+    .chip-add.timed input.chip-text{flex:1 1 180px;}
+    .chip-tip{font-size:11px;color:var(--text3);margin-top:5px;line-height:1.5;}
     .was-row .was-v{flex:1;}
     .tl-btn,.tl-open{background:none;border:none;color:var(--accent);font-size:11.5px;font-family:'Lato',sans-serif;cursor:pointer;padding:2px 0;display:inline-flex;align-items:center;gap:5px;}
     .tl-open{color:var(--text3);margin-top:6px;}
@@ -904,15 +911,27 @@ function fieldHtml(c, f){
     // One entry at a time, so nobody has to guess whether commas or periods
     // separate things. Each chip is its own answer.
     var items = flist(c, f.field_key);
+    var itemWhen = (raw.items && typeof raw.items === 'object') ? raw.items : {};
+    var enter = 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();addChip(\'' + key + '\');}"';
     input = '<div class="chips" id="chips-' + key + '">'
-      + items.map(function(it, i){ return chipHtml(f.field_key, it, i); }).join('')
+      + items.map(function(it, i){ return chipHtml(f.field_key, it, i, itemWhen[it]); }).join('')
       + '</div>'
-      + '<div class="chip-add">'
-      +   '<input id="' + id + '" placeholder="Type one, then press Enter" '
-      +     'onkeydown="if(event.key===\'Enter\'){event.preventDefault();addChip(\'' + key + '\');}"/>'
-      +   '<button type="button" class="btn ghost" style="padding:6px 12px;font-size:12px;" '
-      +     'onclick="addChip(\'' + key + '\')">Add</button>'
-      + '</div>';
+      + (f.timeline
+          // Each entry can have its own chapter: English from the start,
+          // Elvish learned in chapter 2, a sword lost in chapter 9.
+          ? '<div class="chip-add timed">'
+            + '<input class="chip-text" id="' + id + '" placeholder="Type one" ' + enter + '/>'
+            + '<span class="tl-lbl">from ch.</span><input class="tl-in" id="cfrom-' + key + '" placeholder="#" ' + enter + '/>'
+            + '<label class="tl-chk"><input type="checkbox" id="cpre-' + key + '" onchange="preCh1(\'' + key + '\', \'cfrom-\')"/> Before ch.1</label>'
+            + '<span class="tl-lbl">until ch.</span><input class="tl-in" id="cuntil-' + key + '" placeholder="#" ' + enter + '/>'
+            + '<button type="button" class="btn ghost" style="padding:6px 12px;font-size:12px;" onclick="addChip(\'' + key + '\')">Add</button>'
+            + '</div>'
+            + '<div class="chip-tip">Chapters are optional. Leave them blank if it has always been true. '
+            + 'Learned something new in chapter 2? Add it with <b>from ch. 2</b>. Lost something? Add <b>until</b> the chapter it was lost.</div>'
+          : '<div class="chip-add">'
+            + '<input id="' + id + '" placeholder="Type one, then press Enter" ' + enter + '/>'
+            + '<button type="button" class="btn ghost" style="padding:6px 12px;font-size:12px;" onclick="addChip(\'' + key + '\')">Add</button>'
+            + '</div>');
 
   } else if(f.input_type === 'pairs'){
     // Defaults matter: a pairs field saved without options would otherwise
@@ -960,7 +979,7 @@ function fieldHtml(c, f){
 
   // "Does it change?" — asked on every question where the answer can move.
   // Hidden behind one small button so the question itself stays clean.
-  var tl = f.timeline ? timelineHtml(f, raw) : '';
+  var tl = (f.timeline && f.input_type !== 'list') ? timelineHtml(f, raw) : '';
   var tlCut = tl.indexOf('<div class="tl" id=');
   var tlOpenBtn = tlCut > 0 ? tl.slice(0, tlCut) : '';
   var tlPanel = tlCut >= 0 ? tl.slice(tlCut) : tl;
@@ -997,8 +1016,16 @@ function fieldHtml(c, f){
     + '</div>';
 }
 
-function chipHtml(key, value, i){
-  return '<span class="chip" data-v="' + esc(value) + '">' + esc(value)
+function chipWhen(from, until){
+  var f = from === '0' ? 'before ch.1' : (from ? 'from ch.' + from : '');
+  var u = until ? 'until ch.' + until : '';
+  return [f, u].filter(Boolean).join(' \u00b7 ');
+}
+function chipHtml(key, value, i, when){
+  when = when || {};
+  var label = chipWhen(when.from, when.until);
+  return '<span class="chip" data-v="' + esc(value) + '" data-from="' + esc(when.from || '') + '" data-until="' + esc(when.until || '') + '">' + esc(value)
+    + (label ? '<span class="chip-when">' + esc(label) + '</span>' : '')
     + '<button type="button" onclick="this.parentElement.remove()" aria-label="Remove">'
     + '<i class="ti ti-x"></i></button></span>';
 }
@@ -1008,16 +1035,28 @@ function addChip(key){
   if(!box || !wrap) return;
   var val = String(box.value || '').trim();
   if(!val) return;
+  var when = chipAddWhen(key);
   // Typing "a, b, c" out of habit still works: it becomes three chips rather
   // than one chip with commas in it.
   val.split(',').map(function(x){ return x.trim(); }).filter(Boolean).forEach(function(part){
     var dupe = Array.prototype.some.call(wrap.children, function(el){
       return (el.getAttribute('data-v') || '').toLowerCase() === part.toLowerCase();
     });
-    if(!dupe) wrap.insertAdjacentHTML('beforeend', chipHtml(key, part));
+    if(!dupe) wrap.insertAdjacentHTML('beforeend', chipHtml(key, part, 0, when));
   });
   box.value = '';
+  ['cfrom-', 'cuntil-'].forEach(function(p){ var el = document.getElementById(p + key); if(el){ el.value = ''; el.disabled = false; } });
+  var pre = document.getElementById('cpre-' + key); if(pre) pre.checked = false;
   box.focus();
+}
+
+function chipAddWhen(key){
+  var pre = document.getElementById('cpre-' + key);
+  var fr = document.getElementById('cfrom-' + key), un = document.getElementById('cuntil-' + key);
+  return {
+    from: (pre && pre.checked) ? '0' : (fr ? String(fr.value).replace(/\D/g, '') : ''),
+    until: un ? String(un.value).replace(/\D/g, '') : ''
+  };
 }
 
 function pairRowHtml(key, row, i, labels){
@@ -1118,7 +1157,7 @@ function closeTl(key){
   if(btn) btn.style.display = '';
 }
 function preCh1(key, prefix){
-  var box = document.getElementById((prefix === 'since-' ? 'presince-' : 'pre-') + key);
+  var box = document.getElementById((prefix === 'since-' ? 'presince-' : prefix === 'cfrom-' ? 'cpre-' : 'pre-') + key);
   var inp = document.getElementById(prefix + key);
   if(!box || !inp) return;
   inp.disabled = box.checked;
@@ -1280,17 +1319,28 @@ async function saveCard(){
 
     if(f.input_type === 'list'){
       var wrap = document.getElementById('chips-' + f.field_key);
+      var itemsWhen = {};
       var items = wrap ? Array.prototype.map.call(wrap.children, function(el){
-        return el.getAttribute('data-v') || '';
+        var v = el.getAttribute('data-v') || '';
+        var fr = el.getAttribute('data-from') || '', un = el.getAttribute('data-until') || '';
+        if(v && (fr || un)) itemsWhen[v] = Object.assign(fr ? { from: fr } : {}, un ? { until: un } : {});
+        return v;
       }).filter(Boolean) : [];
       // Anything left in the add box counts too: an author who types a last
       // entry and hits Save should not silently lose it.
       var pending = document.getElementById('fld-' + f.field_key);
       if(pending && String(pending.value).trim()){
+        var pw2 = chipAddWhen(f.field_key);
         String(pending.value).split(',').map(function(x){ return x.trim(); })
-          .filter(Boolean).forEach(function(x){ items.push(x); });
+          .filter(Boolean).forEach(function(x){
+            items.push(x);
+            if(pw2.from || pw2.until) itemsWhen[x] = Object.assign(pw2.from ? { from: pw2.from } : {}, pw2.until ? { until: pw2.until } : {});
+          });
       }
-      if(items.length) entry = { v: items };
+      if(items.length){
+        entry = { v: items };
+        if(Object.keys(itemsWhen).length) entry.items = itemsWhen;
+      }
 
     } else if(f.input_type === 'pairs'){
       var pw = document.getElementById('pairs-' + f.field_key);
