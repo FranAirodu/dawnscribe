@@ -143,6 +143,11 @@
     .chip-add{display:flex;gap:6px;}
     .chip-add input{flex:1;}
     .pair-row{display:flex;gap:6px;margin-bottom:6px;align-items:center;}
+    .pair-row.timed{flex-wrap:wrap;padding-bottom:6px;border-bottom:1px dashed var(--border);}
+    .pair-row.timed .pair-a{flex:1 1 30%;}
+    .pair-row.timed .pair-b{flex:1 1 45%;}
+    .pair-when{display:flex;align-items:center;gap:6px;flex-basis:100%;}
+    .f .pair-when input.tl-in{width:70px;flex:0 0 auto;padding:6px 8px;}
     .pair-row .pair-a{flex:0 0 34%;}
     .pair-row .pair-b{flex:1;}
     .pair-row button,.was-row button{background:none;border:none;color:var(--text3);cursor:pointer;display:flex;padding:4px;}
@@ -939,11 +944,13 @@ function fieldHtml(c, f){
     var labels = (Array.isArray(f.options) && f.options.length >= 2)
       ? f.options : ['Item', 'Detail'];
     var rows = flist(c, f.field_key);
+    var rowsWhen = Array.isArray(raw.rows_when) ? raw.rows_when : [];
     input = '<div id="pairs-' + key + '">'
-      + rows.map(function(r, i){ return pairRowHtml(f.field_key, r, i, labels); }).join('')
+      + rows.map(function(r, i){ return pairRowHtml(f.field_key, r, i, labels, rowsWhen[i]); }).join('')
       + '</div>'
       + '<button type="button" class="btn ghost" style="padding:6px 12px;font-size:12px;margin-top:6px;" '
-      +   'onclick="addPair(\'' + key + '\')"><i class="ti ti-plus"></i> Add ' + esc(labels[0].toLowerCase()) + '</button>';
+      +   'onclick="addPair(\'' + key + '\')"><i class="ti ti-plus"></i> Add ' + esc(labels[0].toLowerCase()) + '</button>'
+      + (f.timeline ? '<div class="chip-tip">Chapters are optional \u2014 leave them blank if it has always been true.</div>' : '');
 
   } else if(f.input_type === 'height' || f.input_type === 'weight'){
     input = measureHtml(f, raw);
@@ -979,7 +986,7 @@ function fieldHtml(c, f){
 
   // "Does it change?" — asked on every question where the answer can move.
   // Hidden behind one small button so the question itself stays clean.
-  var tl = (f.timeline && f.input_type !== 'list') ? timelineHtml(f, raw) : '';
+  var tl = (f.timeline && f.input_type !== 'list' && f.input_type !== 'pairs') ? timelineHtml(f, raw) : '';
   var tlCut = tl.indexOf('<div class="tl" id=');
   var tlOpenBtn = tlCut > 0 ? tl.slice(0, tlCut) : '';
   var tlPanel = tlCut >= 0 ? tl.slice(tlCut) : tl;
@@ -1059,12 +1066,25 @@ function chipAddWhen(key){
   };
 }
 
-function pairRowHtml(key, row, i, labels){
+function pairRowHtml(key, row, i, labels, when){
   var a = Array.isArray(row) ? (row[0] || '') : (row || '');
   var b = Array.isArray(row) ? (row[1] || '') : '';
-  return '<div class="pair-row">'
+  var f = FIELDS_BY_KEY[key];
+  var timed = !!(f && f.timeline);
+  when = when || {};
+  var pre = when.from === '0';
+  return '<div class="pair-row' + (timed ? ' timed' : '') + '">'
     + '<input class="pair-a" value="' + esc(a) + '" placeholder="' + esc(labels[0] || '') + '"/>'
     + '<input class="pair-b" value="' + esc(b) + '" placeholder="' + esc(labels[1] || '') + '"/>'
+    + (timed
+        // Same idea as list chips: each row can have its own chapters.
+        ? '<div class="pair-when">'
+          + '<span class="tl-lbl">from ch.</span><input class="tl-in pair-from" value="' + esc(pre ? '' : (when.from || '')) + '" placeholder="#"' + (pre ? ' disabled' : '') + '/>'
+          + '<label class="tl-chk"><input type="checkbox" class="pair-pre"' + (pre ? ' checked' : '')
+          +   ' onchange="var r=this.closest(\'.pair-row\').querySelector(\'.pair-from\');r.disabled=this.checked;if(this.checked)r.value=\'\';"/> Before ch.1</label>'
+          + '<span class="tl-lbl">until ch.</span><input class="tl-in pair-until" value="' + esc(when.until || '') + '" placeholder="#"/>'
+          + '</div>'
+        : '')
     + '<button type="button" onclick="this.parentElement.remove()" aria-label="Remove">'
     + '<i class="ti ti-x"></i></button></div>';
 }
@@ -1344,11 +1364,26 @@ async function saveCard(){
 
     } else if(f.input_type === 'pairs'){
       var pw = document.getElementById('pairs-' + f.field_key);
-      var rows = pw ? Array.prototype.map.call(pw.children, function(row){
+      var rowsWhen = [], anyWhen = false;
+      var rows = pw ? Array.prototype.filter.call(pw.children, function(row){
         var a = row.querySelector('.pair-a'), b = row.querySelector('.pair-b');
+        return (a && a.value.trim()) || (b && b.value.trim());
+      }).map(function(row){
+        var a = row.querySelector('.pair-a'), b = row.querySelector('.pair-b');
+        var pre = row.querySelector('.pair-pre'), fr = row.querySelector('.pair-from'), un = row.querySelector('.pair-until');
+        var w = {};
+        var frv = (pre && pre.checked) ? '0' : (fr ? fr.value.replace(/\D/g, '') : '');
+        var unv = un ? un.value.replace(/\D/g, '') : '';
+        if(frv) w.from = frv;
+        if(unv) w.until = unv;
+        if(frv || unv) anyWhen = true;
+        rowsWhen.push(w);
         return [a ? a.value.trim() : '', b ? b.value.trim() : ''];
-      }).filter(function(r){ return r[0] || r[1]; }) : [];
-      if(rows.length) entry = { v: rows };
+      }) : [];
+      if(rows.length){
+        entry = { v: rows };
+        if(anyWhen) entry.rows_when = rowsWhen;
+      }
 
     } else if(f.input_type === 'height'){
       var cmv = parseFloat((document.getElementById('hcm-' + f.field_key) || {}).value);
