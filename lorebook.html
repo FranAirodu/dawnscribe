@@ -1214,7 +1214,7 @@ function chInputHtml(attrs, value){
     + ' value="' + esc(chLabel(value)) + '"/>';
 }
 
-var chMenuEl = null, chMenuInput = null;
+var chMenuEl = null, chMenuInput = null, chMenuHover = false;
 function chMenuClose(){
   if(chMenuEl) chMenuEl.style.display = 'none';
   if(chMenuInput) chMenuInput.setAttribute('aria-expanded', 'false');
@@ -1234,8 +1234,12 @@ function chOpenMenu(inp){
     chMenuEl = document.createElement('div');
     chMenuEl.className = 'ch-menu';
     chMenuEl.setAttribute('role', 'listbox');
-    // mousedown must not blur the box, or the click never lands.
-    chMenuEl.addEventListener('mousedown', function(e){ e.preventDefault(); });
+    // Keep focus when an option is clicked, or the click never lands. But
+    // NOT on the scrollbar — blocking mousedown there made a long list
+    // impossible to drag.
+    chMenuEl.addEventListener('mousedown', function(e){
+      if(e.target.closest && e.target.closest('.ch-opt')) e.preventDefault();
+    });
     chMenuEl.addEventListener('click', function(e){
       var opt = e.target.closest ? e.target.closest('.ch-opt') : null;
       if(!opt || !chMenuInput) return;
@@ -1245,6 +1249,8 @@ function chOpenMenu(inp){
       chMenuClose();
       box.focus();
     });
+    chMenuEl.addEventListener('mouseenter', function(){ chMenuHover = true; });
+    chMenuEl.addEventListener('mouseleave', function(){ chMenuHover = false; });
     document.body.appendChild(chMenuEl);
   }
   var typed = String(inp.value || '').trim().toLowerCase();
@@ -1292,15 +1298,25 @@ function chMenuKey(e, inp){
 }
 document.addEventListener('focusout', function(e){
   if(e.target === chMenuInput) setTimeout(function(){
-    if(chMenuInput && document.activeElement !== chMenuInput) chMenuClose();
-  }, 120);
+    if(!chMenuInput) return;
+    if(document.activeElement === chMenuInput) return;
+    // Dragging the menu's scrollbar takes focus off the box; that is not
+    // a reason to close.
+    if(chMenuEl && chMenuEl.contains && chMenuEl.contains(document.activeElement)) return;
+    if(chMenuHover) return;
+    chMenuClose();
+  }, 150);
 });
 document.addEventListener('mousedown', function(e){
   if(!chMenuEl || chMenuEl.style.display === 'none') return;
   if(e.target === chMenuInput || (chMenuEl.contains && chMenuEl.contains(e.target))) return;
   chMenuClose();
 }, true);
-window.addEventListener('scroll', chMenuClose, true);
+// Scrolling the page closes the menu; scrolling INSIDE the menu must not.
+window.addEventListener('scroll', function(e){
+  if(chMenuEl && e.target && chMenuEl.contains && (e.target === chMenuEl || chMenuEl.contains(e.target))) return;
+  chMenuClose();
+}, true);
 window.addEventListener('resize', chMenuClose);
 
 function timelineHtml(f, raw){
