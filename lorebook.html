@@ -168,6 +168,8 @@
     .tl-row{display:flex;align-items:center;gap:7px;margin-bottom:6px;}
     .tl-lbl{font-size:11px;color:var(--text3);white-space:nowrap;}
     .tl-in{width:70px;flex:0 0 auto;}
+    .ch-in{width:150px;flex:0 0 auto;}
+    .f .tl-row input.ch-in,.f .chip-add input.ch-in,.f .pair-when input.ch-in,.f .measure input.ch-in{width:150px;flex:0 0 auto;padding:6px 8px;}
     .f .tl-row input.tl-in,.f .chip-add input.tl-in{width:70px;flex:0 0 auto;padding:6px 8px;}
     .f input[type=checkbox]{width:auto;flex:0 0 auto;padding:0;margin:0;accent-color:var(--accent);}
     .f .tl-row .log-v,.f .tl-row .was-v{flex:1;min-width:0;}
@@ -831,6 +833,19 @@ var SUBTITLE_HELP = {
 /* ── CARD SHEET ────────────────────────────────────────────────────── */
 var EDIT_ID = null;
 
+var SHEET_SNAPSHOT = '';
+function sheetFingerprint(){
+  var sheet = document.getElementById('sheet');
+  if(!sheet) return '';
+  return Array.prototype.map.call(sheet.querySelectorAll('input,textarea'), function(el){
+    return el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+  }).join('\u0001')
+    + '\u0002' + Array.prototype.map.call(sheet.querySelectorAll('.chip'), function(el){
+        return [el.getAttribute('data-v'), el.getAttribute('data-from'), el.getAttribute('data-until')].join('~');
+      }).join('\u0001');
+}
+function sheetIsDirty(){ return SHEET_SNAPSHOT !== '' && sheetFingerprint() !== SHEET_SNAPSHOT; }
+
 function openCard(id){
   var c = cardById(id);
   if(!c) return;
@@ -864,6 +879,7 @@ function openCard(id){
           + '<div class="finding-acts"><button class="btn ghost" onclick="closeSheet();setView(\'checks\')">'
           + 'Open checks</button></div></div>'
         : '')
+    + chapterOptionsHtml()
     + '<div class="grp"><div class="grp-h">The card itself</div><div class="fields">'
       + '<div class="f"><label class="q">Name</label>'
         + '<div class="ans"><input id="lb-name" maxlength="120" value="' + esc(c.name) + '"/></div>'
@@ -886,7 +902,7 @@ function openCard(id){
     + (c.kind === 'character' ? relSection(c) : '')
     + '<div class="sheet-actions">'
       + '<button class="btn primary" onclick="saveCard()"><i class="ti ti-check"></i> Save card</button>'
-      + '<button class="btn ghost" onclick="closeSheet()">Close</button>'
+      + '<button class="btn ghost" onclick="closeSheet(true)">Close</button>'
       + '<button class="btn danger" style="margin-left:auto;" onclick="deleteCardAsk()">Delete card</button>'
     + '</div>'
     + '<div id="lb-del"></div>';
@@ -894,6 +910,7 @@ function openCard(id){
   document.getElementById('sheet').innerHTML = html;
   syncReveals();
   document.getElementById('sheet-back').classList.add('open');
+  SHEET_SNAPSHOT = sheetFingerprint();
   document.body.style.overflow = 'hidden';
 }
 
@@ -942,13 +959,17 @@ function fieldHtml(c, f){
           // Elvish learned in chapter 2, a sword lost in chapter 9.
           ? '<div class="chip-add timed">'
             + '<input class="chip-text" id="' + id + '" placeholder="Type one" ' + enter + '/>'
-            + '<span class="tl-lbl">from ch.</span><input class="tl-in" id="cfrom-' + key + '" placeholder="#" ' + enter + '/>'
+            + '<span class="tl-lbl">from ch.</span>' + chInputHtml('id="cfrom-' + key + '" ' + enter, '')
             + '<label class="tl-chk"><input type="checkbox" id="cpre-' + key + '" onchange="preCh1(\'' + key + '\', \'cfrom-\')"/> Before ch.1</label>'
-            + '<span class="tl-lbl">until ch.</span><input class="tl-in" id="cuntil-' + key + '" placeholder="#" ' + enter + '/>'
+            + '<span class="tl-lbl">until ch.</span>' + chInputHtml('id="cuntil-' + key + '" ' + enter, '')
+            + '<label class="tl-chk"><input type="checkbox" id="cend-' + key + '"'
+            +   ' onchange="var u=document.getElementById(\'cuntil-' + key + '\');u.disabled=this.checked;if(this.checked)u.value=\'\';"/>'
+            +   ' Until the end of the story</label>'
             + '<button type="button" class="btn ghost" style="padding:6px 12px;font-size:12px;" onclick="addChip(\'' + key + '\')">Add</button>'
             + '</div>'
             + '<div class="chip-tip">Chapters are optional. Leave them blank if it has always been true. '
-            + 'Learned something new in chapter 2? Add it with <b>from ch. 2</b>. Lost something? Add <b>until</b> the chapter it was lost.</div>'
+            + 'Learned something new in chapter 2? Add it with <b>from ch. 2</b>. Lost something? Add <b>until</b> the chapter it was lost, '
+            + 'or tick <b>Until the end of the story</b> if it sticks for good. Pick a chapter from the list, or type its number or title.</div>'
           : '<div class="chip-add">'
             + '<input id="' + id + '" placeholder="Type one, then press Enter" ' + enter + '/>'
             + '<button type="button" class="btn ghost" style="padding:6px 12px;font-size:12px;" onclick="addChip(\'' + key + '\')">Add</button>'
@@ -974,7 +995,7 @@ function fieldHtml(c, f){
   } else if(f.input_type === 'chapter' && f.before_ch1){
     var pre = (v === BEFORE_CH1);
     input = '<div class="measure">'
-      + '<input id="' + id + '" value="' + esc(pre ? '' : v) + '" placeholder="#"' + (pre ? ' disabled' : '') + '/>'
+      + chInputHtml('id="' + id + '"' + (pre ? ' disabled' : ''), pre ? '' : v)
       + '<label class="tl-chk"><input type="checkbox" id="pre-' + key + '"' + (pre ? ' checked' : '')
       +   ' onchange="preCh1(\'' + key + '\', \'fld-\')"/> ' + esc(f.label.replace(/ in chapter$/i, '')) + ' before chapter 1</label>'
       + '</div>';
@@ -1046,7 +1067,7 @@ function fieldHtml(c, f){
 
 function chipWhen(from, until){
   var f = from === '0' ? 'before ch.1' : (from ? 'from ch.' + from : '');
-  var u = until ? 'until ch.' + until : '';
+  var u = until === 'end' ? 'to the end' : (until ? 'until ch.' + until : '');
   return [f, u].filter(Boolean).join(' \u00b7 ');
 }
 function chipHtml(key, value, i, when){
@@ -1074,16 +1095,18 @@ function addChip(key){
   });
   box.value = '';
   ['cfrom-', 'cuntil-'].forEach(function(p){ var el = document.getElementById(p + key); if(el){ el.value = ''; el.disabled = false; } });
-  var pre = document.getElementById('cpre-' + key); if(pre) pre.checked = false;
+  ['cpre-', 'cend-'].forEach(function(p){ var el = document.getElementById(p + key); if(el) el.checked = false; });
   box.focus();
 }
 
 function chipAddWhen(key){
   var pre = document.getElementById('cpre-' + key);
   var fr = document.getElementById('cfrom-' + key), un = document.getElementById('cuntil-' + key);
+  var end = document.getElementById('cend-' + key);
   return {
-    from: (pre && pre.checked) ? '0' : (fr ? String(fr.value).replace(/\D/g, '') : ''),
-    until: un ? String(un.value).replace(/\D/g, '') : ''
+    from: (pre && pre.checked) ? '0' : (fr ? chNum(fr.value) : ''),
+    // 'end' means "and it never stops" — kept as a word so the chip can say so.
+    until: (end && end.checked) ? 'end' : (un ? chNum(un.value) : '')
   };
 }
 
@@ -1100,10 +1123,15 @@ function pairRowHtml(key, row, i, labels, when){
     + (timed
         // Same idea as list chips: each row can have its own chapters.
         ? '<div class="pair-when">'
-          + '<span class="tl-lbl">from ch.</span><input class="tl-in pair-from" value="' + esc(pre ? '' : (when.from || '')) + '" placeholder="#"' + (pre ? ' disabled' : '') + '/>'
+          + '<span class="tl-lbl">from ch.</span>' + chInputHtml('class="ch-in pair-from"' + (pre ? ' disabled' : ''), pre ? '' : (when.from || ''))
           + '<label class="tl-chk"><input type="checkbox" class="pair-pre"' + (pre ? ' checked' : '')
           +   ' onchange="var r=this.closest(\'.pair-row\').querySelector(\'.pair-from\');r.disabled=this.checked;if(this.checked)r.value=\'\';"/> Before ch.1</label>'
-          + '<span class="tl-lbl">until ch.</span><input class="tl-in pair-until" value="' + esc(when.until || '') + '" placeholder="#"/>'
+          + '<span class="tl-lbl">until ch.</span>'
+          + (when.until === 'end'
+              ? '<input class="ch-in pair-until" value="end" disabled/>'
+              : chInputHtml('class="ch-in pair-until"', when.until || ''))
+          + '<label class="tl-chk"><input type="checkbox" class="pair-end"' + (when.until === 'end' ? ' checked' : '')
+          +   ' onchange="var u=this.closest(\'.pair-row\').querySelector(\'.pair-until\');u.disabled=this.checked;if(this.checked)u.value=\'\';"/> To the end</label>'
           + '</div>'
         : '')
     + '<button type="button" onclick="this.parentElement.remove()" aria-label="Remove">'
@@ -1118,6 +1146,49 @@ function addPair(key){
 
 var BEFORE_CH1 = 'Before chapter 1';
 
+/* Chapter boxes are a pick-or-type list: the dropdown shows every chapter as
+   "4 — Venture into the Unknown", and typing either the number or a few words
+   of the title finds it. "chapter four" still resolves, so nothing typed by
+   hand is lost. */
+function chapterOptionsHtml(){
+  return '<datalist id="ds-chapters">'
+    + CHAPTERS.map(function(c){
+        return '<option value="' + esc(c.chapter_number + ' \u2014 ' + (c.title || 'Untitled')) + '"></option>';
+      }).join('')
+    + '</datalist>';
+}
+var CH_WORDS = ['zero','one','two','three','four','five','six','seven','eight','nine','ten',
+  'eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen','twenty'];
+// Returns the chapter number as a plain string, or '' if nothing matches.
+function chNum(v){
+  var t = String(v == null ? '' : v).trim();
+  if(!t) return '';
+  var lead = t.match(/^\s*(?:ch(?:apter)?\.?\s*)?(\d+)/i);
+  if(lead) return lead[1];
+  var low = t.toLowerCase();
+  var word = low.match(/^\s*(?:ch(?:apter)?\.?\s*)?([a-z]+)\s*$/);
+  if(word){
+    var wi = CH_WORDS.indexOf(word[1]);
+    if(wi >= 0) return String(wi);
+  }
+  var hit = CHAPTERS.filter(function(c){
+    return c.title && low.length > 2 && String(c.title).toLowerCase().indexOf(low) >= 0;
+  })[0];
+  if(hit) return String(hit.chapter_number);
+  var any = t.match(/\d+/);
+  return any ? any[0] : '';
+}
+// What to show in a chapter box for a stored number.
+function chLabel(n){
+  if(n == null || n === '') return '';
+  var hit = CHAPTERS.filter(function(c){ return String(c.chapter_number) === String(n); })[0];
+  return hit ? (n + ' \u2014 ' + (hit.title || 'Untitled')) : String(n);
+}
+function chInputHtml(attrs, value){
+  return '<input class="ch-in" list="ds-chapters" placeholder="# or title" ' + attrs
+    + ' value="' + esc(chLabel(value)) + '"/>';
+}
+
 function timelineHtml(f, raw){
   var key = esc(f.field_key);
   var was = Array.isArray(raw.was) ? raw.was : [];
@@ -1131,7 +1202,7 @@ function timelineHtml(f, raw){
     +   '<div class="tl-row"><span class="tl-q">Does it change? Yes</span>'
     +     '<button type="button" class="tl-no" onclick="closeTl(\'' + key + '\')">No, it never changes</button></div>'
     +   '<div class="tl-row"><span class="tl-lbl">In what chapter?</span>'
-    +     '<input class="tl-in" id="since-' + key + '" value="' + esc(pre || !hasSince ? '' : raw.since) + '" placeholder="#"' + (pre ? ' disabled' : '') + '/>'
+    +     chInputHtml('id="since-' + key + '"' + (pre ? ' disabled' : ''), pre || !hasSince ? '' : raw.since)
     +     '<label class="tl-chk"><input type="checkbox" id="presince-' + key + '"' + (pre ? ' checked' : '')
     +       ' onchange="preCh1(\'' + key + '\', \'since-\')"/> Before chapter 1</label></div>'
     +   '<div class="tl-sub">What was it before?</div>'
@@ -1152,14 +1223,14 @@ function wasRowHtml(key, w){
   return '<div class="tl-row was-row">'
     + '<input class="was-v" value="' + esc(w && w.v != null ? w.v : '') + '" placeholder="what it was"/>'
     + '<span class="tl-lbl">until ch.</span>'
-    + '<input class="tl-in was-until" value="' + esc(w && w.until != null && !pre ? w.until : '') + '" placeholder="#"/>'
+    + chInputHtml('class="ch-in was-until"', w && w.until != null && !pre ? w.until : '')
     + '<button type="button" onclick="this.parentElement.remove()" aria-label="Remove">'
     + '<i class="ti ti-x"></i></button></div>';
 }
 function logRowHtml(e){
   return '<div class="tl-row log-row">'
     + '<span class="tl-lbl">ch.</span>'
-    + '<input class="tl-in log-ch" value="' + esc(e && e.ch != null ? e.ch : '') + '" placeholder="#"/>'
+    + chInputHtml('class="ch-in log-ch"', e && e.ch != null ? e.ch : '')
     + '<input class="log-v" value="' + esc(e && e.v != null ? e.v : '') + '" placeholder="what it is in that chapter"/>'
     + '<button type="button" onclick="this.parentElement.remove()" aria-label="Remove">'
     + '<i class="ti ti-x"></i></button></div>';
@@ -1402,8 +1473,9 @@ async function saveCard(){
         var a = row.querySelector('.pair-a'), b = row.querySelector('.pair-b');
         var pre = row.querySelector('.pair-pre'), fr = row.querySelector('.pair-from'), un = row.querySelector('.pair-until');
         var w = {};
-        var frv = (pre && pre.checked) ? '0' : (fr ? fr.value.replace(/\D/g, '') : '');
-        var unv = un ? un.value.replace(/\D/g, '') : '';
+        var pend = row.querySelector('.pair-end');
+        var frv = (pre && pre.checked) ? '0' : (fr ? chNum(fr.value) : '');
+        var unv = (pend && pend.checked) ? 'end' : (un ? chNum(un.value) : '');
         if(frv) w.from = frv;
         if(unv) w.until = unv;
         if(frv || unv) anyWhen = true;
@@ -1451,18 +1523,18 @@ async function saveCard(){
     if(f.timeline){
       var sinceEl = document.getElementById('since-' + f.field_key);
       var preSince = document.getElementById('presince-' + f.field_key);
-      var since = (preSince && preSince.checked) ? '0' : (sinceEl ? String(sinceEl.value).replace(/\D/g, '') : '');
+      var since = (preSince && preSince.checked) ? '0' : (sinceEl ? chNum(sinceEl.value) : '');
       var logWrap = document.getElementById('logwrap-' + f.field_key);
       var logBox = document.getElementById('log-' + f.field_key);
       var log = (logWrap && logWrap.style.display !== 'none' && logBox) ? Array.prototype.map.call(logBox.children, function(row){
         var chEl = row.querySelector('.log-ch'), vEl = row.querySelector('.log-v');
-        return { ch: chEl ? chEl.value.replace(/\D/g, '') : '', v: vEl ? vEl.value.trim() : '' };
+        return { ch: chEl ? chNum(chEl.value) : '', v: vEl ? vEl.value.trim() : '' };
       }).filter(function(x){ return x.ch !== '' && x.v; })
         .sort(function(a, b){ return Number(a.ch) - Number(b.ch); }) : [];
       var wasWrap = document.getElementById('was-' + f.field_key);
       var was = wasWrap ? Array.prototype.map.call(wasWrap.children, function(row){
         var vEl = row.querySelector('.was-v'), uEl = row.querySelector('.was-until');
-        return { v: vEl ? vEl.value.trim() : '', until: uEl ? uEl.value.replace(/\D/g, '') : '' };
+        return { v: vEl ? vEl.value.trim() : '', until: uEl ? chNum(uEl.value) : '' };
       }).filter(function(x){ return x.v; }) : [];
       // A blank current value with a filled-in past is meaningful, so the
       // entry is created rather than dropped.
@@ -1536,17 +1608,29 @@ async function deleteCard(){
   render();
 }
 
-function closeSheet(){
+// Unsaved answers are easy to lose in a long card, so leaving by the edge or
+// the Escape key asks first. Save and Delete pass no argument and never ask.
+function closeSheet(ask){
+  if(ask && sheetIsDirty() && !confirm('Close this card? Anything you have typed since the last save will be lost.')) return;
   document.getElementById('sheet-back').classList.remove('open');
   document.body.style.overflow = '';
   EDIT_ID = null;
   PENDING_NOTE = null;
+  SHEET_SNAPSHOT = '';
 }
+// Closing by clicking the dark edge must not fire when a drag STARTED inside
+// the card — selecting text and releasing outside the panel used to count as
+// a click on the backdrop and threw away everything unsaved.
+var backDownOnSelf = false;
+document.getElementById('sheet-back').addEventListener('mousedown', function(e){
+  backDownOnSelf = (e.target === this);
+});
 document.getElementById('sheet-back').addEventListener('click', function(e){
-  if(e.target === this) closeSheet();
+  if(e.target === this && backDownOnSelf) closeSheet(true);
+  backDownOnSelf = false;
 });
 document.addEventListener('keydown', function(e){
-  if(e.key === 'Escape') closeSheet();
+  if(e.key === 'Escape') closeSheet(true);
 });
 
 /* A destructive button that is dead for a moment cannot be reached by the
@@ -1736,7 +1820,7 @@ function openRelationFor(aId, bId, existing){
     + '</div></div>'
     + '<div class="sheet-actions">'
       + '<button class="btn primary" onclick="saveRelation()"><i class="ti ti-check"></i> Save</button>'
-      + '<button class="btn ghost" onclick="closeSheet()">Close</button>'
+      + '<button class="btn ghost" onclick="closeSheet(true)">Close</button>'
       + (found ? '<button class="btn danger" style="margin-left:auto;" onclick="deleteRelationAsk()">Remove the tie</button>' : '')
     + '</div>'
     + '<div id="lb-del"></div>';
