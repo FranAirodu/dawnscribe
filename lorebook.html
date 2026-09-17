@@ -1002,6 +1002,7 @@ function fieldHtml(c, f){
 
   return '<div class="f' + (wide ? ' wide' : '') + (skipped ? ' skipped' : '') + (f.reveal_under ? ' child' : '') + '" id="wrap-' + key + '"'
     + (f.reveal_under ? ' data-under="' + esc(f.reveal_under) + '" data-mode="' + esc(f.reveal_mode || 'button') + '"'
+        + (Array.isArray(f.reveal_when) ? ' data-when="' + esc(JSON.stringify(f.reveal_when)) + '"' : '')
         + ' data-has="' + ((raw.v != null && String(raw.v) !== '') || skipped ? '1' : '') + '"' : '')
     + '>'
     + '<label class="q">' + esc(f.label) + (f.allow_skip ? '' : ' <span style="color:var(--red);">*</span>') + '</label>'
@@ -1257,7 +1258,16 @@ function syncReveals(){
     var parent = w.getAttribute('data-under'), mode = w.getAttribute('data-mode');
     var key = w.id.replace(/^wrap-/, '');
     var show;
-    if(mode === 'yes'){
+    if(mode === 'value'){
+      // Shown when the parent answer is one of the listed choices, e.g. the
+      // regression questions when "Does their age ever shift?" is "Both".
+      var pv = document.getElementById('fld-' + parent);
+      var list = [];
+      try { list = JSON.parse(w.getAttribute('data-when') || '[]'); } catch(e) {}
+      var cur = pv ? String(pv.value || '').trim().toLowerCase() : '';
+      show = !!cur && list.some(function(x){ return String(x).toLowerCase() === cur; });
+      if(!show && w.getAttribute('data-has') === '1' && !pv) show = true;
+    } else if(mode === 'yes'){
       var pe = document.getElementById('fld-' + parent);
       show = !!(pe && /^\s*yes\s*$/i.test(pe.value)) || (w.getAttribute('data-has') === '1' && !pe);
     } else if(mode === 'many'){
@@ -1409,7 +1419,10 @@ async function saveCard(){
     // but anything already on file under it is kept rather than wiped.
     var wrapEl = document.getElementById('wrap-' + f.field_key);
     if(f.reveal_under && wrapEl && wrapEl.style.display === 'none' && f.reveal_mode !== 'button'){
-      if(c.data && c.data[f.field_key]) data[f.field_key] = c.data[f.field_key];
+      // "value" follow-ups are dropped when the parent answer rules them out
+      // (age shift set back to "No"), so the beta reader never reads stale
+      // regression details for a character who does not regress.
+      if(f.reveal_mode !== 'value' && c.data && c.data[f.field_key]) data[f.field_key] = c.data[f.field_key];
       return;
     }
 
