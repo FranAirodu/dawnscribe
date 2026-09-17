@@ -962,7 +962,10 @@ function fieldHtml(c, f){
     var enter = 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();chMenuClose();addChip(\'' + key + '\');}"';
     // A list question can offer suggested answers (virtues, vices) while
     // still accepting anything typed.
-    var chipPick = Array.isArray(f.options) && f.options.length ? pickAttrs(f.options) : '';
+    var chipPick = f.chapter_picker
+      ? ' autocomplete="off" role="combobox" aria-expanded="false" data-opts="chapters"'
+        + ' onfocus="chOpenMenu(this)" onclick="chOpenMenu(this)" oninput="chOpenMenu(this)"'
+      : (Array.isArray(f.options) && f.options.length ? pickAttrs(f.options) : '');
     input = '<div class="chips" id="chips-' + key + '">'
       + items.map(function(it, i){ return chipHtml(f.field_key, it, i, itemWhen[it]); }).join('')
       + '</div>'
@@ -983,7 +986,7 @@ function fieldHtml(c, f){
             + 'Learned something new in chapter 2? Add it with <b>from ch. 2</b>. Lost something? Add <b>until</b> the chapter it was lost, '
             + 'or tick <b>Until the end of the story</b> if it sticks for good. Pick a chapter from the list, or type its number or title.</div>'
           : '<div class="chip-add">'
-            + '<input id="' + id + '" placeholder="' + (chipPick ? 'Pick one, or type your own' : 'Type one, then press Enter') + '" ' + chipPick + ' ' + enter + '/>'
+            + '<input id="' + id + '" placeholder="' + (f.chapter_picker ? 'Pick a chapter, or type a number or title' : (chipPick ? 'Pick one, or type your own' : 'Type one, then press Enter')) + '" ' + chipPick + ' ' + enter + '/>'
             + '<button type="button" class="btn ghost" style="padding:6px 12px;font-size:12px;" onclick="addChip(\'' + key + '\')">Add</button>'
             + '</div>');
 
@@ -1004,7 +1007,10 @@ function fieldHtml(c, f){
   } else if(f.input_type === 'height' || f.input_type === 'weight'){
     input = measureHtml(f, raw);
 
-  } else if(f.input_type === 'chapter' && f.before_ch1){
+  } else if(f.input_type === 'chapter' && !f.before_ch1){
+    input = chInputHtml('id="' + id + '"', v);
+
+  } else if(f.input_type === 'chapter'){
     var pre = (v === BEFORE_CH1);
     input = '<div class="measure">'
       + chInputHtml('id="' + id + '"' + (pre ? ' disabled' : ''), pre ? '' : v)
@@ -1081,8 +1087,11 @@ function chipWhen(from, until){
 }
 function chipHtml(key, value, i, when){
   when = when || {};
+  // On a chapter list the chip stores the number but shows "6 — Title".
+  var fdef = FIELDS_BY_KEY[key];
+  var shown = (fdef && fdef.chapter_picker && /^\d+$/.test(String(value))) ? chLabel(value) : value;
   var label = chipWhen(when.from, when.until);
-  return '<span class="chip" data-v="' + esc(value) + '" data-from="' + esc(when.from || '') + '" data-until="' + esc(when.until || '') + '">' + esc(value)
+  return '<span class="chip" data-v="' + esc(value) + '" data-from="' + esc(when.from || '') + '" data-until="' + esc(when.until || '') + '">' + esc(shown)
     + (label ? '<span class="chip-when">' + esc(label) + '</span>' : '')
     + '<button type="button" onclick="this.parentElement.remove()" aria-label="Remove">'
     + '<i class="ti ti-x"></i></button></span>';
@@ -1096,7 +1105,11 @@ function addChip(key){
   var when = chipAddWhen(key);
   // Typing "a, b, c" out of habit still works: it becomes three chips rather
   // than one chip with commas in it.
+  var chapterChips = box.getAttribute('data-opts') === 'chapters';
   val.split(',').map(function(x){ return x.trim(); }).filter(Boolean).forEach(function(part){
+    // On a chapter list the chip keeps the number, so "6 — Venture into the
+    // Unknown" is stored as 6. A range like "1-4" is kept as typed.
+    if(chapterChips) part = chNumStrict(part) || part;
     var dupe = Array.prototype.some.call(wrap.children, function(el){
       return (el.getAttribute('data-v') || '').toLowerCase() === part.toLowerCase();
     });
@@ -1175,6 +1188,17 @@ function chapterOptionsHtml(){
 var CH_WORDS = ['zero','one','two','three','four','five','six','seven','eight','nine','ten',
   'eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen','twenty'];
 // Returns the chapter number as a plain string, or '' if nothing matches.
+// Strict: only a bare number, "ch. 7", or an exact chapter label converts.
+// "1-4" or "9, 12" stays as typed rather than silently becoming "1".
+function chNumStrict(v){
+  var t = String(v == null ? '' : v).trim();
+  if(/^\s*(?:ch(?:apter)?\.?\s*)?\d+\s*$/i.test(t)) return t.match(/\d+/)[0];
+  var low = t.toLowerCase();
+  var exact = CHAPTERS.filter(function(c){ return chLabel(c.chapter_number).toLowerCase() === low; })[0];
+  if(exact) return String(exact.chapter_number);
+  var byTitle = CHAPTERS.filter(function(c){ return c.title && String(c.title).toLowerCase() === low; })[0];
+  return byTitle ? String(byTitle.chapter_number) : '';
+}
 function chNum(v){
   var t = String(v == null ? '' : v).trim();
   if(!t) return '';
