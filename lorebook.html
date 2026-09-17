@@ -1119,8 +1119,14 @@ function pairRowHtml(key, row, i, labels, when){
   when = when || {};
   var pre = when.from === '0';
   return '<div class="pair-row' + (timed ? ' timed' : '') + '">'
-    + '<input class="pair-a" value="' + esc(a) + '" placeholder="' + esc(labels[0] || '') + '"/>'
-    + '<input class="pair-b" value="' + esc(b) + '" placeholder="' + esc(labels[1] || '') + '"/>'
+    // A column that asks for a chapter gets the same pick-or-type list as
+    // every other chapter box on the card.
+    + (/chapter/i.test(labels[0] || '')
+        ? chInputHtml('class="pair-a ch-in" placeholder="' + esc(labels[0] || '') + '"', a)
+        : '<input class="pair-a" value="' + esc(a) + '" placeholder="' + esc(labels[0] || '') + '"/>')
+    + (/chapter/i.test(labels[1] || '')
+        ? chInputHtml('class="pair-b ch-in" placeholder="' + esc(labels[1] || '') + '"', b)
+        : '<input class="pair-b" value="' + esc(b) + '" placeholder="' + esc(labels[1] || '') + '"/>')
     + (timed
         // Same idea as list chips: each row can have its own chapters.
         ? '<div class="pair-when">'
@@ -1186,7 +1192,8 @@ function chLabel(n){
   return hit ? (n + ' \u2014 ' + (hit.title || 'Untitled')) : String(n);
 }
 function chInputHtml(attrs, value){
-  return '<input class="ch-in" list="ds-chapters" placeholder="# or title" ' + attrs
+  return '<input ' + (/class=/.test(attrs) ? '' : 'class="ch-in" ')
+    + 'list="ds-chapters" ' + (/placeholder=/.test(attrs) ? '' : 'placeholder="# or title" ') + attrs
     + ' value="' + esc(chLabel(value)) + '"/>';
 }
 
@@ -1467,6 +1474,8 @@ async function saveCard(){
     } else if(f.input_type === 'pairs'){
       var pw = document.getElementById('pairs-' + f.field_key);
       var rowsWhen = [], anyWhen = false;
+      var plabels = (Array.isArray(f.options) && f.options.length >= 2) ? f.options : ['', ''];
+      var aIsCh = /chapter/i.test(plabels[0] || ''), bIsCh = /chapter/i.test(plabels[1] || '');
       var rows = pw ? Array.prototype.filter.call(pw.children, function(row){
         var a = row.querySelector('.pair-a'), b = row.querySelector('.pair-b');
         return (a && a.value.trim()) || (b && b.value.trim());
@@ -1481,7 +1490,8 @@ async function saveCard(){
         if(unv) w.until = unv;
         if(frv || unv) anyWhen = true;
         rowsWhen.push(w);
-        return [a ? a.value.trim() : '', b ? b.value.trim() : ''];
+        return [a ? (aIsCh ? chNum(a.value) : a.value.trim()) : '',
+                b ? (bIsCh ? chNum(b.value) : b.value.trim()) : ''];
       }) : [];
       if(rows.length){
         entry = { v: rows };
