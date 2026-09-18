@@ -883,16 +883,11 @@ async function newCard(kind){
   if(name === null) return;
   name = name.trim();
   if(!name){ toast('A card needs a name', 'ti-alert-triangle', true); return; }
-  var res = await db.from('lore_cards')
-    .insert({ work_id: workId, author_id: uid, kind: kind, name: name, data: {} })
-    .select().maybeSingle();
-  if(res.error || !res.data){
-    toast(res.error ? res.error.message : 'Could not create the card', 'ti-x', true);
-    return;
-  }
-  CARDS.push(res.data);
+  var made = await findOrMakeCard(name, kind);
+  if(!made.card){ toast(made.error, 'ti-x', true); return; }
+  if(!made.made) toast('You already have a ' + kind + ' card called that \u2014 opening it');
   render();
-  openCard(res.data.id);
+  openCard(made.card.id);
 }
 
 var SUBTITLE_HELP = {
@@ -1801,7 +1796,13 @@ async function saveCard(){
   }).eq('id', c.id).select().maybeSingle();
 
   if(res.error || !res.data){
-    toast(res.error ? res.error.message : 'Could not save', 'ti-x', true);
+    var smsg = res.error ? res.error.message : 'Could not save';
+    // Renaming a card onto another card's name hits the no-duplicates rule.
+    if(/duplicate|unique/i.test(smsg)){
+      smsg = 'You already have a ' + c.kind + ' card with that name \u2014 pick a different one, '
+        + 'or add these answers to that card instead.';
+    }
+    toast(smsg, 'ti-x', true);
     return;
   }
   for(var i=0;i<CARDS.length;i++) if(CARDS[i].id === c.id) CARDS[i] = res.data;
@@ -2481,6 +2482,38 @@ function suggestHtml(f){
 
 // The suggestion is filled into the editor, highlighted, and left for the
 // author to check. Nothing reaches a card until they press Save card.
+// A second finding about the same subject must land on the SAME card, not a
+// second one with the same name.
+function cardByName(name, kind){
+  var n = String(name || '').trim().toLowerCase();
+  if(!n) return null;
+  return CARDS.filter(function(c){
+    return String(c.name || '').trim().toLowerCase() === n && (!kind || c.kind === kind);
+  })[0] || null;
+}
+// Two cards in a work can no longer share a kind and a name (enforced in the
+// database too), so a clash means "use the one already there".
+async function findOrMakeCard(name, kind){
+  var existing = cardByName(name, kind);
+  if(existing) return { card: existing, made: false };
+  var res = await db.from('lore_cards').insert({
+    work_id: workId, author_id: uid, kind: kind, name: String(name).trim()
+  }).select().maybeSingle();
+  if(res.error || !res.data){
+    if(res.error && /duplicate|unique/i.test(res.error.message || '')){
+      var again = await db.from('lore_cards').select('*')
+        .eq('work_id', workId).eq('kind', kind).ilike('name', String(name).trim()).maybeSingle();
+      if(again.data){
+        if(!cardByName(again.data.name, kind)) CARDS.push(again.data);
+        return { card: again.data, made: false };
+      }
+    }
+    return { card: null, error: res.error ? res.error.message : 'Could not make that card' };
+  }
+  CARDS.push(res.data);
+  return { card: res.data, made: true };
+}
+
 var PENDING_FILL = null;
 var FILL_FINDING = null;   // survives openCard, which clears PENDING_FILL
 async function applySuggestion(findingId){
@@ -2490,16 +2523,11 @@ async function applySuggestion(findingId){
   var card = hit.card;
 
   if(!card){
-    var res = await db.from('lore_cards').insert({
-      work_id: workId, author_id: uid, kind: hit.sg.kind, name: hit.sg.name
-    }).select().maybeSingle();
-    if(res.error || !res.data){
-      toast(res.error ? res.error.message : 'Could not make that card', 'ti-x', true);
-      return;
-    }
-    card = res.data;
-    CARDS.push(card);
-    toast('Card made \u2014 check the answers and save');
+    var made = await findOrMakeCard(hit.sg.name, hit.sg.kind);
+    if(!made.card){ toast(made.error, 'ti-x', true); return; }
+    card = made.card;
+    toast(made.made ? 'Card made \u2014 check the answers and save'
+                    : 'Adding to the ' + card.name + ' card you already have');
   }
 
   PENDING_FILL = { fields: hit.sg.fields, finding_id: findingId };
@@ -2618,16 +2646,11 @@ async function makeCardForFinding(findingId){
   var kindWord = String((document.getElementById('fc-kind') || {}).value || 'Character').toLowerCase();
   var kind = ({ character:'character', society:'society', organisation:'organisation',
                 artifact:'artifact', event:'event' })[kindWord] || 'character';
-  var res = await db.from('lore_cards').insert({
-    work_id: workId, author_id: uid, kind: kind, name: name
-  }).select().maybeSingle();
-  if(res.error || !res.data){
-    toast(res.error ? res.error.message : 'Could not make that card', 'ti-x', true);
-    return;
-  }
-  CARDS.push(res.data);
+  var made = await findOrMakeCard(name, kind);
+  if(!made.card){ toast(made.error, 'ti-x', true); return; }
+  if(!made.made) toast('That card already exists \u2014 opening it');
   PENDING_FINDING = findingId;
-  openCard(res.data.id);
+  openCard(made.card.id);
 }
 function pendingFindingBanner(){
   var f = PENDING_FINDING && FINDINGS.filter(function(x){ return x.id === PENDING_FINDING; })[0];
