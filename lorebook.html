@@ -2724,8 +2724,50 @@ function findingToCard(findingId){
 }
 // The finding rides along so it sits at the top of the editor while you work.
 var PENDING_FINDING = null;
-function openFindingOnCard(findingId, cardId){
+async function openFindingOnCard(findingId, cardId){
   PENDING_FINDING = findingId;
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  var hit = f && findingSuggest(f);
+  // Already worked out (by the read, or by an earlier click): fill straight in.
+  if(hit && hit.card && hit.card.id === cardId){
+    PENDING_FILL = { fields: hit.sg.fields, finding_id: findingId };
+    FILL_FINDING = findingId;
+    openCard(cardId);
+    return;
+  }
+  // Otherwise ask the reader which questions this finding answers. Free, and
+  // it never writes: the boxes are filled in for the author to check.
+  toast('Working out what to fill in\u2026', 'ti-wand');
+  try {
+    var sess = await db.auth.getSession();
+    var token = sess.data.session ? sess.data.session.access_token : null;
+    if(token){
+      var resp = await fetch(SUPABASE_URL + '/functions/v1/lorekeeper-suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ finding_id: findingId, card_id: cardId })
+      });
+      var out = await resp.json();
+      if(out && out.ok && out.fields && out.fields.length){
+        PENDING_FILL = { fields: out.fields, finding_id: findingId };
+        FILL_FINDING = findingId;
+        // Keep it in memory too, so reopening the card does not ask again.
+        for(var i=0;i<FINDINGS.length;i++){
+          if(FINDINGS[i].id === findingId){
+            FINDINGS[i].detail = FINDINGS[i].detail || {};
+            FINDINGS[i].detail.raw = FINDINGS[i].detail.raw || {};
+            FINDINGS[i].detail.raw.suggest = { card_id: cardId, fields: out.fields };
+          }
+        }
+      } else if(out && out.ok){
+        toast('Nothing it could fill in by itself \u2014 the finding is pinned at the top', 'ti-info-circle');
+      } else if(out && out.error){
+        toast(out.error, 'ti-info-circle');
+      }
+    }
+  } catch(e) {
+    console.warn('suggest fill:', e);
+  }
   openCard(cardId);
 }
 async function makeCardForFinding(findingId){
