@@ -2473,10 +2473,13 @@ function suggestHtml(f){
         : 'Ready to make a new ' + esc(String(kindWord).toLowerCase().replace(/s$/, '')) + ' card: <b>' + esc(hit.sg.name) + '</b>')
     + '</div>'
     + lines
-    + '<div class="sg-foot">Nothing is saved until you check it and press Save card.</div>'
+    + '<div class="sg-foot">Add it in one tap, or open the card to change the wording first. '
+    + 'Anything you have already answered is left alone.</div>'
     + '<div class="finding-acts">'
-    + '<button class="btn primary" onclick="applySuggestion(\'' + esc(f.id) + '\')"><i class="ti ti-cards"></i> '
-    + (hit.card ? 'Add these facts to ' + esc(hit.card.name) + '\u2019s card' : 'Make the card and add these facts') + '</button>'
+    + '<button class="btn primary" onclick="quickAddSuggestion(\'' + esc(f.id) + '\')"><i class="ti ti-bolt"></i> '
+    + (hit.card ? 'Add to ' + esc(hit.card.name) + '\u2019s card' : 'Make the card and add this') + '</button>'
+    + '<button class="btn ghost" onclick="applySuggestion(\'' + esc(f.id) + '\')">'
+    + '<i class="ti ti-pencil"></i> Edit the card instead</button>'
     + '</div></div>';
 }
 
@@ -2512,6 +2515,84 @@ async function findOrMakeCard(name, kind){
   }
   CARDS.push(res.data);
   return { card: res.data, made: true };
+}
+
+/* The finding usually names its subject, so the card can be worked out
+   without asking. Longest name first, so "Dead God" wins over "God". */
+function cardFromMessage(msg){
+  var low = String(msg || '').toLowerCase();
+  var hits = CARDS.filter(function(c){
+    var n = String(c.name || '').trim().toLowerCase();
+    return n.length > 2 && low.indexOf(n) >= 0;
+  }).sort(function(a, b){ return b.name.length - a.name.length; });
+  return hits[0] || null;
+}
+function findingCard(f){
+  if(!f) return null;
+  var hit = findingSuggest(f);
+  if(hit && hit.card) return hit.card;
+  if(f.card_id && cardById(f.card_id)) return cardById(f.card_id);
+  return cardFromMessage(f.message);
+}
+
+/* One-tap filing: the suggested answers are written straight to the card.
+   Answers already on the card are never touched, and the toast says what
+   landed so a wrong guess is easy to spot and undo by hand. */
+async function quickAddSuggestion(findingId){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  var hit = f && findingSuggest(f);
+  if(!hit) return;
+  var card = hit.card;
+  if(!card){
+    var made = await findOrMakeCard(hit.sg.name, hit.sg.kind);
+    if(!made.card){ toast(made.error, 'ti-x', true); return; }
+    card = made.card;
+  }
+
+  var data = JSON.parse(JSON.stringify(card.data || {}));
+  var added = [], skipped = 0;
+  hit.sg.fields.forEach(function(fl){
+    var def = (FIELDS[card.kind] || []).filter(function(x){ return x.field_key === fl.key; })[0];
+    if(!def) { skipped++; return; }
+    var cur = data[fl.key] || {};
+    var ch = fl.chapter ? String(fl.chapter) : '';
+    if(def.input_type === 'list'){
+      var items = Array.isArray(cur.v) ? cur.v.slice() : (cur.v ? [cur.v] : []);
+      if(items.some(function(x){ return String(x).toLowerCase() === String(fl.value).toLowerCase(); })){ skipped++; return; }
+      items.push(fl.value);
+      var when = cur.items && typeof cur.items === 'object' ? cur.items : {};
+      if(ch) when[fl.value] = { from: ch };
+      data[fl.key] = Object.assign({}, cur, { v: items });
+      if(Object.keys(when).length) data[fl.key].items = when;
+    } else if(def.input_type === 'pairs'){
+      var rows = Array.isArray(cur.v) ? cur.v.slice() : [];
+      if(rows.some(function(r){ return String((r || [])[0] || '').toLowerCase() === String(fl.value).toLowerCase(); })){ skipped++; return; }
+      rows.push([fl.value, '']);
+      data[fl.key] = Object.assign({}, cur, { v: rows });
+    } else {
+      // Never overwrite something the author wrote themselves.
+      if(cur.v != null && String(cur.v).trim() !== ''){ skipped++; return; }
+      data[fl.key] = Object.assign({}, cur, { v: fl.value });
+      if(ch && def.timeline) data[fl.key].since = ch;
+    }
+    added.push(def.label);
+  });
+
+  if(!added.length){
+    toast('Those questions already have answers \u2014 nothing changed', 'ti-info-circle');
+    return;
+  }
+
+  var res = await db.from('lore_cards').update({ data: data }).eq('id', card.id).select().maybeSingle();
+  if(res.error || !res.data){
+    toast(res.error ? res.error.message : 'Could not save that', 'ti-x', true);
+    return;
+  }
+  for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === card.id) CARDS[i] = res.data;
+  try { await respond(findingId, 'resolve', true); } catch(e) {}
+  toast('Added to ' + card.name + ': ' + added.join(', ')
+    + (skipped ? ' (' + skipped + ' already answered)' : ''));
+  render();
 }
 
 var PENDING_FILL = null;
@@ -2602,12 +2683,16 @@ function findingToCard(findingId){
   if(!f) return;
   var hit = findingSuggest(f);
   if(hit) return applySuggestion(findingId);
+  var guess = findingCard(f);
 
   var kinds = [['character','Character'],['society','Society'],['organisation','Organisation'],
                ['artifact','Artifact'],['event','Event']];
   document.getElementById('sheet').innerHTML =
     '<h2 id="sheet-title">Put this on a card</h2>'
     + '<div class="sub">' + esc(f.message) + '</div>'
+    + (guess
+        ? '<div class="board-help">This looks like it belongs to <b>' + esc(guess.name) + '</b>.</div>'
+        : '')
     + (CARDS.length
         ? '<div class="grp"><div class="grp-h">An existing card</div>'
           + CARDS.slice().sort(function(a, b){ return String(a.name).localeCompare(String(b.name)); })
@@ -2683,8 +2768,17 @@ function findingHtml(f){
         ? '<div class="finding-acts"><button class="btn ghost" onclick="respond(\'' + f.id + '\',\'reopen\')">'
           + 'Put it back</button></div>'
         : '<div class="finding-acts">'
-          + '<button class="btn ghost" onclick="findingToCard(\'' + f.id + '\')">'
-          + '<i class="ti ti-cards"></i> Put this on a card</button>'
+          + (findingSuggest(f)
+              ? ''   // the suggestion box below carries its own buttons
+              : (function(){
+                  var c = findingCard(f);
+                  return c
+                    ? '<button class="btn ghost" onclick="openFindingOnCard(\'' + f.id + '\', \'' + c.id + '\')">'
+                      + '<i class="ti ti-cards"></i> Edit ' + esc(c.name) + '\u2019s card</button>'
+                      + '<button class="btn ghost" onclick="findingToCard(\'' + f.id + '\')">Another card\u2026</button>'
+                    : '<button class="btn ghost" onclick="findingToCard(\'' + f.id + '\')">'
+                      + '<i class="ti ti-cards"></i> Put this on a card</button>';
+                })())
           + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'resolve\')">'
           + '<i class="ti ti-check"></i> I changed the chapter</button>'
           + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'ignore_once\')">Skip for now</button>'
