@@ -1912,13 +1912,27 @@ function renderBoard(){
     + '</div>';
   var board = document.getElementById('board');
 
+  // A card saved on top of another (from an old bug, or two cards nudged into
+  // the same spot) is invisible and impossible to grab, so it is stepped
+  // aside before anything is drawn.
+  var placed = [];
+  chars.forEach(function(c, i){
+    var x = (c.pos_x == null) ? 20 + (i % 5) * 170 : c.pos_x;
+    var y = (c.pos_y == null) ? 20 + Math.floor(i / 5) * 130 : c.pos_y;
+    var guard = 0;
+    while(guard++ < 60 && placed.some(function(p){ return Math.abs(p.x - x) < 40 && Math.abs(p.y - y) < 30; })){
+      x += 165; y += 8;
+      if(x > 900){ x = 20; y += 120; }
+    }
+    if(x !== c.pos_x || y !== c.pos_y){ c.pos_x = x; c.pos_y = y; savePos(c.id, x, y); }
+    placed.push({ x: x, y: y });
+  });
+
   chars.forEach(function(c, i){
     var el = document.createElement('div');
     el.className = 'bcard';
     el.dataset.id = c.id;
-    // Cards with no saved position land on a grid rather than on each other.
-    var x = (c.pos_x == null) ? 20 + (i % 5) * 170 : c.pos_x;
-    var y = (c.pos_y == null) ? 20 + Math.floor(i / 5) * 130 : c.pos_y;
+    var x = c.pos_x, y = c.pos_y;
     el.style.left = x + 'px';
     el.style.top  = y + 'px';
     var ties = RELATIONS.filter(function(r){
