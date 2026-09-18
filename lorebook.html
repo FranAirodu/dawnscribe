@@ -368,7 +368,31 @@ var REL_STYLE = {
   unaware:          { c:'#6b7280', d:'2 6' },
   first_impression: { c:'#94a3b8', d:'2 6' }
 };
-function relStyle(k){ return REL_STYLE[k] || { c:'#9b9bc0', d:'' }; }
+function relStyle(k){
+  if(REL_STYLE[k]) return REL_STYLE[k];
+  if(/^custom:/.test(String(k || ''))) return customStyle(k);
+  return { c:'#9b9bc0', d:'' };
+}
+// Any kind the author types becomes its own tie kind, keyed custom:<slug>,
+// with a colour picked from a fixed set so the board still reads clearly.
+var CUSTOM_COLOURS = ['#22d3ee','#a3e635','#fbbf24','#c084fc','#fb7185','#60a5fa','#2dd4bf','#f97316'];
+function relKeyFor(label){
+  var t = String(label || '').trim();
+  if(!t) return 'friends';
+  var hit = REL_GROUPS.filter(function(g){ return g[1].toLowerCase() === t.toLowerCase(); })[0];
+  if(hit) return hit[0];
+  return 'custom:' + t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+}
+function relKindLabel(key, rel){
+  if(REL_LABEL[key]) return REL_LABEL[key];
+  if(rel && rel.data && rel.data.kind_label) return rel.data.kind_label;
+  return String(key || '').replace(/^custom:/, '').replace(/-/g, ' ');
+}
+function customStyle(key){
+  var n = 0;
+  for(var i = 0; i < key.length; i++) n = (n * 31 + key.charCodeAt(i)) % 997;
+  return { c: CUSTOM_COLOURS[n % CUSTOM_COLOURS.length], d: '5 4' };
+}
 
 var REL_LABEL = {};
 REL_GROUPS.forEach(function(g){ REL_LABEL[g[0]] = g[1]; });
@@ -1589,7 +1613,7 @@ function relSection(c){
   mine.forEach(function(r){ (byGroup[r.group_key] = byGroup[r.group_key] || []).push(r); });
 
   var blocks = Object.keys(byGroup).map(function(k){
-    return '<div class="grp"><div class="grp-h">' + esc(REL_LABEL[k] || k) + '</div>'
+    return '<div class="grp"><div class="grp-h">' + esc(relKindLabel(k, byGroup[k][0])) + '</div>'
       + byGroup[k].map(function(r){
           var otherId = r.from_card_id === c.id ? r.to_card_id : r.from_card_id;
           var other = cardById(otherId);
@@ -1947,7 +1971,7 @@ function drawRelLines(){
         + '<path class="rel-line" d="' + d + '" stroke="' + st.c + '"'
         + (st.d ? ' stroke-dasharray="' + st.d + '"' : '') + ' data-rel="' + esc(rel.id) + '"></path>'
         + '<text class="rel-tag" x="' + (mx + nx * off * 0.9) + '" y="' + (my + ny * off * 0.9) + '"'
-        + ' fill="' + st.c + '" text-anchor="middle">' + esc(REL_LABEL[rel.group_key] || rel.group_key) + '</text>';
+        + ' fill="' + st.c + '" text-anchor="middle">' + esc(relKindLabel(rel.group_key, rel)) + '</text>';
     });
   });
   svg.innerHTML = out;
@@ -2045,7 +2069,7 @@ function openPairTies(aId, bId){
         var st = relStyle(r.group_key);
         return '<div class="tie-row" onclick="openRelation(\'' + esc(r.id) + '\')">'
           + '<span class="tie-dot" style="background:' + st.c + ';"></span>'
-          + '<span><span class="tie-what">' + esc(REL_LABEL[r.group_key] || r.group_key) + '</span>'
+          + '<span><span class="tie-what">' + esc(relKindLabel(r.group_key, r)) + '</span>'
           + (r.tie_label ? '<span class="tie-sub"> \u00b7 ' + esc(r.tie_label) + '</span>' : '')
           + '</span><i class="ti ti-chevron-right" style="margin-left:auto;color:var(--text3);"></i></div>';
       }).join('')
@@ -2111,14 +2135,26 @@ function openRelationFor(aId, bId, existing, forceNew){
   // The row's own direction decides which note belongs to which card.
   var aIsFrom = !found || found.from_card_id === aId;
 
-  var groupOpts = REL_GROUPS.map(function(g){
-    var sel = found && found.group_key === g[0] ? ' selected' : '';
-    return '<option value="' + g[0] + '"' + sel + '>' + esc(g[1]) + '</option>';
-  }).join('');
+  var kindItems = REL_GROUPS.map(function(g){ return g[1]; });
+  // Kinds this author has already invented, so they can be reused.
+  RELATIONS.forEach(function(r){
+    var l = relKindLabel(r.group_key, r);
+    if(l && kindItems.indexOf(l) < 0) kindItems.push(l);
+  });
+  var kindValue = found ? relKindLabel(found.group_key, found) : '';
+  var others = relsForPair(aId, bId).filter(function(r){ return !found || r.id !== found.id; });
 
   document.getElementById('sheet').innerHTML =
     '<h2 id="sheet-title">' + esc(a.name) + ' &amp; ' + esc(b.name) + '</h2>'
     + '<div class="sub">' + (found ? 'Edit what is between them' : 'A new relationship') + '</div>'
+    + (others.length
+        ? '<div class="board-help" style="margin:8px 0 0;">Also between them: '
+          + others.map(function(r){
+              return '<a href="#" onclick="openRelation(\'' + esc(r.id) + '\');return false;" style="color:'
+                + relStyle(r.group_key).c + ';font-weight:700;">' + esc(relKindLabel(r.group_key, r)) + '</a>';
+            }).join(', ')
+          + '</div>'
+        : '')
     + '<div class="private"><i class="ti ti-eye-off"></i> Only you can see this</div>'
     + '<div class="grp"><div class="grp-h">Between them</div>'
     + '<div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;line-height:1.6;">'
@@ -2126,8 +2162,12 @@ function openRelationFor(aId, bId, existing, forceNew){
     + 'checks your chapters against them.</div>'
     + '<div class="fields">'
       + '<div class="f"><label class="q">What they are to each other</label>'
-        + '<div class="ans"><select id="rel-group">' + groupOpts + '</select></div>'
-        + '<div class="help"></div><div class="f-foot"></div></div>'
+        + '<div class="ans">'
+        + pickInputHtml('id="rel-group" placeholder="Pick one, or type your own"', kindValue, kindItems)
+        + '</div>'
+        + '<div class="help">Not on the list? Type it \u2014 "step-siblings", "blood oath", "the one who got away". '
+        + 'Your own kinds are remembered and get their own colour on the board.</div>'
+        + '<div class="f-foot"></div></div>'
       + relF('rel-tie', 'How it feels to be in the room with them',
           'One or two words for the mood between them \u2014 easy, strained, unspoken, lethal, all business',
           'text', found ? (found.tie_label || '') : '', null, 'easy, strained, unspoken, lethal')
@@ -2174,6 +2214,9 @@ function openRelationFor(aId, bId, existing, forceNew){
     + '</div></div>'
     + '<div class="sheet-actions">'
       + '<button class="btn primary" onclick="saveRelation()"><i class="ti ti-check"></i> Save</button>'
+      + (relsForPair(aId, bId).length + (found ? 0 : 1) < REL_MAX_PER_PAIR
+          ? '<button class="btn" onclick="saveRelation(true)"><i class="ti ti-plus"></i> Save and add another tie</button>'
+          : '')
       + '<button class="btn ghost" onclick="closeSheet(true)">Close</button>'
       + (found ? '<button class="btn danger" style="margin-left:auto;" onclick="deleteRelationAsk()">Remove the tie</button>' : '')
     + '</div>'
@@ -2184,13 +2227,13 @@ function openRelationFor(aId, bId, existing, forceNew){
   SHEET_SNAPSHOT = sheetFingerprint();   // so closing warns about unsaved edits here too
 }
 
-async function saveRelation(){
+async function saveRelation(andAnother){
   var payload = {
     work_id: workId,
     author_id: uid,
     from_card_id: REL_A,
     to_card_id: REL_B,
-    group_key: document.getElementById('rel-group').value,
+    group_key: relKeyFor(relVal('rel-group')),
     tie_label: document.getElementById('rel-tie').value.trim() || null,
     how_started: document.getElementById('rel-started').value.trim() || null,
     what_now: document.getElementById('rel-now').value.trim() || null,
@@ -2201,6 +2244,7 @@ async function saveRelation(){
           return [chEl ? chNum(chEl.value) : '', vEl ? vEl.value.trim() : ''];
         }).filter(function(r){ return r[0] || r[1]; });
       var d = {
+        kind_label: relVal('rel-group'),
         power: relVal('rel-power'), trust: relVal('rel-trust'), public: relVal('rel-public'),
         unspoken: relVal('rel-unspoken'), owes: relVal('rel-owes'), last: relVal('rel-last'),
         from_ch: chNum(relVal('rel-from-ch')), end_ch: chNum(relVal('rel-end-ch')),
@@ -2252,8 +2296,12 @@ async function saveRelation(){
     RELATIONS.push(res.data);
   }
   toast('Saved');
+  var pairA = REL_A, pairB = REL_B;
   closeSheet();
   render();
+  if(andAnother && relsForPair(pairA, pairB).length < REL_MAX_PER_PAIR){
+    openRelationFor(pairA, pairB, null, true);
+  }
 }
 
 function deleteRelationAsk(){
