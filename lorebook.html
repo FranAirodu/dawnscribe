@@ -239,6 +239,17 @@
     .note-pin-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-bottom:4px;display:flex;align-items:center;gap:6px;}
     .note-pin-tip{font-size:11.5px;color:var(--text2);margin-top:6px;line-height:1.55;}
     .note-pin-tip b{color:var(--text);}
+    .sg{background:rgba(var(--accent-rgb),0.07);border:1px solid rgba(var(--accent-rgb),0.3);border-radius:10px;padding:10px 12px;margin-top:10px;}
+    .sg-h{font-size:12.5px;color:var(--text2);margin-bottom:7px;display:flex;align-items:center;gap:6px;}
+    .sg-h i{color:var(--accent);}
+    .sg-h b{color:var(--text);}
+    .sg-line{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px;padding:3px 0;}
+    .sg-q{color:var(--text3);min-width:150px;}
+    .sg-v{color:var(--text);font-weight:700;}
+    .sg-ch{color:var(--accent);font-size:11px;}
+    .sg-foot{font-size:11px;color:var(--text3);margin:6px 0 8px;}
+    .f.suggested{background:rgba(var(--accent-rgb),0.06);border-radius:10px;padding:8px 10px;margin:-8px -10px;}
+    .sg-tag{font-size:10.5px;color:var(--accent);display:flex;align-items:center;gap:5px;margin-top:5px;}
     .note-card{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:11px;padding:13px 15px;margin-bottom:10px;}
     .note-card.done{opacity:.6;border-left-color:var(--border);}
     .note-meta{font-size:11px;color:var(--text3);margin-bottom:5px;}
@@ -932,6 +943,7 @@ function openCard(id){
     + '<div class="sub">' + esc(c.subtitle || deckTitle(c.kind)) + '</div>'
     + '<div class="private"><i class="ti ti-eye-off"></i> Only you can see this card</div>'
     + pendingNoteBanner()
+    + pendingFindingBanner()
     + '<div style="font-size:11.5px;color:var(--text3);">' + fill.answered + ' of ' + fill.total
       + ' questions answered</div>'
     + (flags.length
@@ -970,6 +982,7 @@ function openCard(id){
 
   document.getElementById('sheet').innerHTML = html;
   syncReveals();
+  applyPendingFill();
   document.getElementById('sheet-back').classList.add('open');
   SHEET_SNAPSHOT = sheetFingerprint();
   document.body.style.overflow = 'hidden';
@@ -1793,7 +1806,14 @@ async function saveCard(){
   }
   for(var i=0;i<CARDS.length;i++) if(CARDS[i].id === c.id) CARDS[i] = res.data;
   var fromNote = PENDING_NOTE;
+  var fromFinding = PENDING_FINDING || (PENDING_FILL && PENDING_FILL.finding_id) || FILL_FINDING;
+  FILL_FINDING = null;
   closeSheet();
+  // Saving the card is the author answering the finding, so it is marked
+  // resolved rather than left sitting in the list.
+  if(fromFinding){
+    try { await respond(fromFinding, 'resolve', true); } catch(e) {}
+  }
   if(fromNote){
     var ok = await noteSet(fromNote, 'applied', true);
     toast(ok ? 'Card saved — note moved to Done' : 'Card saved');
@@ -1845,6 +1865,8 @@ function closeSheet(ask){
   document.body.style.overflow = '';
   EDIT_ID = null;
   PENDING_NOTE = null;
+  PENDING_FINDING = null;
+  PENDING_FILL = null;
   SHEET_SNAPSHOT = '';
 }
 // Closing by clicking the dark edge must not fire when a drag STARTED inside
@@ -2389,7 +2411,9 @@ function renderChecks(){
     + '</div>'
     + '<div class="board-help">'
     + 'Checks compare your chapters against your cards. They run when you publish or save a chapter, '
-    + 'and they are never right about everything \u2014 a flag is as often a deliberate choice as a mistake.'
+    + 'and they are never right about everything \u2014 a flag is as often a deliberate choice as a mistake. '
+    + '<b>Put this on a card</b> is the only button that writes anything; the rest just decide whether '
+    + 'you see the finding again.'
     + '</div>';
 
   // Lorekeeper is not a lock on this page: the rule-based checks are part of
@@ -2423,6 +2447,197 @@ function renderChecks(){
         : '');
 }
 
+function findingSuggest(f){
+  var sg = f && f.detail && f.detail.raw ? f.detail.raw.suggest : null;
+  if(!sg || !Array.isArray(sg.fields) || !sg.fields.length) return null;
+  var card = sg.card_id ? cardById(sg.card_id) : (f.card_id ? cardById(f.card_id) : null);
+  if(!card && !(sg.name && sg.kind)) return null;
+  return { sg: sg, card: card };
+}
+function suggestHtml(f){
+  var hit = findingSuggest(f);
+  if(!hit) return '';
+  var kindWord = hit.card ? deckTitle(hit.card.kind) : deckTitle(hit.sg.kind);
+  var lines = hit.sg.fields.map(function(fl){
+    var def = FIELDS_BY_KEY[fl.key];
+    return '<div class="sg-line"><span class="sg-q">' + esc(def ? def.label : fl.key) + '</span>'
+      + '<span class="sg-v">' + esc(fl.value) + '</span>'
+      + (fl.chapter ? '<span class="sg-ch">from ch.' + esc(fl.chapter) + '</span>' : '')
+      + '</div>';
+  }).join('');
+  return '<div class="sg">'
+    + '<div class="sg-h"><i class="ti ti-wand"></i> '
+    + (hit.card
+        ? 'Ready to add to <b>' + esc(hit.card.name) + '</b>'
+        : 'Ready to make a new ' + esc(String(kindWord).toLowerCase().replace(/s$/, '')) + ' card: <b>' + esc(hit.sg.name) + '</b>')
+    + '</div>'
+    + lines
+    + '<div class="sg-foot">Nothing is saved until you check it and press Save card.</div>'
+    + '<div class="finding-acts">'
+    + '<button class="btn primary" onclick="applySuggestion(\'' + esc(f.id) + '\')"><i class="ti ti-cards"></i> '
+    + (hit.card ? 'Add these facts to ' + esc(hit.card.name) + '\u2019s card' : 'Make the card and add these facts') + '</button>'
+    + '</div></div>';
+}
+
+// The suggestion is filled into the editor, highlighted, and left for the
+// author to check. Nothing reaches a card until they press Save card.
+var PENDING_FILL = null;
+var FILL_FINDING = null;   // survives openCard, which clears PENDING_FILL
+async function applySuggestion(findingId){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  var hit = f && findingSuggest(f);
+  if(!hit) return;
+  var card = hit.card;
+
+  if(!card){
+    var res = await db.from('lore_cards').insert({
+      work_id: workId, author_id: uid, kind: hit.sg.kind, name: hit.sg.name
+    }).select().maybeSingle();
+    if(res.error || !res.data){
+      toast(res.error ? res.error.message : 'Could not make that card', 'ti-x', true);
+      return;
+    }
+    card = res.data;
+    CARDS.push(card);
+    toast('Card made \u2014 check the answers and save');
+  }
+
+  PENDING_FILL = { fields: hit.sg.fields, finding_id: findingId };
+  FILL_FINDING = findingId;
+  PENDING_FINDING = findingId;
+  openCard(card.id);
+}
+// Applied right after the sheet is built, so it lands in the real controls.
+function applyPendingFill(){
+  if(!PENDING_FILL) return;
+  var filled = 0;
+  PENDING_FILL.fields.forEach(function(fl){
+    var def = FIELDS_BY_KEY[fl.key];
+    var wrap = document.getElementById('wrap-' + fl.key);
+    if(!def || !wrap) return;
+    if(def.input_type === 'list'){
+      var box = document.getElementById('fld-' + fl.key);
+      var chips = document.getElementById('chips-' + fl.key);
+      if(!box || !chips) return;
+      var dupe = Array.prototype.some.call(chips.children, function(el){
+        return (el.getAttribute('data-v') || '').toLowerCase() === String(fl.value).toLowerCase();
+      });
+      if(!dupe){
+        var from = document.getElementById('cfrom-' + fl.key);
+        if(from && fl.chapter) from.value = chLabel(fl.chapter);
+        box.value = fl.value;
+        addChip(fl.key);
+      }
+    } else if(def.input_type === 'pairs'){
+      var pw = document.getElementById('pairs-' + fl.key);
+      if(!pw) return;
+      addPair(fl.key);
+      var row = pw.lastElementChild;
+      var a = row && row.querySelector('.pair-a');
+      if(a) a.value = fl.value;
+      var fr = row && row.querySelector('.pair-from');
+      if(fr && fl.chapter) fr.value = chLabel(fl.chapter);
+    } else {
+      var el = document.getElementById('fld-' + fl.key);
+      if(!el || String(el.value).trim() !== '') return;   // never overwrite an answer
+      el.value = fl.value;
+      if(fl.chapter && def.timeline){
+        openTl(fl.key);
+        var since = document.getElementById('since-' + fl.key);
+        if(since) since.value = chLabel(fl.chapter);
+      }
+    }
+    wrap.classList.add('suggested');
+    filled++;
+    if(!wrap.querySelector('.sg-tag')){
+      var tag = document.createElement('div');
+      tag.className = 'sg-tag';
+      tag.innerHTML = '<i class="ti ti-wand"></i> Filled in from Chapter '
+        + (fl.chapter || '') + ' \u2014 check it before saving';
+      wrap.appendChild(tag);
+    }
+  });
+  if(filled){
+    var first = document.querySelector('#sheet .f.suggested');
+    if(first) first.scrollIntoView({ block: 'center' });
+  } else {
+    toast('Those questions already have answers \u2014 nothing was changed');
+  }
+  syncReveals();
+  PENDING_FILL = null;
+}
+
+/* Any finding can be sent to a card by hand: pick the card, or make one, and
+   the finding is pinned at the top of the editor while you fill it in. */
+function findingToCard(findingId){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  if(!f) return;
+  var hit = findingSuggest(f);
+  if(hit) return applySuggestion(findingId);
+
+  var kinds = [['character','Character'],['society','Society'],['organisation','Organisation'],
+               ['artifact','Artifact'],['event','Event']];
+  document.getElementById('sheet').innerHTML =
+    '<h2 id="sheet-title">Put this on a card</h2>'
+    + '<div class="sub">' + esc(f.message) + '</div>'
+    + (CARDS.length
+        ? '<div class="grp"><div class="grp-h">An existing card</div>'
+          + CARDS.slice().sort(function(a, b){ return String(a.name).localeCompare(String(b.name)); })
+              .map(function(c){
+                return '<div class="tie-row" onclick="openFindingOnCard(\'' + esc(findingId) + '\', \'' + esc(c.id) + '\')">'
+                  + '<span class="tie-what">' + esc(c.name) + '</span>'
+                  + '<span class="tie-sub"> \u00b7 ' + esc(deckTitle(c.kind)) + '</span>'
+                  + '<i class="ti ti-chevron-right" style="margin-left:auto;color:var(--text3);"></i></div>';
+              }).join('')
+          + '</div>'
+        : '')
+    + '<div class="grp"><div class="grp-h">Or make a new card</div>'
+    + '<div class="fields"><div class="f"><label class="q">Name</label>'
+    + '<div class="ans"><input id="fc-name" maxlength="120" placeholder="Luna"/></div>'
+    + '<div class="help"></div><div class="f-foot"></div></div>'
+    + '<div class="f"><label class="q">What kind of card</label>'
+    + '<div class="ans">' + pickInputHtml('id="fc-kind" placeholder="Pick one"', 'Character',
+        kinds.map(function(k){ return k[1]; })) + '</div>'
+    + '<div class="help"></div><div class="f-foot"></div></div></div>'
+    + '<div class="finding-acts"><button class="btn primary" onclick="makeCardForFinding(\'' + esc(findingId) + '\')">'
+    + '<i class="ti ti-plus"></i> Make the card and open it</button></div></div>'
+    + '<div class="sheet-actions"><button class="btn ghost" onclick="closeSheet()">Close</button></div>';
+  document.getElementById('sheet-back').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+// The finding rides along so it sits at the top of the editor while you work.
+var PENDING_FINDING = null;
+function openFindingOnCard(findingId, cardId){
+  PENDING_FINDING = findingId;
+  openCard(cardId);
+}
+async function makeCardForFinding(findingId){
+  var name = (document.getElementById('fc-name') || {}).value;
+  name = String(name || '').trim();
+  if(!name){ toast('Give the card a name first', 'ti-alert-triangle', true); return; }
+  var kindWord = String((document.getElementById('fc-kind') || {}).value || 'Character').toLowerCase();
+  var kind = ({ character:'character', society:'society', organisation:'organisation',
+                artifact:'artifact', event:'event' })[kindWord] || 'character';
+  var res = await db.from('lore_cards').insert({
+    work_id: workId, author_id: uid, kind: kind, name: name
+  }).select().maybeSingle();
+  if(res.error || !res.data){
+    toast(res.error ? res.error.message : 'Could not make that card', 'ti-x', true);
+    return;
+  }
+  CARDS.push(res.data);
+  PENDING_FINDING = findingId;
+  openCard(res.data.id);
+}
+function pendingFindingBanner(){
+  var f = PENDING_FINDING && FINDINGS.filter(function(x){ return x.id === PENDING_FINDING; })[0];
+  if(!f) return '';
+  return '<div class="note-pin"><div class="note-pin-h"><i class="ti ti-eye"></i> What the reader noticed</div>'
+    + '<div class="note-body">' + esc(f.message) + '</div>'
+    + '<div class="note-pin-tip">Fill in the questions below that this answers, then press '
+    + '<b>Save card</b>. The finding is marked as handled for you.</div></div>';
+}
+
 function findingHtml(f){
   var card = f.card_id ? cardById(f.card_id) : null;
   var answered = f.status !== 'open';
@@ -2445,11 +2660,16 @@ function findingHtml(f){
         ? '<div class="finding-acts"><button class="btn ghost" onclick="respond(\'' + f.id + '\',\'reopen\')">'
           + 'Put it back</button></div>'
         : '<div class="finding-acts">'
-          + '<button class="btn" onclick="respond(\'' + f.id + '\',\'resolve\')"><i class="ti ti-check"></i> Fixed it</button>'
-          + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'ignore_once\')">Ignore once</button>'
-          + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'accept\')">That is the story now</button>'
+          + '<button class="btn ghost" onclick="findingToCard(\'' + f.id + '\')">'
+          + '<i class="ti ti-cards"></i> Put this on a card</button>'
+          + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'resolve\')">'
+          + '<i class="ti ti-check"></i> I changed the chapter</button>'
+          + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'ignore_once\')">Skip for now</button>'
+          + '<button class="btn ghost" title="Nothing is written to a card \u2014 this only stops the reader raising it again" '
+          + 'onclick="respond(\'' + f.id + '\',\'accept\')">Leave it \u2014 stop asking</button>'
           + '<button class="btn danger" onclick="dismissAsk(\'' + f.id + '\')">The check is wrong</button>'
           + '</div>')
+    + (answered ? '' : suggestHtml(f))
     + '<div id="cnf-' + f.id + '"></div>'
     + '</div>';
 }
@@ -2892,7 +3112,7 @@ async function runChecks(btn){
   }
 }
 
-async function respond(id, action){
+async function respond(id, action, quiet){
   var res = await db.rpc('lore_finding_respond', { p_finding_id: id, p_action: action });
   if(res.error || !res.data || res.data.ok !== true){
     toast((res.data && res.data.error) || (res.error && res.error.message) || 'Could not do that', 'ti-x', true);
@@ -2901,13 +3121,15 @@ async function respond(id, action){
   for(var i=0;i<FINDINGS.length;i++){
     if(FINDINGS[i].id === id) FINDINGS[i].status = res.data.status;
   }
-  toast({
-    open: 'Back in the queue',
-    resolved: 'Marked fixed',
-    ignored_once: 'Ignored here only',
-    accepted: 'The card will not argue about it again',
-    dismissed: 'Check switched off'
-  }[res.data.status] || 'Done');
+  if(!quiet){
+    toast({
+      open: 'Back in the queue',
+      resolved: 'Marked fixed',
+      ignored_once: 'Ignored here only',
+      accepted: 'Left as is \u2014 it will not be raised again',
+      dismissed: 'Check switched off'
+    }[res.data.status] || 'Done');
+  }
   render();
 }
 </script>
