@@ -101,6 +101,21 @@
     .board .bcard{position:absolute;width:150px;background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:grab;user-select:none;box-shadow:0 6px 16px rgba(0,0,0,0.35);}
     .board .bcard.dragging{cursor:grabbing;z-index:20;border-color:var(--accent);}
     .board .bcard.drop-target{border-color:var(--gold);box-shadow:0 0 0 2px rgba(240,192,64,0.35);}
+    .board-lines{position:absolute;left:0;top:0;pointer-events:none;overflow:visible;}
+    .board-lines path{pointer-events:stroke;}
+    .rel-line{fill:none;stroke-width:2.5;opacity:.85;}
+    .rel-hit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer;}
+    .rel-hit:hover + .rel-line{stroke-width:4;opacity:1;}
+    .rel-tag{font-family:'Lato',sans-serif;font-size:10.5px;opacity:.9;paint-order:stroke;stroke:var(--bg2);stroke-width:3px;}
+    .board .bcard{z-index:2;}
+    .board-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;font-size:11.5px;color:var(--text2);}
+    .legend-item{display:inline-flex;align-items:center;gap:6px;}
+    .legend-line{width:20px;height:3px;border-radius:2px;display:inline-block;}
+    .tie-row{display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin-bottom:8px;cursor:pointer;}
+    .tie-row:hover{border-color:var(--accent);}
+    .tie-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;}
+    .tie-row .tie-what{font-size:13px;}
+    .tie-row .tie-sub{font-size:11px;color:var(--text3);}
     .bcard-name{font-family:'Cinzel',serif;font-size:13.5px;}
     .bcard-sub{font-size:11px;color:var(--text3);margin-top:2px;}
     .bcard-ties{font-size:10.5px;color:var(--accent);margin-top:7px;}
@@ -338,6 +353,23 @@ var REL_GROUPS = [
   ['past_loves','Past loves'], ['debts','Debts'], ['wronged','People they have wronged'],
   ['unaware','Does not know they exist'], ['first_impression','First impressions']
 ];
+// Every kind of tie gets its own colour and line style on the board.
+var REL_STYLE = {
+  family:           { c:'#f0c040', d:'' },
+  friends:          { c:'#34d399', d:'' },
+  allies:           { c:'#38bdf8', d:'' },
+  enemies:          { c:'#f87171', d:'' },
+  rivals:           { c:'#fb923c', d:'7 5' },
+  mentors:          { c:'#a78bfa', d:'' },
+  loves:            { c:'#f472b6', d:'' },
+  past_loves:       { c:'#f472b6', d:'7 5' },
+  debts:            { c:'#facc15', d:'2 5' },
+  wronged:          { c:'#e879f9', d:'7 5' },
+  unaware:          { c:'#6b7280', d:'2 6' },
+  first_impression: { c:'#94a3b8', d:'2 6' }
+};
+function relStyle(k){ return REL_STYLE[k] || { c:'#9b9bc0', d:'' }; }
+
 var REL_LABEL = {};
 REL_GROUPS.forEach(function(g){ REL_LABEL[g[0]] = g[1]; });
 
@@ -1839,7 +1871,17 @@ function renderBoard(){
   body.innerHTML =
     '<div class="board-help">Drag a card onto another to write what is between them. '
     + 'Positions are saved, so a family left of a rival stays that way.</div>'
-    + '<div class="board" id="board"></div>';
+    + '<div class="board" id="board">'
+    +   '<svg class="board-lines" id="board-lines"></svg>'
+    + '</div>'
+    + '<div class="board-legend">'
+    +   REL_GROUPS.map(function(g){
+          var st = relStyle(g[0]);
+          return '<span class="legend-item"><span class="legend-line" style="background:' + st.c + ';'
+            + (st.d ? 'background-image:repeating-linear-gradient(90deg,' + st.c + ' 0 6px,transparent 6px 11px);background-color:transparent;' : '')
+            + '"></span>' + esc(g[1]) + '</span>';
+        }).join('')
+    + '</div>';
   var board = document.getElementById('board');
 
   chars.forEach(function(c, i){
@@ -1860,6 +1902,59 @@ function renderBoard(){
       + (ties ? '<div class="bcard-ties">' + ties + ' tie' + (ties === 1 ? '' : 's') + '</div>' : '');
     board.appendChild(el);
     makeDraggable(el, board);
+  });
+  drawRelLines();
+}
+
+/* Lines between cards. Up to three ties per pair, fanned apart so a pair who
+   are lovers AND enemies shows both. Click a line to open that tie. */
+var REL_MAX_PER_PAIR = 3;
+function pairKey(a, b){ return [a, b].sort().join('|'); }
+function relsForPair(a, b){
+  return RELATIONS.filter(function(r){
+    return pairKey(r.from_card_id, r.to_card_id) === pairKey(a, b);
+  });
+}
+function drawRelLines(){
+  var svg = document.getElementById('board-lines');
+  var board = document.getElementById('board');
+  if(!svg || !board) return;
+  var pos = {};
+  Array.prototype.forEach.call(board.querySelectorAll('.bcard'), function(el){
+    pos[el.dataset.id] = {
+      x: (parseInt(el.style.left, 10) || 0) + el.offsetWidth / 2,
+      y: (parseInt(el.style.top, 10) || 0) + el.offsetHeight / 2
+    };
+  });
+  var seen = {}, out = '';
+  RELATIONS.forEach(function(r){
+    var k = pairKey(r.from_card_id, r.to_card_id);
+    if(seen[k]) return;
+    seen[k] = true;
+    var group = relsForPair(r.from_card_id, r.to_card_id).slice(0, REL_MAX_PER_PAIR);
+    var a = pos[r.from_card_id], b = pos[r.to_card_id];
+    if(!a || !b) return;
+    var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    var dx = b.x - a.x, dy = b.y - a.y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / len, ny = dx / len;      // perpendicular, to fan the lines
+    group.forEach(function(rel, i){
+      var off = (i - (group.length - 1) / 2) * 34;
+      var st = relStyle(rel.group_key);
+      var cx = mx + nx * off * 1.6, cy = my + ny * off * 1.6;
+      var d = 'M' + a.x + ' ' + a.y + ' Q' + cx + ' ' + cy + ' ' + b.x + ' ' + b.y;
+      out += '<path class="rel-hit" d="' + d + '" data-rel="' + esc(rel.id) + '"></path>'
+        + '<path class="rel-line" d="' + d + '" stroke="' + st.c + '"'
+        + (st.d ? ' stroke-dasharray="' + st.d + '"' : '') + ' data-rel="' + esc(rel.id) + '"></path>'
+        + '<text class="rel-tag" x="' + (mx + nx * off * 0.9) + '" y="' + (my + ny * off * 0.9) + '"'
+        + ' fill="' + st.c + '" text-anchor="middle">' + esc(REL_LABEL[rel.group_key] || rel.group_key) + '</text>';
+    });
+  });
+  svg.innerHTML = out;
+  svg.setAttribute('width', board.clientWidth);
+  svg.setAttribute('height', Math.max(board.clientHeight, 520));
+  Array.prototype.forEach.call(svg.querySelectorAll('.rel-hit'), function(el){
+    el.addEventListener('click', function(){ openRelation(el.getAttribute('data-rel')); });
   });
 }
 
@@ -1899,6 +1994,7 @@ function makeDraggable(el, board){
       if(overlap && !target) target = other;
     });
     if(prev && prev !== target) prev.classList.remove('drop-target');
+    drawRelLines();
   });
 
   function finish(e){
@@ -1912,10 +2008,11 @@ function makeDraggable(el, board){
     var y = parseInt(el.style.top, 10) || 0;
     savePos(el.dataset.id, x, y);
 
+    drawRelLines();
     if(target){
       var a = el.dataset.id, b = target.dataset.id;
       target = null;
-      openRelationFor(a, b);
+      openPairTies(a, b);
     }
   }
   el.addEventListener('pointerup', finish);
@@ -1931,6 +2028,36 @@ async function savePos(id, x, y){
 
 /* ── RELATIONSHIP EDITOR ───────────────────────────────────────────── */
 var REL_A = null, REL_B = null, REL_ID = null;
+
+// A pair can hold up to three ties, so dropping on an existing pair asks
+// which one to open rather than always reopening the first.
+function openPairTies(aId, bId){
+  var a = cardById(aId), b = cardById(bId);
+  if(!a || !b) return;
+  var ties = relsForPair(aId, bId);
+  if(!ties.length) return openRelationFor(aId, bId);
+
+  document.getElementById('sheet').innerHTML =
+    '<h2 id="sheet-title">' + esc(a.name) + ' &amp; ' + esc(b.name) + '</h2>'
+    + '<div class="sub">' + ties.length + ' tie' + (ties.length === 1 ? '' : 's') + ' between them</div>'
+    + '<div class="grp"><div class="grp-h">Open one</div>'
+    + ties.map(function(r){
+        var st = relStyle(r.group_key);
+        return '<div class="tie-row" onclick="openRelation(\'' + esc(r.id) + '\')">'
+          + '<span class="tie-dot" style="background:' + st.c + ';"></span>'
+          + '<span><span class="tie-what">' + esc(REL_LABEL[r.group_key] || r.group_key) + '</span>'
+          + (r.tie_label ? '<span class="tie-sub"> \u00b7 ' + esc(r.tie_label) + '</span>' : '')
+          + '</span><i class="ti ti-chevron-right" style="margin-left:auto;color:var(--text3);"></i></div>';
+      }).join('')
+    + (ties.length < REL_MAX_PER_PAIR
+        ? '<button class="btn" onclick="openRelationFor(\'' + esc(aId) + '\', \'' + esc(bId) + '\', null, true)">'
+          + '<i class="ti ti-plus"></i> Add another tie</button>'
+        : '<div class="board-help">Three ties is the most a pair can have \u2014 open one above to change it.</div>')
+    + '</div>'
+    + '<div class="sheet-actions"><button class="btn ghost" onclick="closeSheet()">Close</button></div>';
+  document.getElementById('sheet-back').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
 
 function openRelation(id){
   var r = RELATIONS.filter(function(x){ return x.id === id; })[0];
@@ -1965,16 +2092,20 @@ function addRelTurn(){
 }
 function relVal(id){ var el = document.getElementById(id); return el ? el.value.trim() : ''; }
 
-function openRelationFor(aId, bId, existing){
+function openRelationFor(aId, bId, existing, forceNew){
   var a = cardById(aId), b = cardById(bId);
   if(!a || !b) return;
+  if(forceNew && relsForPair(aId, bId).length >= REL_MAX_PER_PAIR){
+    toast('Three ties is the most a pair can have', 'ti-alert-triangle', true);
+    return;
+  }
 
   // One row per pair per group, so an existing relationship must be found
   // in either direction before offering to make a second one.
-  var found = existing || RELATIONS.filter(function(r){
+  var found = existing || (forceNew ? null : RELATIONS.filter(function(r){
     return (r.from_card_id === aId && r.to_card_id === bId)
         || (r.from_card_id === bId && r.to_card_id === aId);
-  })[0] || null;
+  })[0]) || null;
 
   REL_A = aId; REL_B = bId; REL_ID = found ? found.id : null;
   // The row's own direction decides which note belongs to which card.
