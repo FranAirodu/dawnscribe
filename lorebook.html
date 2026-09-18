@@ -116,6 +116,10 @@
     .tie-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;}
     .tie-row .tie-what{font-size:13px;}
     .tie-row .tie-sub{font-size:11px;color:var(--text3);}
+    .bcard-add{position:absolute;right:7px;bottom:6px;background:none;border:1px solid var(--border);border-radius:999px;
+      color:var(--text3);font-size:10.5px;font-family:'Lato',sans-serif;padding:2px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;}
+    .bcard-add:hover{border-color:var(--accent);color:var(--accent);}
+    .board .bcard{padding-bottom:26px;}
     .bcard-name{font-family:'Cinzel',serif;font-size:13.5px;}
     .bcard-sub{font-size:11px;color:var(--text3);margin-top:2px;}
     .bcard-ties{font-size:10.5px;color:var(--accent);margin-top:7px;}
@@ -1894,7 +1898,7 @@ function renderBoard(){
 
   body.innerHTML =
     '<div class="board-help">Drag a card onto another to write what is between them. '
-    + 'Positions are saved, so a family left of a rival stays that way.</div>'
+    + 'Or use the <b>+ tie</b> button on a card. Positions are saved, so a family left of a rival stays that way.</div>'
     + '<div class="board" id="board">'
     +   '<svg class="board-lines" id="board-lines"></svg>'
     + '</div>'
@@ -1923,7 +1927,10 @@ function renderBoard(){
     el.innerHTML =
       '<div class="bcard-name">' + esc(c.name) + '</div>'
       + '<div class="bcard-sub">' + esc(c.subtitle || '') + '</div>'
-      + (ties ? '<div class="bcard-ties">' + ties + ' tie' + (ties === 1 ? '' : 's') + '</div>' : '');
+      + (ties ? '<div class="bcard-ties">' + ties + ' tie' + (ties === 1 ? '' : 's') + '</div>' : '')
+      + '<button class="bcard-add" title="Write a tie with someone" '
+      + 'onclick="event.stopPropagation();pickTiePartner(\'' + esc(c.id) + '\')">'
+      + '<i class="ti ti-plus"></i> tie</button>';
     board.appendChild(el);
     makeDraggable(el, board);
   });
@@ -2028,16 +2035,22 @@ function makeDraggable(el, board){
 
     if(!moved){ openCard(el.dataset.id); target = null; return; }
 
-    var x = parseInt(el.style.left, 10) || 0;
-    var y = parseInt(el.style.top, 10) || 0;
-    savePos(el.dataset.id, x, y);
-
-    drawRelLines();
     if(target){
+      // Dropping one card on another means "write a tie", not "park it here".
+      // Leaving it stacked hid the card underneath, so it springs back.
+      el.style.left = origX + 'px';
+      el.style.top  = origY + 'px';
+      drawRelLines();
       var a = el.dataset.id, b = target.dataset.id;
       target = null;
       openPairTies(a, b);
+      return;
     }
+
+    var x = parseInt(el.style.left, 10) || 0;
+    var y = parseInt(el.style.top, 10) || 0;
+    savePos(el.dataset.id, x, y);
+    drawRelLines();
   }
   el.addEventListener('pointerup', finish);
   el.addEventListener('pointercancel', finish);
@@ -2052,6 +2065,29 @@ async function savePos(id, x, y){
 
 /* ── RELATIONSHIP EDITOR ───────────────────────────────────────────── */
 var REL_A = null, REL_B = null, REL_ID = null;
+
+// Ties without dragging: pick who the tie is with.
+function pickTiePartner(aId){
+  var a = cardById(aId);
+  if(!a) return;
+  var others = CARDS.filter(function(c){ return c.kind === 'character' && c.id !== aId; });
+  if(!others.length){ toast('Make another character first', 'ti-alert-triangle', true); return; }
+  document.getElementById('sheet').innerHTML =
+    '<h2 id="sheet-title">' + esc(a.name) + '</h2>'
+    + '<div class="sub">Who is the tie with?</div>'
+    + '<div class="grp"><div class="grp-h">Characters</div>'
+    + others.map(function(c){
+        var n = relsForPair(aId, c.id).length;
+        return '<div class="tie-row" onclick="openPairTies(\'' + esc(aId) + '\', \'' + esc(c.id) + '\')">'
+          + '<span class="tie-what">' + esc(c.name) + '</span>'
+          + (n ? '<span class="tie-sub"> \u00b7 ' + n + ' tie' + (n === 1 ? '' : 's') + ' already</span>' : '')
+          + '<i class="ti ti-chevron-right" style="margin-left:auto;color:var(--text3);"></i></div>';
+      }).join('')
+    + '</div>'
+    + '<div class="sheet-actions"><button class="btn ghost" onclick="closeSheet()">Close</button></div>';
+  document.getElementById('sheet-back').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
 
 // A pair can hold up to three ties, so dropping on an existing pair asks
 // which one to open rather than always reopening the first.
