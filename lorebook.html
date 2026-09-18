@@ -1938,6 +1938,33 @@ function openRelation(id){
   openRelationFor(r.from_card_id, r.to_card_id, r);
 }
 
+// One question in the relationship sheet, laid out like a card question.
+function relF(id, label, help, type, value, opts, placeholder){
+  var input;
+  if(type === 'long'){
+    input = '<textarea id="' + id + '" rows="2">' + esc(value || '') + '</textarea>';
+  } else if(type === 'pick'){
+    input = pickInputHtml('id="' + id + '" placeholder="Pick one, or type your own"', value || '', opts || []);
+  } else if(type === 'chapter'){
+    input = chInputHtml('id="' + id + '"', value || '');
+  } else {
+    input = '<input id="' + id + '" maxlength="120"' + (placeholder ? ' placeholder="' + esc(placeholder) + '"' : '')
+      + ' value="' + esc(value || '') + '"/>';
+  }
+  return '<div class="f' + (type === 'long' ? ' wide' : '') + '"><label class="q">' + label + '</label>'
+    + '<div class="ans">' + input + '</div>'
+    + '<div class="help">' + (help ? esc(help) : '') + '</div><div class="f-foot"></div></div>';
+}
+function relData(found, key){
+  var d = found && found.data ? found.data : {};
+  return d[key] == null ? '' : d[key];
+}
+function addRelTurn(){
+  var wrap = document.getElementById('pairs-relturns');
+  if(wrap) wrap.insertAdjacentHTML('beforeend', pairRowHtml('relturns', ['', ''], wrap.children.length, ['Chapter', 'What changes between them']));
+}
+function relVal(id){ var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
 function openRelationFor(aId, bId, existing){
   var a = cardById(aId), b = cardById(bId);
   if(!a || !b) return;
@@ -1964,28 +1991,55 @@ function openRelationFor(aId, bId, existing){
     + '<div class="private"><i class="ti ti-eye-off"></i> Only you can see this</div>'
     + '<div class="grp"><div class="grp-h">Between them</div>'
     + '<div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;line-height:1.6;">'
-    + 'These three answers appear on both cards.</div>'
+    + 'The facts of the tie itself. These show on both cards, and the beta reader '
+    + 'checks your chapters against them.</div>'
     + '<div class="fields">'
-      + '<div class="f"><label>This is</label><select id="rel-group">' + groupOpts + '</select></div>'
-      + '<div class="f"><label>In a word, what is it?</label><input id="rel-tie" maxlength="60" placeholder="strained, unspoken, lethal" value="'
-        + esc(found ? (found.tie_label || '') : '') + '"/></div>'
-      + '<div class="f wide"><label>How it started</label><textarea id="rel-started" rows="2">'
-        + esc(found ? (found.how_started || '') : '') + '</textarea></div>'
-      + '<div class="f wide"><label>What it is now</label><textarea id="rel-now" rows="2">'
-        + esc(found ? (found.what_now || '') : '') + '</textarea></div>'
-      + '<div class="f wide"><label>What would end it</label><textarea id="rel-end" rows="2">'
-        + esc(found ? (found.what_would_end || '') : '') + '</textarea></div>'
+      + '<div class="f"><label class="q">What they are to each other</label>'
+        + '<div class="ans"><select id="rel-group">' + groupOpts + '</select></div>'
+        + '<div class="help"></div><div class="f-foot"></div></div>'
+      + relF('rel-tie', 'How it feels to be in the room with them',
+          'One or two words for the mood between them \u2014 easy, strained, unspoken, lethal, all business',
+          'text', found ? (found.tie_label || '') : '', null, 'easy, strained, unspoken, lethal')
+      + relF('rel-power', 'Who has the upper hand', 'Who gives way when they disagree',
+          'pick', relData(found, 'power'), [esc(a.name), esc(b.name), 'Even', 'It shifts', 'Neither of them wants it'])
+      + relF('rel-trust', 'How far they trust each other', null, 'pick', relData(found, 'trust'),
+          ['Completely', 'With most things', 'Only where it suits them', 'Not at all', 'One trusts far more than the other'])
+      + relF('rel-started', 'How they met, and how it began', 'The first meeting, and what it was like then', 'long',
+          found ? (found.how_started || '') : '')
+      + relF('rel-now', 'Where it stands now', 'As of the latest chapter you have written', 'long',
+          found ? (found.what_now || '') : '')
+      + relF('rel-public', 'How they act in public, and how they act alone together',
+          'Many ties are one thing in front of others and another behind a closed door', 'long', relData(found, 'public'))
+      + relF('rel-unspoken', 'What is never said out loud between them',
+          'The thing both know and neither will name', 'long', relData(found, 'unspoken'))
+      + relF('rel-owes', 'Who owes whom, and what', 'A debt, a favour, a life, an apology', 'long', relData(found, 'owes'))
+      + relF('rel-last', 'The last time they spoke, and how it ended', null, 'long', relData(found, 'last'))
+      + relF('rel-end', 'What would break it for good', 'The one thing neither could come back from', 'long',
+          found ? (found.what_would_end || '') : '')
+      + relF('rel-from-ch', 'Chapter they meet, or the tie begins', null, 'chapter', relData(found, 'from_ch'))
+      + relF('rel-end-ch', 'Chapter it ends, if it does', 'Death, a falling out, a parting of ways', 'chapter', relData(found, 'end_ch'))
+      + '<div class="f wide"><label class="q">Turning points</label>'
+        + '<div class="ans"><div id="pairs-relturns">'
+        + (Array.isArray(relData(found, 'turns')) ? relData(found, 'turns') : []).map(function(r, i){
+            return pairRowHtml('relturns', r, i, ['Chapter', 'What changes between them']);
+          }).join('')
+        + '</div><button type="button" class="tl-btn" onclick="addRelTurn()"><i class="ti ti-plus"></i> Add a turning point</button></div>'
+        + '<div class="help">The chapters where this tie shifts \u2014 a betrayal, a confession, a death. '
+        + 'The beta reader uses the latest one at or before the chapter it is reading.</div>'
+        + '<div class="f-foot"></div></div>'
     + '</div></div>'
     + '<div class="grp"><div class="grp-h">Their own side of it</div>'
     + '<div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;line-height:1.6;">'
-    + 'Private to each card. One of them is usually wrong about the other.</div>'
+    + 'How each one reads the other. They do not have to agree \u2014 one of them is usually wrong.</div>'
     + '<div class="fields">'
-      + '<div class="f wide"><label>What ' + esc(a.name) + ' thinks of ' + esc(b.name) + '</label>'
-        + '<textarea id="rel-a-note" rows="2">'
-        + esc(found ? ((aIsFrom ? found.from_note : found.to_note) || '') : '') + '</textarea></div>'
-      + '<div class="f wide"><label>What ' + esc(b.name) + ' thinks of ' + esc(a.name) + '</label>'
-        + '<textarea id="rel-b-note" rows="2">'
-        + esc(found ? ((aIsFrom ? found.to_note : found.from_note) || '') : '') + '</textarea></div>'
+      + relF('rel-a-note', 'What ' + esc(a.name) + ' thinks of ' + esc(b.name), null, 'long',
+          found ? ((aIsFrom ? found.from_note : found.to_note) || '') : '')
+      + relF('rel-b-note', 'What ' + esc(b.name) + ' thinks of ' + esc(a.name), null, 'long',
+          found ? ((aIsFrom ? found.to_note : found.from_note) || '') : '')
+      + relF('rel-a-wants', 'What ' + esc(a.name) + ' wants from ' + esc(b.name),
+          'And whether the other knows', 'long', relData(found, aIsFrom ? 'from_wants' : 'to_wants'))
+      + relF('rel-b-wants', 'What ' + esc(b.name) + ' wants from ' + esc(a.name), null, 'long',
+          relData(found, aIsFrom ? 'to_wants' : 'from_wants'))
     + '</div></div>'
     + '<div class="sheet-actions">'
       + '<button class="btn primary" onclick="saveRelation()"><i class="ti ti-check"></i> Save</button>'
@@ -1996,6 +2050,7 @@ function openRelationFor(aId, bId, existing){
 
   document.getElementById('sheet-back').classList.add('open');
   document.body.style.overflow = 'hidden';
+  SHEET_SNAPSHOT = sheetFingerprint();   // so closing warns about unsaved edits here too
 }
 
 async function saveRelation(){
@@ -2008,6 +2063,24 @@ async function saveRelation(){
     tie_label: document.getElementById('rel-tie').value.trim() || null,
     how_started: document.getElementById('rel-started').value.trim() || null,
     what_now: document.getElementById('rel-now').value.trim() || null,
+    data: (function(){
+      var turns = Array.prototype.map.call(
+        (document.getElementById('pairs-relturns') || { children: [] }).children, function(row){
+          var chEl = row.querySelector('.pair-a'), vEl = row.querySelector('.pair-b');
+          return [chEl ? chNum(chEl.value) : '', vEl ? vEl.value.trim() : ''];
+        }).filter(function(r){ return r[0] || r[1]; });
+      var d = {
+        power: relVal('rel-power'), trust: relVal('rel-trust'), public: relVal('rel-public'),
+        unspoken: relVal('rel-unspoken'), owes: relVal('rel-owes'), last: relVal('rel-last'),
+        from_ch: chNum(relVal('rel-from-ch')), end_ch: chNum(relVal('rel-end-ch')),
+        // Stored in the row's own direction, like from_note/to_note below.
+        from_wants: relVal('rel-a-wants'), to_wants: relVal('rel-b-wants'), turns: turns
+      };
+      Object.keys(d).forEach(function(k){
+        if(d[k] === '' || (Array.isArray(d[k]) && !d[k].length)) delete d[k];
+      });
+      return d;
+    })(),
     what_would_end: document.getElementById('rel-end').value.trim() || null,
     from_note: document.getElementById('rel-a-note').value.trim() || null,
     to_note: document.getElementById('rel-b-note').value.trim() || null
@@ -2022,6 +2095,9 @@ async function saveRelation(){
       payload.from_card_id = existing.from_card_id;
       payload.to_card_id = existing.to_card_id;
       var t = payload.from_note; payload.from_note = payload.to_note; payload.to_note = t;
+      var w = payload.data.from_wants; payload.data.from_wants = payload.data.to_wants; payload.data.to_wants = w;
+      if(payload.data.from_wants === undefined) delete payload.data.from_wants;
+      if(payload.data.to_wants === undefined) delete payload.data.to_wants;
     }
     res = await db.from('lore_relations').update(payload).eq('id', REL_ID).select().maybeSingle();
   } else {
