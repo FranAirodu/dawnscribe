@@ -202,6 +202,7 @@
     .tl-lbl{font-size:11px;color:var(--text3);white-space:nowrap;}
     .tl-in{width:70px;flex:0 0 auto;}
     .ch-in{flex:1 1 120px;min-width:0;max-width:100%;}
+    .ch-unknown{font-size:11.5px;color:var(--amber);margin-top:5px;line-height:1.5;}
     .ch-menu{position:fixed;display:none;z-index:1000;background:var(--bg2);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,0.5);max-height:250px;overflow-y:auto;padding:4px;}
     .ch-opt{padding:7px 11px;border-radius:7px;font-size:12.5px;color:var(--text);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .ch-opt.has-d{white-space:normal;max-width:330px;}
@@ -1057,7 +1058,7 @@ function openCard(id){
         ? '<div class="finding" style="margin-top:14px;">'
           + '<div class="finding-msg"><i class="ti ti-alert-triangle" style="color:var(--amber);"></i> '
           + flags.length + ' thing' + (flags.length === 1 ? '' : 's') + ' to look at on this card</div>'
-          + '<div class="finding-acts"><button class="btn ghost" onclick="closeSheet();setView(\'checks\')">'
+          + '<div class="finding-acts"><button class="btn ghost" onclick="if(closeSheet(true)!==false)setView(\'checks\')">'
           + 'Open checks</button></div></div>'
         : '')
     + '<div class="grp"><div class="grp-h">The card itself</div><div class="fields">'
@@ -1344,6 +1345,8 @@ function addPair(key){
   wrap.insertAdjacentHTML('beforeend', pairRowHtml(key, ['', ''], wrap.children.length, def));
 }
 
+// Words too common to mean a chapter on their own, however they sit in a title.
+var CH_NOT_A_TITLE = ['the','and','for','with','from','that','this','into','chapter','chapters','part','one','two','six','ten'];
 var BEFORE_CH1 = '0';   // 'before chapter 1', stored as a number the checks can read
 var BEFORE_CH1_LABEL = 'Before chapter 1';
 
@@ -1385,10 +1388,26 @@ function chNum(v){
     var wi = CH_WORDS.indexOf(word[1]);
     if(wi >= 0) return String(wi);
   }
-  var hit = CHAPTERS.filter(function(c){
-    return c.title && low.length > 2 && String(c.title).toLowerCase().indexOf(low) >= 0;
+  // Matching typed text against chapter titles used to be a plain substring
+  // search, first match wins. That turned ordinary words into chapters with no
+  // warning: "the" became chapter 1, "war" chapter 4, "chapter" chapter 6.
+  // Now the text must either be the whole title, or the start of a word in it,
+  // and it must match exactly one chapter — ambiguous text picks nothing
+  // rather than guessing ("heart" sits in two of these titles).
+  var whole = CHAPTERS.filter(function(c){
+    return c.title && String(c.title).toLowerCase() === low;
   })[0];
-  if(hit) return String(hit.chapter_number);
+  if(whole) return String(whole.chapter_number);
+  if(low.length > 2 && CH_NOT_A_TITLE.indexOf(low) < 0){
+    var hits = CHAPTERS.filter(function(c){
+      if(!c.title) return false;
+      return String(c.title).toLowerCase().split(/[^a-z0-9']+/).some(function(w){
+        return w && w.indexOf(low) === 0;
+      });
+    });
+    if(hits.length === 1) return String(hits[0].chapter_number);
+    if(hits.length > 1) return '';      // ambiguous — do not guess
+  }
   var any = t.match(/\d+/);
   return any ? any[0] : '';
 }
@@ -1431,8 +1450,25 @@ function chInputHtml(attrs, value, pre1){
     + ' autocomplete="off" role="combobox" aria-expanded="false" data-opts="chapters"'
     + (pre1 ? ' data-pre1="1"' : '')
     + ' onfocus="chOpenMenu(this)" onclick="chOpenMenu(this)" oninput="chOpenMenu(this)"'
-    + ' onkeydown="chMenuKey(event, this)"'
+    + ' onkeydown="chMenuKey(event, this)" onblur="chFlagUnknown(this)"'
     + ' value="' + esc(chLabel(value)) + '"/>';
+}
+
+// "chapter 999" on a six-chapter story used to be accepted in silence and shown
+// as a bare 999. It is still allowed — authors plan ahead for chapters they
+// have not written — but now it says so, so a typo is visible straight away.
+function chFlagUnknown(inp){
+  var host = inp.parentElement;
+  if(!host) return;
+  var prev = host.querySelector('.ch-unknown');
+  if(prev) prev.parentNode.removeChild(prev);
+  var n = chNum(inp.value);
+  if(!n || String(n) === BEFORE_CH1) return;
+  if(CHAPTERS.some(function(c){ return String(c.chapter_number) === String(n); })) return;
+  var d = document.createElement('div');
+  d.className = 'ch-unknown';
+  d.textContent = 'There is no chapter ' + n + ' yet — this will line up once you write it';
+  host.appendChild(d);
 }
 
 var chMenuEl = null, chMenuInput = null, chMenuHover = false;
@@ -1777,7 +1813,7 @@ function relSection(c){
     + 'Drag two cards together on the Relationships board to start one. '
     + 'What you write in the middle \u2014 how it started, what it is now, what would end it \u2014 '
     + 'shows on both cards; the note you write here does not.</div>'
-    + '<div class="finding-acts"><button class="btn ghost" onclick="closeSheet();setView(\'board\')">'
+    + '<div class="finding-acts"><button class="btn ghost" onclick="if(closeSheet(true)!==false)setView(\'board\')">'
     + '<i class="ti ti-arrows-shuffle"></i> Open the board</button></div></div>';
 }
 
@@ -1991,8 +2027,20 @@ async function deleteCard(){
 
 // Unsaved answers are easy to lose in a long card, so leaving by the edge or
 // the Escape key asks first. Save and Delete pass no argument and never ask.
+// The in-page Close paths ask before discarding edits, but closing the tab or
+// hitting Back did not. A character sheet holds ~190 questions; losing a long
+// sitting to a stray Ctrl-W is the worst outcome in the Lorebook.
+window.addEventListener('beforeunload', function(e){
+  if(!sheetIsDirty()) return;
+  e.preventDefault();
+  e.returnValue = '';   // browsers show their own wording
+});
+
 function closeSheet(ask){
-  if(ask && sheetIsDirty() && !confirm('Close this card? Anything you have typed since the last save will be lost.')) return;
+  // Returns false when the author backs out, so callers that also switch view
+  // (Open checks / Open the board) stay put instead of navigating away from a
+  // sheet that is still open with unsaved work in it.
+  if(ask && sheetIsDirty() && !confirm('Close this card? Anything you have typed since the last save will be lost.')) return false;
   document.getElementById('sheet-back').classList.remove('open');
   document.body.style.overflow = '';
   EDIT_ID = null;
@@ -2000,6 +2048,7 @@ function closeSheet(ask){
   PENDING_FINDING = null;
   PENDING_FILL = null;
   SHEET_SNAPSHOT = '';
+  return true;
 }
 // Closing by clicking the dark edge must not fire when a drag STARTED inside
 // the card — selecting text and releasing outside the panel used to count as
