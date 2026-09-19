@@ -308,7 +308,10 @@
        on screen, sitting over the footer. It has to clear its height AND the
        gap, and it is made invisible too so nothing shows through. */
     #lb-toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(calc(100% + 40px));background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:12px 18px;font-size:13px;z-index:400;transition:transform .28s,opacity .28s,visibility 0s .28s;display:flex;gap:8px;align-items:center;opacity:0;visibility:hidden;pointer-events:none;}
-    #lb-toast.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible;transition:transform .28s,opacity .28s,visibility 0s 0s;}
+    #lb-toast.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible;pointer-events:auto;transition:transform .28s,opacity .28s,visibility 0s 0s;}
+    #lb-toast-undo{display:none;margin-left:6px;background:none;border:1px solid var(--border);border-radius:7px;
+      padding:4px 11px;font:700 12px 'Lato',sans-serif;color:var(--accent);cursor:pointer;}
+    #lb-toast-undo:hover{border-color:var(--accent);}
 
     @media (max-width:760px){
       nav{padding:0 14px;}
@@ -336,7 +339,7 @@
   <div class="sheet" id="sheet"></div>
 </div>
 
-<div id="lb-toast"><i class="ti ti-check" id="lb-toast-icon"></i> <span id="lb-toast-msg"></span></div>
+<div id="lb-toast"><i class="ti ti-check" id="lb-toast-icon"></i> <span id="lb-toast-msg"></span><button id="lb-toast-undo" type="button">Undo</button></div>
 
 <script>
   var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
@@ -455,14 +458,44 @@ function safeUrl(u){
   return '';
 }
 var toastTimer;
-function toast(msg, icon, bad){
+function toast(msg, icon, bad, undoFn){
   var el = document.getElementById('lb-toast');
   document.getElementById('lb-toast-msg').textContent = msg;
   document.getElementById('lb-toast-icon').className = 'ti ' + (icon || 'ti-check');
   el.style.color = bad ? 'var(--red)' : 'var(--text)';
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(function(){ el.classList.remove('show'); }, 3400);
+
+  // Anything that writes to a card without showing it first offers a way back.
+  // A misclick is noticed at once, so the offer stands for a minute and then
+  // gets out of the way.
+  var btn = document.getElementById('lb-toast-undo');
+  btn.style.display = undoFn ? '' : 'none';
+  btn.onclick = null;
+  if(undoFn){
+    btn.onclick = function(){
+      btn.onclick = null;
+      btn.style.display = 'none';
+      el.classList.remove('show');
+      clearTimeout(toastTimer);
+      Promise.resolve().then(undoFn);
+    };
+  }
+  toastTimer = setTimeout(function(){
+    el.classList.remove('show');
+    btn.style.display = 'none';
+    btn.onclick = null;
+  }, undoFn ? 60000 : 3400);
+}
+
+/* Put a card's answers back exactly as they were, and the finding with them. */
+async function undoCardWrite(cardId, prevData, findingId, prevStatus){
+  var res = await db.from('lore_cards').update({ data: prevData }).eq('id', cardId).select().maybeSingle();
+  if(res.error || !res.data){ toast('Could not undo that', 'ti-x', true); return; }
+  for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === cardId) CARDS[i] = res.data;
+  if(findingId && prevStatus === 'open'){ try { await respond(findingId, 'reopen', true); } catch(e) {} }
+  toast('Put back the way it was');
+  render();
 }
 function showState(icon, title, body){
   document.getElementById('page').innerHTML =
@@ -2796,6 +2829,8 @@ async function quickAddSuggestion(findingId){
   }
 
   var data = JSON.parse(JSON.stringify(card.data || {}));
+  var prevData = JSON.parse(JSON.stringify(card.data || {}));   // for Undo
+  var prevStatus = f.status;
   var added = [], skipped = 0;
   hit.sg.fields.forEach(function(fl){
     var def = (FIELDS[card.kind] || []).filter(function(x){ return x.field_key === fl.key; })[0];
@@ -2837,7 +2872,9 @@ async function quickAddSuggestion(findingId){
   for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === card.id) CARDS[i] = res.data;
   try { await respond(findingId, 'resolve', true); } catch(e) {}
   toast('Added to ' + card.name + ': ' + added.join(', ')
-    + (skipped ? ' (' + skipped + ' already answered)' : ''));
+    + (skipped ? ' (' + skipped + ' already answered)' : ''),
+    'ti-check', false,
+    function(){ return undoCardWrite(card.id, prevData, findingId, prevStatus); });
   render();
 }
 
@@ -3090,6 +3127,10 @@ function findingHtml(f){
                     : '<button class="btn ghost" onclick="findingToCard(\'' + f.id + '\')">'
                       + '<i class="ti ti-cards"></i> Put this on a card</button>';
                 })())
+          + (f.detail && f.detail.field && f.detail.text_value && f.card_id
+              ? '<button class="btn ghost" onclick="acceptChapterValue(\'' + f.id + '\')">'
+                + '<i class="ti ti-arrow-back-up"></i> This is true \u2014 update the card</button>'
+              : '')
           + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'resolve\')">'
           + '<i class="ti ti-check"></i> I changed the chapter</button>'
           + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'ignore_once\')">Skip for now</button>'
@@ -3100,6 +3141,34 @@ function findingHtml(f){
     + (answered ? '' : suggestHtml(f))
     + '<div id="cnf-' + f.id + '"></div>'
     + '</div>';
+}
+
+/* A contradiction finding already knows both sides: the field, what the card
+   says, what the chapter says. This takes the chapter's word for it, writes it
+   straight onto the card and marks the finding fixed \u2014 with Undo on the
+   toast, because nothing is shown before it is written. */
+async function acceptChapterValue(findingId){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  if(!f || !f.detail) return;
+  var key = f.detail.field, val = f.detail.text_value;
+  var card = f.card_id ? cardById(f.card_id) : null;
+  if(!card || !key || !val){ toast('Nothing to update here', 'ti-x', true); return; }
+
+  var prevData = JSON.parse(JSON.stringify(card.data || {}));
+  var prevStatus = f.status;
+  var data = JSON.parse(JSON.stringify(card.data || {}));
+  var cur = data[key] || {};
+  data[key] = Object.assign({}, cur, { v: val });
+
+  var res = await db.from('lore_cards').update({ data: data }).eq('id', card.id).select().maybeSingle();
+  if(res.error || !res.data){ toast(res.error ? res.error.message : 'Could not save that', 'ti-x', true); return; }
+  for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === card.id) CARDS[i] = res.data;
+  try { await respond(findingId, 'resolve', true); } catch(e) {}
+
+  var label = (FIELDS_BY_KEY[key] && FIELDS_BY_KEY[key].label) || key;
+  toast(card.name + ' \u2014 ' + label + ' is now ' + val, 'ti-check', false,
+    function(){ return undoCardWrite(card.id, prevData, findingId, prevStatus); });
+  render();
 }
 
 /* "The check is wrong" is the only answer that cannot be undone by writing,
@@ -3550,13 +3619,19 @@ async function respond(id, action, quiet){
     if(FINDINGS[i].id === id) FINDINGS[i].status = res.data.status;
   }
   if(!quiet){
+    // Undo on the answer buttons too: these do not write to a card, but a
+    // misclick still takes a finding out of the queue. "The check is wrong"
+    // is left out on purpose — it asks twice already.
+    var back = (action !== 'dismiss' && action !== 'reopen')
+      ? function(){ return respond(id, 'reopen'); }
+      : null;
     toast({
       open: 'Back in the queue',
       resolved: 'Marked fixed',
       ignored_once: 'Ignored here only',
       accepted: 'Left as is \u2014 it will not be raised again',
       dismissed: 'Check switched off'
-    }[res.data.status] || 'Done');
+    }[res.data.status] || 'Done', 'ti-check', false, back);
   }
   render();
 }
