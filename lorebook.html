@@ -1759,6 +1759,11 @@ function syncReveals(){
       var cur = pv ? String(pv.value || '').trim().toLowerCase() : '';
       show = !!cur && list.some(function(x){ return String(x).toLowerCase() === cur; });
       if(!show && w.getAttribute('data-has') === '1' && !pv) show = true;
+    } else if(mode === 'filled'){
+      // Shown as soon as the parent has ANY answer — e.g. the questions about
+      // coming back only matter once "Died in chapter" is filled in.
+      var pf = document.getElementById('fld-' + parent);
+      show = !!(pf && String(pf.value || '').trim()) || (w.getAttribute('data-has') === '1' && !pf);
     } else if(mode === 'yes'){
       var pe = document.getElementById('fld-' + parent);
       show = !!(pe && /^\s*yes\s*$/i.test(pe.value)) || (w.getAttribute('data-has') === '1' && !pe);
@@ -2717,6 +2722,10 @@ function suggestHtml(f){
     + (hit.card ? 'Add to ' + esc(hit.card.name) + '\u2019s card' : 'Make the card and add this') + '</button>'
     + '<button class="btn ghost" onclick="applySuggestion(\'' + esc(f.id) + '\')">'
     + '<i class="ti ti-pencil"></i> Edit the card instead</button>'
+    + (hit.card
+        ? '<button class="btn ghost" onclick="findingToCard(\'' + esc(f.id) + '\', true)">'
+          + '<i class="ti ti-arrow-right"></i> Add to a different card</button>'
+        : '')
     + '</div></div>';
 }
 
@@ -2935,11 +2944,14 @@ function applyPendingFill(){
 
 /* Any finding can be sent to a card by hand: pick the card, or make one, and
    the finding is pinned at the top of the editor while you fill it in. */
-function findingToCard(findingId){
+function findingToCard(findingId, force){
+  // force: show the chooser even when the read already suggested a card. A
+  // finding inherits the card that triggered it, so a line about ANOTHER
+  // character arrives pointing at the wrong card.
   var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
   if(!f) return;
   var hit = findingSuggest(f);
-  if(hit) return applySuggestion(findingId);
+  if(hit && !force) return applySuggestion(findingId);
   var guess = findingCard(f);
 
   var kinds = [['character','Character'],['society','Society'],['organisation','Organisation'],
