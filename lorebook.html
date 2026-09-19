@@ -1817,9 +1817,19 @@ function relSection(c){
     + '<i class="ti ti-arrows-shuffle"></i> Open the board</button></div></div>';
 }
 
+var SAVING_CARD = false;
 async function saveCard(){
   var c = cardById(EDIT_ID);
   if(!c) return;
+  if(SAVING_CARD) return;          // a second click while the first save is in flight
+  SAVING_CARD = true;
+  try {
+    return await saveCardInner(c);
+  } finally {
+    SAVING_CARD = false;
+  }
+}
+async function saveCardInner(c){
   var defs = FIELDS[c.kind] || [];
   var missing = null;
 
@@ -1908,6 +1918,11 @@ async function saveCard(){
       var pre1 = f.before_ch1 && document.getElementById('pre-' + f.field_key);
       var el = document.getElementById('fld-' + f.field_key);
       var v = (pre1 && pre1.checked) ? BEFORE_CH1 : (el ? String(el.value).trim() : '');
+      // A chapter box stores the NUMBER, the way per-item, pair and timeline
+      // chapters already do. Storing the raw text meant the checks read it with
+      // "first run of digits": "chapter four" had none and was ignored, and a
+      // typed "Before chapter 1" was read as chapter 1.
+      if(v !== '' && f.input_type === 'chapter' && v !== BEFORE_CH1) v = chNum(v);
       if(v !== '') entry = { v: v };
     }
 
