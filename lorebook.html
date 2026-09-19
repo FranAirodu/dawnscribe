@@ -2737,6 +2737,7 @@ function applyPendingFill(){
   PENDING_FILL.fields.forEach(function(fl){
     var def = FIELDS_BY_KEY[fl.key];
     var wrap = document.getElementById('wrap-' + fl.key);
+    var appended = false;
     if(!def || !wrap) return;
     if(def.input_type === 'list'){
       var box = document.getElementById('fld-' + fl.key);
@@ -2762,12 +2763,29 @@ function applyPendingFill(){
       if(fr && fl.chapter) fr.value = chLabel(fl.chapter);
     } else {
       var el = document.getElementById('fld-' + fl.key);
-      if(!el || String(el.value).trim() !== '') return;   // never overwrite an answer
-      el.value = fl.value;
-      if(fl.chapter && def.timeline){
-        openTl(fl.key);
-        var since = document.getElementById('since-' + fl.key);
-        if(since) since.value = chLabel(fl.chapter);
+      if(!el) return;
+      var had = String(el.value).trim();
+      if(had){
+        /* One question can hold several facts — "Japan was destroyed in WW3"
+           and "China is in ruins" both belong in the same box. For prose
+           answers we add the new fact on its own line and leave the author's
+           own words untouched. Short answers and dropdowns hold ONE value
+           (an eye colour, a rank), so appending there would corrupt them —
+           those are still skipped. */
+        if(def.input_type !== 'long') return;              // never overwrite an answer
+        var seen = had.toLowerCase();
+        var adding = String(fl.value).trim();
+        if(!adding || seen.indexOf(adding.toLowerCase()) >= 0) return;  // already said
+        el.value = had + '\n' + adding;
+        appended = true;
+        if(el.tagName === 'TEXTAREA'){ el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+      } else {
+        el.value = fl.value;
+        if(fl.chapter && def.timeline){
+          openTl(fl.key);
+          var since = document.getElementById('since-' + fl.key);
+          if(since) since.value = chLabel(fl.chapter);
+        }
       }
     }
     wrap.classList.add('suggested');
@@ -2775,7 +2793,9 @@ function applyPendingFill(){
     if(!wrap.querySelector('.sg-tag')){
       var tag = document.createElement('div');
       tag.className = 'sg-tag';
-      tag.innerHTML = '<i class="ti ti-wand"></i> Filled in from Chapter '
+      tag.innerHTML = '<i class="ti ti-wand"></i> '
+        + (appended ? 'Added underneath your answer, from Chapter '
+                    : 'Filled in from Chapter ')
         + (fl.chapter || '') + ' \u2014 check it before saving';
       wrap.appendChild(tag);
     }
