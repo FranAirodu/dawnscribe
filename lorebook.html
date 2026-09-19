@@ -1814,6 +1814,11 @@ function syncReveals(){
       var b = document.getElementById('rbtn-' + key);
       if(b) b.style.display = show ? 'none' : '';
     }
+    // A question the reader just filled in is always shown. Several live
+    // behind a reveal ("What they did before the events of chapter 1" sits
+    // under a button), and filling one without opening it left the author
+    // looking at an unchanged card with nothing to scroll to.
+    if(!show && w.classList.contains('suggested')) show = true;
     w.style.display = show ? '' : 'none';
   });
 }
@@ -3036,9 +3041,12 @@ function applyPendingFill(){
       var first = hits[0];
       if(!first) return;
       var box = document.getElementById('sheet-back');
-      if(box && box.scrollHeight > box.clientHeight){
-        var top = first.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
-        box.scrollTo({ top: Math.max(0, top - box.clientHeight / 2 + first.offsetHeight / 2),
+      // offsetTop walk rather than getBoundingClientRect: the rects read as 0
+      // while the sheet is still being shown, which sent this to the top.
+      var y = 0, n = first;
+      while(n && n !== box && n.offsetParent){ y += n.offsetTop; n = n.offsetParent; }
+      if(box && box.scrollHeight > box.clientHeight && y > 0){
+        box.scrollTo({ top: Math.max(0, y - box.clientHeight / 2 + first.offsetHeight / 2),
                        behavior: 'smooth' });
       } else {
         first.scrollIntoView({ block: 'center', behavior: 'smooth' });
