@@ -1341,6 +1341,7 @@ function addPair(key){
 }
 
 var BEFORE_CH1 = '0';   // 'before chapter 1', stored as a number the checks can read
+var BEFORE_CH1_LABEL = 'Before chapter 1';
 
 /* Chapter boxes are a pick-or-type list: the dropdown shows every chapter as
    "4 — Venture into the Unknown", and typing either the number or a few words
@@ -1360,6 +1361,7 @@ var CH_WORDS = ['zero','one','two','three','four','five','six','seven','eight','
 // "1-4" or "9, 12" stays as typed rather than silently becoming "1".
 function chNumStrict(v){
   var t = String(v == null ? '' : v).trim();
+  if(isPre1(t)) return BEFORE_CH1;
   if(/^\s*(?:ch(?:apter)?\.?\s*)?\d+\s*$/i.test(t)) return t.match(/\d+/)[0];
   var low = t.toLowerCase();
   var exact = CHAPTERS.filter(function(c){ return chLabel(c.chapter_number).toLowerCase() === low; })[0];
@@ -1370,6 +1372,7 @@ function chNumStrict(v){
 function chNum(v){
   var t = String(v == null ? '' : v).trim();
   if(!t) return '';
+  if(isPre1(t)) return BEFORE_CH1;
   var lead = t.match(/^\s*(?:ch(?:apter)?\.?\s*)?(\d+)/i);
   if(lead) return lead[1];
   var low = t.toLowerCase();
@@ -1385,9 +1388,15 @@ function chNum(v){
   var any = t.match(/\d+/);
   return any ? any[0] : '';
 }
+// "Before chapter 1" must land as 0. Left to the rules above it would fall
+// through to "grab any digit in the text" and come back as chapter 1 — the
+// checks would then read it as happening IN chapter 1.
+var PRE1_RE = /^\s*before\s+(?:ch(?:apter)?\.?\s*)?(?:1|one)\s*$/i;
+function isPre1(v){ return PRE1_RE.test(String(v == null ? '' : v)); }
 // What to show in a chapter box for a stored number.
 function chLabel(n){
   if(n == null || n === '') return '';
+  if(String(n) === BEFORE_CH1) return BEFORE_CH1_LABEL;
   var hit = CHAPTERS.filter(function(c){ return String(c.chapter_number) === String(n); })[0];
   return hit ? (n + ' \u2014 ' + (hit.title || 'Untitled')) : String(n);
 }
@@ -1409,13 +1418,14 @@ function pickInputHtml(attrs, value, items){
     + ' value="' + esc(value == null ? '' : value) + '"/>';
 }
 
-function chInputHtml(attrs, value){
+function chInputHtml(attrs, value, pre1){
   // Own dropdown rather than <datalist>: a native list filters itself down to
   // the chapter already in the box, so picking the wrong one left no way back
   // without clearing the text first.
   return '<input ' + (/class=/.test(attrs) ? '' : 'class="ch-in" ')
     + (/placeholder=/.test(attrs) ? '' : 'placeholder="# or title" ') + attrs
     + ' autocomplete="off" role="combobox" aria-expanded="false" data-opts="chapters"'
+    + (pre1 ? ' data-pre1="1"' : '')
     + ' onfocus="chOpenMenu(this)" onclick="chOpenMenu(this)" oninput="chOpenMenu(this)"'
     + ' onkeydown="chMenuKey(event, this)"'
     + ' value="' + esc(chLabel(value)) + '"/>';
@@ -1430,7 +1440,16 @@ function chMenuClose(){
 // Every choice list on a card — chapters and preset answers alike.
 function pickItems(inp){
   var raw = inp.getAttribute('data-opts') || '[]';
-  if(raw === 'chapters') return CHAPTERS.map(function(c){ return chLabel(c.chapter_number); });
+  if(raw === 'chapters'){
+    var chs = CHAPTERS.map(function(c){ return chLabel(c.chapter_number); });
+    // Only boxes that ask for it: a tie can begin before the story opens, but
+    // e.g. "died in" must NOT offer this, or the after-death check would flag
+    // every later chapter that merely remembers the character.
+    if(inp.getAttribute('data-pre1') === '1'){
+      chs.unshift({ v: BEFORE_CH1_LABEL, d: 'It was already true when the story opens' });
+    }
+    return chs;
+  }
   try { return JSON.parse(raw) || []; } catch(e) { return []; }
 }
 function pickLabels(inp){ return pickItems(inp).map(optV); }
@@ -2320,7 +2339,7 @@ function relF(id, label, help, type, value, opts, placeholder){
   } else if(type === 'pick'){
     input = pickInputHtml('id="' + id + '" placeholder="Pick one, or type your own"', value || '', opts || []);
   } else if(type === 'chapter'){
-    input = chInputHtml('id="' + id + '"', value || '');
+    input = chInputHtml('id="' + id + '"', value || '', opts === 'pre1');
   } else {
     input = '<input id="' + id + '" maxlength="120"' + (placeholder ? ' placeholder="' + esc(placeholder) + '"' : '')
       + ' value="' + esc(value || '') + '"/>';
@@ -2410,7 +2429,7 @@ function openRelationFor(aId, bId, existing, forceNew){
       + relF('rel-last', 'The last time they spoke, and how it ended', null, 'long', relData(found, 'last'))
       + relF('rel-end', 'What would break it for good', 'The one thing neither could come back from', 'long',
           found ? (found.what_would_end || '') : '')
-      + relF('rel-from-ch', 'Chapter they meet, or the tie begins', null, 'chapter', relData(found, 'from_ch'))
+      + relF('rel-from-ch', 'Chapter they meet, or the tie begins', null, 'chapter', relData(found, 'from_ch'), 'pre1')
       + relF('rel-end-ch', 'Chapter it ends, if it does', 'Death, a falling out, a parting of ways', 'chapter', relData(found, 'end_ch'))
       + '<div class="f wide"><label class="q">Turning points</label>'
         + '<div class="ans"><div id="pairs-relturns">'
