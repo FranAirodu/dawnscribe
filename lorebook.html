@@ -2741,6 +2741,16 @@ function suggestHtml(f){
       + (fl.chapter ? '<span class="sg-ch">from ch.' + esc(fl.chapter) + '</span>' : '')
       + '</div>';
   }).join('');
+  var nAdd = suggestWouldAdd(hit);
+  if(nAdd === 0){
+    // Already on the card. Offering to add it again only leads to a dead end
+    // ("nothing changed"), so the offer goes and the finding says why.
+    return '<div class="sg"><div class="sg-h"><i class="ti ti-check"></i> '
+      + 'Already on <b>' + esc(hit.card.name) + '</b>\u2019s card</div>'
+      + lines
+      + '<div class="sg-foot">Nothing to add \u2014 these questions are answered. '
+      + 'Use <b>Leave it \u2014 stop asking</b> to clear it from the queue.</div></div>';
+  }
   return '<div class="sg">'
     + '<div class="sg-h"><i class="ti ti-wand"></i> '
     + (hit.card
@@ -2818,6 +2828,31 @@ function findingCard(f){
   return cardFromMessage(f.message);
 }
 
+/* Would a one-tap add actually change anything? Same rules quickAddSuggestion
+   uses, so what the finding OFFERS and what the button DOES can never drift
+   apart: an answer already on the card is never overwritten, and a list item
+   already there is not added twice. */
+function suggestWouldAdd(hit){
+  if(!hit || !hit.card) return -1;            // no card yet: it would make one
+  var data = hit.card.data || {};
+  var n = 0;
+  hit.sg.fields.forEach(function(fl){
+    var def = (FIELDS[hit.card.kind] || []).filter(function(x){ return x.field_key === fl.key; })[0];
+    if(!def) return;
+    var cur = data[fl.key] || {};
+    if(def.input_type === 'list'){
+      var items = Array.isArray(cur.v) ? cur.v : (cur.v ? [cur.v] : []);
+      if(!items.some(function(x){ return String(x).toLowerCase() === String(fl.value).toLowerCase(); })) n++;
+    } else if(def.input_type === 'pairs'){
+      var rows = Array.isArray(cur.v) ? cur.v : [];
+      if(!rows.some(function(r){ return String((r || [])[0] || '').toLowerCase() === String(fl.value).toLowerCase(); })) n++;
+    } else if(cur.v == null || String(cur.v).trim() === ''){
+      n++;
+    }
+  });
+  return n;
+}
+
 /* One-tap filing: the suggested answers are written straight to the card.
    Answers already on the card are never touched, and the toast says what
    landed so a wrong guess is easy to spot and undo by hand. */
@@ -2864,7 +2899,14 @@ async function quickAddSuggestion(findingId){
   });
 
   if(!added.length){
-    toast('Those questions already have answers \u2014 nothing changed', 'ti-info-circle');
+    // Nothing to write: the card already says it. Clear it from the queue
+    // instead of leaving a button that can only ever say "nothing changed".
+    var wasStatus = f.status;
+    try { await respond(findingId, 'accept', true); } catch(e) {}
+    toast('Already on ' + card.name + '\u2019s card \u2014 cleared from the queue',
+      'ti-check', false,
+      function(){ return respond(findingId, 'reopen'); });
+    render();
     return;
   }
 
