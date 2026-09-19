@@ -2049,20 +2049,12 @@ function renderBoard(){
     + '</div>';
   var board = document.getElementById('board');
 
-  // A card saved on top of another (from an old bug, or two cards nudged into
-  // the same spot) is invisible and impossible to grab, so it is stepped
-  // aside before anything is drawn.
-  var placed = [];
+  // Default spots for cards that have never been placed. Anything already
+  // placed keeps its spot; overlaps are sorted out by separateCards() below,
+  // once the cards exist and can actually be measured.
   chars.forEach(function(c, i){
-    var x = (c.pos_x == null) ? 20 + (i % 5) * 170 : c.pos_x;
-    var y = (c.pos_y == null) ? 20 + Math.floor(i / 5) * 130 : c.pos_y;
-    var guard = 0;
-    while(guard++ < 60 && placed.some(function(p){ return Math.abs(p.x - x) < 40 && Math.abs(p.y - y) < 30; })){
-      x += 165; y += 8;
-      if(x > 900){ x = 20; y += 120; }
-    }
-    if(x !== c.pos_x || y !== c.pos_y){ c.pos_x = x; c.pos_y = y; savePos(c.id, x, y); }
-    placed.push({ x: x, y: y });
+    if(c.pos_x == null) c.pos_x = 20 + (i % 5) * 170;
+    if(c.pos_y == null) c.pos_y = 20 + Math.floor(i / 5) * 130;
   });
 
   chars.forEach(function(c, i){
@@ -2085,7 +2077,47 @@ function renderBoard(){
     board.appendChild(el);
     makeDraggable(el, board);
   });
+  separateCards(board);
   drawRelLines();
+}
+
+/* Cards saved on top of each other are invisible and impossible to grab. The
+   old check used fixed guesses (40px across, 30px down) that were far smaller
+   than a card, so overlapping cards were judged "fine". This measures the
+   cards as they actually render and steps each one aside until it sits clear
+   of everything already placed. */
+function separateCards(board){
+  var els = Array.prototype.slice.call(board.querySelectorAll('.bcard'));
+  var GAP = 14, placed = [], maxBottom = 0;
+  els.forEach(function(el){
+    var w = el.offsetWidth, h = el.offsetHeight;
+    var x0 = parseInt(el.style.left, 10) || 0;
+    var y0 = parseInt(el.style.top, 10) || 0;
+    var x = x0, y = y0;
+    var wide = Math.max(board.clientWidth, w + 40);
+    var guard = 0;
+    var clash = function(){
+      return placed.some(function(p){
+        return x < p.x + p.w + GAP && x + w + GAP > p.x
+            && y < p.y + p.h + GAP && y + h + GAP > p.y;
+      });
+    };
+    while(guard++ < 300 && clash()){
+      x += w + GAP;
+      if(x + w > wide){ x = 20; y += h + GAP; }
+    }
+    if(x !== x0 || y !== y0){
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+      var c = cardById(el.dataset.id);
+      if(c){ c.pos_x = x; c.pos_y = y; }
+      savePos(el.dataset.id, x, y);
+    }
+    placed.push({ x:x, y:y, w:w, h:h });
+    maxBottom = Math.max(maxBottom, y + h);
+  });
+  // Grow the board so a card pushed onto a new row is never cut off.
+  board.style.minHeight = Math.max(520, maxBottom + 24) + 'px';
 }
 
 /* Lines between cards. Up to three ties per pair, fanned apart so a pair who
@@ -2165,15 +2197,19 @@ function makeDraggable(el, board){
     // Overlap test against the other cards, so the drop target is whatever
     // the card is actually sitting on rather than whatever is under the
     // cursor (which is usually the dragged card itself).
+    // It uses the CENTRE of the dragged card, not any touching of edges:
+    // dropping on a target springs the card back, so a mere graze used to
+    // undo every drag and make the cards look stuck.
     var prev = target;
     target = null;
     var a = el.getBoundingClientRect();
+    var cx = a.left + a.width / 2, cy = a.top + a.height / 2;
     Array.prototype.forEach.call(board.children, function(other){
-      if(other === el) return;
+      if(other === el || !other.classList || !other.classList.contains('bcard')) return;
       var b = other.getBoundingClientRect();
-      var overlap = !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
-      other.classList.toggle('drop-target', overlap && !target);
-      if(overlap && !target) target = other;
+      var over = cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom;
+      other.classList.toggle('drop-target', over && !target);
+      if(over && !target) target = other;
     });
     if(prev && prev !== target) prev.classList.remove('drop-target');
     drawRelLines();
