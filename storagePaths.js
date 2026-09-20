@@ -55,6 +55,11 @@
                          catches genuinely oversized camera output.
      ──────────────────────────────────────────────────────────────────── */
   var RESIZE = {
+    /* characters: maxPx is the LONGEST edge, so 1800 keeps a 1200x1800 full
+       figure byte-for-byte. Set it to 1600 and every delivery would come out
+       1067x1600 without anyone noticing. The 512 portrait and expression
+       crops are far below the cap and pass through untouched. */
+    'characters':      { maxPx: 1800, quality: 0.90 },
     'avatars':         { maxPx: 768,  quality: 0.88 },
     'banners':         { maxPx: 1920, quality: 0.85 },
     'covers':          { maxPx: 1600, quality: 0.85 },
@@ -95,6 +100,12 @@
                          contentType; leave that pipeline byte-predictable.
      ──────────────────────────────────────────────────────────────────── */
   var CONVERT_TO_WEBP = {
+    /* Character art MUST convert: as PNG a character runs ~3.1 MB across its
+       poses and faces, against ~0.84 MB as WebP, and these load beside every
+       comment. cosmetic-assets was left unconverted and its body PNGs sit at
+       585-665 kB each - the mistake not to repeat. 0.90 because this is the
+       art people paid for and look at closely. */
+    'characters':      { quality: 0.90 },
     'banners':         { quality: 0.85 },
     'covers':          { quality: 0.85 },
     'collab-art':      { quality: 0.92 },   // paid artwork: bias toward fidelity
@@ -323,11 +334,23 @@
      the same reason it is excluded from resizing — avatar layers must line up
      pixel-for-pixel, and a derivative would only ever be wrong. */
   var THUMB = {
+    'characters':     { maxPx: 600, quality: 0.82 },
     'covers':         { maxPx: 400, quality: 0.82 },
     'collab-art':     { maxPx: 500, quality: 0.82 },
     'banners':        { maxPx: 600, quality: 0.80 },
     'comment-images': { maxPx: 320, quality: 0.80 }
   };
+
+  /* Where a character's art lives. One folder per character so the whole set
+     can be listed, reconciled by the weekly storage-cleanup job, or removed
+     with the character. Kinds: figure-1, portrait-1 (per pose), face-annoyed
+     (per expression). */
+  function characterAssetPath(characterSlug, kind, ext) {
+    var slug = trimSlashes(String(characterSlug || '')).replace(/[^a-z0-9-]/gi, '');
+    var k = String(kind || '').replace(/[^a-z0-9-]/gi, '');
+    if (!slug || !k) return '';
+    return slug + '/' + k + '.' + (ext || 'png').replace(/[^a-z0-9]/gi, '');
+  }
 
   /* Thumb path for an original path: covers/x/y.png -> covers/x/y.thumb.webp
      Derived, never stored, so nothing has to persist a second column. */
@@ -514,6 +537,7 @@
     thumbPath: thumbPath,
     thumbUrl: thumbUrl,
     makeThumb: makeThumb,
+    characterAssetPath: characterAssetPath,
     thumbPolicy: function (bucket) { return THUMB[bucket] || null; },
     resizePolicy: function (bucket) { return RESIZE[bucket] || null; },
     convertPolicy: function (bucket) { return CONVERT_TO_WEBP[bucket] || null; }
