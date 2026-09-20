@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="accent.js"></script>
+  <script>
+    (function(){
+      var t=localStorage.getItem('ds_theme');
+      if(t){document.documentElement.setAttribute('data-theme',t);}
+    })();
+  </script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Characters — DawnScribe</title>
+  <meta name="robots" content="noindex,nofollow" />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="escapeUtils.js"></script>
+  <style>
+    :root {
+      --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
+      --border:#2a3347; --text:#e8eaf0; --text2:#9ba3b8; --text3:#9099b8;
+      --accent:#2dd4bf; --gold:#f59e0b; --red:#f87171; --green:#189e74;
+      --amber:#e0a458;
+    }
+    html[data-theme="light"]{--bg:#f4f5f8;--bg2:#ffffff;--bg3:#eef0f5;--bg4:#e4e7ef;--border:#c4cad9;--text:#1a1f2e;--text2:#4a5270;--text3:#5c6480;--accent:#0a6b63;--red:#b01818;--green:#036b4e;--gold:#7d5205;}
+    html[data-theme="dim"]{--bg:#212329;--bg2:#282d39;--bg3:#303747;--bg4:#373f4f;--border:#3e475b;--text2:#a2a9bd;--text3:#a5aab9;}
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Lato', sans-serif; min-height: 100vh; }
+
+    nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .nav-left { display: flex; align-items: center; gap: 16px; }
+    .logo { font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700; color: var(--text); text-decoration: none; letter-spacing: 0.5px; }
+    .logo span { color: var(--accent); }
+    .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; font-weight: 700; text-decoration: none; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); transition: all .2s; }
+    .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .page-wrap { max-width: 1040px; margin: 0 auto; padding: 32px 20px 90px; }
+    .page-title { font-family: 'Cinzel', serif; font-size: 26px; font-weight: 700; }
+    .page-title span { color: var(--accent); }
+    .page-sub { color: var(--text2); font-size: 13.5px; margin-top: 5px; line-height: 1.6; }
+
+    .tabs { display:flex; gap:7px; flex-wrap:wrap; margin: 22px 0 20px; }
+    .tab { padding:8px 15px; border-radius:999px; border:1px solid var(--border); background:var(--bg2);
+           color:var(--text2); font-size:12.5px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:6px; }
+    .tab.on { border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),0.08); }
+    .tab .n { background:var(--bg4); color:var(--text2); border-radius:999px; padding:1px 7px; font-size:11px; }
+
+    .roster { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:18px; }
+    .ch-card { background:var(--bg2); border:1px solid var(--border); border-radius:14px; overflow:hidden;
+               cursor:pointer; transition:border-color .2s, transform .2s; display:flex; flex-direction:column; }
+    .ch-card:hover { border-color:var(--accent); transform:translateY(-2px); }
+    .ch-art { aspect-ratio:2/3; background:var(--bg3); display:flex; align-items:flex-end; justify-content:center; overflow:hidden; position:relative; }
+    .ch-art img { width:100%; height:100%; object-fit:contain; object-position:bottom; }
+    .ch-glyph { font-family:'Cinzel',serif; font-size:40px; color:var(--text3); opacity:.5; align-self:center; }
+    .ch-body { padding:11px 13px 13px; }
+    .ch-name { font-family:'Cinzel',serif; font-size:15px; font-weight:700; }
+    .ch-from { font-size:11.5px; color:var(--text3); margin-top:2px; }
+    .ch-tag { position:absolute; top:8px; left:8px; background:rgba(0,0,0,.55); backdrop-filter:blur(3px);
+              border-radius:999px; padding:3px 9px; font-size:10.5px; font-weight:700; color:#fff; }
+    .ch-tag.mine { background:rgba(var(--accent-rgb),.85); }
+    .ch-locked .ch-art { filter:grayscale(1) brightness(.5); }
+
+    /* Crowd unlock progress */
+    .bar { height:6px; background:var(--bg4); border-radius:999px; overflow:hidden; margin-top:9px; }
+    .bar > i { display:block; height:100%; background:var(--accent); border-radius:999px; }
+    .bar-note { font-size:11px; color:var(--text3); margin-top:5px; }
+
+    /* The ??? slot: the EXISTENCE of a secret is shown, never the condition. */
+    .secret-slot { background:var(--bg2); border:1px dashed var(--border); border-radius:14px;
+                   display:flex; flex-direction:column; align-items:center; justify-content:center;
+                   aspect-ratio:2/3; color:var(--text3); gap:8px; }
+    .secret-slot .q { font-family:'Cinzel',serif; font-size:34px; opacity:.55; }
+    .secret-slot .t { font-size:11.5px; text-align:center; padding:0 14px; line-height:1.5; }
+
+    /* DETAIL */
+    .detail { display:grid; grid-template-columns:minmax(0,340px) minmax(0,1fr); gap:28px; align-items:start; }
+    @media (max-width:760px){ .detail { grid-template-columns:1fr; } }
+    .stage { background:var(--bg2); border:1px solid var(--border); border-radius:16px; padding:16px;
+             position:relative; }
+    .figure-wrap { position:relative; aspect-ratio:2/3; background:var(--bg3); border-radius:11px; overflow:hidden; }
+    .figure-wrap img.fig { width:100%; height:100%; object-fit:contain; object-position:bottom; display:block; }
+    /* The face sits over the figure so a line can change the expression
+       without reloading the whole illustration. */
+    .face { position:absolute; top:6%; left:50%; transform:translateX(-50%); width:38%;
+            border-radius:50%; overflow:hidden; opacity:0; transition:opacity .18s; pointer-events:none; }
+    .face.show { opacity:1; }
+    .face img { width:100%; display:block; }
+
+    /* Tap zones. Invisible, but they are the whole interaction. */
+    .zone { position:absolute; cursor:pointer; background:transparent; border:0; }
+    .zone:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; border-radius:8px; }
+    .zone.head { top:2%;  left:31%; width:38%; height:22%; }
+    .zone.arm  { top:26%; left:6%;  width:24%; height:34%; }
+    .zone.body { top:26%; left:32%; width:36%; height:42%; }
+
+    .bubble { margin-top:13px; min-height:52px; background:var(--bg3); border:1px solid var(--border);
+              border-radius:11px; padding:11px 13px; font-size:13.5px; line-height:1.55; color:var(--text);
+              opacity:0; transition:opacity .18s; }
+    .bubble.show { opacity:1; }
+    .bubble .who { font-family:'Cinzel',serif; font-size:11.5px; color:var(--accent); display:block; margin-bottom:3px; }
+    .hint { font-size:11.5px; color:var(--text3); margin-top:9px; line-height:1.5; }
+
+    .panel { background:var(--bg2); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px; }
+    .panel h3 { font-family:'Cinzel',serif; font-size:16px; margin-bottom:9px; }
+    .panel p { font-size:13px; color:var(--text2); line-height:1.65; }
+
+    .aff { display:flex; align-items:center; gap:10px; margin-top:12px; }
+    .aff .bar { flex:1; margin:0; }
+    .aff .v { font-size:12px; color:var(--text2); white-space:nowrap; }
+
+    .poses { display:flex; gap:9px; flex-wrap:wrap; margin-top:13px; }
+    .pose { width:54px; height:54px; border-radius:9px; background:var(--bg3); border:1px solid var(--border);
+            overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:pointer;
+            color:var(--text3); font-size:16px; position:relative; }
+    .pose img { width:100%; height:100%; object-fit:cover; }
+    .pose.on { border-color:var(--accent); }
+    .pose.locked { opacity:.45; cursor:not-allowed; }
+
+    .btn { padding:9px 16px; border-radius:9px; border:1px solid var(--border); background:var(--bg3);
+           color:var(--text); font-size:13px; font-weight:700; cursor:pointer; font-family:'Lato',sans-serif;
+           display:inline-flex; align-items:center; gap:7px; }
+    .btn:hover { border-color:var(--accent); }
+    .btn.primary { background:var(--green); border-color:var(--green); color:#fff; }
+    .btn.primary:hover { filter:brightness(1.08); }
+    .btn:disabled { opacity:.45; cursor:not-allowed; }
+    .btn-row { display:flex; gap:9px; flex-wrap:wrap; margin-top:14px; }
+
+    .give { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+    .give input { width:96px; background:var(--bg3); border:1px solid var(--border); border-radius:8px;
+                  padding:8px 10px; color:var(--text); font-size:13px; font-family:'Lato',sans-serif; }
+
+    .state { text-align:center; padding:60px 20px; color:var(--text2); }
+    .state i { font-size:34px; display:block; margin-bottom:12px; opacity:.5; }
+
+    #toast { position:fixed; bottom:22px; left:50%;
+             transform:translateX(-50%) translateY(calc(100% + 40px));
+             background:var(--bg3); border:1px solid var(--border); border-radius:11px;
+             padding:12px 18px; font-size:13px; z-index:400; display:flex; gap:8px; align-items:center;
+             opacity:0; visibility:hidden; pointer-events:none;
+             transition:transform .28s, opacity .28s, visibility 0s .28s; }
+    #toast.show { transform:translateX(-50%) translateY(0); opacity:1; visibility:visible;
+                  pointer-events:auto; transition:transform .28s, opacity .28s, visibility 0s 0s; }
+  </style>
+</head>
+<body>
+<nav>
+  <div class="nav-left">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="index.html"><i class="ti ti-arrow-left"></i> Back to home</a>
+  </div>
+</nav>
+
+<div class="page-wrap">
+  <div id="head-area">
+    <div class="page-title">Dawn<span>Scribe</span> Characters</div>
+    <div class="page-sub">Everyone the ship has met on its way between universes. Give Embers to
+      open a locked one — it belongs to everybody who helped.</div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+</div>
+
+<div id="toast"><i class="ti ti-check" id="toast-icon"></i> <span id="toast-msg"></span></div>
+
+<script>
+  const SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx';
+  var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  window.db = db;
+
+  var ME = null;
+  var CHARS = [];          // every character this viewer may see
+  var MINE = {};           // character_id -> ownership row
+  var SLOTS = { total: 0, found: 0 };
+  var VIEW = 'all';
+  var OPEN = null;         // the character being looked at
+  var LINES = [];          // lines the viewer has earned on OPEN
+  var POSES = [];
+  var FACES = {};          // slug -> image_path
+  var CUR_POSE = 1;
+  var faceTimer = null, toastTimer = null;
+
+  function esc(s){
+    if (window.DSEscape && window.DSEscape.esc) return window.DSEscape.esc(s);
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c];
+    });
+  }
+
+  function assetUrl(path){
+    if(!path) return '';
+    return SUPABASE_URL + '/storage/v1/object/public/characters/' + path;
+  }
+
+  function toast(msg, icon, bad){
+    var el = document.getElementById('toast');
+    document.getElementById('toast-msg').textContent = msg;
+    document.getElementById('toast-icon').className = 'ti ' + (icon || 'ti-check');
+    el.style.color = bad ? 'var(--red)' : 'var(--text)';
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.classList.remove('show'); }, 3400);
+  }
+
+  async function boot(){
+    var s = await db.auth.getSession();
+    ME = s.data.session ? s.data.session.user : null;
+    if(!ME){
+      document.getElementById('view').innerHTML =
+        '<div class="state"><i class="ti ti-lock"></i>Sign in to meet the crew.</div>';
+      return;
+    }
+    // Secrets are granted by reading, so the check runs on arrival. It is
+    // cheap, idempotent, and the only moment the user could be surprised.
+    try { await db.rpc('ds_grant_secret_characters'); } catch(e){}
+    await load();
+  }
+
+  async function load(){
+    var res = await Promise.all([
+      db.from('ds_characters').select('*').order('chain_order', { ascending:true, nullsFirst:false }),
+      db.from('ds_user_characters').select('*').eq('user_id', ME.id),
+      db.rpc('ds_secret_slots')
+    ]);
+    CHARS = res[0].data || [];
+    MINE = {};
+    (res[1].data || []).forEach(function(r){ MINE[r.character_id] = r; });
+    SLOTS = res[2].data || { total:0, found:0 };
+    render();
+  }
+
+  function renderTabs(){
+    var mine = CHARS.filter(function(c){ return MINE[c.id]; }).length;
+    var open = CHARS.filter(function(c){ return c.availability==='ember_unlock' && !c.unlocked_at; }).length;
+    var tabs = [
+      ['all','Everyone', CHARS.length],
+      ['mine','Yours', mine],
+      ['open','Being opened', open],
+      ['secret','Secrets', SLOTS.found + '/' + SLOTS.total]
+    ];
+    document.getElementById('tabs').innerHTML = tabs.map(function(t){
+      return '<button class="tab' + (VIEW===t[0] ? ' on' : '') + '" onclick="setView(\'' + t[0] + '\')">'
+        + esc(t[1]) + '<span class="n">' + esc(String(t[2])) + '</span></button>';
+    }).join('');
+  }
+
+  function setView(v){ VIEW = v; OPEN = null; render(); }
+
+  function render(){
+    renderTabs();
+    if(OPEN) return renderDetail();
+
+    var list = CHARS.slice();
+    if(VIEW==='mine')   list = list.filter(function(c){ return MINE[c.id]; });
+    if(VIEW==='open')   list = list.filter(function(c){ return c.availability==='ember_unlock' && !c.unlocked_at; });
+    if(VIEW==='secret') list = list.filter(function(c){ return c.availability==='secret'; });
+
+    var html = '';
+    if(!list.length && VIEW!=='secret'){
+      html = '<div class="state"><i class="ti ti-users"></i>Nobody here yet.</div>';
+    } else {
+      html = '<div class="roster">' + list.map(cardHtml).join('')
+        // Unfound secrets appear as ??? so the community knows to look. The
+        // condition itself is never sent to the browser.
+        + (VIEW==='secret' || VIEW==='all'
+            ? Array(Math.max(0, SLOTS.total - SLOTS.found)).fill(0).map(function(){
+                return '<div class="secret-slot"><div class="q">?</div>'
+                  + '<div class="t">Someone out there, not yet found.</div></div>';
+              }).join('')
+            : '')
+        + '</div>';
+    }
+    document.getElementById('view').innerHTML = html;
+  }
+
+  function cardHtml(c){
+    var own = MINE[c.id];
+    var art = ''; // the roster shows the base portrait only
+    return '<div class="ch-card' + (own ? '' : ' ch-locked') + '" onclick="openChar(\'' + esc(c.id) + '\')">'
+      + '<div class="ch-art">'
+      +   (art ? '<img loading="lazy" src="' + esc(art) + '" alt=""/>'
+               : '<div class="ch-glyph">' + esc((c.name||'?').charAt(0)) + '</div>')
+      +   (own ? '<div class="ch-tag mine">Yours</div>'
+              : (c.availability==='ember_unlock' && !c.unlocked_at
+                  ? '<div class="ch-tag">Opening</div>' : ''))
+      + '</div>'
+      + '<div class="ch-body">'
+      +   '<div class="ch-name">' + esc(c.name) + '</div>'
+      +   '<div class="ch-from">' + esc(c.subtitle || sourceLabel(c)) + '</div>'
+      + '</div></div>';
+  }
+
+  function sourceLabel(c){
+    if(c.source==='book')    return 'From a story on DawnScribe';
+    if(c.source==='creator') return 'Made by a Scribe';
+    return 'Met on the way';
+  }
+
+  async function openChar(id){
+    OPEN = CHARS.filter(function(c){ return c.id===id; })[0];
+    if(!OPEN) return;
+    CUR_POSE = 1; LINES = []; POSES = []; FACES = {};
+    document.getElementById('view').innerHTML =
+      '<div class="state"><i class="ti ti-loader"></i>A moment…</div>';
+
+    var res = await Promise.all([
+      db.from('ds_character_poses').select('*').eq('character_id', id).order('pose_order'),
+      db.from('ds_character_expressions').select('*').eq('character_id', id),
+      db.rpc('ds_character_lines_for', { p_character_id: id }),
+      db.rpc('ds_character_progress',  { p_character_id: id })
+    ]);
+    POSES = res[0].data || [];
+    (res[1].data || []).forEach(function(e){ FACES[e.slug] = e.image_path; });
+    LINES = res[2].data || [];
+    OPEN._progress = res[3].data || null;
+    renderDetail();
+  }
+
+  function renderDetail(){
+    var c = OPEN, own = MINE[c.id];
+    var pose = POSES.filter(function(p){ return p.pose_order===CUR_POSE; })[0] || POSES[0] || {};
+    var aff = own ? own.affection : 0;
+    var prog = c._progress;
+
+    var stage =
+      '<div class="stage">'
+      + '<div class="figure-wrap">'
+      +   (pose.figure_path
+            ? '<img class="fig" src="' + esc(assetUrl(pose.figure_path)) + '" alt="' + esc(c.name) + '"/>'
+            : '<div class="ch-glyph" style="margin:auto;">' + esc((c.name||'?').charAt(0)) + '</div>')
+      +   '<div class="face" id="face"><img id="face-img" src="" alt=""/></div>'
+      +   (own ? '<button class="zone head" aria-label="Their head"  onclick="say(\'head\')"></button>'
+               + '<button class="zone arm"  aria-label="Their arm"   onclick="say(\'arm\')"></button>'
+               + '<button class="zone body" aria-label="Talk to them" onclick="say(\'body\')"></button>' : '')
+      + '</div>'
+      + '<div class="bubble" id="bubble"></div>'
+      + (own ? '<div class="hint">Touch their head, their arm, or just say hello.</div>' : '')
+      + (POSES.length > 1 ? posesHtml(aff) : '')
+      + '</div>';
+
+    var side =
+      '<div>'
+      + '<div class="panel">'
+      +   '<h3>' + esc(c.name) + '</h3>'
+      +   '<p>' + esc(c.story_blurb) + '</p>'
+      +   '<p style="margin-top:8px;color:var(--text3);font-size:12px;">' + esc(sourceLabel(c)) + '</p>'
+      + '</div>'
+      + (own ? affectionPanel(own) : unlockPanel(c, prog))
+      + '<div class="btn-row"><button class="btn" onclick="setView(\'' + esc(VIEW) + '\')">'
+      +   '<i class="ti ti-arrow-left"></i> Back to everyone</button></div>'
+      + '</div>';
+
+    document.getElementById('view').innerHTML = '<div class="detail">' + stage + side + '</div>';
+  }
+
+  function posesHtml(aff){
+    return '<div class="poses">' + POSES.map(function(p){
+      var locked = p.min_affection > aff;
+      return '<div class="pose' + (p.pose_order===CUR_POSE ? ' on' : '') + (locked ? ' locked' : '') + '"'
+        + (locked ? ' title="Stay together a little longer"' : ' onclick="pickPose(' + p.pose_order + ')"')
+        + '>' + (locked ? '<i class="ti ti-lock"></i>'
+                        : (p.portrait_path ? '<img src="' + esc(assetUrl(p.portrait_path)) + '" alt=""/>'
+                                           : '<i class="ti ti-user"></i>'))
+        + '</div>';
+    }).join('') + '</div>';
+  }
+
+  function pickPose(n){ CUR_POSE = n; renderDetail(); }
+
+  function affectionPanel(own){
+    var pct = Math.min(100, Math.round(own.affection / 21 * 100));
+    return '<div class="panel">'
+      + '<h3>Together</h3>'
+      + '<p>Affection grows on any day you read while they are your character. '
+      +   (own.maxed_at ? 'They are as close as they get \u2014 and they stay yours.'
+                        : 'Another pose opens when you reach the end.') + '</p>'
+      + '<div class="aff"><div class="bar"><i style="width:' + pct + '%"></i></div>'
+      +   '<span class="v">' + own.affection + ' / 21</span></div>'
+      + '<div class="btn-row">'
+      +   (own.is_active
+            ? '<button class="btn" disabled><i class="ti ti-check"></i> Your character</button>'
+            : '<button class="btn primary" onclick="makeActive(\'' + esc(own.character_id) + '\')">'
+              + '<i class="ti ti-user-star"></i> Make them yours</button>')
+      + '</div></div>';
+  }
+
+  function unlockPanel(c, prog){
+    if(c.availability === 'secret'){
+      return '<div class="panel"><h3>Not found yet</h3>'
+        + '<p>Some of the crew turn up on their own, for people who read the right things. '
+        + 'Nobody is going to tell you which.</p></div>';
+    }
+    if(c.availability === 'purchase'){
+      return '<div class="panel"><h3>In the shop</h3>'
+        + '<p>This one is bought outright, and stays yours.</p></div>';
+    }
+    var goal = (prog && prog.goal) || c.ember_unlock_price || 0;
+    var have = (prog && prog.pledged) || 0;
+    var pct  = goal ? Math.min(100, Math.round(have / goal * 100)) : 0;
+    return '<div class="panel">'
+      + '<h3>Being opened</h3>'
+      + '<p>Give a few Embers whenever you like. When the last one lands, everybody who '
+      +   'helped gets them \u2014 and the next of the crew steps forward.</p>'
+      + '<div class="bar"><i style="width:' + pct + '%"></i></div>'
+      + '<div class="bar-note">' + have.toLocaleString() + ' of ' + goal.toLocaleString()
+      +   ' Embers \u00b7 ' + ((prog && prog.backers) || 0) + ' helping'
+      +   ((prog && prog.mine) ? ' \u00b7 you have given ' + prog.mine.toLocaleString() : '') + '</div>'
+      + '<div class="give">'
+      +   '<input id="give-amt" type="number" min="1" max="1000" value="10" aria-label="Embers to give"/>'
+      +   '<button class="btn primary" onclick="give(\'' + esc(c.id) + '\')">'
+      +     '<i class="ti ti-flame"></i> Give Embers</button>'
+      + '</div></div>';
+  }
+
+  /* Tap to talk. Picks a line for that spot at random from the ones this
+     viewer has earned, and swaps the face to match if the line names one. */
+  function say(where){
+    var pool = LINES.filter(function(l){ return l.trigger === where; });
+    if(!pool.length) pool = LINES.filter(function(l){ return l.trigger === 'idle'; });
+    if(!pool.length) return;
+    var line = pool[Math.floor(Math.random() * pool.length)];
+
+    var b = document.getElementById('bubble');
+    b.innerHTML = '<span class="who">' + esc(OPEN.name) + '</span>' + esc(line.body);
+    b.classList.add('show');
+
+    var face = document.getElementById('face'), img = document.getElementById('face-img');
+    clearTimeout(faceTimer);
+    if(line.image_path && face && img){
+      img.src = assetUrl(line.image_path);
+      face.classList.add('show');
+      // Back to the drawn expression after a beat, so the figure is not left
+      // wearing a reaction to something that happened a minute ago.
+      faceTimer = setTimeout(function(){ face.classList.remove('show'); }, 4000);
+    }
+  }
+
+  async function makeActive(id){
+    var r = await db.rpc('ds_character_set_active', { p_character_id: id });
+    if(r.error || !r.data || r.data.ok !== true){
+      toast((r.data && r.data.error) || 'Could not do that', 'ti-x', true); return;
+    }
+    Object.keys(MINE).forEach(function(k){ MINE[k].is_active = (k === id); });
+    toast('They are with you now');
+    renderDetail();
+  }
+
+  async function give(id){
+    var el = document.getElementById('give-amt');
+    var amt = Math.floor(Number(el && el.value));
+    if(!amt || amt < 1){ toast('Pick an amount first', 'ti-x', true); return; }
+    var r = await db.rpc('ds_pledge_embers', { p_character_id: id, p_embers: amt });
+    if(r.error || !r.data || r.data.ok !== true){
+      toast((r.data && r.data.error) || (r.error && r.error.message) || 'Could not give that', 'ti-x', true);
+      return;
+    }
+    if(r.data.unlocked){
+      toast('Open! They belong to everyone who helped.', 'ti-sparkles');
+      await load();
+      return openChar(id);
+    }
+    toast('Given \u2014 ' + r.data.pledged.toLocaleString() + ' of ' + r.data.goal.toLocaleString());
+    var p = await db.rpc('ds_character_progress', { p_character_id: id });
+    OPEN._progress = p.data || OPEN._progress;
+    renderDetail();
+  }
+
+  boot();
+</script>
+<script src="footer.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>
