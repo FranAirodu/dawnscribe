@@ -401,6 +401,31 @@
 </div>
 
 
+<!-- ── GIFT MODAL ─────────────────────────────────────────────── -->
+<div class="modal-overlay" id="gift-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:900;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;max-width:400px;width:100%;">
+    <h3 style="font-family:'Cinzel',serif;font-size:17px;color:var(--text);margin-bottom:6px;">Gift <span id="gf-name">this</span></h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px;">Your Quills are held until they accept. Declined or unanswered after 14 days, and you get them back.</p>
+    <div style="display:flex;align-items:center;gap:8px;font-size:19px;font-weight:700;color:var(--gold);margin-bottom:6px;">
+      <i class="ti ti-feather"></i> <span id="gf-price">0</span> Quills
+    </div>
+    <div id="gf-balance" style="font-size:11px;color:var(--text3);margin-bottom:12px;"></div>
+    <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px;">Who is it for?</label>
+    <input id="gf-search" autocomplete="off" placeholder="Type a username..." oninput="gfSearch()"
+      style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;"/>
+    <div id="gf-results" style="max-height:140px;overflow-y:auto;margin-top:6px;"></div>
+    <label style="font-size:11px;color:var(--text3);display:block;margin:10px 0 4px;">Add a note (optional)</label>
+    <textarea id="gf-msg" rows="2" maxlength="300" oninput="gfCount()"
+      style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;resize:vertical;"></textarea>
+    <div style="text-align:right;font-size:10px;color:var(--text3);" id="gf-count">0/300</div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button onclick="closeGiftModal()" style="flex:1;padding:10px;border-radius:9px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);font-size:13px;font-weight:700;cursor:pointer;font-family:'Lato',sans-serif;">Cancel</button>
+      <button id="gf-send" onclick="gfSend()" disabled style="flex:1;padding:10px;border-radius:9px;background:var(--bg4);color:var(--text3);border:none;font-size:13px;font-weight:700;cursor:not-allowed;font-family:'Lato',sans-serif;">Send gift</button>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:10px;">Gifts sent to you appear in your <a href="notifications.html" style="color:var(--accent);">notifications</a>.</div>
+  </div>
+</div>
+
 <!-- ── ITEM DETAIL MODAL (characters and banners) ─────────────── -->
 <div class="modal-overlay" id="item-modal" onclick="closeItemModal(event)">
   <div class="modal" id="item-modal-inner">
@@ -436,6 +461,13 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="modal-unlock-btn" id="im-buy-btn" onclick="buyOpenItem()">
             <i class="ti ti-shopping-cart"></i> Buy
+          </button>
+          <!-- Gifting is a normal purchase paid by the sender. The Quills are
+               HELD, not spent, until the recipient accepts; declined or
+               ignored for 14 days and they come back. -->
+          <button class="modal-unlock-btn" id="im-gift-btn" onclick="openGiftModal()"
+                  style="background:var(--bg3);color:var(--gold);border:1px solid var(--gold);">
+            <i class="ti ti-gift"></i> Gift
           </button>
         </div>
       </div>
@@ -500,6 +532,9 @@
   let currentUser = null;
   let userQuills = 0;
   let userEmbers = 0;
+  // Quills held by pending gift offers. Was an implicit global before —
+  // declared here so it exists before loadCurrencies() assigns it.
+  let userQuillsReserved = 0;
   let allCharacters = [];
   let allBanners = [];
   let ownedCharacterIds = new Set();
@@ -1236,6 +1271,9 @@
     } else {
       btn.innerHTML = '<i class="ti ti-shopping-cart"></i> Buy for ' + Number(c.quill_price || 0).toLocaleString() + ' Quills';
     }
+    // You can gift something you already own — it is a second copy for
+    // someone else, not a transfer of yours.
+    document.getElementById('im-gift-btn').style.display = currentUser ? '' : 'none';
     document.getElementById('item-modal').classList.add('open');
   }
 
@@ -1279,6 +1317,7 @@
     btn.innerHTML = owned
       ? '<i class="ti ti-photo-check"></i> Use as my banner'
       : '<i class="ti ti-shopping-cart"></i> Buy for ' + Number(b.quill_price || 0).toLocaleString() + ' Quills';
+    document.getElementById('im-gift-btn').style.display = currentUser ? '' : 'none';
 
     document.getElementById('item-modal').classList.add('open');
   }
@@ -1390,6 +1429,134 @@
     }
   }
 
+
+  // ── GIFTING ───────────────────────────────────────────────────
+  // Characters and banners both. The server holds the Quills as `reserved`
+  // and only settles them when the recipient accepts, so the sender's
+  // spendable balance drops immediately while their balance does not.
+  let gfRecipient = null;
+  let gfSearchTimer = null;
+
+  window.openGiftModal = function() {
+    if (!currentUser) { window.location.href = 'auth.html'; return; }
+    if (!openItem) return;
+    gfRecipient = null;
+    const price = Number(openItem.row.quill_price || 0);
+    document.getElementById('gf-name').textContent = openItem.row.name || 'this';
+    document.getElementById('gf-price').textContent = price.toLocaleString();
+    document.getElementById('gf-search').value = '';
+    document.getElementById('gf-msg').value = '';
+    document.getElementById('gf-results').innerHTML = '';
+    document.getElementById('gf-count').textContent = '0/300';
+    gfRefresh();
+    document.getElementById('gift-modal').style.display = 'flex';
+  };
+
+  window.closeGiftModal = function() {
+    document.getElementById('gift-modal').style.display = 'none';
+    gfRecipient = null;
+  };
+
+  window.gfCount = function() {
+    const n = document.getElementById('gf-msg').value.length;
+    document.getElementById('gf-count').textContent = n + '/300';
+  };
+
+  function gfRefresh() {
+    const price = Number((openItem && openItem.row.quill_price) || 0);
+    const avail = userQuillsAvailable();
+    document.getElementById('gf-balance').textContent =
+      'You have ' + avail.toLocaleString() + ' Quills available' +
+      (userQuillsReserved ? ' (' + userQuillsReserved.toLocaleString() + ' already held by other gifts)' : '') + '.';
+    const btn = document.getElementById('gf-send');
+    const ok = !!gfRecipient && avail >= price;
+    btn.disabled = !ok;
+    btn.style.cursor = ok ? 'pointer' : 'not-allowed';
+    btn.style.background = ok ? 'linear-gradient(135deg,var(--gold),#d97706)' : 'var(--bg4)';
+    btn.style.color = ok ? '#0a0a0f' : 'var(--text3)';
+  }
+
+  window.gfSearch = function() {
+    clearTimeout(gfSearchTimer);
+    gfSearchTimer = setTimeout(gfDoSearch, 250);
+  };
+
+  async function gfDoSearch() {
+    const q = document.getElementById('gf-search').value.trim();
+    const box = document.getElementById('gf-results');
+    gfRecipient = null;
+    gfRefresh();
+    if (q.length < 2) { box.innerHTML = ''; return; }
+    try {
+      const { data } = await db.from('profiles').select('id,username,display_name')
+        .ilike('username', q + '%')
+        .neq('id', currentUser.id)
+        .limit(6);
+      const rows = data || [];
+      box.innerHTML = rows.length
+        ? rows.map(p =>
+            '<div onclick="gfPick(\'' + p.id + '\',\'' + esc(p.username).replace(/'/g, "\\'") + '\')" ' +
+            'style="padding:7px 9px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--text2);" ' +
+            'onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'transparent\'">' +
+            esc(p.display_name || p.username) + ' <span style="color:var(--text3);">@' + esc(p.username) + '</span></div>'
+          ).join('')
+        : '<div style="padding:7px 9px;font-size:12px;color:var(--text3);">No one by that name.</div>';
+    } catch (e) {
+      box.innerHTML = '<div style="padding:7px 9px;font-size:12px;color:var(--text3);">Could not search right now.</div>';
+    }
+  }
+
+  window.gfPick = function(id, username) {
+    gfRecipient = id;
+    document.getElementById('gf-search').value = username;
+    document.getElementById('gf-results').innerHTML = '';
+    gfRefresh();
+  };
+
+  window.gfSend = async function() {
+    if (!openItem || !gfRecipient) return;
+    const btn = document.getElementById('gf-send');
+    const { kind, row } = openItem;
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    try {
+      const msg = document.getElementById('gf-msg').value.trim() || null;
+      const { data: res, error } = kind === 'character'
+        ? await db.rpc('ds_gift_character_offer', { p_recipient_id: gfRecipient, p_character_id: row.id, p_message: msg })
+        : await db.rpc('gift_cosmetic_offer',     { p_recipient_id: gfRecipient, p_cosmetic_id:  row.id, p_message: msg });
+
+      if (error) throw error;
+      if (!res || res.status !== 'success') {
+        // These strings must stay in step with the two offer functions.
+        const map = {
+          cannot_gift_self:     'You cannot gift yourself.',
+          recipient_unavailable:'That account cannot receive gifts.',
+          blocked:              'You cannot send a gift to that person.',
+          recipient_already_owns:'They already own that.',
+          offer_already_pending:'You already have a gift waiting for them.',
+          insufficient_available_quills:
+            'Not enough available Quills. Quills bought in the last 3 days cannot be gifted yet.',
+          no_quill_account:     'Buy some Quills first.',
+          not_purchasable:      'That is not for sale, so it cannot be gifted.',
+          not_approved:         'That is not approved for sale yet.',
+        };
+        showToast(map[res && res.error] || 'Could not send that gift.', 'ti-alert-triangle', true);
+        btn.disabled = false; btn.textContent = 'Send gift';
+        gfRefresh();
+        return;
+      }
+
+      // Balance is unchanged; the hold shows up as reserved.
+      userQuillsReserved = res.reserved != null ? res.reserved : userQuillsReserved + Number(row.quill_price || 0);
+      showToast('Gift sent. Your Quills are held until they accept.', 'ti-gift');
+      closeGiftModal();
+      btn.textContent = 'Send gift';
+    } catch (e) {
+      console.error(e);
+      showToast('Something went wrong sending that gift.', 'ti-alert-triangle', true);
+      btn.disabled = false; btn.textContent = 'Send gift';
+    }
+  };
 
   // ── QUILL BUNDLES MODAL ───────────────────────────────────────
   let BUNDLES = [];
