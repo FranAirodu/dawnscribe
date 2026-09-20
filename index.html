@@ -71,7 +71,6 @@
   <script src="badgeCelebrate.js"></script>
 <script src="escapeUtils.js"></script>
 <script src="blockUtils.js"></script>
-<script src="avatarRender.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <meta name="theme-color" content="#2dd4bf"/>
   <meta name="mobile-web-app-capable" content="yes"/>
@@ -649,7 +648,7 @@
         <i class="ti ti-feather"></i>
         <span class="quill-count" id="ds-quill-count">0</span>
       </div>
-      <div class="ember-wrap" id="ember-wrap" style="display:none;cursor:pointer;" title="Your embers — spend them in My Avatar" onclick="window.location.href='avatar.html'">
+      <div class="ember-wrap" id="ember-wrap" style="display:none;cursor:pointer;" title="Your Embers — give them to open the next character" onclick="window.location.href='characters.html'">
         <i class="ti ti-flame"></i>
         <span class="ember-count" id="ds-ember-count">0</span>
       </div>
@@ -733,7 +732,7 @@
               <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>
               <a class="user-dropdown-item" href="following.html#artists"><i class="ti ti-palette"></i> Following Artists</a>
               <a class="user-dropdown-item" href="following.html#history"><i class="ti ti-history"></i> Reading History</a>
-              <a class="user-dropdown-item" href="avatar.html"><i class="ti ti-shirt"></i> My Avatar</a>
+              <a class="user-dropdown-item" href="characters.html"><i class="ti ti-users"></i> Characters</a>
             </div>
 
             <div class="user-dropdown-divider" style="margin:4px 8px;"></div>
@@ -744,7 +743,6 @@
               <i class="ti ti-chevron-down dd-acc-chevron"></i>
             </button>
             <div class="dd-accordion-body">
-              <a class="user-dropdown-item" href="scroll-create.html"><i class="ti ti-writing" style="color:var(--accent);"></i> <span style="color:var(--accent);">Submit a Scroll</span></a>
               <a class="user-dropdown-item" href="banner-create.html"><i class="ti ti-photo" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Submit a Banner</span></a>
               <a class="user-dropdown-item" href="cosmetic-create.html"><i class="ti ti-shirt" style="color:#a78bfa;"></i> <span style="color:#a78bfa;">Submit a Cosmetic</span></a>
               <a class="user-dropdown-item" href="licensing.html"><i class="ti ti-license"></i> Character Licensing</a>
@@ -1790,72 +1788,61 @@
       } catch(e) { return {}; }
     }
 
-    /* ── AVATAR WIDGET ──────────────────────────────────────────── */
-    // Renders a small preview of the user's customized avatar (same
-    // placeholder layering used in avatar.html) and links through to
-    // the full avatar editor.
-    // Avatar rendering is shared — see avatarRender.js (DSAvatar).
-    function renderAvatarSvg(avatarData, allItems) {
-      return DSAvatar.renderSvg(avatarData, window.__bodyPresets || [], allItems);
-    }
-
+    /* ── STANDING CHARACTER WIDGET ──────────────────────────────── */
+    // Shows the character the user keeps beside their name in the home
+    // sidebar, and mirrors its portrait into the nav button. Replaces the
+    // layered avatar preview: one illustration, no slot compositing, no
+    // body presets, no cosmetic_items fetch.
     async function loadAvatarWidget(uid) {
       try {
-        var [avatarRes, itemsRes, presetsRes] = await Promise.all([
-          db.from('user_avatars').select('*').eq('user_id', uid).maybeSingle(),
-          // Columns enumerated deliberately: anon's SELECT grant on cosmetic_items is
-      // column-scoped and EXCLUDES admin_notes, rejection_reason,
-      // contract_artist_id, staged_asset_paths and contract_status. A select('*')
-      // here would ask for those and fail outright for logged-out visitors.
-      db.from('cosmetic_items').select('id,name,description,image_url,slot,artist_id,is_marketplace_item,created_at,lines_url,shadow_url,highlight_url,fill_regions,z_index,is_base_item,is_randomizer_item,rarity_weight,updated_at,quill_price,total_sales,is_secret_unlock,tag_slug,character_id,status,submitted_at,asset_paths,ember_unlock_price,work_id'),
-          db.from('avatar_body_presets').select('*').eq('is_active', true).order('sort_order')
-        ]);
+        var r = await db.rpc('ds_profile_character', { p_user_id: uid });
+        var ch = (r.data || [])[0];
 
-        window.__bodyPresets = presetsRes.data || [];
-        var allItems = itemsRes.data || [];
-        var avatarData = avatarRes.data;
-
-        // First-time user (no user_avatars row): show an empty "set up your
-        // avatar" placeholder rather than a rendered body. They pick a skin
-        // tone on their first visit to avatar.html.
-        var isFirstTime = !avatarData;
-
-        var svgHtml;
-        if (isFirstTime) {
-          svgHtml = '<div class="avatar-empty-state">' +
-              '<i class="ti ti-user-plus"></i>' +
-              '<span>Set up your avatar</span>' +
-            '</div>';
+        var base = 'https://cajjyyskpmjnpcxcfeuk.supabase.co/storage/v1/object/public/characters/';
+        var html;
+        if (!ch || !ch.figure_path) {
+          html = '<a class="avatar-empty-state" href="characters.html">' +
+                   '<i class="ti ti-user-plus"></i>' +
+                   '<span>Choose a character</span>' +
+                 '</a>';
         } else {
-          svgHtml = renderAvatarSvg(avatarData, allItems);
+          html = '<a href="characters.html" title="' + (ch.name || '') + '">' +
+                   '<img src="' + base + ch.figure_path + '" alt="' + (ch.name || '') + '" ' +
+                   'style="width:100%;height:100%;display:block;object-fit:contain;object-position:bottom;"/>' +
+                 '</a>';
         }
-        // Populate fixed sidebar
+
         var sidebarFig = document.getElementById('avatar-sidebar-figure');
         var sidebar = document.getElementById('avatar-sidebar');
         var subHeaderAvatar = document.getElementById('sub-header-avatar');
         if (sidebarFig && sidebar && subHeaderAvatar) {
-          sidebarFig.innerHTML = svgHtml;
+          sidebarFig.innerHTML = html;
           sidebar.style.display = '';
           sidebar.classList.add('visible');
           subHeaderAvatar.appendChild(sidebar);
           subHeaderAvatar.classList.add('visible');
         }
-        // Mirror of nav.js headshot sync (index.html keeps its own nav copy):
-        // nav pfp shows the avatar's face instead of the uploaded photo.
+
+        // Mirror of the nav.js headshot sync (index.html keeps its own nav
+        // copy). Uses the 512 crop, not the figure: this renders at ~36px.
         try {
-          if (!isFirstTime && (window.__bodyPresets || []).length) {
-            var _hsSvg = DSAvatar.renderHeadshotSvg(avatarData, window.__bodyPresets, allItems);
+          if (ch && ch.portrait_path) {
             var _navBtn = document.getElementById('user-avatar-btn');
-            if (_navBtn && _hsSvg) {
-              window.__dsNavHeadshot = true; // photo fetch must not overwrite
-              _navBtn.innerHTML = _hsSvg;
-              var _nsv = _navBtn.querySelector('svg');
-              if (_nsv) { _nsv.style.width='100%'; _nsv.style.height='100%'; _nsv.style.display='block'; _nsv.style.borderRadius='50%'; }
+            if (_navBtn) {
+              var _im = document.createElement('img');
+              _im.alt = ch.name || '';
+              _im.style.cssText = 'width:100%;height:100%;display:block;border-radius:50%;object-fit:cover;';
+              _im.onload = function(){
+                window.__dsNavHeadshot = true; // photo fetch must not overwrite
+                _navBtn.innerHTML = '';
+                _navBtn.appendChild(_im);
+              };
+              _im.src = base + ch.portrait_path;
             }
           }
         } catch(_e) { /* keep photo fallback */ }
       } catch(e) {
-        // Avatar system unavailable — silently hide the widget rather
+        // Character art unavailable — silently hide the widget rather
         // than show a broken preview.
       }
     }
@@ -5484,7 +5471,7 @@ function dsLoadLayoutFromCache() {
 <script src="footer.js"></script>
   <!-- AVATAR SIDEBAR -->
   <!-- avatar-sidebar is rendered into #sub-header-avatar by JS -->
-  <aside class="avatar-sidebar" id="avatar-sidebar" style="display:none;cursor:pointer;" onclick="window.location.href='avatar.html'">
+  <aside class="avatar-sidebar" id="avatar-sidebar" style="display:none;cursor:pointer;" onclick="window.location.href='characters.html'">
     <div class="avatar-sidebar-inner">
       <div class="avatar-sidebar-figure" id="avatar-sidebar-figure"></div>
       <span class="avatar-sidebar-link"><i class="ti ti-shirt"></i> My Avatar</span>

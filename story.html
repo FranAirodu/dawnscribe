@@ -1427,24 +1427,25 @@
           if (!holders.length) return;
           (async function() {
             try {
-              if (typeof DSAvatar === 'undefined') {
-                await new Promise(function(res, rej) {
-                  var sc = document.createElement('script');
-                  sc.src = 'avatarRender.js'; sc.onload = res; sc.onerror = rej;
-                  document.head.appendChild(sc);
-                });
-              }
-              if (typeof DSAvatar === 'undefined' || !DSAvatar.load) return;
+              // Each author's standing character, as the 512 crop. One call
+              // per author, and only the crop: these are small circles, and
+              // shipping full figures into a list is the expensive mistake.
+              var base = 'https://cajjyyskpmjnpcxcfeuk.supabase.co/storage/v1/object/public/characters/';
               for (var h = 0; h < holders.length; h++) {
                 var holder = holders[h];
                 var aid = holder.getAttribute('data-author-id');
                 if (!aid) continue;
                 try {
-                  var r = await DSAvatar.load(db, aid);
-                  if (!r || !r.presets || !r.presets.length || !r.headshotSvg) continue;
-                  holder.innerHTML = r.headshotSvg;
-                  var sv = holder.querySelector('svg');
-                  if (sv) { sv.style.width='100%'; sv.style.height='100%'; sv.style.display='block'; sv.style.borderRadius='50%'; }
+                  var r = await db.rpc('ds_profile_character', { p_user_id: aid });
+                  var ch = (r.data || [])[0];
+                  if (!ch || !ch.portrait_path) continue;
+                  (function(holderEl, c){
+                    var im = document.createElement('img');
+                    im.alt = c.name || '';
+                    im.style.cssText = 'width:100%;height:100%;display:block;border-radius:50%;object-fit:cover;';
+                    im.onload = function(){ holderEl.innerHTML = ''; holderEl.appendChild(im); };
+                    im.src = base + c.portrait_path;
+                  })(holder, ch);
                 } catch (e) { /* keep this author's PNG */ }
               }
             } catch (e) { /* keep all PNGs */ }

@@ -395,7 +395,7 @@ window.dsApplyAccent = dsApplyAccent;
       <i class="ti ti-feather"></i>
       <span class="quill-count" id="ds-quill-count">0</span>
     </div>
-    <div class="ember-wrap" id="ember-wrap" style="display:none;cursor:pointer;" title="Your embers — spend them in My Avatar" onclick="window.location.href='avatar.html'">
+    <div class="ember-wrap" id="ember-wrap" style="display:none;cursor:pointer;" title="Your Embers — give them to open the next character" onclick="window.location.href='characters.html'">
       <i class="ti ti-flame"></i>
       <span class="ember-count" id="ds-ember-count">0</span>
     </div>
@@ -479,7 +479,7 @@ window.dsApplyAccent = dsApplyAccent;
             <a class="user-dropdown-item" href="following.html#authors"><i class="ti ti-feather"></i> Following Authors</a>
             <a class="user-dropdown-item" href="following.html#artists"><i class="ti ti-palette"></i> Following Artists</a>
             <a class="user-dropdown-item" href="following.html#history"><i class="ti ti-history"></i> Reading History</a>
-            <a class="user-dropdown-item" href="avatar.html"><i class="ti ti-shirt"></i> My Avatar</a>
+            <a class="user-dropdown-item" href="characters.html"><i class="ti ti-users"></i> Characters</a>
           </div>
 
           <div class="user-dropdown-divider" style="margin:4px 8px;"></div>
@@ -490,7 +490,6 @@ window.dsApplyAccent = dsApplyAccent;
             <i class="ti ti-chevron-down dd-acc-chevron"></i>
           </button>
           <div class="dd-accordion-body">
-            <a class="user-dropdown-item" href="scroll-create.html"><i class="ti ti-writing" style="color:var(--accent);"></i> <span style="color:var(--accent);">Submit a Scroll</span></a>
             <a class="user-dropdown-item" href="banner-create.html"><i class="ti ti-photo" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Submit a Banner</span></a>
             <a class="user-dropdown-item" href="cosmetic-create.html"><i class="ti ti-shirt" style="color:#a78bfa;"></i> <span style="color:#a78bfa;">Submit a Cosmetic</span></a>
             <a class="user-dropdown-item" href="licensing.html"><i class="ti ti-license"></i> Character Licensing</a>
@@ -1411,28 +1410,30 @@ window.dsScopeCacheToUser = function (uid) {
         } catch(e) { /* timezone capture is never worth an error */ }
       })();
 
-      // ── SVG AVATAR HEADSHOT (sitewide) ──────────────────────────
-      // Overrides the photo pfp with the user's customized avatar face.
-      // Loads avatarRender.js on demand so every page gets it without
-      // needing its own <script> include. Falls back silently to the
-      // avatar_url photo if presets/artwork aren't available.
-      (async function dsApplyAvatarHeadshot(uid){
+      // ── CHARACTER HEADSHOT (sitewide) ───────────────────────────
+      // Overrides the photo pfp with the character the user keeps beside
+      // their name. Uses the 512 PORTRAIT CROP, never the full figure: this
+      // renders at 30-44px and the crop is ~38 kB against ~316 kB.
+      // Falls back silently to the avatar_url photo.
+      (async function dsApplyCharacterHeadshot(uid){
         try {
-          if (!window.DSAvatar) {
-            await new Promise(function(res, rej){
-              var sc = document.createElement('script');
-              sc.src = 'avatarRender.js'; sc.onload = res; sc.onerror = rej;
-              document.head.appendChild(sc);
-            });
-          }
-          var r = await DSAvatar.load(db, uid);
-          if (!r.presets || !r.presets.length || !r.headshotSvg) return;
+          var r = await db.rpc('ds_profile_character', { p_user_id: uid });
+          var ch = (r.data || [])[0];
+          if (!ch || !ch.portrait_path) return;
           var btn = document.getElementById('user-avatar-btn');
           if (!btn) return;
-          window.__dsNavHeadshot = true; // photo fetches must not overwrite
-          btn.innerHTML = r.headshotSvg;
-          var sv = btn.querySelector('svg');
-          if (sv) { sv.style.width='100%'; sv.style.height='100%'; sv.style.display='block'; sv.style.borderRadius='50%'; }
+          var img = document.createElement('img');
+          img.alt = ch.name || '';
+          img.style.cssText = 'width:100%;height:100%;display:block;border-radius:50%;object-fit:cover;';
+          // Only take over the button once the art has actually loaded, so a
+          // missing file leaves the photo in place instead of an empty circle.
+          img.onload = function(){
+            window.__dsNavHeadshot = true;  // photo fetches must not overwrite
+            btn.innerHTML = '';
+            btn.appendChild(img);
+          };
+          img.src = 'https://cajjyyskpmjnpcxcfeuk.supabase.co/storage/v1/object/public/characters/'
+                  + ch.portrait_path;
         } catch(e) { /* keep photo fallback */ }
       })(session.user.id);
 
