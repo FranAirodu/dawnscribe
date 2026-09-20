@@ -55,7 +55,6 @@
 <script src="storagePaths.js"></script>
   <script src="escapeUtils.js"></script>
   <script src="blockUtils.js"></script>
-<script src="avatarRender.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
   <style>
@@ -151,13 +150,13 @@
 
     /* AVATAR */
     .profile-header{max-width:960px;margin:0 auto;padding:0 24px;position:relative;}
-    /* Full-body customized avatar (shared renderer — avatarRender.js).
-       Anchored so the character's feet sit on the banner's bottom edge,
-       standing in front of the banner art. Transparent SVG = banner
-       integrity preserved. pointer-events:none so banner buttons/credit
-       chips behind it stay clickable. */
+    /* The character this person keeps beside their name, standing on the
+       banner's bottom edge in front of the banner art. Transparent PNG/WebP
+       = banner integrity preserved. pointer-events:none so banner buttons
+       and credit chips behind it stay clickable. */
     /* Sized from --ds-avatar-h so the figure keeps its proportion against a banner
-       that now changes height. The 2:3 width ratio matches the renderer's viewBox.
+       that now changes height. The 2:3 width ratio matches the delivered
+       figure size (1200x1800), so art drops in without cropping.
        top is derived, not hardcoded: the element is positioned inside
        .profile-header (which starts at the banner's bottom edge), so a top of
        -(height - 40px) puts the feet 40px below that edge — exactly where the old
@@ -168,6 +167,9 @@
     .ds-avatar-figure.clickable:hover{filter:drop-shadow(0 6px 16px rgba(0,0,0,0.45)) drop-shadow(0 0 10px rgba(45,212,191,0.45));transform:translateY(-3px);}
     .ds-avatar-figure.visible{display:block;}
     .ds-avatar-figure svg{width:100%;height:100%;display:block;}
+    /* Character art is a PNG/WebP figure, bottom-aligned so every character
+       stands on the same ground line regardless of how tall they are drawn. */
+    .ds-avatar-figure img{width:100%;height:100%;display:block;object-fit:contain;object-position:bottom;}
     /* Phone: pin the pair to their previous fixed values rather than let the
        clamps drive them, so the small-screen layout is unchanged. */
     @media (max-width:720px){ :root{ --ds-avatar-h:210px; } .ds-avatar-figure{top:-182px;left:2px;width:140px;height:210px;} }
@@ -1467,33 +1469,48 @@
     }
 
     /* ── LOAD COLLABS TAB ──────────────────────────────────────────── */
-    /* ── FULL-BODY AVATAR (shared renderer) ─────────────────────
-       Renders the profile owner's customized avatar standing on the
-       banner's bottom edge. Non-critical: hides itself on any error. */
+    /* ── STANDING CHARACTER ──────────────────────────────────────
+       The character this person keeps beside their name, standing on the
+       banner's bottom edge. Replaces the layered dress-up doll: one finished
+       illustration, chosen rather than assembled.
+
+       The slot is 2:3, which is exactly the delivered figure ratio
+       (1200x1800), so the art drops in without cropping.
+
+       Non-critical: hides itself on any error, as the doll did. */
     async function loadFullBodyAvatar(profileUserId) {
       try {
-        if (!window.DSAvatar) return;
         var fig = document.getElementById('ds-avatar-figure');
         if (!fig) return;
-        var r = await DSAvatar.load(db, profileUserId, { skipSlots: ['background'] });
-        // Skip render if user has no body preset artwork available
-        if (!r.presets || !r.presets.length) return;
-        fig.innerHTML = r.svg;
-        fig.classList.add('visible');
 
-        // Owner: clicking the avatar opens the editor (replaces the old
-        // Customize Avatar button). Visitors: purely decorative.
-        try {
-          var _s = (await db.auth.getSession()).data.session;
-          if (_s && _s.user && _s.user.id === profileUserId) {
-            fig.href = 'avatar.html';
-            fig.title = 'Customize your avatar';
-            fig.setAttribute('aria-hidden', 'false');
-            fig.setAttribute('aria-label', 'Customize your avatar');
-            fig.classList.add('clickable');
-          }
-        } catch(_e) { /* stays decorative */ }
-      } catch(e) { /* avatar figure is decorative — fail silently */ }
+        // One call, and it has to be this one. Querying the poses table
+        // directly returns the pose the VIEWER has earned, so a visitor would
+        // see the base art while the owner saw the pose they spent three
+        // weeks on. ds_profile_character() reads the OWNER's progress.
+        var r = await db.rpc('ds_profile_character', { p_user_id: profileUserId });
+        var ch = (r.data || [])[0];
+        if (!ch || !ch.figure_path) return;            // nobody standing there
+
+        var url = 'https://cajjyyskpmjnpcxcfeuk.supabase.co/storage/v1/object/public/characters/'
+                + ch.figure_path;
+        var img = document.createElement('img');
+        img.alt = ch.name || '';
+        img.loading = 'lazy';
+        // Only reveal once it actually loads, so a missing file leaves the
+        // banner clean instead of showing a broken-image box.
+        img.onload = function(){ fig.classList.add('visible'); };
+        img.onerror = function(){ fig.classList.remove('visible'); };
+        img.src = url;
+        fig.innerHTML = '';
+        fig.appendChild(img);
+
+        fig.href = 'characters.html';
+        fig.title = ch.name + (ch.subtitle ? ' \u2014 ' + ch.subtitle : '')
+                  + (ch.maxed ? ' \u2014 closest' : '');
+        fig.setAttribute('aria-hidden', 'false');
+        fig.setAttribute('aria-label', ch.name);
+        fig.classList.add('clickable');
+      } catch(e) { /* the standing character is decorative — fail silently */ }
     }
 
     async function loadCollabsTab(profileId, isOwner) {
