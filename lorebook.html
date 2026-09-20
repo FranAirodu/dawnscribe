@@ -268,6 +268,11 @@
     .f.just-changed{background:rgba(var(--accent-rgb),0.20);
       box-shadow:0 0 0 2px rgba(var(--accent-rgb),0.55);
       transition:background .6s ease, box-shadow .6s ease;}
+    .read-done{margin-top:10px;font-size:12.5px;color:var(--text2);display:flex;flex-wrap:wrap;
+      align-items:center;gap:8px;padding-top:9px;border-top:1px solid var(--border);}
+    .read-done.found{color:var(--amber);}
+    .read-done.bad{color:var(--red);}
+    .read-done .btn{padding:3px 10px;font-size:11.5px;}
     .sg-tag{font-size:10.5px;color:var(--accent);display:flex;align-items:center;gap:5px;margin-top:5px;
       flex-basis:100%;width:100%;}
     .note-card{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:11px;padding:13px 15px;margin-bottom:10px;}
@@ -464,7 +469,7 @@ function safeUrl(u){
   return '';
 }
 var toastTimer;
-function toast(msg, icon, bad, undoFn){
+function toast(msg, icon, bad, undoFn, actionLabel){
   var el = document.getElementById('lb-toast');
   document.getElementById('lb-toast-msg').textContent = msg;
   document.getElementById('lb-toast-icon').className = 'ti ' + (icon || 'ti-check');
@@ -477,6 +482,7 @@ function toast(msg, icon, bad, undoFn){
   // gets out of the way.
   var btn = document.getElementById('lb-toast-undo');
   btn.style.display = undoFn ? '' : 'none';
+  btn.textContent = actionLabel || 'Undo';
   btn.onclick = null;
   if(undoFn){
     btn.onclick = function(){
@@ -3348,6 +3354,30 @@ function renderReader(){
       : (c.word_count ? Number(c.word_count).toLocaleString() + ' words' : '');
 
     var disabled = q && (q.ok === false || q.affordable === false);
+
+    // The outcome of this session's read, shown on the row itself. The toast
+    // is gone in seconds and the findings appear on another tab, which left
+    // a finished read looking like nothing had happened.
+    var done = READ_RESULT[c.id];
+    var doneLine = '';
+    if(done){
+      if(done.state === 'found'){
+        doneLine = '<div class="read-done found"><i class="ti ti-alert-triangle"></i> '
+          + 'Finished reading \u2014 <b>' + done.findings + ' thing'
+          + (done.findings === 1 ? '' : 's') + '</b> to look at '
+          + '<button class="btn ghost" onclick="setView(\'checks\')">See them</button></div>';
+      } else if(done.state === 'clean'){
+        doneLine = '<div class="read-done"><i class="ti ti-check"></i> '
+          + 'Finished reading \u2014 nothing worth raising.</div>';
+      } else if(done.state === 'unchanged'){
+        doneLine = '<div class="read-done"><i class="ti ti-check"></i> '
+          + 'Nothing changed since the last read \u2014 nothing charged.</div>';
+      } else {
+        doneLine = '<div class="read-done bad"><i class="ti ti-x"></i> '
+          + esc(done.note || 'That read did not finish.') + '</div>';
+      }
+    }
+
     return '<div class="finding" style="border-left-color:'
       + (q && q.free ? 'var(--green)' : 'var(--border)') + ';">'
       + '<div class="finding-msg">' + label + '</div>'
@@ -3356,8 +3386,9 @@ function renderReader(){
       + '</div>'
       + '<div class="finding-acts">'
       +   '<button class="btn' + (disabled ? '' : ' primary') + '" ' + (disabled ? 'disabled style="opacity:.45;"' : '')
-      +     ' onclick="askForRead(\'' + c.id + '\', this)"><i class="ti ti-eye"></i> Ask for a read</button>'
-      + '</div></div>';
+      +     ' onclick="askForRead(\'' + c.id + '\', this)"><i class="ti ti-eye"></i> '
+      +     (done ? 'Read it again' : 'Ask for a read') + '</button>'
+      + '</div>' + doneLine + '</div>';
   }).join('');
 
   body.innerHTML = intro + balance
@@ -3372,6 +3403,12 @@ function renderReader(){
 /* Quotes are fetched per chapter rather than up front: one RPC per chapter on
    a 300-chapter novel would be 300 round trips for numbers the author has not
    asked about yet. */
+// What the last read of each chapter came back with, so the answer stays on
+// the page after the toast has gone. A read takes 15-30 seconds and its
+// findings land in the Checks tab, so without this the reader tab looks
+// exactly as it did before you pressed the button.
+var READ_RESULT = {};
+
 async function askForRead(chapterId, btn){
   var original = btn.innerHTML;
   btn.disabled = true;
@@ -3412,14 +3449,20 @@ async function askForRead(chapterId, btn){
     // Per-chapter outcome, not just the overall call: a run can succeed as a
     // request and still have refused this chapter.
     var r = (result.results || [])[0] || {};
+    var seeChecks = function(){ setView('checks'); };
     if(r.ok === false){
+      READ_RESULT[chapterId] = { state: 'failed', note: r.error || 'could not be read' };
       toast(r.error || 'That chapter could not be read', 'ti-alert-triangle', true);
     } else if(r.unchanged){
+      READ_RESULT[chapterId] = { state: 'unchanged' };
       toast('Nothing changed since the last read \u2014 findings are unchanged, nothing charged.', 'ti-check');
     } else if((r.findings || 0) === 0){
-      toast('Read it and noticed nothing worth raising.', 'ti-check');
+      READ_RESULT[chapterId] = { state: 'clean' };
+      toast('Finished reading \u2014 nothing worth raising.', 'ti-check');
     } else {
-      toast(r.findings + ' thing' + (r.findings === 1 ? '' : 's') + ' to look at.', 'ti-alert-triangle');
+      READ_RESULT[chapterId] = { state: 'found', findings: r.findings };
+      toast('Finished reading \u2014 ' + r.findings + ' thing' + (r.findings === 1 ? '' : 's')
+        + ' to look at.', 'ti-alert-triangle', false, seeChecks, 'See them');
     }
 
     if(result.balance) {
