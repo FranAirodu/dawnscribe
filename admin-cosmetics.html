@@ -94,6 +94,7 @@
     .st-draft{background:var(--bg4);color:var(--text3);}
     .st-rejected{background:rgba(248,113,113,0.15);color:var(--red);}
     .st-retired{background:var(--bg4);color:var(--text2);}
+    .st-awaiting_author{background:rgba(167,139,250,0.15);color:var(--purple);}
 
     /* ── editor ── */
     .editor{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;}
@@ -163,7 +164,8 @@
           <select id="char-status-filter" onchange="renderCharList()">
             <option value="">Every status</option>
             <option value="approved">Live</option>
-            <option value="pending">Waiting for review</option>
+            <option value="pending">Waiting for you</option>
+            <option value="awaiting_author">Waiting for the story's author</option>
             <option value="draft">Draft</option>
             <option value="rejected">Sent back</option>
             <option value="retired">Retired</option>
@@ -173,6 +175,7 @@
             <option value="ember_unlock">Crowd unlock</option>
             <option value="purchase">Sold for Quills</option>
             <option value="secret">Hidden reward</option>
+            <option value="randomizer">Free randomizer</option>
           </select>
         </div>
         <div class="grid" id="char-grid"><div class="empty"><i class="ti ti-loader"></i>Loading…</div></div>
@@ -190,6 +193,16 @@
     <section class="tab" id="tab-banners">
       <div class="bar">
         <button class="btn btn-main" onclick="editBanner(null)"><i class="ti ti-plus"></i> New banner</button>
+      </div>
+      <div class="editor" style="margin-bottom:18px;">
+        <h3 style="font-size:14px;margin-bottom:4px;">Randomizer prices</h3>
+        <p style="font-size:12px;color:var(--text3);margin-bottom:10px;">Embers per roll. Lower the character price as more characters are donated.</p>
+        <div class="row" style="align-items:end;">
+          <div class="f"><label for="cost-banner">Banner roll</label><input type="number" id="cost-banner" min="1" max="100000"/></div>
+          <div class="f"><label for="cost-character">Character roll</label><input type="number" id="cost-character" min="1" max="100000"/></div>
+          <div class="f"><button class="btn btn-main" onclick="saveRollCosts()"><i class="ti ti-device-floppy"></i> Save prices</button></div>
+        </div>
+        <p id="pool-info" style="font-size:12px;color:var(--text3);"></p>
       </div>
       <div id="banner-editor" style="display:none;margin-bottom:20px;"></div>
       <div class="grid" id="banner-grid"></div>
@@ -229,8 +242,8 @@
   const EXPRESSIONS = ['neutral','pleased','annoyed','surprised','sad','shy'];
   const REQUIRED_FACES = ['neutral','pleased','annoyed','surprised'];   // the art spec
   const MAX_AFFECTION = 21;
-  const AVAIL_LABEL = { ember_unlock: 'Crowd unlock', purchase: 'Sold for Quills', secret: 'Hidden reward' };
-  const STATUS_LABEL = { approved: 'Live', pending: 'Waiting', draft: 'Draft', rejected: 'Sent back', retired: 'Retired' };
+  const AVAIL_LABEL = { ember_unlock: 'Crowd unlock', purchase: 'Sold for Quills', secret: 'Hidden reward', randomizer: 'Free randomizer' };
+  const STATUS_LABEL = { approved: 'Live', pending: 'Waiting for you', awaiting_author: 'Waiting for author', draft: 'Draft', rejected: 'Sent back', retired: 'Retired' };
   const SOURCE_LABEL = { dawnscribe: 'DawnScribe lore', book: 'From a book', creator: 'Creator-made' };
 
   // Longest edge, per the art spec. The figure is 1200x1800; crops 512.
@@ -269,7 +282,7 @@
   // ════════════════════════════════════════════════════════════════
   async function loadAll() {
     if (!(await window.__adminReady)) return;
-    const [c, p, f, b, r, t, tg] = await Promise.all([
+    const [c, p, f, b, r, t, tg, st] = await Promise.all([
       db.from('ds_characters').select('*').order('created_at', { ascending: false }),
       db.from('ds_character_poses').select('*').order('pose_order'),
       db.from('ds_character_expressions').select('*'),
@@ -277,6 +290,7 @@
       db.from('ds_reading_rewards').select('*').order('created_at', { ascending: false }),
       db.from('prestige_tiers').select('*').order('tier'),
       db.from('tags').select('name, category').order('name'),
+      db.from('site_settings').select('key, value').in('key', ['randomizer_banner_cost', 'randomizer_character_cost']),
     ]);
     if (c.error) { toast('Could not load characters: ' + c.error.message, true); return; }
     CHARS = c.data || [];
@@ -286,6 +300,9 @@
     REWARDS = r.data || [];
     TIERS = t.data || [];
     TAGS = (tg.data || []).map(x => x.name);
+    const cost = {}; (st.data || []).forEach(x => cost[x.key] = x.value);
+    document.getElementById('cost-banner').value = cost.randomizer_banner_cost ?? 10;
+    document.getElementById('cost-character').value = cost.randomizer_character_cost ?? 500;
 
     const pids = [...new Set(CHARS.flatMap(x => [x.creator_id, x.author_id]).filter(Boolean))];
     const wids = [...new Set(CHARS.map(x => x.work_id).filter(Boolean))];
@@ -323,10 +340,12 @@
   }
   function renderReview() {
     const list = CHARS.filter(c => c.status === 'pending');
+    const withAuthor = CHARS.filter(c => c.status === 'awaiting_author');
     const pill = document.getElementById('review-count');
     pill.textContent = list.length; pill.style.display = list.length ? '' : 'none';
-    document.getElementById('review-grid').innerHTML = list.length ? list.map(charCard).join('')
-      : '<div class="empty"><i class="ti ti-inbox"></i>Nothing waiting. Submissions from creators show up here.</div>';
+    document.getElementById('review-grid').innerHTML = (list.length ? list.map(charCard).join('')
+      : '<div class="empty"><i class="ti ti-inbox"></i>Nothing waiting for you. Submissions from creators show up here.</div>') +
+      (withAuthor.length ? '<div style="grid-column:1/-1;font-size:13px;color:var(--text3);margin-top:10px;">Still with the story\'s author (' + withAuthor.length + '):</div>' + withAuthor.map(charCard).join('') : '');
   }
 
   // ════════════════════════════════════════════════════════════════
@@ -365,6 +384,8 @@
         '<button class="btn btn-ghost btn-sm" onclick="closeEditor()"><i class="ti ti-arrow-left"></i> All characters</button></div>' +
 
       (c.status === 'rejected' && c.rejection_note ? '<div class="note note-bad"><strong>Sent back:</strong> ' + esc(c.rejection_note) + '</div>' : '') +
+      (c.status === 'awaiting_author' ? '<div class="note note-info">Waiting for the author of ' + esc(WORKS[c.work_id] || 'the story') + ' to approve this character. You can review it once they do.</div>' : '') +
+      (c.source === 'creator' && c.author_approved_at && c.creator_id ? '<div class="note note-info">The story\'s author approved this on ' + new Date(c.author_approved_at).toLocaleDateString() + (c.author_note ? ': “' + esc(c.author_note) + '”' : '.') + '</div>' : '') +
 
       // ── Basics
       '<div class="row">' +
@@ -394,6 +415,7 @@
           radio('e-avail', 'ember_unlock', c.availability, 'Crowd unlock', 'Everyone chips in Embers; at the goal every backer gets them') +
           radio('e-avail', 'purchase', c.availability, 'Sold for Quills', 'Bought outright in the Marketplace') +
           radio('e-avail', 'secret', c.availability, 'Hidden reward', 'Earned by reading or prestige. Set the condition in Reading rewards.') +
+          radio('e-avail', 'randomizer', c.availability, 'Free randomizer', 'In the Ember character roll. A creator donating one unlocks selling characters.') +
         '</div>' +
         '<div class="row">' +
           '<div class="f" id="f-ember"><label for="e-ember">Ember goal</label><input type="number" id="e-ember" min="1" value="' + (c.ember_unlock_price || '') + '"/></div>' +
@@ -437,6 +459,8 @@
       info.innerHTML = '<div class="note ' + (n ? 'note-info' : 'note-warn') + '">' +
         (n ? 'Given by ' + n + ' reading reward' + (n > 1 ? 's' : '') + '.'
            : 'No reading reward gives this character yet, so nobody can get them. Add one in the Reading rewards tab after saving.') + '</div>';
+    } else if (a === 'randomizer') {
+      info.innerHTML = '<div class="note note-info">Anyone can win this in the character roll. Price per roll is set on the Banners tab.</div>';
     } else info.innerHTML = '';
   };
 
@@ -663,6 +687,7 @@
       h += '<div class="hint">Live now. Retiring takes them off sale and out of crowd unlocks. Everyone who owns them keeps them, poses and all.</div>' +
            '<button class="btn btn-ghost" onclick="reviewCharacter(\'retired\')"><i class="ti ti-archive"></i> Retire</button>';
     } else {
+      if (c.status === 'awaiting_author') return h + '<div class="hint">Nothing to do until the author responds.</div></div>';
       if (!ready) h += '<div class="note note-warn">Needs pose 1 with both a full figure and a portrait before it can go live.</div>';
       if (facesMissing.length) h += '<div class="note note-warn">Faces still missing: ' + facesMissing.join(', ') + '. It can go live without them, but taps will fall back to neutral.</div>';
       h += '<div class="bar"><button class="btn btn-ok" ' + (ready ? '' : 'disabled') + ' onclick="reviewCharacter(\'approved\')"><i class="ti ti-check"></i> ' +
@@ -682,7 +707,8 @@
     if (decision === 'retired' && !confirm('Retire ' + editing.name + '? Owners keep them.')) return;
     const { data, error } = await db.rpc('ds_review_character', { p_character_id: editing.id, p_decision: decision, p_note: note });
     if (error || !data || data.status !== 'success') {
-      const why = { no_starting_pose: 'Pose 1 needs art first.', note_required: 'A note is required.', not_admin: 'Your admin session expired.' }[data && data.error];
+      const why = { no_starting_pose: 'Pose 1 needs art first.', note_required: 'A note is required.', not_admin: 'Your admin session expired.',
+                    needs_author_approval: 'The story\'s author has not approved this character yet.' }[data && data.error];
       toast(why || 'Could not update: ' + (error ? error.message : 'unknown'), true);
       return;
     }
@@ -693,14 +719,29 @@
   // ════════════════════════════════════════════════════════════════
   //  BANNERS
   // ════════════════════════════════════════════════════════════════
+  window.saveRollCosts = async function() {
+    const b = parseInt(document.getElementById('cost-banner').value, 10);
+    const c = parseInt(document.getElementById('cost-character').value, 10);
+    if (!(b >= 1) || !(c >= 1)) { toast('Both prices must be at least 1 Ember.', true); return; }
+    const res = await Promise.all([
+      db.from('site_settings').update({ value: b, updated_at: new Date().toISOString() }).eq('key', 'randomizer_banner_cost'),
+      db.from('site_settings').update({ value: c, updated_at: new Date().toISOString() }).eq('key', 'randomizer_character_cost'),
+    ]);
+    const err = res.find(r => r.error);
+    toast(err ? 'Could not save: ' + err.error.message : 'Roll prices saved.', !!err);
+  };
+
   function renderBanners() {
+    const bp = BANNERS.filter(b => b.is_randomizer_item && b.status === 'approved').length;
+    const cp = CHARS.filter(c => c.availability === 'randomizer' && c.status === 'approved').length;
+    document.getElementById('pool-info').textContent = 'In the draw right now: ' + bp + ' banner' + (bp === 1 ? '' : 's') + ', ' + cp + ' character' + (cp === 1 ? '' : 's') + '.';
     const g = document.getElementById('banner-grid');
     g.innerHTML = BANNERS.length ? BANNERS.map(b => {
       const giver = REWARDS.some(r => r.cosmetic_item_id === b.id);
       return '<button class="card" onclick="editBanner(\'' + b.id + '\')">' +
         '<div class="card-art wide">' + (b.image_url ? '<img src="' + esc(b.image_url) + '" alt="" loading="lazy"/>' : '<i class="ti ti-photo"></i>') + '</div>' +
         '<div class="card-body"><div class="card-name">' + esc(b.name) + '</div>' +
-        '<div class="card-meta">' + (b.quill_price ? b.quill_price + ' Quills' : 'Not for sale') + (giver ? ' &middot; reading reward' : '') + '</div>' +
+        '<div class="card-meta">' + (b.quill_price ? b.quill_price + ' Quills' : 'Not for sale') + (b.is_randomizer_item ? ' &middot; randomizer' : '') + (giver ? ' &middot; reading reward' : '') + '</div>' +
         '<span class="status st-' + (b.status || 'draft') + '">' + esc(STATUS_LABEL[b.status] || b.status || 'draft') + '</span></div></button>';
     }).join('') : '<div class="empty"><i class="ti ti-photo"></i>No banners yet.</div>';
   }
@@ -729,6 +770,7 @@
           ['approved','draft','retired'].map(s => '<option value="' + s + '"' + (b.status === s ? ' selected' : '') + '>' + STATUS_LABEL[s] + '</option>').join('') +
         '</select></div>' +
       '</div>' +
+      '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:10px;"><input type="checkbox" id="bn-rand"' + (b.is_randomizer_item ? ' checked' : '') + '/> In the free randomizer (a donated banner — unlocks selling banners for its artist)</label>' +
       '<div class="hint" style="font-size:12px;color:var(--text3);margin-bottom:10px;">Gifting needs at least 100 Quills. The artist earns 75% of each sale when they have an account linked.</div>' +
       '<button class="btn btn-main" onclick="saveBanner()"><i class="ti ti-device-floppy"></i> ' + (b.id ? 'Save banner' : 'Create banner') + '</button>' +
     '</div>';
@@ -750,6 +792,7 @@
       description: document.getElementById('bn-desc').value.trim() || null,
       quill_price: price, is_marketplace_item: price != null,
       status: document.getElementById('bn-status').value,
+      is_randomizer_item: document.getElementById('bn-rand').checked,
       slot: 'banner',
     };
     if (!row.name) { toast('Give the banner a name.', true); return; }
