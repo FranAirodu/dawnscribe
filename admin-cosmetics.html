@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>DawnScribe — Cosmetic Review</title>
+  <title>DawnScribe — Characters &amp; Banners</title>
   <script src="accessibilityPrefs.js"></script>
   <meta name="robots" content="noindex,nofollow" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="avatarRender.js"></script>
   <script>
-    // Block all rendering until the admin check completes.
+    // Courtesy gate. The real locks are RLS (is_admin() on every table
+    // this page writes) and the admin-only storage policies.
     document.documentElement.style.visibility = 'hidden';
-    (async function() {
+    window.__adminReady = (async function() {
       window.db = window.supabase.createClient(
         'https://cajjyyskpmjnpcxcfeuk.supabase.co',
         'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx'
@@ -23,13 +23,15 @@
         if (session) break;
         await new Promise(function(res) { setTimeout(res, 350); });
       }
-      var adminRes = session ? await window.db.from('admins').select('id').eq('id', session.user.id).maybeSingle() : null;
-      if (!session || !adminRes || !adminRes.data) {
+      var adminRow = session ? await window.db.from('admins').select('id').eq('id', session.user.id).maybeSingle() : null;
+      if (!session || !adminRow || !adminRow.data) {
         document.documentElement.style.visibility = '';
-        document.body.innerHTML = '<div style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</div>';
-        return;
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</div>';
+        return false;
       }
+      window.__me = session.user.id;
       document.documentElement.style.visibility = '';
+      return true;
     })();
   </script>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
@@ -39,467 +41,823 @@
       --bg:#0a0a0f; --bg2:#12121a; --bg3:#1a1a26; --bg4:#22223a;
       --accent:#2dd4bf; --accent2:#0d9488;
       --text:#f1f0ff; --text2:#9b9bc0; --text3:#8a8aa8;
-      --border:rgba(255,255,255,0.07); --red:#f87171; --green:#34d399; --gold:#f59e0b;
+      --border:rgba(255,255,255,0.07); --red:#f87171; --green:#34d399; --gold:#f59e0b; --purple:#a78bfa;
     }
-    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--border:rgba(0,0,0,0.10);--text:#0a0a0f;--text2:#3a3a5c;--text3:#5a5a76;--accent:#0a6b63;--accent2:#075e56;--red:#b01818;--green:#036b4e;--gold:#7d5205;--pink:#a3216b;--shadow:rgba(0,0,0,0.12);}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--border:rgba(0,0,0,0.10);--text:#0a0a0f;--text2:#3a3a5c;--text3:#5a5a76;--accent:#0a6b63;--accent2:#075e56;--red:#b01818;--green:#036b4e;--gold:#7d5205;--purple:#5b3fb5;}
     html[data-theme="dim"]{--bg:#1c1c21;--bg2:#24242c;--bg3:#2c2c38;--bg4:#34344c;--border:rgba(255,255,255,0.12);--text2:#9b9bc0;--text3:#9e9eb4;}
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
-    nav{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
-    .logo{font-family:'Cinzel',serif;font-size:20px;font-weight:700;color:var(--text);text-decoration:none;letter-spacing:1px;}
-    .logo span{color:var(--accent);}
-    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
-    .back-btn:hover{border-color:#2dd4bf;color:#2dd4bf;}
-    .page{max-width:1000px;margin:0 auto;padding:32px 24px 80px;}
-    .page-title{font-family:'Cinzel',serif;font-size:30px;font-weight:700;margin-bottom:4px;}
-    .page-title span{color:var(--accent);}
-    .page-sub{color:var(--text2);font-size:14px;margin-bottom:26px;}
-    .section{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:24px;}
-    .section-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
-    .section-title i{color:#2dd4bf;}
-    .section-sub{color:var(--text3);font-size:12.5px;margin-bottom:16px;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:var(--text);}
+    .nav-links{display:flex;gap:8px;}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--text2);font-size:13px;display:flex;align-items:center;gap:6px;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .page{max-width:1080px;margin:0 auto;padding:36px 24px 80px;}
+    .page-title{font-family:'Cinzel',serif;font-size:26px;font-weight:700;margin-bottom:4px;}
+    .page-sub{font-size:14px;color:var(--text3);margin-bottom:22px;max-width:680px;}
 
-    .notice{background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:12px 14px;font-size:12.5px;color:var(--text2);margin-bottom:18px;display:flex;gap:9px;align-items:flex-start;}
-    .notice i{color:var(--gold);font-size:16px;flex-shrink:0;margin-top:2px;}
+    .tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);margin-bottom:20px;}
+    .tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:11px 16px;font-size:13px;font-weight:700;color:var(--text3);cursor:pointer;display:flex;align-items:center;gap:6px;font-family:'Lato',sans-serif;}
+    .tab-btn:hover{color:var(--text2);}
+    .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+    .pill{background:var(--red);color:#fff;border-radius:10px;padding:0 7px;font-size:11px;}
+    .tab{display:none;}
+    .tab.active{display:block;}
 
-    .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;}
-    .filter-btn{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:5px 15px;font-size:11.5px;font-weight:700;color:var(--text3);cursor:pointer;font-family:'Lato',sans-serif;transition:all 0.15s;}
-    .filter-btn:hover{color:var(--text2);}
-    .filter-btn.active{background:rgba(45,212,191,0.12);border-color:var(--accent);color:var(--accent);}
-    .filter-btn .cnt{opacity:0.7;font-weight:400;}
+    .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;}
+    input[type=text],input[type=number],select,textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;padding:8px 10px;width:100%;}
+    textarea{resize:vertical;}
+    :focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+    .bar select{width:auto;}
+    .btn{border:none;border-radius:8px;padding:9px 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Lato',sans-serif;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+    .btn:disabled{opacity:0.5;cursor:not-allowed;}
+    .btn-main{background:var(--accent);color:#0a0a0f;}
+    .btn-ok{background:var(--green);color:#0a0a0f;}
+    .btn-ghost{background:var(--bg3);color:var(--text2);border:1px solid var(--border);}
+    .btn-bad{background:transparent;color:var(--red);border:1px solid var(--red);}
+    .btn-sm{padding:6px 10px;font-size:12px;}
 
-    .item{background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--text3);border-radius:10px;padding:14px 16px;margin-bottom:12px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;}
-    .item.pending{border-left-color:var(--gold);}
-    .item.listed{border-left-color:var(--green);}
-    .item.rejected{border-left-color:var(--red);opacity:0.7;}
-    .thumb{width:112px;height:112px;flex-shrink:0;border-radius:10px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;}
-    .thumb img{width:100%;height:100%;object-fit:contain;}
-    .thumb i{font-size:30px;color:var(--text3);}
-    .body{flex:1;min-width:260px;}
-    .name-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:15px;}
-    .tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:2px 8px;border-radius:20px;}
-    .tag.pending{background:rgba(245,158,11,0.15);color:var(--gold);}
-    .tag.approved{background:rgba(45,212,191,0.15);color:var(--accent);}
-    .tag.listed{background:rgba(52,211,153,0.15);color:var(--green);}
-    .tag.rejected{background:rgba(248,113,113,0.15);color:var(--red);}
-    .tag.noart{background:rgba(155,155,192,0.13);color:var(--text2);}
-    .meta{color:var(--text3);font-size:12px;margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;}
-    .meta a{color:var(--text2);}
-    .desc{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;color:var(--text2);white-space:pre-wrap;}
-    .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;}
-    .act{background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:6px 13px;font-size:12px;font-weight:700;color:var(--text2);cursor:pointer;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:5px;transition:all 0.15s;text-decoration:none;}
-    .act:hover{border-color:var(--accent);color:var(--accent);}
-    .act.green:hover{border-color:var(--green);color:var(--green);}
-    .act.red:hover{border-color:var(--red);color:var(--red);}
-    .price-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);}
-    .price-in{width:82px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 9px;color:var(--text);font-size:12.5px;font-family:'Lato',sans-serif;}
-    .price-in:focus{outline:none;border-color:var(--accent);}
-    .reason{display:none;width:100%;margin-top:9px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12.5px;font-family:'Lato',sans-serif;resize:vertical;}
-    .reason:focus{outline:none;border-color:var(--red);}
-    .reject-confirm{display:none;margin-top:8px;}
-    .rejected-note{margin-top:9px;font-size:12px;color:var(--red);display:flex;gap:6px;align-items:flex-start;}
-    .preview{flex-shrink:0;width:200px;}
-    .preview-stage{width:200px;height:300px;border-radius:10px;background:var(--bg);border:1px solid var(--border);overflow:hidden;}
-    .preview-stage svg{width:100%;height:100%;display:block;}
-    .preview-ctrls{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;align-items:center;}
-    .pbtn{background:var(--bg4);border:1px solid var(--border);border-radius:7px;padding:3px 9px;font-size:11px;font-weight:700;color:var(--text3);cursor:pointer;font-family:'Lato',sans-serif;}
-    .pbtn.on{background:rgba(45,212,191,0.12);border-color:var(--accent);color:var(--accent);}
-    .tone{width:17px;height:17px;border-radius:50%;border:1px solid var(--border);cursor:pointer;padding:0;}
-    .tone.on{outline:2px solid var(--accent);outline-offset:1px;}
-    .preview-note{font-size:10.5px;color:var(--text3);margin-top:6px;line-height:1.45;}
-    .empty{text-align:center;color:var(--text3);padding:34px 0;font-size:13.5px;}
-    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(45,212,191,0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;max-width:90vw;}
-    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-    .toast i{color:#2dd4bf;flex-shrink:0;}
-    footer{text-align:center;color:var(--text3);font-size:12px;padding:24px;border-top:1px solid var(--border);}
+    /* ── roster grid ── */
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;}
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;text-align:left;color:inherit;font:inherit;padding:0;}
+    .card:hover{border-color:var(--accent);}
+    .card-art{height:150px;background:var(--bg3);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:34px;}
+    .card-art img{width:110px;height:110px;border-radius:50%;object-fit:cover;}
+    .card-art.wide img{width:100%;height:100%;border-radius:0;}
+    .card-body{padding:10px 12px;}
+    .card-name{font-weight:700;font-size:14px;}
+    .card-meta{font-size:12px;color:var(--text3);}
+    .status{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 7px;margin-top:4px;}
+    .st-approved{background:rgba(52,211,153,0.15);color:var(--green);}
+    .st-pending{background:rgba(245,158,11,0.15);color:var(--gold);}
+    .st-draft{background:var(--bg4);color:var(--text3);}
+    .st-rejected{background:rgba(248,113,113,0.15);color:var(--red);}
+    .st-retired{background:var(--bg4);color:var(--text2);}
+
+    /* ── editor ── */
+    .editor{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;}
+    .ed-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+    .ed-title{font-family:'Cinzel',serif;font-size:20px;}
+    .section{border-top:1px solid var(--border);padding-top:16px;margin-top:16px;}
+    .section h3{font-size:14px;font-weight:700;color:var(--text2);margin-bottom:4px;}
+    .section .hint{font-size:12px;color:var(--text3);margin-bottom:12px;max-width:680px;}
+    .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px;}
+    .f label{display:block;font-size:12px;color:var(--text3);margin-bottom:3px;}
+    .choice{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px;}
+    .choice label{display:block;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;font-size:13px;}
+    .choice input{margin-right:6px;}
+    .choice label:has(input:checked){border-color:var(--accent);}
+    .choice small{display:block;color:var(--text3);font-size:12px;margin-top:2px;}
+
+    .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
+    .slot{background:var(--bg3);border:1px dashed var(--border);border-radius:10px;padding:10px;text-align:center;font-size:12px;color:var(--text3);}
+    .slot .pic{height:110px;display:flex;align-items:center;justify-content:center;margin-bottom:6px;}
+    .slot .pic img{max-height:110px;max-width:100%;object-fit:contain;}
+    .slot .pic.round img{width:90px;height:90px;border-radius:50%;object-fit:cover;}
+    .slot .lbl{font-weight:700;color:var(--text2);text-transform:capitalize;}
+    .slot input[type=file]{display:none;}
+    .pose{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:12px;align-items:start;}
+    .note{font-size:12px;border-radius:8px;padding:8px 10px;margin-bottom:10px;}
+    .note-warn{background:rgba(245,158,11,0.1);color:var(--gold);}
+    .note-bad{background:rgba(248,113,113,0.1);color:var(--red);}
+    .note-info{background:var(--bg3);color:var(--text2);}
+
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th{text-align:left;color:var(--text3);font-weight:700;font-size:12px;padding:8px;border-bottom:1px solid var(--border);}
+    td{padding:8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+    .empty{text-align:center;padding:50px 20px;color:var(--text3);}
+    .empty i{font-size:34px;display:block;opacity:0.5;margin-bottom:8px;}
+
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 18px;font-size:13px;z-index:999;display:none;max-width:90vw;}
+    .toast.err{border-color:var(--red);color:var(--red);}
+    @media (max-width:720px){ nav{padding:0 14px;} .pose{grid-template-columns:1fr;} }
   </style>
 </head>
 <body>
-
-  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
-
   <nav>
     <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <a class="back-btn" href="WhiteRoomUnbreakable.html"><i class="ti ti-arrow-left"></i> Site Admin</a>
+    <div class="nav-links">
+      <a class="back-btn" href="admin-character-lines.html"><i class="ti ti-message-circle"></i> Lines</a>
+      <a class="back-btn" href="admin-rewards.html"><i class="ti ti-award"></i> Badges</a>
+      <a class="back-btn" href="admin-stats.html"><i class="ti ti-arrow-left"></i> Admin</a>
     </div>
   </nav>
 
   <div class="page">
-    <h1 class="page-title">Cosmetic <span>Review</span></h1>
-    <p class="page-sub">Artist-submitted avatar cosmetics from Create &amp; Sell. Platform items (base, randomizer, secret, genre and loyalty rewards) are managed elsewhere and never appear here.</p>
+    <div class="page-title">Characters &amp; banners</div>
+    <p class="page-sub">Create characters, upload their art, decide how people get them, and review what creators submit. Reading rewards are hidden from everyone but you.</p>
 
-    <div class="section">
-      <div class="section-title"><i class="ti ti-shirt"></i> Submissions</div>
-      <div class="section-sub">Oldest submission first — whoever has waited longest is at the top.</div>
-
-      <div class="notice">
-        <i class="ti ti-info-circle"></i>
-        <div><strong>Approving puts the item on sale immediately.</strong> Check the fit on the body art first — use the body and skin-tone toggles under each preview, and flip between poses. If something sits wrong on one body type, send it back with a note rather than approving. You can still pull an approved item from the shop later.</div>
-      </div>
-
-      <div class="filters" id="filters">
-        <button class="filter-btn active" data-f="pending"  onclick="setFilter(this,'pending')">Pending review <span class="cnt" id="c-pending"></span></button>
-        <button class="filter-btn"        data-f="listed"   onclick="setFilter(this,'listed')">In shop <span class="cnt" id="c-listed"></span></button>
-        <button class="filter-btn"        data-f="pulled"   onclick="setFilter(this,'pulled')">Pulled from shop <span class="cnt" id="c-pulled"></span></button>
-        <button class="filter-btn"        data-f="rejected" onclick="setFilter(this,'rejected')">Needs changes <span class="cnt" id="c-rejected"></span></button>
-        <button class="filter-btn"        data-f="all"      onclick="setFilter(this,'all')">All <span class="cnt" id="c-all"></span></button>
-      </div>
-
-      <div id="list"><div class="empty">Loading…</div></div>
+    <div class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="chars" onclick="showTab('chars')"><i class="ti ti-user-heart"></i> Characters</button>
+      <button class="tab-btn" data-tab="review" onclick="showTab('review')"><i class="ti ti-inbox"></i> To review <span class="pill" id="review-count" style="display:none;"></span></button>
+      <button class="tab-btn" data-tab="banners" onclick="showTab('banners')"><i class="ti ti-photo"></i> Banners</button>
+      <button class="tab-btn" data-tab="rewards" onclick="showTab('rewards')"><i class="ti ti-eye-off"></i> Reading rewards</button>
     </div>
+
+    <!-- ══ CHARACTERS ══ -->
+    <section class="tab active" id="tab-chars">
+      <div id="char-list-view">
+        <div class="bar">
+          <button class="btn btn-main" onclick="editCharacter(null)"><i class="ti ti-plus"></i> New character</button>
+          <select id="char-status-filter" onchange="renderCharList()">
+            <option value="">Every status</option>
+            <option value="approved">Live</option>
+            <option value="pending">Waiting for review</option>
+            <option value="draft">Draft</option>
+            <option value="rejected">Sent back</option>
+            <option value="retired">Retired</option>
+          </select>
+          <select id="char-avail-filter" onchange="renderCharList()">
+            <option value="">Every way to get it</option>
+            <option value="ember_unlock">Crowd unlock</option>
+            <option value="purchase">Sold for Quills</option>
+            <option value="secret">Hidden reward</option>
+          </select>
+        </div>
+        <div class="grid" id="char-grid"><div class="empty"><i class="ti ti-loader"></i>Loading…</div></div>
+      </div>
+      <div id="char-editor-view" style="display:none;"></div>
+    </section>
+
+    <!-- ══ REVIEW ══ -->
+    <section class="tab" id="tab-review">
+      <p class="page-sub">Characters creators have submitted. Open one to check its art and wording, then approve it or send it back with a note. Their lines are reviewed separately on the <a href="admin-character-lines.html" style="color:var(--accent);">Lines</a> page.</p>
+      <div class="grid" id="review-grid"></div>
+    </section>
+
+    <!-- ══ BANNERS ══ -->
+    <section class="tab" id="tab-banners">
+      <div class="bar">
+        <button class="btn btn-main" onclick="editBanner(null)"><i class="ti ti-plus"></i> New banner</button>
+      </div>
+      <div id="banner-editor" style="display:none;margin-bottom:20px;"></div>
+      <div class="grid" id="banner-grid"></div>
+    </section>
+
+    <!-- ══ READING REWARDS ══ -->
+    <section class="tab" id="tab-rewards">
+      <p class="page-sub">Things readers get without being told why. A genre reward needs a number of finished chapters, each at least <strong>1,200 words</strong>, carrying that tag. A prestige reward arrives when someone reaches the tier. Nobody else can read these conditions, including the people who earn them.</p>
+      <div class="editor" style="margin-bottom:18px;">
+        <h3 style="font-size:14px;margin-bottom:10px;">Add a reward</h3>
+        <div class="choice" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));">
+          <label><input type="radio" name="rw-kind" value="genre" checked onchange="rwKindChanged()"/> Reading a genre<small>Hidden chapter count</small></label>
+          <label><input type="radio" name="rw-kind" value="prestige" onchange="rwKindChanged()"/> Reaching a prestige tier<small>Years away for most readers</small></label>
+        </div>
+        <div class="row">
+          <div class="f" id="rw-tag-f"><label for="rw-tag">Genre tag</label><input type="text" id="rw-tag" list="tag-options" placeholder="Start typing a tag…"/><datalist id="tag-options"></datalist></div>
+          <div class="f" id="rw-ch-f"><label for="rw-ch">Chapters of 1,200+ words</label><input type="number" id="rw-ch" min="1" max="10000" value="50"/></div>
+          <div class="f" id="rw-tier-f" style="display:none;"><label for="rw-tier">Prestige tier</label><select id="rw-tier"></select></div>
+        </div>
+        <div class="row">
+          <div class="f"><label for="rw-prize">They get</label><select id="rw-prize"></select></div>
+          <div class="f"><label for="rw-note">Private note (only you see this)</label><input type="text" id="rw-note" maxlength="500" placeholder="e.g. Dark fantasy readers' reward"/></div>
+        </div>
+        <div id="rw-warn"></div>
+        <button class="btn btn-main" onclick="addReward()"><i class="ti ti-plus"></i> Add reward</button>
+      </div>
+      <div id="reward-table"></div>
+    </section>
   </div>
 
-  <footer>&copy; 2026 DawnScribe. Admin panel.</footer>
+  <div class="toast" id="toast" role="status"></div>
 
   <script>
-    // Status vocabulary written by cosmetic-create.html:
-    // 'draft' | 'pending_review' | 'approved' | 'rejected'. Drafts are the
-    // artist's private workspace and are deliberately not shown here.
-    var LABEL = { draft:'Draft', pending_review:'Pending review', approved:'Approved', rejected:'Needs changes' };
-    // Matches the artist INSERT/UPDATE RLS policies on cosmetic_items, so an
-    // admin price edit can never leave a value the artist can't edit back.
-    var PRICE_MIN = 100, PRICE_MAX = 3000;
+  // ════════════════════════════════════════════════════════════════
+  //  STATE
+  // ════════════════════════════════════════════════════════════════
+  const EXPRESSIONS = ['neutral','pleased','annoyed','surprised','sad','shy'];
+  const REQUIRED_FACES = ['neutral','pleased','annoyed','surprised'];   // the art spec
+  const MAX_AFFECTION = 21;
+  const AVAIL_LABEL = { ember_unlock: 'Crowd unlock', purchase: 'Sold for Quills', secret: 'Hidden reward' };
+  const STATUS_LABEL = { approved: 'Live', pending: 'Waiting', draft: 'Draft', rejected: 'Sent back', retired: 'Retired' };
+  const SOURCE_LABEL = { dawnscribe: 'DawnScribe lore', book: 'From a book', creator: 'Creator-made' };
 
-    var _all = [];
-    var _profiles = {};
-    var _filter = 'pending';
-    var _presets = [];          // avatar_body_presets rows, for the fit preview
-    var _previewState = {};     // itemId -> { body, tone, pose }
+  // Longest edge, per the art spec. The figure is 1200x1800; crops 512.
+  const FIGURE_MAX = 1800, CROP_MAX = 512, BANNER_MAX = 1800, WEBP_Q = 0.90;
 
-    function escHtml(s) {
-      return String(s == null ? '' : s)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  let CHARS = [], POSES = {}, FACES = {}, BANNERS = [], REWARDS = [], TIERS = [], TAGS = [];
+  let PEOPLE = {}, WORKS = {};
+  let editing = null;          // character row being edited (a copy)
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function toast(msg, err) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast' + (err ? ' err' : '');
+    t.style.display = 'block';
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', 3600);
+  }
+  function url(bucket, path) {
+    if (!path) return null;
+    if (/^https?:\/\//.test(path)) return path;
+    return db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  }
+  function slugify(s) {
+    return String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  }
+  function showTab(t) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+    document.querySelectorAll('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + t));
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  //  LOAD
+  // ════════════════════════════════════════════════════════════════
+  async function loadAll() {
+    if (!(await window.__adminReady)) return;
+    const [c, p, f, b, r, t, tg] = await Promise.all([
+      db.from('ds_characters').select('*').order('created_at', { ascending: false }),
+      db.from('ds_character_poses').select('*').order('pose_order'),
+      db.from('ds_character_expressions').select('*'),
+      db.from('cosmetic_items').select('*').eq('slot', 'banner').order('created_at', { ascending: false }),
+      db.from('ds_reading_rewards').select('*').order('created_at', { ascending: false }),
+      db.from('prestige_tiers').select('*').order('tier'),
+      db.from('tags').select('name, category').order('name'),
+    ]);
+    if (c.error) { toast('Could not load characters: ' + c.error.message, true); return; }
+    CHARS = c.data || [];
+    POSES = {}; (p.data || []).forEach(x => (POSES[x.character_id] = POSES[x.character_id] || []).push(x));
+    FACES = {}; (f.data || []).forEach(x => (FACES[x.character_id] = FACES[x.character_id] || {})[x.slug] = x);
+    BANNERS = b.data || [];
+    REWARDS = r.data || [];
+    TIERS = t.data || [];
+    TAGS = (tg.data || []).map(x => x.name);
+
+    const pids = [...new Set(CHARS.flatMap(x => [x.creator_id, x.author_id]).filter(Boolean))];
+    const wids = [...new Set(CHARS.map(x => x.work_id).filter(Boolean))];
+    const [pp, ww] = await Promise.all([
+      pids.length ? db.from('profiles').select('id, username').in('id', pids) : { data: [] },
+      wids.length ? db.from('works').select('id, title').in('id', wids) : { data: [] },
+    ]);
+    (pp.data || []).forEach(x => PEOPLE[x.id] = x.username);
+    (ww.data || []).forEach(x => WORKS[x.id] = x.title);
+
+    renderCharList(); renderReview(); renderBanners(); renderRewards();
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  //  CHARACTER LIST
+  // ════════════════════════════════════════════════════════════════
+  function charPortrait(c) {
+    const p = (POSES[c.id] || [])[0];
+    return p ? url('characters', p.portrait_path) : null;
+  }
+  function charCard(c) {
+    const img = charPortrait(c);
+    return '<button class="card" onclick="editCharacter(\'' + c.id + '\')">' +
+      '<div class="card-art">' + (img ? '<img src="' + esc(img) + '" alt="" loading="lazy"/>' : '<i class="ti ti-user"></i>') + '</div>' +
+      '<div class="card-body"><div class="card-name">' + esc(c.name) + '</div>' +
+      '<div class="card-meta">' + esc(AVAIL_LABEL[c.availability]) + ' &middot; ' + esc(SOURCE_LABEL[c.source]) + '</div>' +
+      '<span class="status st-' + c.status + '">' + esc(STATUS_LABEL[c.status] || c.status) + '</span></div></button>';
+  }
+  function renderCharList() {
+    const s = document.getElementById('char-status-filter').value;
+    const a = document.getElementById('char-avail-filter').value;
+    const list = CHARS.filter(c => (!s || c.status === s) && (!a || c.availability === a));
+    document.getElementById('char-grid').innerHTML = list.length ? list.map(charCard).join('')
+      : '<div class="empty"><i class="ti ti-user-plus"></i>No characters match. Use “New character” to add one.</div>';
+  }
+  function renderReview() {
+    const list = CHARS.filter(c => c.status === 'pending');
+    const pill = document.getElementById('review-count');
+    pill.textContent = list.length; pill.style.display = list.length ? '' : 'none';
+    document.getElementById('review-grid').innerHTML = list.length ? list.map(charCard).join('')
+      : '<div class="empty"><i class="ti ti-inbox"></i>Nothing waiting. Submissions from creators show up here.</div>';
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  //  CHARACTER EDITOR
+  // ════════════════════════════════════════════════════════════════
+  window.editCharacter = function(id) {
+    const c = id ? CHARS.find(x => x.id === id) : null;
+    editing = c ? { ...c } : {
+      id: null, name: '', subtitle: '', slug: '', source: 'dawnscribe', work_id: null, author_id: null,
+      creator_id: null, story_blurb: '', availability: 'ember_unlock', ember_unlock_price: 5000,
+      quill_price: null, chain_order: (Math.max(0, ...CHARS.map(x => x.chain_order || 0)) + 1),
+      opens_after_id: null, status: 'draft', rejection_note: null,
+    };
+    showTab('chars');
+    document.getElementById('char-list-view').style.display = 'none';
+    const v = document.getElementById('char-editor-view');
+    v.style.display = '';
+    v.innerHTML = editorHTML();
+    syncAvailability();
+    window.scrollTo(0, 0);
+  };
+  window.closeEditor = function() {
+    editing = null;
+    document.getElementById('char-editor-view').style.display = 'none';
+    document.getElementById('char-list-view').style.display = '';
+  };
+
+  function editorHTML() {
+    const c = editing, isNew = !c.id;
+    const others = CHARS.filter(x => x.id !== c.id);
+    const hasArt = !isNew && ((POSES[c.id] || []).length || Object.keys(FACES[c.id] || {}).length);
+    return '' +
+    '<div class="editor">' +
+      '<div class="ed-head"><div class="ed-title">' + (isNew ? 'New character' : esc(c.name)) +
+        (isNew ? '' : ' <span class="status st-' + c.status + '">' + esc(STATUS_LABEL[c.status]) + '</span>') + '</div>' +
+        '<button class="btn btn-ghost btn-sm" onclick="closeEditor()"><i class="ti ti-arrow-left"></i> All characters</button></div>' +
+
+      (c.status === 'rejected' && c.rejection_note ? '<div class="note note-bad"><strong>Sent back:</strong> ' + esc(c.rejection_note) + '</div>' : '') +
+
+      // ── Basics
+      '<div class="row">' +
+        '<div class="f"><label for="e-name">Name</label><input type="text" id="e-name" maxlength="80" value="' + esc(c.name) + '" oninput="nameTyped()"/></div>' +
+        '<div class="f"><label for="e-sub">Subtitle (optional)</label><input type="text" id="e-sub" maxlength="80" value="' + esc(c.subtitle) + '" placeholder="e.g. Keeper of the Unwritten Roads"/></div>' +
+        '<div class="f"><label for="e-slug">Web name</label><input type="text" id="e-slug" maxlength="60" value="' + esc(c.slug) + '"' + (hasArt ? ' disabled title="Locked once art is uploaded — the art is stored under this name."' : '') + '/></div>' +
+      '</div>' +
+      '<div class="f" style="margin-bottom:12px;"><label for="e-blurb">Their story (shown on the character page — required)</label><textarea id="e-blurb" rows="3" maxlength="1200">' + esc(c.story_blurb) + '</textarea></div>' +
+
+      // ── Where they come from
+      '<div class="section"><h3>Where they come from</h3>' +
+        '<div class="hint">Every character belongs to a story. Book and creator characters pay their writer a share of every Quill sale: 20% for a book contract, 75% for a creator.</div>' +
+        '<div class="choice">' +
+          radio('e-source', 'dawnscribe', c.source, 'DawnScribe lore', 'The travelling-dimension world') +
+          radio('e-source', 'book', c.source, 'From a book on the site', 'Author gets 20% of paid sales') +
+          radio('e-source', 'creator', c.source, 'Creator-made', 'Creator gets 75% of paid sales') +
+        '</div>' +
+        '<div class="row">' +
+          '<div class="f" id="f-work"><label for="e-work">Book</label><input type="text" id="e-work" list="work-opts" placeholder="Type a book title…" value="' + esc(c.work_id ? (WORKS[c.work_id] || '') : '') + '" oninput="searchWorks()"/><datalist id="work-opts"></datalist></div>' +
+          '<div class="f" id="f-person"><label for="e-person">Author / creator username</label><input type="text" id="e-person" list="person-opts" placeholder="Type a username…" value="' + esc(PEOPLE[c.creator_id || c.author_id] || '') + '" oninput="searchPeople()"/><datalist id="person-opts"></datalist></div>' +
+        '</div>' +
+      '</div>' +
+
+      // ── How people get it
+      '<div class="section"><h3>How people get them</h3>' +
+        '<div class="choice">' +
+          radio('e-avail', 'ember_unlock', c.availability, 'Crowd unlock', 'Everyone chips in Embers; at the goal every backer gets them') +
+          radio('e-avail', 'purchase', c.availability, 'Sold for Quills', 'Bought outright in the Marketplace') +
+          radio('e-avail', 'secret', c.availability, 'Hidden reward', 'Earned by reading or prestige. Set the condition in Reading rewards.') +
+        '</div>' +
+        '<div class="row">' +
+          '<div class="f" id="f-ember"><label for="e-ember">Ember goal</label><input type="number" id="e-ember" min="1" value="' + (c.ember_unlock_price || '') + '"/></div>' +
+          '<div class="f" id="f-chain"><label for="e-after">Opens after</label><select id="e-after"><option value="">Available straight away</option>' +
+            others.map(o => '<option value="' + o.id + '"' + (o.id === c.opens_after_id ? ' selected' : '') + '>' + esc(o.name) + '</option>').join('') + '</select></div>' +
+          '<div class="f" id="f-quill"><label for="e-quill">Price in Quills (100 ≈ $1)</label><input type="number" id="e-quill" min="50" max="5000" value="' + (c.quill_price || '') + '"/></div>' +
+        '</div>' +
+        '<div id="secret-info"></div>' +
+      '</div>' +
+
+      '<div class="bar" style="margin-top:16px;">' +
+        '<button class="btn btn-main" onclick="saveCharacter()"><i class="ti ti-device-floppy"></i> ' + (isNew ? 'Create character' : 'Save details') + '</button>' +
+        (isNew ? '<span style="font-size:12px;color:var(--text3);">Art uploads open once the character exists.</span>' : '') +
+      '</div>' +
+
+      (isNew ? '' : artHTML(c) + statusHTML(c)) +
+    '</div>';
+  }
+
+  function radio(name, val, cur, title, sub) {
+    return '<label><input type="radio" name="' + name + '" value="' + val + '"' + (val === cur ? ' checked' : '') +
+      ' onchange="syncAvailability()"/>' + title + '<small>' + sub + '</small></label>';
+  }
+  function pick(name) { const el = document.querySelector('input[name="' + name + '"]:checked'); return el ? el.value : null; }
+
+  window.nameTyped = function() {
+    const s = document.getElementById('e-slug');
+    if (!s.disabled && (!editing.id || !editing.slug)) s.value = slugify(document.getElementById('e-name').value);
+  };
+
+  window.syncAvailability = function() {
+    const a = pick('e-avail'), src = pick('e-source');
+    document.getElementById('f-ember').style.display = a === 'ember_unlock' ? '' : 'none';
+    document.getElementById('f-chain').style.display = a === 'ember_unlock' ? '' : 'none';
+    document.getElementById('f-quill').style.display = a === 'purchase' ? '' : 'none';
+    document.getElementById('f-work').style.display = src === 'book' ? '' : 'none';
+    document.getElementById('f-person').style.display = src === 'dawnscribe' ? 'none' : '';
+    const info = document.getElementById('secret-info');
+    if (a === 'secret') {
+      const n = editing.id ? REWARDS.filter(r => r.character_id === editing.id).length : 0;
+      info.innerHTML = '<div class="note ' + (n ? 'note-info' : 'note-warn') + '">' +
+        (n ? 'Given by ' + n + ' reading reward' + (n > 1 ? 's' : '') + '.'
+           : 'No reading reward gives this character yet, so nobody can get them. Add one in the Reading rewards tab after saving.') + '</div>';
+    } else info.innerHTML = '';
+  };
+
+  // Book and person lookups: exact title / username only, chosen from a list.
+  let searchT;
+  window.searchWorks = function() {
+    clearTimeout(searchT);
+    searchT = setTimeout(async () => {
+      const q = document.getElementById('e-work').value.trim();
+      if (q.length < 2) return;
+      const { data } = await db.from('works').select('id, title').ilike('title', '%' + q + '%').limit(8);
+      (data || []).forEach(w => WORKS[w.id] = w.title);
+      document.getElementById('work-opts').innerHTML = (data || []).map(w => '<option value="' + esc(w.title) + '">').join('');
+    }, 250);
+  };
+  window.searchPeople = function() {
+    clearTimeout(searchT);
+    searchT = setTimeout(async () => {
+      const q = document.getElementById('e-person').value.trim();
+      if (q.length < 2) return;
+      const { data } = await db.from('profiles').select('id, username').ilike('username', q + '%').limit(8);
+      (data || []).forEach(p => PEOPLE[p.id] = p.username);
+      document.getElementById('person-opts').innerHTML = (data || []).map(p => '<option value="' + esc(p.username) + '">').join('');
+    }, 250);
+  };
+  function idByValue(map, v) {
+    v = (v || '').trim().toLowerCase();
+    if (!v) return null;
+    const hit = Object.entries(map).find(([, name]) => String(name).toLowerCase() === v);
+    return hit ? hit[0] : undefined;   // undefined = typed but not recognised
+  }
+
+  window.saveCharacter = async function() {
+    const c = editing;
+    const src = pick('e-source'), avail = pick('e-avail');
+    const row = {
+      name: document.getElementById('e-name').value.trim(),
+      subtitle: document.getElementById('e-sub').value.trim() || null,
+      slug: slugify(document.getElementById('e-slug').value),
+      story_blurb: document.getElementById('e-blurb').value.trim(),
+      source: src, availability: avail,
+      ember_unlock_price: null, quill_price: null, opens_after_id: null,
+      work_id: null, author_id: null, creator_id: null,
+    };
+    const problems = [];
+    if (!row.name) problems.push('a name');
+    if (!row.slug) problems.push('a web name');
+    if (!row.story_blurb) problems.push('their story');
+
+    if (src === 'book') {
+      const w = idByValue(WORKS, document.getElementById('e-work').value);
+      if (!w) problems.push('a book picked from the list');
+      else row.work_id = w;
     }
-
-    function showToast(msg, icon) {
-      var t = document.getElementById('toast');
-      document.getElementById('toast-msg').textContent = msg;
-      t.querySelector('i').className = 'ti ' + (icon || 'ti-check');
-      t.classList.add('show');
-      setTimeout(function(){ t.classList.remove('show'); }, 3200);
+    if (src !== 'dawnscribe') {
+      const p = idByValue(PEOPLE, document.getElementById('e-person').value);
+      if (!p) problems.push('a username picked from the list');
+      else if (src === 'book') row.author_id = p; else row.creator_id = p;
     }
-
-    function fmtDate(iso) {
-      if (!iso) return '—';
-      try {
-        var d = new Date(iso);
-        return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
-      } catch(e){ return iso; }
+    if (avail === 'ember_unlock') {
+      row.ember_unlock_price = parseInt(document.getElementById('e-ember').value, 10);
+      if (!(row.ember_unlock_price > 0)) problems.push('an Ember goal');
+      row.opens_after_id = document.getElementById('e-after').value || null;
+      if (!c.id) row.chain_order = c.chain_order;
     }
-
-    function hasArt(it) {
-      var ap = it.asset_paths;
-      if (!ap || typeof ap !== 'object') return false;
-      return Object.keys(ap).some(function(k){ return String(ap[k] || '').trim() !== ''; });
+    if (avail === 'purchase') {
+      row.quill_price = parseInt(document.getElementById('e-quill').value, 10);
+      if (!(row.quill_price >= 50 && row.quill_price <= 5000)) problems.push('a Quill price between 50 and 5,000');
     }
-    function isPending(it){ return it.status === 'pending_review'; }
-    function isListed(it){ return it.status === 'approved' && it.is_marketplace_item === true; }
-    // Approved but NOT listed now only happens when an admin deliberately
-    // pulled it from the shop — approval lists immediately.
-    function isPulled(it){ return it.status === 'approved' && it.is_marketplace_item !== true; }
+    if (problems.length) { toast('Still needs ' + problems.join(', ') + '.', true); return; }
+    if (document.getElementById('e-slug').disabled) delete row.slug;
 
-    async function loadItems() {
-      // Only artist submissions. Platform-owned items are excluded by the same
-      // conditions admin_review_cosmetic() enforces server-side, so the two
-      // can't drift. .neq(col,true) rather than .eq(col,false): nullable
-      // booleans make .eq(...,false) drop rows silently.
-      var res = await Promise.resolve(
-        window.db.from('cosmetic_items')
-          .select('id,name,description,image_url,slot,artist_id,quill_price,ember_unlock_price,status,submitted_at,created_at,rejection_reason,admin_notes,is_marketplace_item,asset_paths,total_sales')
-          .not('artist_id','is',null)
-          .neq('is_base_item', true)
-          .neq('is_randomizer_item', true)
-          .neq('is_secret_unlock', true)
-          .is('tag_slug', null)
-          .is('character_id', null)
-          .is('contract_status', null)
-          .in('status', ['pending_review','approved','rejected'])
-          .order('submitted_at', { ascending: true })
-          .limit(500)
-      ).catch(function(e){ return { error: e }; });
+    let res;
+    if (c.id) res = await db.from('ds_characters').update(row).eq('id', c.id).select().single();
+    else res = await db.from('ds_characters').insert({ ...row, status: 'draft', chain_order: c.chain_order }).select().single();
 
-      if (res.error) {
-        document.getElementById('list').innerHTML =
-          '<div class="empty">Could not load submissions: ' + escHtml(res.error.message) + '</div>';
-        return;
-      }
-      _all = res.data || [];
-
-      // Pending first (oldest wait at the top), then everything else newest-first.
-      _all.sort(function(a,b){
-        var ap = isPending(a) ? 0 : 1, bp = isPending(b) ? 0 : 1;
-        if (ap !== bp) return ap - bp;
-        if (ap === 0) return new Date(a.submitted_at || a.created_at) - new Date(b.submitted_at || b.created_at);
-        return new Date(b.submitted_at || b.created_at) - new Date(a.submitted_at || a.created_at);
-      });
-
-      // Body art for the fit preview. Public table, so a plain select is fine.
-      if (!_presets.length) {
-        var bp = await Promise.resolve(
-          window.db.from('avatar_body_presets').select('*').neq('is_active', false)
-        ).catch(function(){ return {}; });
-        _presets = bp.data || [];
-      }
-
-      var ids = [];
-      _all.forEach(function(it){ if (it.artist_id && ids.indexOf(it.artist_id) === -1) ids.push(it.artist_id); });
-      if (ids.length) {
-        var pr = await Promise.resolve(
-          window.db.from('profiles').select('id,username,display_name').in('id', ids)
-        ).catch(function(){ return {}; });
-        _profiles = {};
-        (pr.data || []).forEach(function(p){ _profiles[p.id] = p; });
-      }
-
-      document.getElementById('c-pending').textContent  = '(' + _all.filter(isPending).length + ')';
-      document.getElementById('c-pulled').textContent   = '(' + _all.filter(isPulled).length + ')';
-      document.getElementById('c-listed').textContent   = '(' + _all.filter(isListed).length + ')';
-      document.getElementById('c-rejected').textContent = '(' + _all.filter(function(i){ return i.status === 'rejected'; }).length + ')';
-      document.getElementById('c-all').textContent      = '(' + _all.length + ')';
-
-      render();
+    if (res.error) {
+      toast(/slug/.test(res.error.message) ? 'That web name is taken. Pick another.' : 'Could not save: ' + res.error.message, true);
+      return;
     }
+    toast(c.id ? 'Saved.' : 'Created. Now add the art.');
+    await loadAll();
+    editCharacter(res.data.id);
+  };
 
-    function setFilter(btn, f) {
-      _filter = f;
-      Array.prototype.forEach.call(document.querySelectorAll('#filters .filter-btn'), function(b){
-        b.classList.remove('active');
-      });
-      btn.classList.add('active');
-      render();
-    }
+  // ── ART ──────────────────────────────────────────────────────────
+  function artHTML(c) {
+    const poses = POSES[c.id] || [];
+    const faces = FACES[c.id] || {};
+    const missing = REQUIRED_FACES.filter(f => !faces[f]);
+    return '' +
+    '<div class="section"><h3>Poses</h3>' +
+      '<div class="hint">Each pose is a full figure (1200 × 1800, transparent PNG) plus a round portrait crop (512 × 512). ' +
+      'Pose 1 must unlock at affection 0 — it is what everyone sees. Later poses unlock as affection grows, up to ' + MAX_AFFECTION + '.</div>' +
+      (poses.length ? '' : '<div class="note note-warn">No poses yet. The character cannot go live without one.</div>') +
+      poses.map(p => poseHTML(c, p)).join('') +
+      '<button class="btn btn-ghost btn-sm" onclick="addPose()"><i class="ti ti-plus"></i> Add a pose</button>' +
+    '</div>' +
+    '<div class="section"><h3>Faces</h3>' +
+      '<div class="hint">512 × 512 crops that swap in when a line is spoken. The head must sit in exactly the same spot in every one, or the swap will visibly jump. The first four are required by the art spec.</div>' +
+      (missing.length ? '<div class="note note-warn">Missing: ' + missing.join(', ') + '.</div>' : '') +
+      '<div class="slots">' + EXPRESSIONS.map(e => {
+        const f = faces[e];
+        return '<label class="slot"><div class="pic round">' + (f ? '<img src="' + esc(url('characters', f.image_path)) + '" alt=""/>' : '<i class="ti ti-upload" style="font-size:24px;"></i>') + '</div>' +
+          '<div class="lbl">' + e + (REQUIRED_FACES.includes(e) ? '' : ' (optional)') + '</div>' +
+          (f ? 'Click to replace' : 'Click to upload') +
+          '<input type="file" accept="image/png,image/webp,image/jpeg" onchange="uploadFace(\'' + e + '\', this)"/></label>';
+      }).join('') + '</div>' +
+      '<div style="margin-top:12px;font-size:13px;"><a href="admin-character-lines.html" style="color:var(--accent);"><i class="ti ti-message-circle"></i> Review this character\'s lines</a></div>' +
+    '</div>';
+  }
+  function poseHTML(c, p) {
+    const fig = url('characters', p.figure_path), por = url('characters', p.portrait_path);
+    return '<div class="pose">' +
+      '<label class="slot"><div class="pic">' + (fig ? '<img src="' + esc(fig) + '" alt=""/>' : '<i class="ti ti-upload" style="font-size:24px;"></i>') + '</div>' +
+        '<div class="lbl">Full figure</div>' + (fig ? 'Replace' : 'Upload') +
+        '<input type="file" accept="image/png,image/webp,image/jpeg" onchange="uploadPose(\'' + p.id + '\', \'figure\', this)"/></label>' +
+      '<label class="slot"><div class="pic round">' + (por ? '<img src="' + esc(por) + '" alt=""/>' : '<i class="ti ti-upload" style="font-size:24px;"></i>') + '</div>' +
+        '<div class="lbl">Portrait crop</div>' + (por ? 'Replace' : 'Upload') +
+        '<input type="file" accept="image/png,image/webp,image/jpeg" onchange="uploadPose(\'' + p.id + '\', \'portrait\', this)"/></label>' +
+      '<div>' +
+        '<div class="f" style="margin-bottom:8px;"><label>Pose ' + p.pose_order + ' name</label><input type="text" maxlength="60" value="' + esc(p.label) + '" onchange="updatePose(\'' + p.id + '\', {label:this.value.trim()||\'Pose\'})"/></div>' +
+        '<div class="f" style="margin-bottom:8px;"><label>Unlocks at affection</label><input type="number" min="0" max="' + MAX_AFFECTION + '" value="' + p.min_affection + '"' +
+          (p.pose_order === 1 ? ' disabled title="The first pose is what everyone sees."' : '') +
+          ' onchange="updatePose(\'' + p.id + '\', {min_affection: Math.max(0, Math.min(' + MAX_AFFECTION + ', parseInt(this.value,10)||0))})"/></div>' +
+        (p.pose_order === 1 ? '' : '<button class="btn btn-bad btn-sm" onclick="deletePose(\'' + p.id + '\')"><i class="ti ti-trash"></i> Remove pose</button>') +
+      '</div></div>';
+  }
 
-    function render() {
-      var rows = _all.filter(function(it){
-        if (_filter === 'pending')  return isPending(it);
-        if (_filter === 'pulled')   return isPulled(it);
-        if (_filter === 'listed')   return isListed(it);
-        if (_filter === 'rejected') return it.status === 'rejected';
-        return true;
-      });
+  window.addPose = async function() {
+    const c = editing, poses = POSES[c.id] || [];
+    const n = poses.length ? Math.max(...poses.map(p => p.pose_order)) + 1 : 1;
+    const { error } = await db.from('ds_character_poses').insert({
+      character_id: c.id, pose_order: n, label: n === 1 ? 'Default' : 'Pose ' + n,
+      min_affection: n === 1 ? 0 : Math.min(MAX_AFFECTION, 7 * (n - 1)),
+    });
+    if (error) { toast('Could not add a pose: ' + error.message, true); return; }
+    await loadAll(); editCharacter(c.id);
+  };
+  window.updatePose = async function(id, patch) {
+    const { error } = await db.from('ds_character_poses').update(patch).eq('id', id);
+    if (error) toast('Could not save: ' + error.message, true); else toast('Saved.');
+    await loadAll(); editCharacter(editing.id);
+  };
+  window.deletePose = async function(id) {
+    if (!confirm('Remove this pose? Owners who had unlocked it will lose it.')) return;
+    const { error } = await db.from('ds_character_poses').delete().eq('id', id);
+    if (error) { toast('Could not remove: ' + error.message, true); return; }
+    await loadAll(); editCharacter(editing.id);
+  };
 
-      if (!rows.length) {
-        document.getElementById('list').innerHTML = '<div class="empty">Nothing here. \u2728</div>';
-        return;
-      }
-
-      document.getElementById('list').innerHTML = rows.map(function(it){
-        // onclick attributes with JSON.stringify'd ids: addEventListener is
-        // stripped by the innerHTML serialisation this render uses.
-        var idArg = JSON.stringify(it.id);
-        var artist = _profiles[it.artist_id] || {};
-        var artistName = artist.display_name || artist.username || 'Unknown artist';
-        var art = hasArt(it);
-
-        var cls = isPending(it) ? 'pending' : (isListed(it) ? 'listed' : (it.status === 'rejected' ? 'rejected' : ''));
-
-        var tags = '<span class="tag ' + (isPending(it) ? 'pending' : (isListed(it) ? 'listed' : (it.status === 'rejected' ? 'rejected' : 'approved'))) + '">' +
-          escHtml(isListed(it) ? 'In shop' : (LABEL[it.status] || it.status)) + '</span>';
-        // asset_paths is the per-body-type layered art; image_url alone still
-        // renders (pickAssetPath falls back to it) but is not body-specific.
-        if (!art) tags += ' <span class="tag noart">Flat art (not per-body)</span>';
-
-        var thumb = it.image_url
-          ? '<img loading="lazy" decoding="async" src="' + escHtml(it.image_url) + '" alt="" onerror="this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;<i class=\'ti ti-photo-off\'></i>&quot;;"/>'
-          : '<i class="ti ti-photo-off"></i>';
-
-        // Fit preview: the submitted art layered onto the real body art via
-        // the same renderer avatar.html uses, so what you approve is what
-        // users will see.
-        var previewHtml =
-          '<div class="preview">' +
-            '<div class="preview-stage" id="pv-' + escHtml(it.id) + '"></div>' +
-            '<div class="preview-ctrls" id="pvc-' + escHtml(it.id) + '"></div>' +
-            '<div class="preview-note">Layered on the live body art. Check both bodies and poses.</div>' +
-          '</div>';
-
-        var actions = '';
-        if (isPending(it)) {
-          actions =
-            '<div class="actions">' +
-              '<span class="price-wrap">Price ' +
-                '<input class="price-in" type="number" id="p-' + escHtml(it.id) + '" value="' + (it.quill_price == null ? '' : escHtml(String(it.quill_price))) + '" min="' + PRICE_MIN + '" max="' + PRICE_MAX + '" step="10"/> Quills' +
-              '</span>' +
-              '<button class="act green" onclick=\'reviewItem(' + escHtml(idArg) + ', true)\'><i class="ti ti-circle-check"></i> Approve &amp; put on sale</button>' +
-              '<button class="act red" onclick=\'toggleReason(' + escHtml(idArg) + ')\'><i class="ti ti-circle-x"></i> Needs changes</button>' +
-              (artist.username ? '<a class="act" href="profile.html?user=' + escHtml(artist.username) + '" target="_blank"><i class="ti ti-external-link"></i> Artist</a>' : '') +
-            '</div>' +
-            '<textarea class="reason" id="r-' + escHtml(it.id) + '" rows="3" placeholder="Explain what needs to change \u2014 this is sent to the artist."></textarea>' +
-            '<div class="reject-confirm" id="rc-' + escHtml(it.id) + '">' +
-              '<button class="act red" onclick=\'reviewItem(' + escHtml(idArg) + ', false)\'><i class="ti ti-send"></i> Send feedback</button>' +
-            '</div>';
-        } else if (it.status === 'approved') {
-          actions =
-            '<div class="actions">' +
-              (isListed(it)
-                ? '<button class="act red" onclick=\'setListing(' + escHtml(idArg) + ', false)\'><i class="ti ti-eye-off"></i> Remove from shop</button>'
-                : '<button class="act green" onclick=\'setListing(' + escHtml(idArg) + ', true)\'><i class="ti ti-shopping-cart"></i> Restore to shop</button>') +
-              (artist.username ? '<a class="act" href="profile.html?user=' + escHtml(artist.username) + '" target="_blank"><i class="ti ti-external-link"></i> Artist</a>' : '') +
-            '</div>';
-        }
-
-        return '<div class="item ' + cls + '" id="i-' + escHtml(it.id) + '">' +
-          previewHtml +
-          '<div class="thumb">' + thumb + '</div>' +
-          '<div class="body">' +
-            '<div class="name-row">' + escHtml(it.name) + ' ' + tags + '</div>' +
-            '<div class="meta">' +
-              '<span><i class="ti ti-user"></i> ' + escHtml(artistName) + '</span>' +
-              '<span><i class="ti ti-hanger"></i> ' + escHtml(it.slot) + '</span>' +
-              '<span><i class="ti ti-feather"></i> ' + (it.quill_price == null ? 'no price' : escHtml(String(it.quill_price)) + ' Quills') + '</span>' +
-              '<span><i class="ti ti-clock"></i> ' + fmtDate(it.submitted_at || it.created_at) + '</span>' +
-              (it.total_sales ? '<span><i class="ti ti-shopping-cart"></i> ' + escHtml(String(it.total_sales)) + ' sold</span>' : '') +
-            '</div>' +
-            (it.description ? '<div class="desc">' + escHtml(it.description) + '</div>' : '') +
-            (it.status === 'rejected' && it.rejection_reason
-              ? '<div class="rejected-note"><i class="ti ti-message-2"></i> <span>' + escHtml(it.rejection_reason) + '</span></div>' : '') +
-            actions +
-          '</div>' +
-        '</div>';
-      }).join('');
-
-      rows.forEach(function(it){ renderPreview(it); });
-    }
-
-    function tonesFor(body) {
-      return _presets.filter(function(p){ return p.body_type === body; })
-        .sort(function(a,b){ return (a.sort_order||0) - (b.sort_order||0); });
-    }
-
-    // Draw one item's fit preview through DSAvatar. A synthetic avatarData is
-    // built with just this item equipped in its own slot, so renderSvg lays
-    // the submitted art over the body exactly as avatar.html would.
-    function renderPreview(it) {
-      var stage = document.getElementById('pv-' + it.id);
-      var ctrls = document.getElementById('pvc-' + it.id);
-      if (!stage || !window.DSAvatar) return;
-
-      if (!_presets.length) {
-        stage.innerHTML = '<div class="empty" style="padding:14px;font-size:11px;">No body art available for preview.</div>';
-        return;
-      }
-
-      var st = _previewState[it.id];
-      if (!st) {
-        var firstBody = tonesFor('male').length ? 'male' : 'female';
-        st = _previewState[it.id] = { body: firstBody, tone: null, pose: 'pose1' };
-      }
-      var tones = tonesFor(st.body);
-      if (!tones.length) { st.body = st.body === 'male' ? 'female' : 'male'; tones = tonesFor(st.body); }
-      if (!st.tone || !tones.some(function(t){ return t.id === st.tone; })) {
-        var def = tones.find(function(t){ return t.is_default; }) || tones[0];
-        st.tone = def ? def.id : null;
-      }
-
-      var avatarData = {
-        skin_tone: st.tone,
-        body_type: st.body,
-        pose: st.pose,
-        equipped: {},
-        avatar_position: 'center',
-        mirrored: false
+  // Resize in the browser before uploading. Transparent PNGs keep their
+  // transparency — WebP carries alpha. Never enlarges a small image.
+  function toWebp(file, maxEdge) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        cv.toBlob(b => b ? resolve({ blob: b, w: img.width, h: img.height }) : reject(new Error('conversion failed')), 'image/webp', WEBP_Q);
+        URL.revokeObjectURL(img.src);
       };
-      avatarData.equipped[it.slot] = { item_id: it.id };
+      img.onerror = () => reject(new Error('that file is not a readable image'));
+      img.src = URL.createObjectURL(file);
+    });
+  }
 
-      try {
-        stage.innerHTML = window.DSAvatar.renderSvg(avatarData, _presets, [it], { applyPosition: false });
-      } catch (e) {
-        stage.innerHTML = '<div class="empty" style="padding:14px;font-size:11px;">Preview failed: ' + escHtml(e.message || e) + '</div>';
-        return;
+  // Every upload gets a NEW file name. Overwriting the old name would leave
+  // the old picture in browsers' and the CDN's caches for up to an hour.
+  // The weekly storage reconcile deletes the file nobody points at any more.
+  async function putArt(bucket, folder, base, file, maxEdge) {
+    if (file.size > 8 * 1024 * 1024) throw new Error('that file is over 8 MB');
+    const { blob, w, h } = await toWebp(file, maxEdge);
+    const path = folder + '/' + base + '-' + Date.now().toString(36) + '.webp';
+    const { error } = await db.storage.from(bucket).upload(path, blob, { contentType: 'image/webp', upsert: false });
+    if (error) throw error;
+    return { path, w, h };
+  }
+
+  window.uploadPose = async function(poseId, kind, input) {
+    const file = input.files[0]; if (!file) return;
+    const c = editing;
+    toast('Uploading…');
+    try {
+      const pose = (POSES[c.id] || []).find(p => p.id === poseId);
+      const r = await putArt('characters', c.slug, (kind === 'figure' ? 'figure-' : 'portrait-') + pose.pose_order, file,
+        kind === 'figure' ? FIGURE_MAX : CROP_MAX);
+      const patch = kind === 'figure' ? { figure_path: r.path } : { portrait_path: r.path };
+      const { error } = await db.from('ds_character_poses').update(patch).eq('id', poseId);
+      if (error) throw error;
+      let msg = 'Uploaded.';
+      if (kind === 'figure' && Math.abs(r.w / r.h - 2 / 3) > 0.02) msg += ' Heads up: this is not 2:3, so it will be letterboxed on profiles.';
+      if (kind === 'portrait' && r.w !== r.h) msg += ' Heads up: this is not square, so the circle will crop it.';
+      toast(msg);
+    } catch (e) { toast('Upload failed: ' + e.message, true); }
+    await loadAll(); editCharacter(c.id);
+  };
+
+  window.uploadFace = async function(slug, input) {
+    const file = input.files[0]; if (!file) return;
+    const c = editing;
+    toast('Uploading…');
+    try {
+      const r = await putArt('characters', c.slug, 'face-' + slug, file, CROP_MAX);
+      const existing = (FACES[c.id] || {})[slug];
+      const res = existing
+        ? await db.from('ds_character_expressions').update({ image_path: r.path }).eq('id', existing.id)
+        : await db.from('ds_character_expressions').insert({ character_id: c.id, slug, image_path: r.path });
+      if (res.error) throw res.error;
+      toast(r.w !== r.h ? 'Uploaded, but it is not square — the circle will crop it.' : 'Uploaded.');
+    } catch (e) { toast('Upload failed: ' + e.message, true); }
+    await loadAll(); editCharacter(c.id);
+  };
+
+  // ── STATUS ───────────────────────────────────────────────────────
+  function statusHTML(c) {
+    const poses = POSES[c.id] || [];
+    const ready = poses.some(p => p.min_affection === 0 && p.figure_path && p.portrait_path);
+    const facesMissing = REQUIRED_FACES.filter(f => !(FACES[c.id] || {})[f]);
+    let h = '<div class="section"><h3>Go live</h3>';
+    if (c.status === 'approved') {
+      h += '<div class="hint">Live now. Retiring takes them off sale and out of crowd unlocks. Everyone who owns them keeps them, poses and all.</div>' +
+           '<button class="btn btn-ghost" onclick="reviewCharacter(\'retired\')"><i class="ti ti-archive"></i> Retire</button>';
+    } else {
+      if (!ready) h += '<div class="note note-warn">Needs pose 1 with both a full figure and a portrait before it can go live.</div>';
+      if (facesMissing.length) h += '<div class="note note-warn">Faces still missing: ' + facesMissing.join(', ') + '. It can go live without them, but taps will fall back to neutral.</div>';
+      h += '<div class="bar"><button class="btn btn-ok" ' + (ready ? '' : 'disabled') + ' onclick="reviewCharacter(\'approved\')"><i class="ti ti-check"></i> ' +
+           (c.status === 'retired' ? 'Bring back' : 'Approve and go live') + '</button>';
+      if (c.creator_id && c.status === 'pending')
+        h += '<button class="btn btn-bad" onclick="document.getElementById(\'sendback\').style.display=\'block\'"><i class="ti ti-arrow-back-up"></i> Send back</button>';
+      h += '</div><div id="sendback" style="display:none;margin-top:8px;">' +
+           '<textarea id="sendback-note" rows="2" maxlength="280" placeholder="What should the creator change? They will see this."></textarea>' +
+           '<button class="btn btn-bad" style="margin-top:6px;" onclick="reviewCharacter(\'rejected\')"><i class="ti ti-send"></i> Send back with this note</button></div>';
+    }
+    return h + '</div>';
+  }
+
+  window.reviewCharacter = async function(decision) {
+    const note = decision === 'rejected' ? (document.getElementById('sendback-note').value || '').trim() : null;
+    if (decision === 'rejected' && !note) { toast('Write a note so the creator knows what to fix.', true); return; }
+    if (decision === 'retired' && !confirm('Retire ' + editing.name + '? Owners keep them.')) return;
+    const { data, error } = await db.rpc('ds_review_character', { p_character_id: editing.id, p_decision: decision, p_note: note });
+    if (error || !data || data.status !== 'success') {
+      const why = { no_starting_pose: 'Pose 1 needs art first.', note_required: 'A note is required.', not_admin: 'Your admin session expired.' }[data && data.error];
+      toast(why || 'Could not update: ' + (error ? error.message : 'unknown'), true);
+      return;
+    }
+    toast({ approved: 'Live.', rejected: 'Sent back. The creator has been told.', retired: 'Retired. Owners keep them.' }[decision]);
+    await loadAll(); editCharacter(editing.id);
+  };
+
+  // ════════════════════════════════════════════════════════════════
+  //  BANNERS
+  // ════════════════════════════════════════════════════════════════
+  function renderBanners() {
+    const g = document.getElementById('banner-grid');
+    g.innerHTML = BANNERS.length ? BANNERS.map(b => {
+      const giver = REWARDS.some(r => r.cosmetic_item_id === b.id);
+      return '<button class="card" onclick="editBanner(\'' + b.id + '\')">' +
+        '<div class="card-art wide">' + (b.image_url ? '<img src="' + esc(b.image_url) + '" alt="" loading="lazy"/>' : '<i class="ti ti-photo"></i>') + '</div>' +
+        '<div class="card-body"><div class="card-name">' + esc(b.name) + '</div>' +
+        '<div class="card-meta">' + (b.quill_price ? b.quill_price + ' Quills' : 'Not for sale') + (giver ? ' &middot; reading reward' : '') + '</div>' +
+        '<span class="status st-' + (b.status || 'draft') + '">' + esc(STATUS_LABEL[b.status] || b.status || 'draft') + '</span></div></button>';
+    }).join('') : '<div class="empty"><i class="ti ti-photo"></i>No banners yet.</div>';
+  }
+
+  window.editBanner = function(id) {
+    const b = id ? BANNERS.find(x => x.id === id) : { id: null, name: '', description: '', artist_name: '', artist_url: '', quill_price: 100, status: 'approved', image_url: null };
+    const box = document.getElementById('banner-editor');
+    box.style.display = '';
+    box.dataset.id = b.id || '';
+    box.innerHTML = '<div class="editor">' +
+      '<div class="ed-head"><div class="ed-title">' + (b.id ? esc(b.name) : 'New banner') + '</div>' +
+        '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'banner-editor\').style.display=\'none\'"><i class="ti ti-x"></i> Close</button></div>' +
+      '<label class="slot" style="display:block;margin-bottom:12px;"><div class="pic" style="height:160px;" id="bn-pic">' +
+        (b.image_url ? '<img src="' + esc(b.image_url) + '" alt="" style="max-height:160px;"/>' : '<i class="ti ti-upload" style="font-size:28px;"></i>') + '</div>' +
+        (b.image_url ? 'Click to replace the image' : 'Click to choose an image') +
+        '<input type="file" id="bn-file" accept="image/png,image/webp,image/jpeg,image/gif" onchange="previewBanner(this)"/></label>' +
+      '<div class="row">' +
+        '<div class="f"><label for="bn-name">Name</label><input type="text" id="bn-name" maxlength="80" value="' + esc(b.name) + '"/></div>' +
+        '<div class="f"><label for="bn-artist">Artist name</label><input type="text" id="bn-artist" maxlength="80" value="' + esc(b.artist_name) + '"/></div>' +
+        '<div class="f"><label for="bn-artist-url">Artist link (optional)</label><input type="text" id="bn-artist-url" maxlength="300" value="' + esc(b.artist_url) + '"/></div>' +
+      '</div>' +
+      '<div class="f" style="margin-bottom:12px;"><label for="bn-desc">Description</label><textarea id="bn-desc" rows="2" maxlength="400">' + esc(b.description) + '</textarea></div>' +
+      '<div class="row">' +
+        '<div class="f"><label for="bn-price">Price in Quills (blank = not sold, e.g. a reading reward)</label><input type="number" id="bn-price" min="100" max="3000" value="' + (b.quill_price || '') + '"/></div>' +
+        '<div class="f"><label for="bn-status">Status</label><select id="bn-status">' +
+          ['approved','draft','retired'].map(s => '<option value="' + s + '"' + (b.status === s ? ' selected' : '') + '>' + STATUS_LABEL[s] + '</option>').join('') +
+        '</select></div>' +
+      '</div>' +
+      '<div class="hint" style="font-size:12px;color:var(--text3);margin-bottom:10px;">Gifting needs at least 100 Quills. The artist earns 75% of each sale when they have an account linked.</div>' +
+      '<button class="btn btn-main" onclick="saveBanner()"><i class="ti ti-device-floppy"></i> ' + (b.id ? 'Save banner' : 'Create banner') + '</button>' +
+    '</div>';
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  window.previewBanner = function(input) {
+    const f = input.files[0]; if (!f) return;
+    document.getElementById('bn-pic').innerHTML = '<img src="' + URL.createObjectURL(f) + '" alt="" style="max-height:160px;"/>';
+  };
+  window.saveBanner = async function() {
+    const box = document.getElementById('banner-editor');
+    const id = box.dataset.id || null;
+    const priceRaw = document.getElementById('bn-price').value.trim();
+    const price = priceRaw ? parseInt(priceRaw, 10) : null;
+    const row = {
+      name: document.getElementById('bn-name').value.trim(),
+      artist_name: document.getElementById('bn-artist').value.trim() || null,
+      artist_url: document.getElementById('bn-artist-url').value.trim() || null,
+      description: document.getElementById('bn-desc').value.trim() || null,
+      quill_price: price, is_marketplace_item: price != null,
+      status: document.getElementById('bn-status').value,
+      slot: 'banner',
+    };
+    if (!row.name) { toast('Give the banner a name.', true); return; }
+    if (price != null && !(price >= 100 && price <= 3000)) { toast('Price must be 100–3,000 Quills, or blank for not sold.', true); return; }
+    if (row.artist_url && !/^https:\/\/[^\s<>"']+$/i.test(row.artist_url)) { toast('The artist link must start with https:// (the database refuses plain http).', true); return; }
+
+    const file = document.getElementById('bn-file').files[0];
+    if (!id && !file) { toast('Choose an image first.', true); return; }
+    try {
+      if (file) {
+        const r = await putArt('cosmetic-assets', 'landscapes', slugify(row.name) || 'banner', file, BANNER_MAX);
+        row.image_url = url('cosmetic-assets', r.path);
       }
+      const res = id ? await db.from('cosmetic_items').update(row).eq('id', id)
+                     : await db.from('cosmetic_items').insert(row);
+      if (res.error) throw res.error;
+      toast(id ? 'Banner saved.' : 'Banner created.');
+      box.style.display = 'none';
+      await loadAll();
+    } catch (e) { toast('Could not save: ' + e.message, true); }
+  };
 
-      var idArg = JSON.stringify(it.id);
-      var bodies = ['male','female'].filter(function(b){ return tonesFor(b).length; });
-      ctrls.innerHTML =
-        bodies.map(function(b){
-          return '<button class="pbtn' + (st.body === b ? ' on' : '') + '" onclick=\'setPreview(' + escHtml(idArg) + ', "body", "' + b + '")\'>' +
-            (b === 'male' ? 'Male' : 'Female') + '</button>';
-        }).join('') +
-        '<button class="pbtn' + (st.pose === 'pose2' ? ' on' : '') + '" onclick=\'setPreview(' + escHtml(idArg) + ', "pose", "' + (st.pose === 'pose1' ? 'pose2' : 'pose1') + '")\'>Pose ' + (st.pose === 'pose1' ? '2' : '1') + '</button>' +
-        tones.map(function(t){
-          return '<button class="tone' + (st.tone === t.id ? ' on' : '') + '" title="' + escHtml(t.label) + '" ' +
-            'style="background:' + escHtml(t.swatch_hex || '#888') + ';" ' +
-            'onclick=\'setPreview(' + escHtml(idArg) + ', "tone", ' + JSON.stringify(t.id) + ')\'></button>';
-        }).join('');
+  // ════════════════════════════════════════════════════════════════
+  //  READING REWARDS
+  // ════════════════════════════════════════════════════════════════
+  window.rwKindChanged = function() {
+    const k = pick('rw-kind');
+    document.getElementById('rw-tag-f').style.display = k === 'genre' ? '' : 'none';
+    document.getElementById('rw-ch-f').style.display = k === 'genre' ? '' : 'none';
+    document.getElementById('rw-tier-f').style.display = k === 'prestige' ? '' : 'none';
+  };
+
+  function prizeName(r) {
+    if (r.character_id) { const c = CHARS.find(x => x.id === r.character_id); return c ? c.name : '(deleted character)'; }
+    const b = BANNERS.find(x => x.id === r.cosmetic_item_id); return b ? b.name : '(deleted banner)';
+  }
+
+  function renderRewards() {
+    document.getElementById('tag-options').innerHTML = TAGS.map(t => '<option value="' + esc(t) + '">').join('');
+    document.getElementById('rw-tier').innerHTML = TIERS.map(t => '<option value="' + t.tier + '">' + esc(t.name) + ' (tier ' + t.tier + ')</option>').join('');
+    document.getElementById('rw-prize').innerHTML =
+      '<optgroup label="Characters">' + CHARS.filter(c => c.status !== 'retired').map(c =>
+        '<option value="c:' + c.id + '">' + esc(c.name) + (c.availability !== 'secret' ? ' — also ' + AVAIL_LABEL[c.availability].toLowerCase() : '') + '</option>').join('') + '</optgroup>' +
+      '<optgroup label="Banners">' + BANNERS.filter(b => b.status !== 'retired').map(b =>
+        '<option value="b:' + b.id + '">' + esc(b.name) + (b.quill_price ? ' — also sold' : '') + '</option>').join('') + '</optgroup>';
+
+    const box = document.getElementById('reward-table');
+    if (!REWARDS.length) { box.innerHTML = '<div class="empty"><i class="ti ti-eye-off"></i>No hidden rewards yet.</div>'; return; }
+    box.innerHTML = '<table><thead><tr><th>When</th><th>They get</th><th>Note</th><th>On</th><th></th></tr></thead><tbody>' +
+      REWARDS.map(r => {
+        const when = r.kind === 'genre'
+          ? esc(r.tag) + ': ' + r.chapters_required + ' chapter' + (r.chapters_required === 1 ? '' : 's')
+          : 'Prestige: ' + esc((TIERS.find(t => t.tier === r.prestige_tier) || {}).name || 'tier ' + r.prestige_tier);
+        return '<tr' + (r.is_active ? '' : ' style="opacity:.5;"') + '><td>' + when + '</td>' +
+          '<td>' + (r.character_id ? '<i class="ti ti-user-heart"></i> ' : '<i class="ti ti-photo"></i> ') + esc(prizeName(r)) + '</td>' +
+          '<td style="color:var(--text3);">' + esc(r.note || '') + '</td>' +
+          '<td><input type="checkbox" ' + (r.is_active ? 'checked' : '') + ' onchange="toggleReward(\'' + r.id + '\', this.checked)" aria-label="Active"/></td>' +
+          '<td><button class="btn btn-bad btn-sm" onclick="deleteReward(\'' + r.id + '\')" aria-label="Delete"><i class="ti ti-trash"></i></button></td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p style="font-size:12px;color:var(--text3);margin-top:10px;">Turning a reward off stops new people earning it. Anyone who already has the prize keeps it.</p>';
+  }
+
+  window.addReward = async function() {
+    const kind = pick('rw-kind');
+    const prize = document.getElementById('rw-prize').value;
+    if (!prize) { toast('Pick what they get.', true); return; }
+    const row = { kind, note: document.getElementById('rw-note').value.trim() || null };
+    if (prize.startsWith('c:')) row.character_id = prize.slice(2); else row.cosmetic_item_id = prize.slice(2);
+
+    if (kind === 'genre') {
+      const tag = document.getElementById('rw-tag').value.trim();
+      const exact = TAGS.find(t => t.toLowerCase() === tag.toLowerCase());
+      if (!exact) { toast('Pick a tag from the list — a typo would make the reward impossible to earn.', true); return; }
+      row.tag = exact;
+      row.chapters_required = parseInt(document.getElementById('rw-ch').value, 10);
+      if (!(row.chapters_required >= 1)) { toast('Set how many chapters.', true); return; }
+    } else {
+      row.prestige_tier = parseInt(document.getElementById('rw-tier').value, 10);
     }
+    const dup = REWARDS.find(r => r.kind === kind && (r.character_id || r.cosmetic_item_id) === (row.character_id || row.cosmetic_item_id)
+      && r.tag === (row.tag || null) && r.prestige_tier === (row.prestige_tier || null));
+    if (dup) { toast('That reward already exists.', true); return; }
 
-    function setPreview(id, key, val) {
-      var it = _all.find(function(x){ return x.id === id; });
-      if (!it) return;
-      _previewState[id] = _previewState[id] || { body:'male', tone:null, pose:'pose1' };
-      _previewState[id][key] = val;
-      if (key === 'body') _previewState[id].tone = null; // re-resolve default tone
-      renderPreview(it);
-    }
+    const { error } = await db.from('ds_reading_rewards').insert(row);
+    if (error) { toast('Could not add: ' + error.message, true); return; }
 
-    function toggleReason(id) {
-      var r  = document.getElementById('r-' + id);
-      var rc = document.getElementById('rc-' + id);
-      if (!r || !rc) return;
-      var show = r.style.display !== 'block';
-      r.style.display  = show ? 'block' : 'none';
-      rc.style.display = show ? 'block' : 'none';
-      if (show) r.focus();
-    }
+    // A character that is ALSO sold or crowd-unlocked can be earned free
+    // here — allowed, but worth saying out loud.
+    const c = row.character_id && CHARS.find(x => x.id === row.character_id);
+    toast(c && c.availability !== 'secret'
+      ? 'Added. Note: ' + c.name + ' is also ' + AVAIL_LABEL[c.availability].toLowerCase() + ', so some people will pay for what others earn free.'
+      : 'Added. Readers who already qualify get it the next time they finish a chapter.');
+    document.getElementById('rw-note').value = '';
+    await loadAll();
+  };
+  window.toggleReward = async function(id, on) {
+    const { error } = await db.from('ds_reading_rewards').update({ is_active: on }).eq('id', id);
+    if (error) toast('Could not update: ' + error.message, true);
+    await loadAll();
+  };
+  window.deleteReward = async function(id) {
+    if (!confirm('Delete this reward? People who already earned the prize keep it.')) return;
+    const { error } = await db.from('ds_reading_rewards').delete().eq('id', id);
+    if (error) toast('Could not delete: ' + error.message, true);
+    await loadAll();
+  };
 
-    async function reviewItem(id, approve) {
-      var reason = null;
-      if (!approve) {
-        var r = document.getElementById('r-' + id);
-        reason = r ? r.value.trim() : '';
-        if (!reason) { toggleReason(id); return; }
-      }
-
-      var price = null;
-      if (approve) {
-        var p = document.getElementById('p-' + id);
-        var v = p ? parseInt(p.value, 10) : NaN;
-        if (p && !isNaN(v)) {
-          if (v < PRICE_MIN || v > PRICE_MAX) {
-            showToast('Price must be between ' + PRICE_MIN + ' and ' + PRICE_MAX + ' Quills.', 'ti-x');
-            p.focus();
-            return;
-          }
-          price = v;
-        }
-      }
-
-      var res = await Promise.resolve(
-        window.db.rpc('admin_review_cosmetic', {
-          p_item_id: id, p_approve: approve, p_reason: reason, p_quill_price: price
-        })
-      ).catch(function(e){ return { error: e }; });
-
-      if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); return; }
-      var out = res.data || {};
-      if (!out.ok) { showToast(out.error || 'Review failed', 'ti-x'); return; }
-
-      if (!approve) showToast('Feedback sent to the artist.');
-      else showToast('Approved and on sale in the avatar shop.');
-
-      loadItems();
-    }
-
-    async function setListing(id, listed) {
-      var res = await Promise.resolve(
-        window.db.rpc('admin_set_cosmetic_listing', { p_item_id: id, p_listed: listed })
-      ).catch(function(e){ return { error: e }; });
-
-      if (res.error) { showToast('Error: ' + res.error.message, 'ti-x'); return; }
-      var out = res.data || {};
-      if (!out.ok) { showToast(out.error || 'Could not update the listing', 'ti-alert-triangle'); return; }
-      showToast(listed ? 'Restored to the avatar shop.' : 'Removed from the avatar shop.');
-      loadItems();
-    }
-
-    // window.db is created by the admin gate in <head>; wait for it plus the session.
-    (function waitForDb(tries) {
-      if (window.db) { loadItems(); return; }
-      if (tries > 25) return;
-      setTimeout(function(){ waitForDb(tries + 1); }, 200);
-    })(0);
+  loadAll();
   </script>
 </body>
 </html>
