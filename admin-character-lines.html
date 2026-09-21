@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Character Lines</title>
+  <script src="accessibilityPrefs.js"></script>
+  <meta name="robots" content="noindex,nofollow" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // Same gate as every other admin page. It is a courtesy, not the lock:
+    // the real lock is ds_review_character_line(), which refuses anyone
+    // not in `admins`, and the ds_character_lines RLS policies.
+    document.documentElement.style.visibility = 'hidden';
+    window.__adminReady = (async function() {
+      window.db = window.supabase.createClient(
+        'https://cajjyyskpmjnpcxcfeuk.supabase.co',
+        'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx'
+      );
+      var session = null;
+      for (var i = 0; i < 5; i++) {
+        var r = await window.db.auth.getSession();
+        session = r.data.session;
+        if (session) break;
+        await new Promise(function(res) { setTimeout(res, 350); });
+      }
+      var adminRow = session ? await window.db.from('admins').select('id').eq('id', session.user.id).maybeSingle() : null;
+      if (!session || !adminRow || !adminRow.data) {
+        document.documentElement.style.visibility = '';
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</div>';
+        return false;
+      }
+      window.__me = session.user.id;
+      document.documentElement.style.visibility = '';
+      return true;
+    })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
+  <style>
+    :root {
+      --bg:#0a0a0f; --bg2:#12121a; --bg3:#1a1a26; --bg4:#22223a;
+      --accent:#2dd4bf; --accent2:#0d9488;
+      --text:#f1f0ff; --text2:#9b9bc0; --text3:#8a8aa8;
+      --border:rgba(255,255,255,0.07); --red:#f87171; --green:#34d399; --gold:#f59e0b;
+    }
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--border:rgba(0,0,0,0.10);--text:#0a0a0f;--text2:#3a3a5c;--text3:#5a5a76;--accent:#0a6b63;--accent2:#075e56;--red:#b01818;--green:#036b4e;--gold:#7d5205;}
+    html[data-theme="dim"]{--bg:#1c1c21;--bg2:#24242c;--bg3:#2c2c38;--bg4:#34344c;--border:rgba(255,255,255,0.12);--text2:#9b9bc0;--text3:#9e9eb4;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:var(--text);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .page{max-width:960px;margin:0 auto;padding:40px 24px 80px;}
+    .page-title{font-family:'Cinzel',serif;font-size:26px;font-weight:700;margin-bottom:6px;}
+    .page-sub{font-size:14px;color:var(--text3);margin-bottom:24px;max-width:640px;}
+
+    .tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);margin-bottom:18px;}
+    .tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:11px 16px;font-size:13px;font-weight:700;color:var(--text3);cursor:pointer;display:flex;align-items:center;gap:6px;font-family:'Lato',sans-serif;}
+    .tab-btn:hover{color:var(--text2);}
+    .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+    .tab-count{background:var(--bg4);color:var(--text2);border-radius:10px;padding:0 7px;font-size:11px;}
+    .tab-btn.active .tab-count{background:var(--accent);color:#0a0a0f;}
+
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px;}
+    select, input[type=number], textarea, input[type=text]{background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;padding:8px 10px;}
+    select:focus, input:focus, textarea:focus, button:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+
+    /* One line = one row. The left side is what the reader will actually
+       SEE: the face that fires and the words in a bubble. Reviewing the
+       words without the face is how a cheerful line ends up on an
+       annoyed expression. */
+    .line{display:grid;grid-template-columns:260px 1fr;gap:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px;}
+    .line.done{opacity:0.45;}
+    .preview{display:flex;gap:10px;align-items:flex-start;}
+    .face{width:64px;height:64px;border-radius:50%;flex-shrink:0;background:var(--bg4);object-fit:cover;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:22px;overflow:hidden;}
+    .face img{width:100%;height:100%;object-fit:cover;}
+    .bubble{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.55;color:var(--text);word-wrap:break-word;min-width:0;flex:1;}
+    .bubble::before{content:"";position:absolute;left:-7px;top:18px;width:12px;height:12px;background:var(--bg3);border-left:1px solid var(--border);border-bottom:1px solid var(--border);transform:rotate(45deg);}
+    .who{font-size:12px;color:var(--text3);margin-top:10px;}
+    .who strong{color:var(--text2);}
+
+    .fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;}
+    .field label{display:block;font-size:11px;color:var(--text3);margin-bottom:3px;}
+    .field select, .field input{width:100%;}
+    .body-edit{width:100%;resize:vertical;min-height:62px;font-family:Georgia,'Times New Roman',serif;font-size:14px;line-height:1.5;}
+    .counter{text-align:right;font-size:11px;color:var(--text3);}
+    .counter.over{color:var(--red);font-weight:700;}
+    .warn{font-size:12px;color:var(--gold);margin-top:4px;}
+    .prior-note{font-size:12px;color:var(--red);background:rgba(248,113,113,0.08);border-radius:8px;padding:6px 10px;margin-bottom:10px;}
+
+    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;}
+    .btn{border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Lato',sans-serif;display:inline-flex;align-items:center;gap:6px;}
+    .btn:disabled{opacity:0.5;cursor:not-allowed;}
+    .btn-approve{background:var(--green);color:#0a0a0f;}
+    .btn-reject{background:transparent;color:var(--red);border:1px solid var(--red);}
+    .reject-box{display:none;width:100%;margin-top:8px;}
+    .reject-box.open{display:block;}
+    .reject-box textarea{width:100%;min-height:52px;}
+
+    .ladder{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:18px;font-size:13px;color:var(--text2);}
+    .ladder-bar{display:flex;gap:2px;margin-top:8px;}
+    .ladder-bar div{flex:1;height:22px;border-radius:3px;background:var(--bg4);font-size:10px;text-align:center;line-height:22px;color:var(--text3);}
+    .ladder-bar div.has{background:var(--accent2);color:#fff;}
+
+    .empty{text-align:center;padding:60px 20px;color:var(--text3);}
+    .empty i{font-size:38px;display:block;margin-bottom:10px;opacity:0.5;}
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 18px;font-size:13px;z-index:999;display:none;}
+    .toast.err{border-color:var(--red);color:var(--red);}
+
+    @media (max-width:720px){
+      .line{grid-template-columns:1fr;}
+      .fields{grid-template-columns:1fr 1fr;}
+      nav{padding:0 16px;}
+    }
+    @media (prefers-reduced-motion:reduce){*{transition:none !important;}}
+  </style>
+</head>
+<body>
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="admin-stats.html"><i class="ti ti-arrow-left"></i> Admin</a>
+  </nav>
+
+  <div class="page">
+    <div class="page-title">Character lines</div>
+    <p class="page-sub">Every line a character can say goes through here first. Readers never see a pending or rejected line. If a writer changes the words, the tap, or the affection level of an approved line, it comes back here.</p>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="pending" onclick="setTab('pending')"><i class="ti ti-clock"></i> Waiting <span class="tab-count" id="n-pending">0</span></button>
+      <button class="tab-btn" data-tab="rejected" onclick="setTab('rejected')"><i class="ti ti-x"></i> Sent back <span class="tab-count" id="n-rejected">0</span></button>
+      <button class="tab-btn" data-tab="approved" onclick="setTab('approved')"><i class="ti ti-check"></i> Live <span class="tab-count" id="n-approved">0</span></button>
+    </div>
+
+    <div class="toolbar">
+      <label for="char-filter" style="font-size:13px;color:var(--text3);">Character</label>
+      <select id="char-filter" onchange="render()"><option value="">All characters</option></select>
+    </div>
+
+    <!-- How the chosen character's live lines spread across affection 0–21.
+         The target is roughly 10 lines at the start rising to about 20,
+         so a gap here is a level where tapping gives nothing new. -->
+    <div class="ladder" id="ladder" style="display:none;"></div>
+
+    <div id="list"><div class="empty"><i class="ti ti-loader"></i>Loading…</div></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+  const TRIGGERS = {
+    head: 'Tap: head', body: 'Tap: body', arm: 'Tap: arm', idle: 'Idle', greeting: 'Greeting',
+    mail: 'Mail', echo: 'Echo', tip: 'Tip', level: 'Affection level-up'
+  };
+  // Matches ds_character_lines_expression_check. Only four have art under
+  // the current spec (neutral, pleased, annoyed, surprised); the page warns
+  // when a line points at a face the character does not have.
+  const EXPRESSIONS = ['neutral','pleased','annoyed','surprised','sad','shy'];
+  const MAX_AFFECTION = 21;
+
+  let LINES = [];
+  let CHARS = {};          // id -> { name, faces: {slug: url} }
+  let WRITERS = {};        // id -> username
+  let tab = 'pending';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function toast(msg, err) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast' + (err ? ' err' : '');
+    t.style.display = 'block';
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', 3200);
+  }
+  function faceUrl(path) {
+    if (!path) return null;
+    return db.storage.from('characters').getPublicUrl(path).data.publicUrl;
+  }
+
+  async function load() {
+    if (!(await window.__adminReady)) return;
+
+    const [lr, cr, er] = await Promise.all([
+      db.from('ds_character_lines').select('*').order('created_at', { ascending: true }),
+      db.from('ds_characters').select('id, name').order('name'),
+      db.from('ds_character_expressions').select('character_id, slug, image_path'),
+    ]);
+    if (lr.error) {
+      document.getElementById('list').innerHTML =
+        '<div class="empty"><i class="ti ti-alert-triangle"></i>Could not load lines: ' + esc(lr.error.message) + '</div>';
+      return;
+    }
+    LINES = lr.data || [];
+    CHARS = {};
+    (cr.data || []).forEach(c => CHARS[c.id] = { name: c.name, faces: {} });
+    (er.data || []).forEach(e => { if (CHARS[e.character_id]) CHARS[e.character_id].faces[e.slug] = faceUrl(e.image_path); });
+
+    const writerIds = [...new Set(LINES.map(l => l.written_by).filter(Boolean))];
+    if (writerIds.length) {
+      const { data } = await db.from('profiles').select('id, username').in('id', writerIds);
+      (data || []).forEach(p => WRITERS[p.id] = p.username);
+    }
+
+    const sel = document.getElementById('char-filter');
+    const keep = sel.value;
+    sel.innerHTML = '<option value="">All characters</option>' +
+      Object.entries(CHARS).map(([id, c]) => '<option value="' + id + '">' + esc(c.name) + '</option>').join('');
+    sel.value = keep;
+    render();
+  }
+
+  function setTab(t) {
+    tab = t;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+    render();
+  }
+
+  function render() {
+    const charId = document.getElementById('char-filter').value;
+    const scoped = LINES.filter(l => !charId || l.character_id === charId);
+    ['pending','rejected','approved'].forEach(s =>
+      document.getElementById('n-' + s).textContent = scoped.filter(l => l.status === s).length);
+
+    renderLadder(charId);
+
+    const rows = scoped.filter(l => l.status === tab)
+      .sort((a, b) => tab === 'pending'
+        ? new Date(a.updated_at) - new Date(b.updated_at)        // oldest wait first
+        : (a.min_affection - b.min_affection) || a.trigger.localeCompare(b.trigger));
+
+    const list = document.getElementById('list');
+    if (!rows.length) {
+      list.innerHTML = '<div class="empty"><i class="ti ti-' +
+        (tab === 'pending' ? 'mood-happy' : 'list') + '"></i>' +
+        (tab === 'pending' ? 'Nothing waiting. New lines appear here when a writer submits or edits one.'
+          : tab === 'rejected' ? 'No lines sent back.' : 'No live lines yet.') + '</div>';
+      return;
+    }
+    list.innerHTML = rows.map(lineRow).join('');
+  }
+
+  function renderLadder(charId) {
+    const box = document.getElementById('ladder');
+    if (!charId) { box.style.display = 'none'; return; }
+    const live = LINES.filter(l => l.character_id === charId && l.status === 'approved');
+    const cells = [];
+    for (let lv = 0; lv <= MAX_AFFECTION; lv++) {
+      const n = live.filter(l => l.min_affection <= lv).length;
+      const newHere = live.filter(l => l.min_affection === lv).length;
+      cells.push('<div class="' + (newHere ? 'has' : '') + '" title="Affection ' + lv + ': ' + n +
+        ' lines available, ' + newHere + ' new at this level">' + (newHere || '') + '</div>');
+    }
+    const atStart = live.filter(l => l.min_affection === 0).length;
+    box.style.display = '';
+    box.innerHTML = '<strong>' + esc(CHARS[charId].name) + '</strong> has ' + live.length +
+      ' live lines, ' + atStart + ' available from the first day. Each square is an affection level; a number means new lines unlock there.' +
+      '<div class="ladder-bar">' + cells.join('') + '</div>';
+  }
+
+  function lineRow(l) {
+    const c = CHARS[l.character_id] || { name: 'Unknown character', faces: {} };
+    const exp = l.expression || 'neutral';
+    const face = c.faces[exp] || c.faces.neutral;
+    const writer = l.written_by ? (WRITERS[l.written_by] || 'unknown writer') : 'DawnScribe';
+    const missingFace = l.expression && !c.faces[l.expression];
+
+    return '' +
+    '<div class="line" id="row-' + l.id + '">' +
+      '<div>' +
+        '<div class="preview">' +
+          '<div class="face">' + (face ? '<img src="' + esc(face) + '" alt="' + esc(c.name + ', ' + exp) + '"/>' : '<i class="ti ti-user"></i>') + '</div>' +
+          '<div class="bubble" id="bubble-' + l.id + '">' + esc(l.body) + '</div>' +
+        '</div>' +
+        '<div class="who"><strong>' + esc(c.name) + '</strong><br>' +
+          esc(TRIGGERS[l.trigger] || l.trigger) + ', affection ' + l.min_affection + '+<br>' +
+          'Written by ' + esc(writer) + '<br>' +
+          (l.status === 'approved' && l.approved_at ? 'Live since ' + new Date(l.approved_at).toLocaleDateString()
+            : 'Submitted ' + new Date(l.updated_at).toLocaleDateString()) +
+        '</div>' +
+      '</div>' +
+
+      '<div>' +
+        (l.status === 'rejected' && l.rejection_note
+          ? '<div class="prior-note"><strong>Sent back:</strong> ' + esc(l.rejection_note) + '</div>' : '') +
+        '<label class="field" style="display:block;"><span style="font-size:11px;color:var(--text3);">Words (you can fix them before approving)</span>' +
+        '<textarea class="body-edit" id="body-' + l.id + '" maxlength="300" oninput="edited(\'' + l.id + '\')">' + esc(l.body) + '</textarea></label>' +
+        '<div class="counter" id="count-' + l.id + '">' + l.body.length + '/300</div>' +
+
+        '<div class="fields">' +
+          '<div class="field"><label for="exp-' + l.id + '">Face</label><select id="exp-' + l.id + '" onchange="edited(\'' + l.id + '\')">' +
+            '<option value="">None (neutral)</option>' +
+            EXPRESSIONS.map(e => '<option value="' + e + '"' + (l.expression === e ? ' selected' : '') + '>' + e +
+              (c.faces[e] ? '' : ' (no art)') + '</option>').join('') +
+          '</select></div>' +
+          '<div class="field"><label for="aff-' + l.id + '">Affection needed</label>' +
+            '<input type="number" id="aff-' + l.id + '" min="0" max="' + MAX_AFFECTION + '" value="' + l.min_affection + '" oninput="edited(\'' + l.id + '\')"/></div>' +
+          '<div class="field"><label>Tap</label><input type="text" value="' + esc(TRIGGERS[l.trigger] || l.trigger) + '" disabled/></div>' +
+        '</div>' +
+        '<div class="warn" id="warn-' + l.id + '"' + (missingFace ? '' : ' style="display:none;"') + '>' +
+          '<i class="ti ti-alert-triangle"></i> ' + esc(c.name) + ' has no art for this face yet. It will fall back to neutral.</div>' +
+
+        '<div class="actions">' +
+          '<button class="btn btn-approve" id="ok-' + l.id + '" onclick="decide(\'' + l.id + '\',\'approved\')"><i class="ti ti-check"></i> ' +
+            (l.status === 'approved' ? 'Save changes' : 'Approve') + '</button>' +
+          '<button class="btn btn-reject" onclick="openReject(\'' + l.id + '\')"><i class="ti ti-arrow-back-up"></i> ' +
+            (l.status === 'approved' ? 'Take down' : 'Send back') + '</button>' +
+          '<div class="reject-box" id="rej-' + l.id + '">' +
+            '<textarea id="note-' + l.id + '" maxlength="280" placeholder="What should the writer change? They will see this."></textarea>' +
+            '<div class="actions" style="margin-top:6px;">' +
+              '<button class="btn btn-reject" onclick="decide(\'' + l.id + '\',\'rejected\')"><i class="ti ti-send"></i> Send back with this note</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // Keeps the bubble, counter and face warning in step with the edit box,
+  // so what you approve is exactly what you are looking at.
+  window.edited = function(id) {
+    const l = LINES.find(x => x.id === id); if (!l) return;
+    const c = CHARS[l.character_id] || { faces: {} };
+    const body = document.getElementById('body-' + id).value;
+    document.getElementById('bubble-' + id).textContent = body;
+    const cnt = document.getElementById('count-' + id);
+    cnt.textContent = body.length + '/300';
+    cnt.classList.toggle('over', body.length > 300 || !body.trim());
+    const exp = document.getElementById('exp-' + id).value;
+    const row = document.getElementById('row-' + id);
+    const img = row.querySelector('.face');
+    const url = c.faces[exp || 'neutral'] || c.faces.neutral;
+    img.innerHTML = url ? '<img src="' + url + '" alt=""/>' : '<i class="ti ti-user"></i>';
+    document.getElementById('warn-' + id).style.display = (exp && !c.faces[exp]) ? '' : 'none';
+    document.getElementById('ok-' + id).disabled = !body.trim() || body.length > 300;
+  };
+
+  window.openReject = function(id) {
+    const box = document.getElementById('rej-' + id);
+    box.classList.toggle('open');
+    if (box.classList.contains('open')) document.getElementById('note-' + id).focus();
+  };
+
+  window.decide = async function(id, decision) {
+    const l = LINES.find(x => x.id === id); if (!l) return;
+    const body = document.getElementById('body-' + id).value.trim();
+    const exp  = document.getElementById('exp-' + id).value;
+    const aff  = parseInt(document.getElementById('aff-' + id).value, 10);
+    const note = (document.getElementById('note-' + id) || {}).value || '';
+
+    if (decision === 'rejected' && !note.trim()) {
+      toast('Write a note so the writer knows what to change.', true);
+      document.getElementById('note-' + id).focus();
+      return;
+    }
+    if (isNaN(aff) || aff < 0 || aff > MAX_AFFECTION) {
+      toast('Affection has to be between 0 and ' + MAX_AFFECTION + '.', true);
+      return;
+    }
+
+    const row = document.getElementById('row-' + id);
+    row.querySelectorAll('button').forEach(b => b.disabled = true);
+
+    // Only send what actually changed. p_expression '' means "clear it".
+    const { data: res, error } = await db.rpc('ds_review_character_line', {
+      p_line_id: id,
+      p_decision: decision,
+      p_note: decision === 'rejected' ? note.trim() : null,
+      p_body: body !== l.body ? body : null,
+      p_min_affection: aff !== l.min_affection ? aff : null,
+      p_expression: exp !== (l.expression || '') ? exp : null,
+    });
+
+    if (error || !res || res.status !== 'success') {
+      const why = { not_admin: 'Your admin session has expired. Sign in again.',
+                    note_required: 'A note is required to send a line back.',
+                    line_not_found: 'That line was deleted.' }[res && res.error];
+      toast(why || ('Could not save: ' + (error ? error.message : 'unknown error')), true);
+      row.querySelectorAll('button').forEach(b => b.disabled = false);
+      return;
+    }
+
+    toast(decision === 'approved' ? 'Line approved. Readers can see it now.' : 'Sent back. The writer has been told.');
+    row.classList.add('done');
+    // Reload so counts, the ladder and the row's tab are all correct.
+    setTimeout(load, 400);
+  };
+
+  load();
+  </script>
+</body>
+</html>
