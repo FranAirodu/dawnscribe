@@ -92,22 +92,29 @@
     <div class="page-icon"><i class="ti ti-award"></i></div>
     <div>
       <div class="page-title">My <span>Rewards</span></div>
-      <div class="page-subtitle">Cosmetic items earned through reading. New milestones unlock automatically as you read.</div>
+      <div class="page-subtitle">Characters and banners that found their way to you. Nobody will tell you how — that’s half the fun.</div>
     </div>
   </div>
 
-  <!-- UNLOCKED ITEMS -->
+  <!-- EARNED CHARACTERS -->
   <div class="section">
-    <div class="section-title"><i class="ti ti-sparkles"></i> Unlocked Items</div>
-    <div class="section-sub">Rare items you've earned, shown in the order you unlocked them.</div>
-    <div id="items-container"><div class="loading-state"><i class="ti ti-loader"></i>Loading your rewards...</div></div>
+    <div class="section-title"><i class="ti ti-user-heart"></i> Characters</div>
+    <div class="section-sub">Characters who arrived on their own, rather than being bought.</div>
+    <div id="chars-container"><div class="loading-state"><i class="ti ti-loader"></i>Loading...</div></div>
   </div>
 
-  <!-- NEXT MILESTONES -->
-  <div class="section" id="teasers-section" style="display:none;">
-    <div class="section-title"><i class="ti ti-flag"></i> Next Milestones</div>
-    <div class="section-sub">Keep reading — these genres are closest to their next unlock.</div>
-    <div class="teaser-list" id="teasers-container"></div>
+  <!-- EARNED BANNERS -->
+  <div class="section">
+    <div class="section-title"><i class="ti ti-photo"></i> Banners</div>
+    <div class="section-sub">Profile banners you earned rather than bought. Set one on your <a href="banner.html" style="color:var(--accent);">profile banner</a> page.</div>
+    <div id="items-container"><div class="loading-state"><i class="ti ti-loader"></i>Loading...</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-sub" style="margin:0;">
+      Some characters and banners are only ever earned, never sold. What brings them to you isn't published —
+      readers work it out between themselves. Keep reading what you love.
+    </div>
   </div>
 </div>
 
@@ -143,118 +150,80 @@
     return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
-  // ── UNLOCKED ITEMS ──────────────────────────────────────────────
+  // -- EARNED BANNERS -------------------------------------------------
+  // Only things that ARRIVED: bought items are not rewards. Thresholds are
+  // never shown; the conditions live in an admin-only table on purpose.
+  var EARNED_SOURCES = ['tag_reward', 'prestige', 'randomizer', 'loyalty', 'admin_grant'];
+
   async function loadUnlockedItems(uid) {
     var container = document.getElementById('items-container');
     try {
-    var result = await db.from('user_unlocked_items')
-      .select('id, unlocked_at, source, cosmetic_items(id,name,description,image_url,slot)')
-      .eq('user_id', uid)
-      .order('unlocked_at', { ascending: false });
+      var result = await db.from('user_unlocked_items')
+        .select('id, unlocked_at, source, cosmetic_items(id,name,description,image_url)')
+        .eq('user_id', uid)
+        .in('source', EARNED_SOURCES)
+        .order('unlocked_at', { ascending: false });
 
-    var items = result.data || [];
-    if (items.length === 0) {
-      container.innerHTML = '<div class="empty-state"><i class="ti ti-award"></i><p>No rewards unlocked yet. Keep reading — rare items unlock automatically as you reach genre milestones.</p></div>';
-      return;
-    }
-
-    // For tag context: find which tag each item came from via tag_rewards
-    var itemIds = items.map(function(it){ return it.cosmetic_items.id; });
-    var rewardsResult = await db.from('tag_rewards').select('tag, points_required, cosmetic_item_id').in('cosmetic_item_id', itemIds);
-    var tagByItem = {};
-    (rewardsResult.data || []).forEach(function(r) {
-      // If an item is tied to multiple tags, just show the first one found
-      if (!tagByItem[r.cosmetic_item_id]) tagByItem[r.cosmetic_item_id] = r.tag;
-    });
-
-    container.innerHTML = '<div class="items-grid">' + items.map(function(it) {
-      var item = it.cosmetic_items;
-      var icon = SLOT_ICONS[item.slot] || 'ti-diamond';
-      var thumb = item.image_url
-        ? '<img loading="lazy" decoding="async" src="' + esc(safeUrl(item.image_url)) + '" alt=""/>'
-        : '<i class="ti ' + icon + '"></i>';
-      var tag = tagByItem[item.id];
-      var tagBadge = tag ? '<div class="item-tag-badge"><i class="ti ti-tag"></i>' + esc(tag) + '</div>' : '';
-
-      return '<div class="item-card">' +
-        '<div class="item-thumb">' + thumb + '</div>' +
-        '<div class="item-name">' + esc(item.name) + '</div>' +
-        (item.description ? '<div class="item-desc">' + esc(item.description) + '</div>' : '') +
-        tagBadge +
-        '<div class="item-meta-row">' +
-          '<span class="item-slot-badge"><i class="ti ' + icon + '"></i>' + esc(item.slot) + '</span>' +
-          '<span class="item-date">' + formatDate(it.unlocked_at) + '</span>' +
-        '</div>' +
-      '</div>';
-    }).join('') + '</div>';
+      var items = (result.data || []).filter(function(it){ return it.cosmetic_items; });
+      if (!items.length) {
+        container.innerHTML = '<div class="empty-state"><i class="ti ti-photo"></i><p>No earned banners yet. Some arrive through reading; others you can win in the <a href="characters.html" style="color:var(--accent);">randomizer</a> for a few Embers.</p></div>';
+        return;
+      }
+      container.innerHTML = '<div class="items-grid">' + items.map(function(it) {
+        var item = it.cosmetic_items;
+        var thumb = safeUrl(item.image_url)
+          ? '<img loading="lazy" decoding="async" src="' + esc(safeUrl(item.image_url)) + '" alt=""/>'
+          : '<i class="ti ti-photo"></i>';
+        return '<div class="item-card">' +
+          '<div class="item-thumb">' + thumb + '</div>' +
+          '<div class="item-name">' + esc(item.name) + '</div>' +
+          (item.description ? '<div class="item-desc">' + esc(item.description) + '</div>' : '') +
+          '<div class="item-meta-row">' +
+            '<span class="item-slot-badge"><i class="ti ti-photo"></i>banner</span>' +
+            '<span class="item-date">' + formatDate(it.unlocked_at) + '</span>' +
+          '</div></div>';
+      }).join('') + '</div>';
     } catch(e) {
-      container.innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Could not load your rewards. Please try again.</p></div>';
+      container.innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Could not load your banners. Please try again.</p></div>';
     }
   }
 
-  // ── NEXT MILESTONE TEASERS ────────────────────────────────────────
-  async function loadTeasers(uid) {
-    var section = document.getElementById('teasers-section');
-    var container = document.getElementById('teasers-container');
+  // -- EARNED CHARACTERS -----------------------------------------------
+  async function loadEarnedCharacters(uid) {
+    var container = document.getElementById('chars-container');
     try {
-    var [progressResult, rewardsResult, unlockedResult] = await Promise.all([
-      db.from('user_tag_progress').select('tag, points').eq('user_id', uid),
-      db.from('tag_rewards').select('tag, points_required, cosmetic_item_id'),
-      db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', uid)
-    ]);
+      var result = await db.from('ds_user_characters')
+        .select('obtained_at, obtained_via, ds_characters(id,name,subtitle,ds_character_poses(pose_order,portrait_path))')
+        .eq('user_id', uid)
+        .in('obtained_via', ['secret', 'randomizer'])
+        .order('obtained_at', { ascending: false });
 
-    var progress = progressResult.data || [];
-    var rewards = rewardsResult.data || [];
-    var unlockedIds = new Set((unlockedResult.data || []).map(function(u){ return u.cosmetic_item_id; }));
-
-    if (progress.length === 0 || rewards.length === 0) {
-      section.style.display = 'none';
-      return;
+      var rows = (result.data || []).filter(function(r){ return r.ds_characters; });
+      if (!rows.length) {
+        container.innerHTML = '<div class="empty-state"><i class="ti ti-user-heart"></i><p>None yet. Some characters find their own way to readers; others can be won in the <a href="characters.html" style="color:var(--accent);">randomizer</a>.</p></div>';
+        return;
+      }
+      container.innerHTML = '<div class="items-grid">' + rows.map(function(r) {
+        var c = r.ds_characters;
+        var pose = (c.ds_character_poses || []).slice().sort(function(a,b){ return a.pose_order - b.pose_order; })[0];
+        // The 512 crop, never the full figure: this is a list.
+        var url = pose && pose.portrait_path
+          ? db.storage.from('characters').getPublicUrl(pose.portrait_path).data.publicUrl : '';
+        var thumb = safeUrl(url)
+          ? '<img loading="lazy" decoding="async" src="' + esc(safeUrl(url)) + '" alt="" style="border-radius:50%;"/>'
+          : '<i class="ti ti-user-heart"></i>';
+        return '<div class="item-card">' +
+          '<div class="item-thumb" style="border-radius:50%;">' + thumb + '</div>' +
+          '<div class="item-name">' + esc(c.name) + '</div>' +
+          (c.subtitle ? '<div class="item-desc">' + esc(c.subtitle) + '</div>' : '') +
+          '<div class="item-meta-row">' +
+            '<a class="item-slot-badge" href="characters.html" style="text-decoration:none;"><i class="ti ti-user-heart"></i>collection</a>' +
+            '<span class="item-date">' + formatDate(r.obtained_at) + '</span>' +
+          '</div></div>';
+      }).join('') + '</div>';
+    } catch(e) {
+      container.innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Could not load your characters. Please try again.</p></div>';
     }
-
-    var progressByTag = {};
-    progress.forEach(function(p){ progressByTag[p.tag] = p.points; });
-
-    // For each tag with progress, find the smallest not-yet-unlocked reward
-    // threshold above the user's current points.
-    var teasers = [];
-    progress.forEach(function(p) {
-      var candidates = rewards.filter(function(r) {
-        return r.tag === p.tag && !unlockedIds.has(r.cosmetic_item_id) && r.points_required > p.points;
-      });
-      if (candidates.length === 0) return;
-      candidates.sort(function(a,b){ return a.points_required - b.points_required; });
-      var next = candidates[0];
-      teasers.push({
-        tag: p.tag,
-        current: p.points,
-        required: next.points_required,
-        remaining: next.points_required - p.points
-      });
-    });
-
-    if (teasers.length === 0) {
-      section.style.display = 'none';
-      return;
-    }
-
-    // Show the closest few milestones (smallest remaining gap first)
-    teasers.sort(function(a,b){ return a.remaining - b.remaining; });
-    teasers = teasers.slice(0, 5);
-
-    container.innerHTML = teasers.map(function(t) {
-      var pct = Math.min(100, Math.round((t.current / t.required) * 100));
-      return '<div class="teaser-row">' +
-        '<div class="teaser-tag">' + esc(t.tag) + '</div>' +
-        '<div class="teaser-progress-wrap">' +
-          '<div class="teaser-bar-bg"><div class="teaser-bar-fill" style="width:' + pct + '%;"></div></div>' +
-          '<div class="teaser-points"><b>' + t.remaining.toLocaleString() + '</b> points to next unlock</div>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-
-    section.style.display = 'block';
-    } catch(e) { section.style.display = 'none'; }
   }
 
   // ── INIT ─────────────────────────────────────────────────────────
@@ -266,7 +235,7 @@
     }
     var uid = session.user.id;
     await loadUnlockedItems(uid);
-    await loadTeasers(uid);
+    await loadEarnedCharacters(uid);
   })();
 </script>
 <script src="footer.js"></script>

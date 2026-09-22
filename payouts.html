@@ -267,18 +267,9 @@
       <div id="sales-loading" class="loading-state"><i class="ti ti-loader"></i><p>Loading sales...</p></div>
       <div id="sales-list"></div>
 
-      <!-- COSMETIC ROYALTIES -->
-      <div class="section-title"><i class="ti ti-user-star"></i> Character royalties</div>
-      <div class="intro-card">
-        <h3><i class="ti ti-info-circle"></i> How character licensing royalties work</h3>
-        <ul>
-          <li>When an artist creates a cosmetic item using one of your licensed characters, <strong>you earn 30%</strong> of every sale and the artist earns 45%. DawnScribe takes 25%.</li>
-          <li>If you are both the character author <strong>and</strong> the cosmetic artist, you earn <strong>75%</strong> of every sale.</li>
-          <li>Royalties accumulate in your USD balance and pay out monthly alongside your other earnings.</li>
-        </ul>
-      </div>
-      <div id="royalties-loading" class="loading-state"><i class="ti ti-loader"></i><p>Loading royalties...</p></div>
-      <div id="royalties-list"></div>
+      <!-- Character royalties had their own section here, built on the retired
+           licensing system. An author's 20% share now appears in Sales history
+           above, labelled "Author", so there is one list instead of two. -->
 
     </div>
   </div>
@@ -674,47 +665,8 @@
       }
     }
 
-    // ── COSMETIC ROYALTIES ───────────────────────────────────────
-    async function loadCosmeticRoyalties() {
-      var uid = currentSession.user.id;
-      var loading = document.getElementById('royalties-loading');
-      var list = document.getElementById('royalties-list');
-      try {
-        var res = await db.from('cosmetic_royalties')
-          .select('id, cosmetic_id, sale_amount_quills_paid, royalty_amount_usd_cents, artist_amount_usd_cents, author_share_pct, artist_share_pct, created_at, cosmetic_items(name, slot)')
-          .eq('author_id', uid)
-          .order('created_at', { ascending: false })
-          .limit(100);
-
-        loading.style.display = 'none';
-
-        if (!res.data || !res.data.length) {
-          list.innerHTML = '<div class="empty-state"><i class="ti ti-user-off"></i><p>No royalties yet. Earnings appear here when a cosmetic using one of your licensed characters sells.</p></div>';
-          return;
-        }
-
-        list.innerHTML = res.data.map(function(row) {
-          var item = row.cosmetic_items || {};
-          var isSamePerson = row.author_share_pct === 80;
-          var myShareCents = isSamePerson
-            ? row.royalty_amount_usd_cents
-            : row.royalty_amount_usd_cents;
-          var roleLabel = isSamePerson ? 'Author + Artist' : 'Character Author';
-          var slotLabel = item.slot ? ' · ' + item.slot : '';
-          return '<div class="sale-row">' +
-            '<div class="sale-info">' +
-              '<span class="sale-role">' + escHtml(roleLabel) + '</span>' +
-              '<strong>' + escHtml(item.name || 'Cosmetic item') + '</strong>' +
-              '<div class="sale-date">' + fmtDate(row.created_at) + slotLabel + ' · ' + escHtml(String(row.sale_amount_quills_paid)) + ' Quills sale · you earned ' + row.author_share_pct + '%</div>' +
-            '</div>' +
-            '<div class="sale-amount"><i class="ti ti-currency-dollar"></i>' + fmtUsd(myShareCents) + '</div>' +
-          '</div>';
-        }).join('');
-      } catch(e) {
-        loading.style.display = 'none';
-        list.innerHTML = '<div class="empty-state"><i class="ti ti-alert-triangle"></i><p>Could not load royalty history.</p></div>';
-      }
-    }
+    // loadCosmeticRoyalties() removed with the licensing system. Author shares
+    // are listed in Sales history via ds_my_sales(), labelled "Author".
 
     // ── INIT ─────────────────────────────────────────────────────
     (async function init() {
@@ -729,7 +681,7 @@
         document.getElementById('main-content').style.display = 'block';
         // Load balance first so _payoutScheduleEnabled is set before connect card renders
         await loadBalance();
-        await Promise.all([loadConnectCard(), loadPendingApprovals(), loadPayoutHistory(), loadReaderTips(), loadEarlyAccess(), loadSalesHistory(), loadCosmeticRoyalties()]);
+        await Promise.all([loadConnectCard(), loadPendingApprovals(), loadPayoutHistory(), loadReaderTips(), loadEarlyAccess(), loadSalesHistory()]);
         // Handle Stripe redirect back
         await handleConnectReturn();
       } catch(err) {
