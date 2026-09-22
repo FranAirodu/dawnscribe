@@ -346,6 +346,16 @@
     document.getElementById('review-grid').innerHTML = (list.length ? list.map(charCard).join('')
       : '<div class="empty"><i class="ti ti-inbox"></i>Nothing waiting for you. Submissions from creators show up here.</div>') +
       (withAuthor.length ? '<div style="grid-column:1/-1;font-size:13px;color:var(--text3);margin-top:10px;">Still with the story\'s author (' + withAuthor.length + '):</div>' + withAuthor.map(charCard).join('') : '');
+    const bWait = BANNERS.filter(b => b.status === 'pending_review');
+    if (bWait.length) {
+      document.getElementById('review-grid').innerHTML +=
+        '<div style="grid-column:1/-1;font-size:13px;font-weight:700;color:var(--text2);margin-top:14px;">Banners waiting for you (' + bWait.length + ')</div>' +
+        bWait.map(b => '<button class="card" onclick="showTab(\'banners\');editBanner(\'' + b.id + '\')">' +
+          '<div class="card-art wide">' + (b.image_url ? '<img src="' + esc(b.image_url) + '" alt="" loading="lazy"/>' : '<i class="ti ti-photo"></i>') + '</div>' +
+          '<div class="card-body"><div class="card-name">' + esc(b.name) + '</div><div class="card-meta">' +
+          (b.is_randomizer_item ? 'Donation' : (b.quill_price || '?') + ' Quills') + (b.work_id ? ' &middot; for a novel' : '') + '</div></div></button>').join('');
+    }
+    pill.textContent = list.length + bWait.length; pill.style.display = (list.length + bWait.length) ? '' : 'none';
   }
 
   // ════════════════════════════════════════════════════════════════
@@ -719,16 +729,15 @@
   // ════════════════════════════════════════════════════════════════
   //  BANNERS
   // ════════════════════════════════════════════════════════════════
+  // site_settings is read-only for everyone, admins included, except
+  // through ds_admin_set_roll_costs(). A direct update silently did nothing.
   window.saveRollCosts = async function() {
     const b = parseInt(document.getElementById('cost-banner').value, 10);
     const c = parseInt(document.getElementById('cost-character').value, 10);
     if (!(b >= 1) || !(c >= 1)) { toast('Both prices must be at least 1 Ember.', true); return; }
-    const res = await Promise.all([
-      db.from('site_settings').update({ value: b, updated_at: new Date().toISOString() }).eq('key', 'randomizer_banner_cost'),
-      db.from('site_settings').update({ value: c, updated_at: new Date().toISOString() }).eq('key', 'randomizer_character_cost'),
-    ]);
-    const err = res.find(r => r.error);
-    toast(err ? 'Could not save: ' + err.error.message : 'Roll prices saved.', !!err);
+    const { data, error } = await db.rpc('ds_admin_set_roll_costs', { p_banner: b, p_character: c });
+    if (error || !data || data.status !== 'success') { toast('Could not save: ' + (error ? error.message : (data && data.error)), true); return; }
+    toast('Roll prices saved.');
   };
 
   function renderBanners() {
@@ -742,7 +751,7 @@
         '<div class="card-art wide">' + (b.image_url ? '<img src="' + esc(b.image_url) + '" alt="" loading="lazy"/>' : '<i class="ti ti-photo"></i>') + '</div>' +
         '<div class="card-body"><div class="card-name">' + esc(b.name) + '</div>' +
         '<div class="card-meta">' + (b.quill_price ? b.quill_price + ' Quills' : 'Not for sale') + (b.is_randomizer_item ? ' &middot; randomizer' : '') + (giver ? ' &middot; reading reward' : '') + '</div>' +
-        '<span class="status st-' + (b.status || 'draft') + '">' + esc(STATUS_LABEL[b.status] || b.status || 'draft') + '</span></div></button>';
+        '<span class="status st-' + (b.status === 'pending_review' ? 'pending' : (b.status || 'draft')) + '">' + esc(b.status === 'pending_review' ? 'Waiting for you' : (STATUS_LABEL[b.status] || b.status || 'draft')) + '</span></div></button>';
     }).join('') : '<div class="empty"><i class="ti ti-photo"></i>No banners yet.</div>';
   }
 
@@ -766,9 +775,18 @@
       '<div class="f" style="margin-bottom:12px;"><label for="bn-desc">Description</label><textarea id="bn-desc" rows="2" maxlength="400">' + esc(b.description) + '</textarea></div>' +
       '<div class="row">' +
         '<div class="f"><label for="bn-price">Price in Quills (blank = not sold, e.g. a reading reward)</label><input type="number" id="bn-price" min="100" max="3000" value="' + (b.quill_price || '') + '"/></div>' +
-        '<div class="f"><label for="bn-status">Status</label><select id="bn-status">' +
-          ['approved','draft','retired'].map(s => '<option value="' + s + '"' + (b.status === s ? ' selected' : '') + '>' + STATUS_LABEL[s] + '</option>').join('') +
+        '<div class="f"><label for="bn-status">Status</label><select id="bn-status" onchange="document.getElementById(\'bn-reject-wrap\').style.display = this.value === \'rejected\' ? \'\' : \'none\'">' +
+          [['approved','Live'],['pending_review','Waiting for you'],['awaiting_author','Waiting for the novel\'s author'],['rejected','Send back to the artist'],['draft','Draft'],['retired','Retired']]
+            .filter(([v]) => v !== 'awaiting_author' || b.status === 'awaiting_author')
+            .map(([v, l]) => '<option value="' + v + '"' + (b.status === v ? ' selected' : '') + '>' + l + '</option>').join('') +
         '</select></div>' +
+      '</div>' +
+      '<div class="f" id="bn-reject-wrap" style="margin-bottom:12px;' + (b.status === 'rejected' ? '' : 'display:none;') + '"><label for="bn-reject-note">What should the artist change? They will see this.</label>' +
+        '<textarea id="bn-reject-note" rows="2" maxlength="480">' + esc(b.rejection_note || '') + '</textarea></div>' +
+      (b.work_id ? '<div class="note ' + (b.author_approved_at ? 'note-info' : 'note-warn') + '">Made for a novel. ' +
+        (b.author_approved_at ? 'Its author approved it' + (b.author_note ? ': “' + esc(b.author_note) + '”' : '.') + ' Artist 55%, author 20%.'
+                              : 'Its author has not approved it yet, so it can\'t go live.') + '</div>' : '') +
+      '<div>' +
       '</div>' +
       '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:10px;"><input type="checkbox" id="bn-rand"' + (b.is_randomizer_item ? ' checked' : '') + '/> In the free randomizer (a donated banner — unlocks selling banners for its artist)</label>' +
       '<div class="hint" style="font-size:12px;color:var(--text3);margin-bottom:10px;">Gifting needs at least 100 Quills. The artist earns 75% of each sale when they have an account linked.</div>' +
@@ -801,18 +819,29 @@
 
     const file = document.getElementById('bn-file').files[0];
     if (!id && !file) { toast('Choose an image first.', true); return; }
+    const noteEl = document.getElementById('bn-reject-note');
+    if (row.status === 'rejected') {
+      row.rejection_note = noteEl ? noteEl.value.trim() : '';
+      if (!row.rejection_note) { toast('Write a note so the artist knows what to change.', true); return; }
+    }
     try {
       if (file) {
         const r = await putArt('cosmetic-assets', 'landscapes', slugify(row.name) || 'banner', file, BANNER_MAX);
         row.image_url = url('cosmetic-assets', r.path);
       }
-      const res = id ? await db.from('cosmetic_items').update(row).eq('id', id)
-                     : await db.from('cosmetic_items').insert(row);
-      if (res.error) throw res.error;
+      // cosmetic_items is locked down (artists and admins alike can only
+      // edit a few columns directly), so every admin write goes through
+      // ds_admin_save_banner(). It also refuses to approve a banner for
+      // someone else's novel until that author has said yes.
+      const { data, error } = await db.rpc('ds_admin_save_banner', { p_id: id, p: row });
+      if (error) throw error;
+      if (!data || data.status !== 'success') throw new Error({ bad_price: 'Price must be 100–3,000 Quills.', bad_name: 'Give it a name.', not_found: 'That banner no longer exists.' }[data && data.error] || (data && data.error) || 'unknown');
       toast(id ? 'Banner saved.' : 'Banner created.');
       box.style.display = 'none';
       await loadAll();
-    } catch (e) { toast('Could not save: ' + e.message, true); }
+    } catch (e) {
+      toast(/author has not approved/.test(e.message) ? 'The novel\'s author hasn\'t approved this banner yet.' : 'Could not save: ' + e.message, true);
+    }
   };
 
   // ════════════════════════════════════════════════════════════════
