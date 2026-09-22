@@ -95,6 +95,8 @@
     .st-rejected{background:rgba(248,113,113,0.15);color:var(--red);}
     .st-retired{background:var(--bg4);color:var(--text2);}
     .st-awaiting_author{background:rgba(167,139,250,0.15);color:var(--purple);}
+    .st-suspended{background:rgba(245,158,11,0.18);color:var(--gold);}
+    .st-removed{background:rgba(248,113,113,0.18);color:var(--red);}
 
     /* ── editor ── */
     .editor{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;}
@@ -169,6 +171,8 @@
             <option value="draft">Draft</option>
             <option value="rejected">Sent back</option>
             <option value="retired">Retired</option>
+            <option value="suspended">Hidden &mdash; checking a report</option>
+            <option value="removed">Removed</option>
           </select>
           <select id="char-avail-filter" onchange="renderCharList()">
             <option value="">Every way to get it</option>
@@ -243,7 +247,7 @@
   const REQUIRED_FACES = ['neutral','pleased','annoyed','surprised'];   // the art spec
   const MAX_AFFECTION = 21;
   const AVAIL_LABEL = { ember_unlock: 'Crowd unlock', purchase: 'Sold for Quills', secret: 'Hidden reward', randomizer: 'Free randomizer' };
-  const STATUS_LABEL = { approved: 'Live', pending: 'Waiting for you', awaiting_author: 'Waiting for author', draft: 'Draft', rejected: 'Sent back', retired: 'Retired' };
+  const STATUS_LABEL = { approved: 'Live', pending: 'Waiting for you', awaiting_author: 'Waiting for author', draft: 'Draft', rejected: 'Sent back', retired: 'Retired', suspended: 'Hidden — checking', removed: 'Removed' };
   const SOURCE_LABEL = { dawnscribe: 'DawnScribe lore', book: 'From a book', creator: 'Creator-made' };
 
   // Longest edge, per the art spec. The figure is 1200x1800; crops 512.
@@ -328,7 +332,7 @@
     return '<button class="card" onclick="editCharacter(\'' + c.id + '\')">' +
       '<div class="card-art">' + (img ? '<img src="' + esc(img) + '" alt="" loading="lazy"/>' : '<i class="ti ti-user"></i>') + '</div>' +
       '<div class="card-body"><div class="card-name">' + esc(c.name) + '</div>' +
-      '<div class="card-meta">' + esc(AVAIL_LABEL[c.availability]) + ' &middot; ' + esc(SOURCE_LABEL[c.source]) + '</div>' +
+      '<div class="card-meta">' + esc(AVAIL_LABEL[c.availability]) + ' &middot; ' + esc(SOURCE_LABEL[c.source]) + (c.is_suggestive ? ' &middot; 18+' : '') + '</div>' +
       '<span class="status st-' + c.status + '">' + esc(STATUS_LABEL[c.status] || c.status) + '</span></div></button>';
   }
   function renderCharList() {
@@ -436,6 +440,19 @@
         '<div id="secret-info"></div>' +
       '</div>' +
 
+      // ── Review checks: the suggestive flag and the artist's working file.
+      '<div class="section"><h3>Review checks</h3>' +
+        '<div class="hint">Suggestive art is hidden from under-18 accounts everywhere: listings, profiles, the randomizer, reading rewards and gifts. ' +
+        '<strong>Never approve a suggestive character who is, or looks, under 18</strong> &mdash; whatever age the story gives them.</div>' +
+        '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:12px;cursor:pointer;">' +
+          '<input type="checkbox" id="e-suggestive"' + (c.is_suggestive ? ' checked' : '') + ' style="margin-top:3px;"/>' +
+          '<span>Suggestive &mdash; revealing outfit, flirty pose, fan service. (Nudity or sex acts are never allowed at all.)</span>' +
+        '</label>' +
+        (c.source_file_path
+          ? '<div class="note note-info">Working file supplied. <a href="#" onclick="openSource(\'' + esc(c.source_file_path) + '\');return false;" style="color:var(--accent);">Open it</a> &mdash; check it is a real layered original at full size, not a flat copy.</div>'
+          : '<div class="note note-warn">No working file. Creator submissions require one; house characters you commissioned yourself are exempt.</div>') +
+      '</div>' +
+
       '<div class="bar" style="margin-top:16px;">' +
         '<button class="btn btn-main" onclick="saveCharacter()"><i class="ti ti-device-floppy"></i> ' + (isNew ? 'Create character' : 'Save details') + '</button>' +
         (isNew ? '<span style="font-size:12px;color:var(--text3);">Art uploads open once the character exists.</span>' : '') +
@@ -512,6 +529,7 @@
       slug: slugify(document.getElementById('e-slug').value),
       story_blurb: document.getElementById('e-blurb').value.trim(),
       source: src, availability: avail,
+      is_suggestive: !!document.getElementById('e-suggestive') && document.getElementById('e-suggestive').checked,
       ember_unlock_price: null, quill_price: null, opens_after_id: null,
       work_id: null, author_id: null, creator_id: null,
     };
@@ -693,9 +711,17 @@
     const ready = poses.some(p => p.min_affection === 0 && p.figure_path && p.portrait_path);
     const facesMissing = REQUIRED_FACES.filter(f => !(FACES[c.id] || {})[f]);
     let h = '<div class="section"><h3>Go live</h3>';
-    if (c.status === 'approved') {
+    if (c.status === 'suspended') {
+      h += '<div class="note note-warn"><strong>Hidden while you check a report.</strong>' + (c.takedown_note ? ' Reason: ' + esc(c.takedown_note) : '') +
+           ' Owners still have it. Ask the artist for their working file and a work-in-progress before deciding.</div>' +
+           '<div class="bar"><button class="btn btn-ok" onclick="unsuspendArt(\'character\',\'' + c.id + '\',\'' + esc(c.name).replace(/'/g, "\\'") + '\')"><i class="ti ti-check"></i> It\'s genuine &mdash; put it back</button>' +
+           '<button class="btn btn-bad" onclick="takedownArt(\'character\',\'' + c.id + '\',\'' + esc(c.name).replace(/'/g, "\\'") + '\')"><i class="ti ti-alert-octagon"></i> Confirmed stolen &mdash; remove and refund</button></div>';
+    } else if (c.status === 'removed') {
+      h += '<div class="note note-bad"><strong>Removed.</strong>' + (c.takedown_note ? ' ' + esc(c.takedown_note) : '') + ' Buyers were refunded and earnings reversed.</div>';
+    } else if (c.status === 'approved') {
       h += '<div class="hint">Live now. Retiring takes them off sale and out of crowd unlocks. Everyone who owns them keeps them, poses and all.</div>' +
-           '<button class="btn btn-ghost" onclick="reviewCharacter(\'retired\')"><i class="ti ti-archive"></i> Retire</button>';
+           '<div class="bar"><button class="btn btn-ghost" onclick="reviewCharacter(\'retired\')"><i class="ti ti-archive"></i> Retire</button>' +
+           '<button class="btn btn-ghost" onclick="suspendArt(\'character\',\'' + c.id + '\',\'' + esc(c.name).replace(/'/g, "\\'") + '\')"><i class="ti ti-eye-off"></i> Hide while I check a report</button></div>';
     } else {
       if (c.status === 'awaiting_author') return h + '<div class="hint">Nothing to do until the author responds.</div></div>';
       if (!ready) h += '<div class="note note-warn">Needs pose 1 with both a full figure and a portrait before it can go live.</div>';
@@ -710,6 +736,44 @@
     }
     return h + '</div>';
   }
+
+  // Source files live in a private bucket, so they need a short-lived signed
+  // link. Nobody but the artist and an admin can ever open one.
+  window.openSource = async function(path) {
+    const { data, error } = await db.storage.from('art-sources').createSignedUrl(path, 300);
+    if (error || !data) { toast('Could not open that file: ' + (error ? error.message : 'unknown'), true); return; }
+    window.open(data.signedUrl, '_blank', 'noopener');
+  };
+
+  // Hide-on-report, then the full takedown. Two separate buttons on purpose:
+  // hiding is reversible and costs nothing, removal refunds and bans.
+  window.suspendArt = async function(kind, id, name) {
+    const reason = prompt('Why is this being hidden? The artist sees this.\n\ne.g. "Reported as traced from another artist."');
+    if (reason === null) return;
+    if (!reason.trim()) { toast('A reason is required.', true); return; }
+    const { data, error } = await db.rpc('ds_admin_suspend_art', { p_kind: kind, p_id: id, p_reason: reason.trim(), p_suspend: true });
+    if (error || !data || data.status !== 'success') { toast('Could not hide it: ' + (error ? error.message : (data && data.error)), true); return; }
+    toast(name + ' is hidden while you check. Owners keep it for now.');
+    await loadAll(); if (kind === 'character') editCharacter(id); else editBanner(id);
+  };
+  window.unsuspendArt = async function(kind, id, name) {
+    const { data, error } = await db.rpc('ds_admin_suspend_art', { p_kind: kind, p_id: id, p_reason: null, p_suspend: false });
+    if (error || !data || data.status !== 'success') { toast('Could not restore it: ' + (error ? error.message : (data && data.error)), true); return; }
+    toast(name + ' is live again.');
+    await loadAll(); if (kind === 'character') editCharacter(id); else editBanner(id);
+  };
+  window.takedownArt = async function(kind, id, name) {
+    const reason = prompt('CONFIRMED STOLEN ART\n\nThis removes "' + name + '" from everyone who has it, refunds every buyer in Quills, and reverses the artist\'s earnings.\n\nWhy? Buyers and the artist see this.');
+    if (reason === null) return;
+    if (!reason.trim()) { toast('A reason is required.', true); return; }
+    const ban = confirm('Also permanently ban the artist?\n\nOK = remove and ban.  Cancel = remove without banning.');
+    if (!confirm('Last check: remove "' + name + '" from every collection and refund all buyers?')) return;
+    const { data, error } = await db.rpc('ds_admin_takedown_art', { p_kind: kind, p_id: id, p_reason: reason.trim(), p_ban_artist: ban });
+    if (error || !data || data.status !== 'success') { toast('Takedown failed: ' + (error ? error.message : (data && data.error)), true); return; }
+    toast('Removed. ' + data.buyers_refunded + ' refunded ' + Number(data.quills_refunded).toLocaleString() + ' Quills; ' +
+          data.earnings_reversed + ' payment(s) reversed' + (data.artist_banned ? '; artist banned.' : '.'));
+    await loadAll(); closeEditor();
+  };
 
   window.reviewCharacter = async function(decision) {
     const note = decision === 'rejected' ? (document.getElementById('sendback-note').value || '').trim() : null;
@@ -788,9 +852,18 @@
                               : 'Its author has not approved it yet, so it can\'t go live.') + '</div>' : '') +
       '<div>' +
       '</div>' +
+      '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:10px;"><input type="checkbox" id="bn-suggestive"' + (b.is_suggestive ? ' checked' : '') + ' style="margin-top:3px;"/>' +
+        '<span>Suggestive &mdash; hidden from under-18 accounts. Never tick this for art of anyone who looks under 18.</span></label>' +
+      (b.source_file_path
+        ? '<div class="note note-info">Working file supplied. <a href="#" onclick="openSource(\'' + esc(b.source_file_path) + '\');return false;" style="color:var(--accent);">Open it</a>.</div>'
+        : '<div class="note note-warn">No working file on this banner.</div>') +
       '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:10px;"><input type="checkbox" id="bn-rand"' + (b.is_randomizer_item ? ' checked' : '') + '/> In the free randomizer (a donated banner — unlocks selling banners for its artist)</label>' +
       '<div class="hint" style="font-size:12px;color:var(--text3);margin-bottom:10px;">Gifting needs at least 100 Quills. The artist earns 75% of each sale when they have an account linked.</div>' +
-      '<button class="btn btn-main" onclick="saveBanner()"><i class="ti ti-device-floppy"></i> ' + (b.id ? 'Save banner' : 'Create banner') + '</button>' +
+      '<div class="bar"><button class="btn btn-main" onclick="saveBanner()"><i class="ti ti-device-floppy"></i> ' + (b.id ? 'Save banner' : 'Create banner') + '</button>' +
+      (b.id && b.status === 'approved' ? '<button class="btn btn-ghost" onclick="suspendArt(\'banner\',\'' + b.id + '\',\'' + esc(b.name).replace(/'/g, "\\'") + '\')"><i class="ti ti-eye-off"></i> Hide while I check a report</button>' : '') +
+      (b.id && b.status === 'suspended' ? '<button class="btn btn-ok" onclick="unsuspendArt(\'banner\',\'' + b.id + '\',\'' + esc(b.name).replace(/'/g, "\\'") + '\')"><i class="ti ti-check"></i> Put it back</button>' +
+        '<button class="btn btn-bad" onclick="takedownArt(\'banner\',\'' + b.id + '\',\'' + esc(b.name).replace(/'/g, "\\'") + '\')"><i class="ti ti-alert-octagon"></i> Confirmed stolen &mdash; remove and refund</button>' : '') +
+      '</div>' +
     '</div>';
     box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -811,6 +884,7 @@
       quill_price: price, is_marketplace_item: price != null,
       status: document.getElementById('bn-status').value,
       is_randomizer_item: document.getElementById('bn-rand').checked,
+      is_suggestive: document.getElementById('bn-suggestive').checked,
       slot: 'banner',
     };
     if (!row.name) { toast('Give the banner a name.', true); return; }

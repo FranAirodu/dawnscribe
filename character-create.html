@@ -271,7 +271,14 @@
         <div id="art-body"></div>
       </div>
 
-      <!-- 3. LINES -->
+      <!-- 3. WORKING FILE -->
+      <div class="card" id="source-card">
+        <div class="card-title"><i class="ti ti-file-stack"></i> Your working file</div>
+        <div class="card-sub">Upload the full-size original you drew this from &mdash; the layered file, or the biggest version you have. <strong>Only you and DawnScribe staff can ever see it.</strong> It's how we prove the art is yours if anyone claims otherwise, and it's required before you can submit.</div>
+        <div id="source-body"></div>
+      </div>
+
+      <!-- 4. LINES -->
       <div class="card" id="lines-card">
         <div class="card-title"><i class="ti ti-message-circle"></i> What they say</div>
         <div class="card-sub">Readers tap your character to hear a line. Aim for about 10 lines available from the start, rising to around 20 as affection grows (it goes up to 21). Every line is checked by DawnScribe before readers see it.</div>
@@ -318,6 +325,7 @@
   var ERRORS = {
     needs_character_donation: 'To sell characters, first donate one to the free randomizer and have it approved. A donated banner doesn\u2019t count.',
     needs_art: 'Pose 1 needs both a full figure and a portrait before you can submit.',
+    needs_source_file: 'Upload your working file before submitting \u2014 see the section above.',
     needs_story: 'Please write a short story for your character.',
     story_not_published: 'That novel isn\u2019t published, so a character can\u2019t come from it yet.',
     author_minor_paid: 'That novel\u2019s author is under 18, so they can\u2019t share in sales. You can still donate a character from their novel.',
@@ -442,7 +450,7 @@
     document.getElementById('basics-actions').style.display = locked ? 'none' : 'flex';
     document.getElementById('delete-btn').style.display = cur && !locked ? 'flex' : 'none';
     document.getElementById('submit-area').style.display = cur && !locked ? 'flex' : 'none';
-    renderArt(); renderLines();
+    renderArt(); renderSource(); renderLines();
     window.scrollTo(0, 0);
   }
 
@@ -643,6 +651,50 @@
     await openCharacter(cur.id);
   };
 
+  function renderSource() {
+    var body = document.getElementById('source-body');
+    if (!cur) { body.innerHTML = '<div class="hint">Save the details above first.</div>'; return; }
+    var has = !!cur.source_file_path;
+    body.innerHTML =
+      (has ? '<div class="status-banner approved" style="margin-bottom:10px;"><i class="ti ti-file-check"></i><div><h4>Working file received</h4><p>Stored privately. You can replace it while this is still a draft.</p></div></div>'
+           : '<div class="status-banner draft" style="margin-bottom:10px;"><i class="ti ti-file-alert"></i><div><h4>No working file yet</h4><p>Required before you can submit. PNG, JPEG, WebP, TIFF, PSD or a ZIP, up to ' + SOURCE_MAX_MB + ' MB.</p></div></div>') +
+      (editable()
+        ? '<label class="btn-secondary" style="display:inline-flex;cursor:pointer;">' +
+          '<i class="ti ti-upload"></i> ' + (has ? 'Replace working file' : 'Upload working file') +
+          '<input type="file" style="display:none;" onchange="uploadSource(this)"/></label>'
+        : '');
+  }
+  window.uploadSource = function(input) {
+    uploadSourceFile('character', cur.id, input, function(){ return openCharacter(cur.id); });
+  };
+
+  // -- WORKING FILE -----------------------------------------------------
+  // The artist's full-size original, in a private bucket only they and
+  // DawnScribe staff can read. Uploaded as-is: no resizing, no conversion,
+  // because the point is to hold the real layered original.
+  var SOURCE_MAX_MB = 200;
+  async function uploadSourceFile(kind, id, input, onDone) {
+    var file = input.files[0]; input.value = ''; if (!file) return;
+    if (file.size > SOURCE_MAX_MB * 1024 * 1024) { showToast('That file is over ' + SOURCE_MAX_MB + ' MB.', true); return; }
+    showToast('Uploading your working file\u2026');
+    try {
+      var session = (await db.auth.getSession()).data.session;
+      var clean = file.name.replace(/[^A-Za-z0-9._-]/g, '-').slice(-60);
+      var path = session.user.id + '/' + Date.now().toString(36) + '-' + clean;
+      var up = await db.storage.from('art-sources').upload(path, file, { upsert: false });
+      if (up.error) throw up.error;
+      var res = await db.rpc('ds_set_source_file', { p_kind: kind, p_id: id, p_path: path });
+      if (res.error) throw res.error;
+      if (!res.data || res.data.status !== 'success') {
+        throw new Error(res.data && res.data.error === 'not_editable'
+          ? 'this can only be changed while it is a draft or has been sent back'
+          : (res.data && res.data.error) || 'unknown');
+      }
+      showToast('Working file saved. Only you and DawnScribe can see it.');
+      if (onDone) await onDone();
+    } catch (e) { showToast('Upload failed: ' + (e.message || e), true); }
+  }
+
   // ── LINES ───────────────────────────────────────────────────────
   function renderLines() {
     var body = document.getElementById('lines-body');
@@ -696,6 +748,7 @@
     var id = await saveBasics(); if (!id) return;
     var p1 = poses.find(function(p){ return p.pose_order === 1; });
     if (!p1 || !p1.figure_path || !p1.portrait_path) { showToast(ERRORS.needs_art, true); return; }
+    if (!cur.source_file_path) { showToast(ERRORS.needs_source_file, true); document.getElementById('source-card').scrollIntoView({ behavior: 'smooth' }); return; }
     var missing = REQUIRED_FACES.filter(function(k){ return !faces[k]; });
     if (missing.length && !confirm('These faces are still missing: ' + missing.join(', ') + '. Lines using them will show the neutral face. Submit anyway?')) return;
     if (!lines.length && !confirm('Your character has no lines yet, so tapping them will do nothing. Submit anyway?')) return;

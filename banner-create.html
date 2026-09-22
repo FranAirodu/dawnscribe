@@ -255,6 +255,15 @@
           </label>
         </div>
         <div class="field">
+          <label>Your working file <span class="req">*</span></label>
+          <div id="source-state" class="hint" style="margin-bottom:6px;"></div>
+          <label class="btn-secondary" style="display:inline-flex;cursor:pointer;" id="source-btn">
+            <i class="ti ti-upload"></i> <span id="source-btn-label">Upload working file</span>
+            <input type="file" id="f-source" style="display:none;" onchange="uploadSource(this)"/>
+          </label>
+          <div class="hint">The full-size original you drew this from. <strong>Only you and DawnScribe staff can ever see it.</strong> Required before you can submit.</div>
+        </div>
+        <div class="field">
           <label>Made for a novel? <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
           <input type="text" id="f-novel" list="novel-opts" placeholder="Leave empty for your own original banner — or type a novel's title" oninput="searchNovels()" onchange="novelPicked()"/>
           <datalist id="novel-opts"></datalist>
@@ -358,6 +367,7 @@
   var SUBMIT_ERRORS = {
     needs_banner_donation: 'To sell banners, first donate one to the free randomizer and have it approved.',
     needs_image: 'Please upload a banner image.',
+    needs_source_file: 'Upload your working file before submitting \u2014 see the field above.',
     image_not_own_upload: 'The banner image must be one you uploaded here. Please choose the image again.',
     needs_attestation: 'Please accept the Creator Age & Liability Agreement first.',
     not_adult: 'You need to be 18 or older to make banners.',
@@ -423,7 +433,7 @@
 
   async function loadExisting() {
     var { data: banners } = await db.from('cosmetic_items')
-      .select('id,name,description,image_url,quill_price,status,submitted_at,rejection_note,author_note,is_randomizer_item,work_id')
+      .select('id,name,description,image_url,quill_price,status,submitted_at,rejection_note,author_note,is_randomizer_item,work_id,source_file_path')
       .eq('artist_id', currentUser.id)
       .eq('slot', 'banner')
       .order('created_at', { ascending: false });
@@ -457,6 +467,49 @@
     });
     document.getElementById('drafts-section').style.display = 'block';
     document.getElementById('editor').style.display = 'none';
+  }
+
+
+  // -- WORKING FILE -----------------------------------------------------
+  // The artist's full-size original, in a private bucket only they and
+  // DawnScribe staff can read. Uploaded as-is: no resizing, no conversion,
+  // because the point is to hold the real layered original.
+  var SOURCE_MAX_MB = 200;
+  async function uploadSourceFile(kind, id, input, onDone) {
+    var file = input.files[0]; input.value = ''; if (!file) return;
+    if (file.size > SOURCE_MAX_MB * 1024 * 1024) { showToast('That file is over ' + SOURCE_MAX_MB + ' MB.', true); return; }
+    showToast('Uploading your working file\u2026');
+    try {
+      var session = (await db.auth.getSession()).data.session;
+      var clean = file.name.replace(/[^A-Za-z0-9._-]/g, '-').slice(-60);
+      var path = session.user.id + '/' + Date.now().toString(36) + '-' + clean;
+      var up = await db.storage.from('art-sources').upload(path, file, { upsert: false });
+      if (up.error) throw up.error;
+      var res = await db.rpc('ds_set_source_file', { p_kind: kind, p_id: id, p_path: path });
+      if (res.error) throw res.error;
+      if (!res.data || res.data.status !== 'success') {
+        throw new Error(res.data && res.data.error === 'not_editable'
+          ? 'this can only be changed while it is a draft or has been sent back'
+          : (res.data && res.data.error) || 'unknown');
+      }
+      showToast('Working file saved. Only you and DawnScribe can see it.');
+      if (onDone) await onDone();
+    } catch (e) { showToast('Upload failed: ' + (e.message || e), true); }
+  }
+
+  var hasSource = false;
+  window.uploadSource = function(input) {
+    if (!currentId) { showToast('Save a draft first, then upload your working file.', true); return; }
+    uploadSourceFile('banner', currentId, input, function(){ hasSource = true; renderSourceState(); });
+  };
+  function renderSourceState() {
+    var st = document.getElementById('source-state');
+    var lbl = document.getElementById('source-btn-label');
+    if (!st) return;
+    st.innerHTML = hasSource
+      ? '<span style="color:var(--accent);"><i class="ti ti-file-check"></i> Working file received \u2014 stored privately.</span>'
+      : (currentId ? 'No working file yet.' : 'Save a draft first, then upload it here.');
+    if (lbl) lbl.textContent = hasSource ? 'Replace working file' : 'Upload working file';
   }
 
   function setMode(mode) {
@@ -527,6 +580,8 @@
     setMode(banner ? (banner.is_randomizer_item ? 'donate' : (banner.quill_price && canSellBanners ? 'sell' : 'donate'))
                    : (canSellBanners ? 'sell' : 'donate'));
 
+    hasSource = !!(banner && banner.source_file_path);
+    renderSourceState();
     if (banner) renderStatusBanner(banner); else document.getElementById('status-banner-wrap').innerHTML = '';
 
     var locked = !isEditable();
@@ -720,6 +775,7 @@
   async function submitForReview() {
     var mode = getMode();
     if (!mode) { showToast('Choose whether to donate or sell this banner.', true); return; }
+    if (!hasSource) { showToast(SUBMIT_ERRORS.needs_source_file, true); return; }
     var attested = await window.DSAgeGate.ensureAttestation();
     if (!attested) return;
 
