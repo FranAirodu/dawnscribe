@@ -1430,25 +1430,8 @@
           } catch(e) { /* credit chip is non-critical */ }
         })();
       }
-      if (data.active_banner_scroll_id) {
-        (async function() {
-          try {
-            var scrollRes = await db.from('scrolls').select('creator_id').eq('id', data.active_banner_scroll_id).maybeSingle();
-            if (scrollRes.data && scrollRes.data.creator_id) {
-              var profRes = await db.from('profiles').select('username, display_name').eq('id', scrollRes.data.creator_id).maybeSingle();
-              if (profRes.data) {
-                var handle = profRes.data.username || profRes.data.display_name;
-                if (handle) {
-                  var chip = document.getElementById('banner-credit-chip');
-                  document.getElementById('banner-credit-label').textContent = 'Art by @' + handle;
-                  chip.href = 'profile.html?user=' + encodeURIComponent(handle);
-                  chip.style.display = 'flex';
-                }
-              }
-            }
-          } catch(e) { /* credit chip is non-critical */ }
-        })();
-      }
+      // (Scroll-banner artist credit removed with Scrolls. Banner credit for
+      //  normal banners is handled above.)
       if (data.id) {
         currentProfileId = data.id;
         loadFullBodyAvatar(data.id);
@@ -3183,198 +3166,141 @@ async function handleFriendBtn() {
     }
 
     /* ── SHOWCASE TAB ───────────────────────────────────────────── */
+    // A creator's banners and characters. Rebuilt for the character pivot:
+    //  - Scrolls and dress-up cosmetics are gone.
+    //  - Banners are read from cosmetic_items (slot='banner'). The old version
+    //    looked for them in `scrolls`, so real banners never showed up here.
+    //  - EVERY creator-written field goes through escHtml / safeUrl. The old
+    //    version inserted names and descriptions raw, so a banner named
+    //    <img src=x onerror=...> ran script for every visitor.
     async function loadShowcase(profileId, isOwner) {
       var container = document.getElementById('showcase-container');
       var tabBtn = document.getElementById('tab-showcase');
       if (!container || !profileId) return;
+      function e(v) { return escHtml(v == null ? '' : v); }
 
       try {
-        // Fetch scrolls (excluding banner type) where user is creator
-        var scrollsPromise = db.from('scrolls')
-          .select('id,name,description,type,quill_price,banner_url,banner_emoji,item_count,status,submitted_at')
-          .eq('artist_id', profileId)
-          .neq('type', 'banner')
-          .in('status', isOwner ? ['approved','pending_review','draft'] : ['approved'])
-          .order('submitted_at', { ascending: false });
+        // Visitors only ever see what is live. Owners also see their drafts
+        // and things waiting on review (RLS already allows it for their own rows).
+        var bannerStatuses = isOwner ? ['approved','pending','pending_review','draft','rejected'] : ['approved'];
+        var charStatuses   = isOwner ? ['approved','pending','awaiting_author','draft','rejected'] : ['approved'];
 
-        // Fetch banner-type scrolls separately
-        var bannersPromise = db.from('scrolls')
-          .select('id,name,description,quill_price,banner_url,banner_emoji,status,submitted_at')
-          .eq('artist_id', profileId)
-          .eq('type', 'banner')
-          .in('status', isOwner ? ['approved','pending_review','draft'] : ['approved'])
-          .order('submitted_at', { ascending: false });
-
-        // Fetch standalone cosmetics
-        var cosmeticsPromise = db.from('cosmetic_items')
-          .select('id,name,description,slot,image_url,quill_price,status,submitted_at,is_marketplace_item')
-          .eq('artist_id', profileId)
-          // Do NOT filter on is_marketplace_item here. It is only true after an
-          // admin approves and lists, so filtering on it hid the owner's own
-          // drafts and pending submissions entirely (same bug class as the
-          // cosmetic-create.html list). status is the gate that matters.
-          .in('status', isOwner ? ['approved','pending_review','draft'] : ['approved'])
-          .order('submitted_at', { ascending: false });
-
-        var [scrollsRes, bannersRes, cosmeticsRes] = await Promise.all([
-          scrollsPromise,
-          bannersPromise,
-          cosmeticsPromise,
+        var res = await Promise.all([
+          db.from('cosmetic_items')
+            .select('id,name,description,image_url,quill_price,status,is_randomizer_item')
+            .eq('artist_id', profileId).eq('slot', 'banner')
+            .in('status', bannerStatuses)
+            .order('created_at', { ascending: false }),
+          db.from('ds_characters')
+            .select('id,name,subtitle,story_blurb,availability,quill_price,status,work_id,ds_character_poses(pose_order,portrait_path)')
+            .eq('creator_id', profileId)
+            .in('status', charStatuses)
+            .order('created_at', { ascending: false }),
         ]);
+        var banners = res[0].data || [];
+        var chars   = res[1].data || [];
 
-        var scrolls   = scrollsRes.data   || [];
-        var banners   = bannersRes.data   || [];
-        var cosmetics = cosmeticsRes.data || [];
-
-        var hasContent = scrolls.length || banners.length || cosmetics.length;
-
-        // Always show tab for owner; hide for visitors with nothing to see
-        if (!hasContent && !isOwner) return;
+        if (!banners.length && !chars.length && !isOwner) return;
         tabBtn.style.display = '';
 
         var html = '';
 
-        // ── Create buttons (owner only) ──────────────────────────
         if (isOwner) {
-          // Creators arrive here without knowing what the shop is for, so state it
-          // once above the buttons rather than leaving three unlabelled actions.
           html +=
             '<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:18px;">' +
               '<div style="font-size:13px;font-weight:700;color:var(--text2);display:flex;align-items:center;gap:7px;margin-bottom:7px;">' +
-                '<i class="ti ti-building-store" style="color:var(--gold);"></i> Merch for your story' +
+                '<i class="ti ti-building-store" style="color:var(--gold);"></i> Sell your art on DawnScribe' +
               '</div>' +
               '<div style="font-size:12.5px;color:var(--text3);line-height:1.65;">' +
-                'Turn your web novel into things readers can buy and wear. Design a <strong style="color:var(--text2);">Scroll</strong> ' +
-                '(a themed set), a <strong style="color:var(--text2);">Profile Banner</strong>, or an <strong style="color:var(--text2);">Avatar Cosmetic</strong> ' +
-                'inspired by your world and characters. Every item is reviewed before it goes on sale, and you keep ' +
-                '<strong style="color:var(--text2);">75%</strong> of each sale \u2014 or <strong style="color:var(--text2);">30%</strong> when another artist made it under a character licence.' +
+                'Make <strong style="color:var(--text2);">profile banners</strong> and <strong style="color:var(--text2);">characters</strong> readers can collect. ' +
+                'Your first of each kind goes into the free randomizer &mdash; donating one banner unlocks selling banners and banner commissions; ' +
+                'donating one character unlocks selling characters and character commissions. ' +
+                'You keep <strong style="color:var(--text2);">75%</strong> of each sale, or <strong style="color:var(--text2);">55%</strong> for a character from someone else\'s story, whose author gets 20%. ' +
+                'Everything is reviewed before it goes live.' +
               '</div>' +
             '</div>' +
             '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">' +
-              '<a href="scroll-create.html" class="showcase-create-btn showcase-create-scroll"><i class="ti ti-book-2"></i> New Scroll</a>' +
               '<a href="banner-create.html" class="showcase-create-btn showcase-create-banner"><i class="ti ti-photo"></i> New Banner</a>' +
-              '<a href="cosmetic-create.html" class="showcase-create-btn showcase-create-cosmetic"><i class="ti ti-shirt"></i> New Cosmetic</a>' +
+              // character-create.html does not exist yet; no button until it does.
+              '<span style="font-size:12px;color:var(--text3);align-self:center;"><i class="ti ti-user-heart"></i> Character submissions are coming soon.</span>' +
             '</div>';
         }
 
-        var typeLabel = { artist:'Artist Scroll', novel:'Novel Scroll', collab:'Collab Scroll', artist_scroll:'Artist Scroll', story_scroll:'Story Scroll' };
-
-        function statusBadgeHtml(status) {
-          if (status === 'pending_review') return '<span class="showcase-status-badge pending">Pending Review</span>';
-          if (status === 'draft') return '<span class="showcase-status-badge draft">Draft</span>';
+        function badge(st) {
+          if (st === 'pending' || st === 'pending_review') return '<span class="showcase-status-badge pending">In review</span>';
+          if (st === 'awaiting_author') return '<span class="showcase-status-badge pending">Waiting for author</span>';
+          if (st === 'draft') return '<span class="showcase-status-badge draft">Draft</span>';
+          if (st === 'rejected') return '<span class="showcase-status-badge draft">Needs changes</span>';
           return '';
         }
-
-        // ── Scrolls section ──────────────────────────────────────
-        if (scrolls.length || isOwner) {
-          html += '<div style="margin-bottom:32px;">' +
+        function section(icon, color, title, emptyText, body) {
+          return '<div style="margin-bottom:32px;">' +
             '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
-              '<i class="ti ti-book-2" style="color:var(--accent);font-size:16px;"></i>' +
-              '<span style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;">Scrolls</span>' +
-            '</div>';
-
-          if (!scrolls.length) {
-            html += '<div style="font-size:13px;color:var(--text3);padding:14px 0;">No scrolls yet.</div>';
-          } else {
-            html += '<div class="showcase-grid">';
-            scrolls.forEach(function(s) {
-              var banner = s.banner_url
-                ? '<img src="' + s.banner_url + '" alt="" loading="lazy">'
-                : '<div class="showcase-card-banner-emoji">' + (s.banner_emoji || '📜') + '</div>';
-              var price = s.quill_price ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + s.quill_price + ' Quills</span>' : '<span class="showcase-card-price" style="color:var(--accent);">Free</span>';
-              var items = s.item_count ? '<span class="showcase-card-items"><i class="ti ti-shirt" style="font-size:10px;"></i> ' + s.item_count + ' item' + (s.item_count === 1 ? '' : 's') + '</span>' : '';
-              var href = s.status === 'approved' ? 'marketplace.html?scroll=' + s.id : 'scroll-create.html?id=' + s.id;
-              html += '<a class="showcase-card" href="' + href + '">' +
-                '<div class="showcase-card-banner">' + banner + (isOwner ? statusBadgeHtml(s.status) : '') + '</div>' +
-                '<div class="showcase-card-body">' +
-                  '<div class="showcase-card-type"><i class="ti ti-book-2"></i> ' + (typeLabel[s.type] || 'Scroll') + '</div>' +
-                  '<div class="showcase-card-name">' + (s.name || 'Untitled Scroll') + '</div>' +
-                  (s.description ? '<div class="showcase-card-desc">' + s.description + '</div>' : '') +
-                  '<div class="showcase-card-meta">' + price + items + '</div>' +
-                '</div></a>';
-            });
-            html += '</div>';
-          }
-          html += '</div>';
+              '<i class="ti ' + icon + '" style="color:' + color + ';font-size:16px;"></i>' +
+              '<span style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;">' + title + '</span>' +
+            '</div>' + (body || '<div style="font-size:13px;color:var(--text3);padding:14px 0;">' + emptyText + '</div>') + '</div>';
         }
 
-        // ── Banners section ──────────────────────────────────────
-        if (banners.length || isOwner) {
-          html += '<div style="margin-bottom:32px;">' +
-            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
-              '<i class="ti ti-photo" style="color:var(--gold);font-size:16px;"></i>' +
-              '<span style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;">Profile Banners</span>' +
-            '</div>';
+        // ── Characters
+        if (chars.length || isOwner) {
+          var cBody = '';
+          if (chars.length) {
+            cBody = '<div class="showcase-grid">' + chars.map(function(c) {
+              var poses = (c.ds_character_poses || []).slice().sort(function(a, b) { return a.pose_order - b.pose_order; });
+              // The 512 portrait crop, never the full figure — grids are where egress adds up.
+              var pic = poses[0] && poses[0].portrait_path
+                ? db.storage.from('characters').getPublicUrl(poses[0].portrait_path).data.publicUrl : '';
+              var thumb = safeUrl(pic)
+                ? '<img src="' + safeUrl(pic) + '" alt="" loading="lazy" style="width:120px;height:120px;border-radius:50%;object-fit:cover;margin:auto;">'
+                : '<div class="showcase-card-banner-emoji"><i class="ti ti-user-heart" style="font-size:36px;color:var(--text3);"></i></div>';
+              var how = c.availability === 'purchase' && c.quill_price
+                ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + Number(c.quill_price).toLocaleString() + ' Quills</span>'
+                : c.availability === 'randomizer' ? '<span class="showcase-card-price" style="color:var(--accent);">In the free randomizer</span>'
+                : c.availability === 'ember_unlock' ? '<span class="showcase-card-price" style="color:var(--accent);">Crowd unlock</span>' : '';
+              // Live characters go to where they can be seen; unfinished ones
+              // have nowhere to go until the submit page exists.
+              var href = c.status === 'approved' ? (c.availability === 'purchase' ? 'marketplace.html' : 'characters.html') : '';
+              var open = href ? '<a class="showcase-card" href="' + href + '">' : '<div class="showcase-card">';
+              var close = href ? '</a>' : '</div>';
+              return open +
+                '<div class="showcase-card-banner" style="background:var(--bg3);display:flex;">' + thumb + (isOwner ? badge(c.status) : '') + '</div>' +
+                '<div class="showcase-card-body">' +
+                  '<div class="showcase-card-type" style="color:var(--violet);background:rgba(167,139,250,0.1);border-color:rgba(167,139,250,0.25);"><i class="ti ti-user-heart"></i> Character</div>' +
+                  '<div class="showcase-card-name">' + e(c.name || 'Unnamed') + '</div>' +
+                  (c.subtitle ? '<div class="showcase-card-desc" style="font-style:italic;">' + e(c.subtitle) + '</div>' : '') +
+                  (c.story_blurb ? '<div class="showcase-card-desc">' + e(c.story_blurb) + '</div>' : '') +
+                  '<div class="showcase-card-meta">' + how + '</div>' +
+                '</div>' + close;
+            }).join('') + '</div>';
+          }
+          html += section('ti-user-heart', 'var(--violet)', 'Characters', 'No characters yet.', cBody);
+        }
 
-          if (!banners.length) {
-            html += '<div style="font-size:13px;color:var(--text3);padding:14px 0;">No banners listed yet.</div>';
-          } else {
-            html += '<div class="showcase-grid">';
-            banners.forEach(function(b) {
-              var banner = b.banner_url
-                ? '<img src="' + b.banner_url + '" alt="" loading="lazy">'
-                : '<div class="showcase-card-banner-emoji">' + (b.banner_emoji || '🖼️') + '</div>';
-              var price = b.quill_price ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + b.quill_price + ' Quills</span>' : '';
-              var href = b.status === 'approved' ? 'marketplace.html?scroll=' + b.id : 'banner-create.html?id=' + b.id;
-              html += '<a class="showcase-card" href="' + href + '">' +
-                '<div class="showcase-card-banner">' + banner + (isOwner ? statusBadgeHtml(b.status) : '') + '</div>' +
+        // ── Banners
+        if (banners.length || isOwner) {
+          var bBody = '';
+          if (banners.length) {
+            bBody = '<div class="showcase-grid">' + banners.map(function(b) {
+              var img = safeUrl(b.image_url);
+              var thumb = img ? '<img src="' + img + '" alt="" loading="lazy">' : '<div class="showcase-card-banner-emoji">\uD83D\uDDBC\uFE0F</div>';
+              var price = b.quill_price
+                ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + Number(b.quill_price).toLocaleString() + ' Quills</span>'
+                : (b.is_randomizer_item ? '<span class="showcase-card-price" style="color:var(--accent);">In the free randomizer</span>' : '');
+              var href = b.status === 'approved' ? 'marketplace.html' : 'banner-create.html?id=' + encodeURIComponent(b.id);
+              return '<a class="showcase-card" href="' + href + '">' +
+                '<div class="showcase-card-banner">' + thumb + (isOwner ? badge(b.status) : '') + '</div>' +
                 '<div class="showcase-card-body">' +
                   '<div class="showcase-card-type" style="color:var(--gold);background:rgba(245,158,11,0.1);border-color:rgba(245,158,11,0.25);"><i class="ti ti-photo"></i> Profile Banner</div>' +
-                  '<div class="showcase-card-name">' + (b.name || 'Untitled Banner') + '</div>' +
-                  (b.description ? '<div class="showcase-card-desc">' + b.description + '</div>' : '') +
+                  '<div class="showcase-card-name">' + e(b.name || 'Untitled Banner') + '</div>' +
+                  (b.description ? '<div class="showcase-card-desc">' + e(b.description) + '</div>' : '') +
                   '<div class="showcase-card-meta">' + price + '</div>' +
                 '</div></a>';
-            });
-            html += '</div>';
+            }).join('') + '</div>';
           }
-          html += '</div>';
+          html += section('ti-photo', 'var(--gold)', 'Profile Banners', 'No banners yet.', bBody);
         }
 
-        // ── Cosmetics section ────────────────────────────────────
-        var SLOT_LABEL = { outfit:'Outfit', hat:'Hat / Head', accessory:'Accessory', hair:'Hair', background:'Background', other:'Other' };
-        var SLOT_ICON  = { outfit:'ti-shirt', hat:'ti-crown', accessory:'ti-diamond', hair:'ti-scissors', background:'ti-layout-board', other:'ti-sparkles' };
-
-        if (cosmetics.length || isOwner) {
-          html += '<div style="margin-bottom:32px;">' +
-            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
-              '<i class="ti ti-shirt" style="color:var(--violet);font-size:16px;"></i>' +
-              '<span style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;">Avatar Cosmetics</span>' +
-            '</div>';
-
-          if (!cosmetics.length) {
-            html += '<div style="font-size:13px;color:var(--text3);padding:14px 0;">No cosmetics listed yet.</div>';
-          } else {
-            html += '<div class="showcase-grid">';
-            cosmetics.forEach(function(ci) {
-              var slotLabel = SLOT_LABEL[ci.slot] || 'Cosmetic';
-              var slotIcon  = SLOT_ICON[ci.slot]  || 'ti-sparkles';
-              var thumb = ci.image_url
-                ? '<img src="' + ci.image_url + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:contain;">'
-                : '<div class="showcase-card-banner-emoji"><i class="ti ' + slotIcon + '" style="font-size:36px;color:var(--text3);"></i></div>';
-              var price = ci.quill_price ? '<span class="showcase-card-price"><i class="ti ti-feather" style="font-size:10px;"></i> ' + ci.quill_price + ' Quills</span>' : '';
-              var href = ci.status === 'approved' ? 'marketplace.html?cosmetic=' + ci.id : 'cosmetic-create.html?id=' + ci.id;
-              html += '<a class="showcase-card" href="' + href + '">' +
-                '<div class="showcase-card-banner" style="background:var(--bg3);">' + thumb + (isOwner ? statusBadgeHtml(ci.status) : '') + '</div>' +
-                '<div class="showcase-card-body">' +
-                  '<div class="showcase-card-type" style="color:var(--violet);background:rgba(167,139,250,0.1);border-color:rgba(167,139,250,0.25);"><i class="ti ' + slotIcon + '"></i> ' + slotLabel + '</div>' +
-                  '<div class="showcase-card-name">' + (ci.name || 'Untitled') + '</div>' +
-                  (ci.description ? '<div class="showcase-card-desc">' + ci.description + '</div>' : '') +
-                  '<div class="showcase-card-meta">' + price + '</div>' +
-                '</div></a>';
-            });
-            html += '</div>';
-          }
-          html += '</div>';
-        }
-
-        if (!html) {
-          container.innerHTML = isOwner
-            ? '<div style="text-align:center;padding:48px 24px;color:var(--text3);"><i class="ti ti-sparkles" style="font-size:40px;display:block;margin-bottom:16px;color:var(--gold);opacity:0.6;"></i><div style="font-size:16px;font-weight:700;color:var(--text2);font-family:\'Cinzel\',serif;margin-bottom:10px;">Your Showcase is empty</div><div style="font-size:13px;margin-bottom:20px;line-height:1.6;">Design Scrolls, Banners, or Cosmetics inspired by your web novel — readers can buy and wear them, and you keep 80% of each sale.</div><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;"><a href="scroll-create.html" class="showcase-create-btn showcase-create-scroll"><i class="ti ti-book-2"></i> New Scroll</a><a href="banner-create.html" class="showcase-create-btn showcase-create-banner"><i class="ti ti-photo"></i> New Banner</a><a href="cosmetic-create.html" class="showcase-create-btn showcase-create-cosmetic"><i class="ti ti-shirt"></i> New Cosmetic</a></div></div>'
-            : '<div style="font-size:13px;color:var(--text3);padding:24px 0;text-align:center;">Nothing in the Showcase yet.</div>';
-        } else {
-          container.innerHTML = html;
-        }
-
+        container.innerHTML = html || '<div style="font-size:13px;color:var(--text3);padding:24px 0;text-align:center;">Nothing in the Showcase yet.</div>';
       } catch(err) {
         console.error('loadShowcase error:', err);
         container.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0;">Could not load showcase.</div>';
@@ -3910,14 +3836,11 @@ async function handleFriendBtn() {
       try {
         var res = await Promise.all([
           q(db.from('ember_spends').select('embers_spent').eq('user_id', uid)),
-          // marketplace_purchases / banner_purchases are dead tables: nothing in the
-          // database writes them (no function INSERTs, no trigger, and the client
-          // holds SELECT only), so this figure always read 0 no matter what a user
-          // spent. purchase_marketplace_cosmetic() records the spend in
-          // cosmetic_item_owns.quills_spent and purchase_scroll() in
-          // scroll_unlocks.quills_spent — count from those instead.
-          q(db.from('cosmetic_item_owns').select('quills_spent').eq('user_id', uid)),
-          q(db.from('scroll_unlocks').select('quills_spent').eq('user_id', uid)),
+          // Quills are spread across banners, characters, gifts and commissions,
+          // and a received gift must NOT count as the recipient's spend. The
+          // server adds it up once, charged to whoever actually paid.
+          q(db.rpc('ds_lifetime_quills_spent', { p_user_id: uid })),
+          Promise.resolve({}),
           q(db.from('dawn_sparks').select('id', { count: 'exact', head: true }).eq('user_id', uid)),
           q(db.from('celestial_flame_gifts').select('id', { count: 'exact', head: true }).eq('user_id', uid)),
           q(db.from('scribe_flame_votes').select('id', { count: 'exact', head: true }).eq('user_id', uid)),
@@ -3931,7 +3854,7 @@ async function handleFriendBtn() {
 
         var spent = {
           'cw-embers':    sum(res[0], 'embers_spent'),
-          'cw-quills':    sum(res[1], 'quills_spent') + sum(res[2], 'quills_spent'),
+          'cw-quills':    Number((res[1] && res[1].data) || 0),
           'cw-sparks':    cnt(res[3]),
           'cw-celestial': cnt(res[4]),
           'cw-scribe':    cnt(res[5]),

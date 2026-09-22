@@ -583,8 +583,9 @@
   // ── COMMISSIONS ─────────────────────────────────────────────
   // Selling rights are earned by donating to the free randomizer:
   //   banner   -> may sell banners
-  //   wearable -> may sell cosmetics AND take commissions
-  //   both     -> may create scrolls
+  // Rights are split by type, with no crossover:
+  //   donated banner    -> may sell banners    AND take banner commissions
+  //   donated character -> may sell characters AND take character commissions
   // The gate is enforced in upsert_commission_offer(); this panel only
   // explains it, so a change in the database is never contradicted here.
   let commRights = null;
@@ -594,7 +595,7 @@
     const grid = document.getElementById('comm-grid');
     try {
       const { data: offers, error } = await db.from('commission_offers')
-        .select('id,artist_id,title,description,price_quills,delivery_days,max_slots,revisions_allowed')
+        .select('id,artist_id,kind,title,description,price_quills,delivery_days,max_slots,revisions_allowed')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(40);
@@ -631,7 +632,9 @@
           '<div style="padding:16px;">' +
             '<div style="font-family:\'Cinzel\',serif;font-size:16px;font-weight:700;margin-bottom:4px;">' +
               esc(o.title) + '</div>' +
-            '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">by ' + who + '</div>' +
+            '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">by ' + who +
+              ' &middot; <span style="color:' + (o.kind === 'character' ? 'var(--purple,#a78bfa)' : 'var(--gold)') + ';">' +
+              (o.kind === 'character' ? 'Character commission' : 'Banner commission') + '</span></div>' +
             (o.description
               ? '<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:12px;">' +
                   esc(o.description).slice(0, 220) + '</div>'
@@ -667,33 +670,36 @@
     const panel = document.getElementById('comm-artist-panel');
     panel.style.display = '';
 
-    if (commRights.can_commission) {
+    const canB = !!commRights.can_commission_banners;
+    const canC = !!commRights.can_commission_characters;
+    const tick = ok => ok ? '<i class="ti ti-circle-check" style="color:var(--accent);"></i>'
+                          : '<i class="ti ti-circle" style="color:var(--text3);"></i>';
+
+    if (canB || canC) {
       panel.innerHTML =
         '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;">' +
-          '<div style="font-weight:700;margin-bottom:6px;"><i class="ti ti-palette" style="color:var(--gold);"></i> You can take commissions</div>' +
-          '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;">You keep 75% of every commission. Set a price and a delivery window — miss the window and the buyer is refunded automatically.</div>' +
+          '<div style="font-weight:700;margin-bottom:6px;"><i class="ti ti-palette" style="color:var(--gold);"></i> You can take ' +
+            (canB && canC ? 'banner and character' : canB ? 'banner' : 'character') + ' commissions</div>' +
+          '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;">You keep 75% of every commission. Set a price and a delivery window — miss the window and the buyer is refunded automatically.' +
+            (canB && canC ? '' : ' To take ' + (canB ? 'character' : 'banner') + ' commissions too, donate a ' + (canB ? 'character' : 'banner') + ' to the free randomizer.') + '</div>' +
           '<button class="filter-btn" onclick="commOfferModal()"><i class="ti ti-plus"></i> New listing</button> ' +
           '<button class="filter-btn" onclick="commOpenOrders()"><i class="ti ti-inbox"></i> My queue</button>' +
         '</div>';
       return;
     }
 
-    // Not yet eligible — explain the ladder plainly rather than just refusing.
+    // Not yet eligible — explain the rule plainly rather than just refusing.
     panel.innerHTML =
       '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;">' +
         '<div style="font-weight:700;margin-bottom:6px;"><i class="ti ti-lock" style="color:var(--text3);"></i> Want to sell your art here?</div>' +
         '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:10px;">' +
-          'Donate one item to the free randomizer and you unlock selling. It stays free for every reader forever — and a free piece of a set is the best advertisement for the rest of it.' +
+          'Donate one piece to the free randomizer first. It stays free for every reader forever — and a free piece is the best advertisement for the rest of your work.' +
         '</div>' +
         '<ul style="font-size:13px;color:var(--text2);line-height:1.8;margin:0 0 12px 18px;">' +
-          '<li>' + (commRights.donated_banner ? '<i class="ti ti-circle-check" style="color:var(--accent);"></i>' : '<i class="ti ti-circle" style="color:var(--text3);"></i>') +
-            ' A <strong>banner</strong> unlocks selling banners</li>' +
-          '<li>' + (commRights.donated_wearable ? '<i class="ti ti-circle-check" style="color:var(--accent);"></i>' : '<i class="ti ti-circle" style="color:var(--text3);"></i>') +
-            ' A <strong>wearable cosmetic</strong> unlocks selling cosmetics and taking commissions</li>' +
-          '<li>' + (commRights.can_make_scrolls ? '<i class="ti ti-circle-check" style="color:var(--accent);"></i>' : '<i class="ti ti-circle" style="color:var(--text3);"></i>') +
-            ' <strong>Both</strong> unlocks submitting your own characters for review</li>' +
+          '<li>' + tick(commRights.donated_banner) + ' A <strong>banner</strong> unlocks selling banners and banner commissions</li>' +
+          '<li>' + tick(commRights.donated_character) + ' A <strong>character</strong> unlocks selling characters and character commissions</li>' +
         '</ul>' +
-        '<a class="filter-btn" href="cosmetic-create.html"><i class="ti ti-brush"></i> Create an item</a>' +
+        '<a class="filter-btn" href="banner-create.html"><i class="ti ti-photo"></i> Submit a banner</a>' +
       '</div>';
   }
 
@@ -753,6 +759,10 @@
   function commOfferModal() {
     commShowModal(
       '<div style="font-family:\'Cinzel\',serif;font-size:18px;font-weight:700;margin-bottom:12px;">New commission listing</div>' +
+      '<select id="co-kind" style="width:100%;padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;">' +
+        (commRights && commRights.can_commission_banners ? '<option value="banner">Banner commission</option>' : '') +
+        (commRights && commRights.can_commission_characters ? '<option value="character">Character commission</option>' : '') +
+      '</select>' +
       '<input id="co-title" maxlength="80" placeholder="What you are offering" ' +
         'style="width:100%;padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
       '<textarea id="co-desc" rows="4" maxlength="1000" placeholder="Details — style, what you need from the buyer, what they get…" ' +
@@ -793,7 +803,8 @@
         p_delivery_days: parseInt(document.getElementById('co-days').value, 10),
         p_max_slots: parseInt(document.getElementById('co-slots').value, 10) || 3,
         p_revisions: parseInt(document.getElementById('co-revs').value, 10),
-        p_is_active: true
+        p_is_active: true,
+        p_kind: (document.getElementById('co-kind') || {}).value || null
       });
       if (res.error) throw res.error;
       if (!res.data || !res.data.ok) throw new Error((res.data && res.data.error) || 'Could not publish');
