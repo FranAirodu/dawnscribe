@@ -2,7 +2,7 @@
    Client-side companion to the server-side 18+ enforcement.
 
    The DATABASE is the real control (RLS policies + triggers on
-   cosmetic_items / scrolls / character_license_agreements). This file only
+   cosmetic_items / ds_characters / character_license_agreements). This file only
    stops under-18 users from walking into a wall they can't pass — it is a
    UX layer, never a security layer. Never rely on it alone.
 
@@ -25,7 +25,9 @@
   var AGREEMENT_VERSION = 'v1';
 
   // Anchors that lead to a paid-listing flow. Hidden for under-18 accounts.
-  var GATED_HREFS = ['scroll-create.html', 'banner-create.html', 'cosmetic-create.html'];
+  // scroll-create / cosmetic-create were deleted with the avatar and Scroll
+  // systems; they now just redirect, so they no longer need hiding.
+  var GATED_HREFS = ['banner-create.html', 'character-create.html'];
 
   var _status = null;
   var _inflight = null;

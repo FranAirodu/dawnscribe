@@ -491,6 +491,7 @@ window.dsApplyAccent = dsApplyAccent;
           </button>
           <div class="dd-accordion-body">
             <a class="user-dropdown-item" href="banner-create.html"><i class="ti ti-photo" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Submit a Banner</span></a>
+            <a class="user-dropdown-item" href="character-create.html"><i class="ti ti-user-heart" style="color:#a78bfa;"></i> <span style="color:#a78bfa;">Submit a Character</span></a>
             <a class="user-dropdown-item" href="licensing.html"><i class="ti ti-license"></i> Character Licensing</a>
             <a class="user-dropdown-item" href="payouts.html"><i class="ti ti-wallet"></i> Creator Payouts</a>
           </div>

@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>(function(){var t=localStorage.getItem('ds_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>DawnScribe — Make a Character</title>
+  <meta name="robots" content="noindex,nofollow" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
+  <script src="accessibilityPrefs.js"></script>
+  <!-- In <head> on purpose: init() calls DSAgeGate.status() during parse. -->
+  <script src="creatorAgeGate.js"></script>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#8a8aa8;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f0c040;--amber:#f59e0b;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--border:rgba(0,0,0,0.10);--text:#0a0a0f;--text2:#3a3a5c;--text3:#5a5a76;--accent:#0a6b63;--accent2:#075e56;--red:#b01818;--green:#036b4e;--gold:#7d5205;--pink:#a3216b;--shadow:rgba(0,0,0,0.12);}
+    html[data-theme="dim"]{--bg:#1c1c21;--bg2:#24242c;--bg3:#2c2c38;--bg4:#34344c;--border:rgba(255,255,255,0.12);--text2:#9b9bc0;--text3:#9e9eb4;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;min-height:100vh;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:16px;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;flex-shrink:0;}
+    .logo span{color:var(--text);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+    .page{max-width:760px;margin:0 auto;padding:36px 24px 80px;}
+    .page-header{margin-bottom:28px;animation:fadeUp .5s ease;}
+    .page-header h1{font-family:'Cinzel',serif;font-size:26px;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:10px;}
+    .page-header p{font-size:14px;color:var(--text2);line-height:1.6;max-width:580px;}
+
+    #auth-wall{text-align:center;padding:80px 20px;display:none;}
+    #auth-wall i{font-size:48px;color:var(--text3);display:block;margin-bottom:16px;}
+    #auth-wall h2{font-family:'Cinzel',serif;font-size:20px;margin-bottom:8px;}
+    #auth-wall p{color:var(--text2);font-size:14px;margin-bottom:20px;}
+    #auth-wall a{background:var(--accent2);color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;}
+
+    .info-box{background:rgba(45,212,191,.05);border:1px solid rgba(45,212,191,.2);border-radius:12px;padding:16px 20px;margin-bottom:28px;}
+    .info-box h4{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+    .info-box ul{list-style:none;display:flex;flex-direction:column;gap:6px;}
+    .info-box li{font-size:12.5px;color:var(--text2);display:flex;align-items:flex-start;gap:8px;line-height:1.5;}
+    .info-box li i{color:var(--accent);flex-shrink:0;margin-top:2px;}
+
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;margin-bottom:20px;animation:fadeUp .4s ease;}
+    .card-title{font-family:'Cinzel',serif;font-size:15px;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+    .card-title i{color:var(--accent);}
+    .card-sub{font-size:13px;color:var(--text3);margin-bottom:22px;line-height:1.5;}
+
+    .field{margin-bottom:20px;}
+    .field label{display:block;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:7px;}
+    .field label .req{color:var(--accent);margin-left:3px;}
+    /* Donate / sell choice. .field label and .field input style every label as
+       an uppercase heading and every input as a full-width box, so the choice
+       cards opt out of both explicitly. */
+    .field label.mode-opt{display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-weight:400;font-size:14px;color:var(--text);
+      background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:11px 14px;margin:0 0 8px;cursor:pointer;}
+    .field label.mode-opt:has(input:checked){border-color:var(--accent);}
+    .field label.mode-opt input{width:auto;flex:0 0 auto;margin:3px 0 0;padding:0;accent-color:var(--accent);}
+    .field label.mode-opt strong{display:block;font-size:14px;}
+    .field label.mode-opt .hint{margin:2px 0 0;}
+    .field input,.field textarea,.field select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-family:'Lato',sans-serif;font-size:14px;outline:none;transition:border-color .2s;}
+    .field input:focus,.field textarea:focus{border-color:var(--accent);}
+    .field .hint{font-size:11.5px;color:var(--text3);margin-top:5px;line-height:1.5;}
+    .field-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    .upload-drop{border:1px dashed var(--border);border-radius:10px;background:var(--bg3);padding:18px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;}
+    .upload-drop:hover{border-color:var(--accent);}
+    .upload-drop.busy{opacity:.6;pointer-events:none;}
+    .upload-drop i{font-size:26px;color:var(--text3);display:block;margin-bottom:6px;}
+    .upload-drop .ud-main{font-size:13.5px;color:var(--text);font-weight:700;}
+    .upload-drop .ud-sub{font-size:11.5px;color:var(--text3);margin-top:4px;}
+    .upload-current{display:flex;align-items:center;gap:10px;margin-top:9px;font-size:12px;color:var(--text2);}
+    .upload-current i{color:var(--green);}
+    @media(max-width:560px){.field-row{grid-template-columns:1fr;}}
+
+    /* Preview */
+    .preview-wrap{margin-bottom:28px;}
+    .preview-label{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;}
+    .preview-banner{width:100%;height:180px;border-radius:12px;background:var(--bg3);border:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;position:relative;}
+    .preview-banner img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;}
+    .preview-banner .placeholder{display:flex;flex-direction:column;align-items:center;gap:8px;}
+    .preview-banner .placeholder i{font-size:32px;}
+    .preview-meta{margin-top:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+    .preview-name{font-size:14px;font-weight:700;color:var(--text);}
+    .preview-price{font-size:13px;font-weight:700;color:var(--accent);display:flex;align-items:center;gap:5px;}
+
+    /* Draft list */
+    .draft-section{margin-bottom:28px;}
+    .draft-section-title{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;}
+    .draft-list{display:flex;flex-direction:column;gap:8px;}
+    .draft-row{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all .2s;}
+    .draft-row:hover{border-color:var(--accent);}
+    .draft-row-thumb{width:56px;height:32px;border-radius:5px;background:var(--bg4);overflow:hidden;flex-shrink:0;}
+    .draft-row-thumb img{width:100%;height:100%;object-fit:cover;}
+    .draft-row-info{flex:1;min-width:0;}
+    .draft-row-name{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .draft-row-meta{font-size:11px;color:var(--text3);margin-top:2px;}
+    .draft-status{font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;flex-shrink:0;}
+    .ds-draft{background:rgba(255,255,255,.06);color:var(--text3);}
+    .ds-pending{background:rgba(245,158,11,.12);color:var(--amber);}
+    .ds-approved{background:rgba(52,211,153,.12);color:var(--green);}
+    .ds-rejected{background:rgba(248,113,113,.12);color:var(--red);}
+
+    /* Status banner */
+    .status-banner{border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:flex-start;gap:12px;}
+    .status-banner.draft{background:rgba(255,255,255,.04);border:1px solid var(--border);}
+    .status-banner.pending_review{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);}
+    .status-banner.approved{background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.3);}
+    .status-banner.rejected{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);}
+    .status-banner i{font-size:20px;flex-shrink:0;margin-top:1px;}
+    .status-banner.draft i,.status-banner.pending_review i{color:var(--amber);}
+    .status-banner.approved i{color:var(--green);}
+    .status-banner.rejected i{color:var(--red);}
+    .status-banner h4{font-size:13px;font-weight:700;margin-bottom:2px;}
+    .status-banner.pending_review h4{color:var(--amber);}
+    .status-banner.approved h4{color:var(--green);}
+    .status-banner.rejected h4{color:var(--red);}
+    .status-banner p{font-size:12px;color:var(--text2);line-height:1.5;}
+
+    .btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+    .btn-primary{background:var(--accent2);color:#fff;border:none;border-radius:10px;padding:11px 26px;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all .2s;}
+    .btn-primary:hover{background:var(--accent);}
+    .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+    .btn-secondary{background:var(--bg3);color:var(--text2);border:1px solid var(--border);border-radius:10px;padding:11px 20px;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all .2s;}
+    .btn-secondary:hover{border-color:var(--accent);color:var(--accent);}
+    .btn-secondary:disabled{opacity:.5;cursor:not-allowed;}
+    .btn-danger{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.3);border-radius:10px;padding:11px 20px;font-size:14px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all .2s;}
+    .btn-danger:hover{background:rgba(248,113,113,.2);}
+
+    .new-banner-btn{display:inline-flex;align-items:center;gap:7px;background:rgba(45,212,191,.08);border:1.5px solid rgba(45,212,191,.3);border-radius:10px;padding:9px 18px;color:var(--accent);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all .2s;margin-bottom:24px;}
+    .new-banner-btn:hover{background:rgba(45,212,191,.15);}
+
+    .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:11px 22px;border-radius:10px;font-size:13.5px;display:flex;align-items:center;gap:8px;opacity:0;transition:all .3s;z-index:400;pointer-events:none;box-shadow:0 8px 30px rgba(0,0,0,.4);}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+    .toast.err{border-color:var(--red);}
+    .toast.err i{color:var(--red);}
+
+    @media(max-width:600px){nav{padding:0 16px;}.page{padding:24px 14px 60px;}}
+
+    /* Character page additions */
+    .field label.mode-opt{display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-weight:400;font-size:14px;color:var(--text);background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:11px 14px;margin:0 0 8px;cursor:pointer;}
+    .field label.mode-opt:has(input:checked){border-color:var(--accent);}
+    .field label.mode-opt input{width:auto;flex:0 0 auto;margin:3px 0 0;padding:0;accent-color:var(--accent);}
+    .field label.mode-opt strong{display:block;font-size:14px;}
+    .field label.mode-opt .hint{margin:2px 0 0;}
+    .art-h{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;}
+    .art-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;}
+    .art-slot{display:block;background:var(--bg3);border:1px dashed var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer;font-size:12px;color:var(--text3);}
+    .art-slot.has{border-style:solid;}
+    .art-slot:hover{border-color:var(--accent);}
+    .art-slot input[type=file]{display:none;}
+    .art-pic{height:110px;display:flex;align-items:center;justify-content:center;margin-bottom:6px;font-size:24px;}
+    .art-pic img{max-height:110px;max-width:100%;object-fit:contain;}
+    .art-pic.round img{width:90px;height:90px;border-radius:50%;object-fit:cover;}
+    .art-lbl{font-weight:700;color:var(--text2);}
+    .art-lbl .req{color:var(--accent);}
+    .pose-row{margin-bottom:14px;}
+    .pose-name{font-size:13px;color:var(--text2);margin-bottom:6px;}
+    .line-row{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+    .line-body{font-family:Georgia,'Times New Roman',serif;font-size:15px;color:var(--text);}
+    .line-meta{font-size:12px;color:var(--text3);margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+    .line-note{font-size:12px;color:var(--red);margin-top:4px;}
+    .line-del{background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;margin-left:auto;}
+    .line-del:hover{color:var(--red);}
+    .line-add{border-top:1px solid var(--border);padding-top:12px;margin-top:6px;}
+  </style>
+</head>
+<body>
+<nav>
+  <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+  <a class="back-btn" href="javascript:history.back()"><i class="ti ti-arrow-left"></i> Back</a>
+</nav>
+
+<div class="page">
+
+  <div id="auth-wall">
+    <i class="ti ti-lock"></i>
+    <h2>Sign in to create characters</h2>
+    <p>You need a DawnScribe account to submit a character.</p>
+    <a href="auth.html">Sign In / Register</a>
+  </div>
+
+  <div id="main-content" style="display:none;">
+
+    <div class="page-header">
+      <h1><i class="ti ti-user-heart" style="color:var(--accent);font-size:26px;"></i> Make a Character</h1>
+      <p>A character is one illustrated figure from a novel on DawnScribe. Readers collect them, tap them to hear them talk, and build affection with them over time.</p>
+    </div>
+
+    <div class="info-box">
+      <h4><i class="ti ti-coin"></i> Donate first, then sell</h4>
+      <ul>
+        <li><i class="ti ti-check"></i> <strong style="color:var(--text);">Your first character goes into the free randomizer.</strong> Readers can win it with Embers, forever. Donating one unlocks <strong style="color:var(--text);">selling characters</strong> and taking <strong style="color:var(--text);">character commissions</strong>. A donated banner doesn't count — each kind needs its own donation.</li>
+        <li><i class="ti ti-check"></i> After that, set a price between <strong style="color:var(--text);">50 and 5,000 Quills</strong> (100 Quills is about $1).</li>
+        <li><i class="ti ti-check"></i> <strong style="color:var(--text);">From your own novel:</strong> you keep <strong style="color:var(--text);">75%</strong> of every sale.</li>
+        <li><i class="ti ti-check"></i> <strong style="color:var(--text);">From someone else's novel:</strong> its author approves it first, then you keep <strong style="color:var(--text);">55%</strong> and the author gets <strong style="color:var(--text);">20%</strong>. DawnScribe keeps 25% either way.</li>
+        <li><i class="ti ti-check"></i> Buyers keep a character forever — it's never retired from their collection.</li>
+      </ul>
+    </div>
+
+    <div class="info-box">
+      <h4><i class="ti ti-photo-check"></i> The art you'll need</h4>
+      <ul>
+        <li><i class="ti ti-check"></i> <strong style="color:var(--text);">Full figure</strong>: 1200 × 1800 px (2:3), transparent PNG, feet at the bottom.</li>
+        <li><i class="ti ti-check"></i> <strong style="color:var(--text);">Portrait crop</strong>: 512 × 512 px, head centred so it still reads inside a small circle. This is what shows in comments and lists.</li>
+        <li><i class="ti ti-check"></i> <strong style="color:var(--text);">Four faces</strong>: neutral, pleased, annoyed and surprised, each 512 × 512. <strong style="color:var(--text);">The head must not move between them</strong> — same eye line, size and position — or it visibly jumps when the character talks.</li>
+        <li><i class="ti ti-check"></i> Your own original work only — no AI-generated, traced or borrowed art. No explicit or sexual content.</li>
+      </ul>
+    </div>
+
+    <div id="list-section" style="display:none;">
+      <div class="draft-section">
+        <div class="draft-section-title">Your Characters</div>
+        <div class="draft-list" id="char-list"></div>
+      </div>
+      <button class="new-banner-btn" onclick="startNew()"><i class="ti ti-plus"></i> Make Another Character</button>
+    </div>
+
+    <div id="editor" style="display:none;">
+      <div id="status-wrap"></div>
+
+      <!-- 1. WHO THEY ARE -->
+      <div class="card">
+        <div class="card-title"><i class="ti ti-id"></i> Who they are</div>
+        <div class="field">
+          <label>Name <span class="req">*</span></label>
+          <input type="text" id="f-name" maxlength="80" placeholder="e.g. Wren Ashdown"/>
+        </div>
+        <div class="field">
+          <label>Subtitle <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
+          <input type="text" id="f-sub" maxlength="80" placeholder="e.g. the Cartographer's apprentice"/>
+        </div>
+        <div class="field">
+          <label>Their story <span class="req">*</span></label>
+          <textarea id="f-blurb" rows="4" maxlength="1200" placeholder="Who are they in the novel? What should a reader know when they meet them?"></textarea>
+        </div>
+        <div class="field">
+          <label>Which novel are they from? <span class="req">*</span></label>
+          <input type="text" id="f-novel" list="novel-opts" placeholder="Type a novel's title…" oninput="searchNovels()" onchange="novelPicked()"/>
+          <datalist id="novel-opts"></datalist>
+          <div class="hint" id="novel-hint">Every character comes from a published novel on DawnScribe — yours, or someone else's with their approval.</div>
+        </div>
+        <div class="field">
+          <label>How will readers get them? <span class="req">*</span></label>
+          <label class="mode-opt">
+            <input type="radio" name="f-mode" value="donate" onchange="modeChanged()"/>
+            <span><strong>Donate them to the free randomizer</strong><span class="hint">Free for readers. Unlocks selling characters and character commissions.</span></span>
+          </label>
+          <label class="mode-opt" id="mode-sell-label">
+            <input type="radio" name="f-mode" value="sell" onchange="modeChanged()"/>
+            <span><strong>Sell them for Quills</strong><span class="hint" id="mode-sell-hint">Available once you have a donated character live.</span></span>
+          </label>
+        </div>
+        <div class="field" id="price-field" style="display:none;">
+          <label>Price in Quills <span class="req">*</span></label>
+          <input type="number" id="f-price" min="50" max="5000" value="800"/>
+          <div class="hint">50–5,000 Quills. 800 Quills is about $8.</div>
+        </div>
+        <div class="btn-row" id="basics-actions">
+          <button class="btn-secondary" id="save-btn" onclick="saveBasics()"><i class="ti ti-device-floppy"></i> Save</button>
+          <button class="btn-danger" id="delete-btn" onclick="deleteCharacter()" style="display:none;"><i class="ti ti-trash"></i> Delete</button>
+        </div>
+      </div>
+
+      <!-- 2. ART (after the first save: art is stored in the character's own folder) -->
+      <div class="card" id="art-card">
+        <div class="card-title"><i class="ti ti-palette"></i> Art</div>
+        <div class="card-sub" id="art-sub">Save the details above first — then you can upload the art.</div>
+        <div id="art-body"></div>
+      </div>
+
+      <!-- 3. LINES -->
+      <div class="card" id="lines-card">
+        <div class="card-title"><i class="ti ti-message-circle"></i> What they say</div>
+        <div class="card-sub">Readers tap your character to hear a line. Aim for about 10 lines available from the start, rising to around 20 as affection grows (it goes up to 21). Every line is checked by DawnScribe before readers see it.</div>
+        <div id="lines-body"></div>
+      </div>
+
+      <div id="submit-area" class="btn-row" style="margin-top:4px;">
+        <button class="btn-primary" id="submit-btn" onclick="submitCharacter()"><i class="ti ti-send"></i> Submit for Review</button>
+      </div>
+      <div id="submitted-area" style="display:none;margin-top:16px;">
+        <div class="status-banner pending_review">
+          <i class="ti ti-clock"></i>
+          <div><h4 id="submitted-title">Submitted</h4><p id="submitted-body"></p></div>
+        </div>
+        <div class="btn-row">
+          <a class="btn-secondary" href="profile.html" style="text-decoration:none;"><i class="ti ti-user"></i> Back to Profile</a>
+          <button class="new-banner-btn" onclick="startNew()" style="margin-bottom:0;"><i class="ti ti-plus"></i> Make Another</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><i class="ti ti-check" id="toast-icon"></i> <span id="toast-msg"></span></div>
+
+<script>
+  const SUPA_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  const SUPA_KEY = 'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx';
+  const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+  window.db = db;
+
+  // Mirror the database's rules so people get a sentence, not a rejection.
+  const PRICE_MIN = 50, PRICE_MAX = 5000, MAX_AFFECTION = 21, LINE_MAX = 300;
+  const FIGURE_MAX = 1800, CROP_MAX = 512, WEBP_Q = 0.90;
+  const FACES = ['neutral','pleased','annoyed','surprised','sad','shy'];
+  const REQUIRED_FACES = ['neutral','pleased','annoyed','surprised'];
+  const TRIGGERS = { head:'Tap on the head', body:'Tap on the body', arm:'Tap on the arm', greeting:'Greeting', idle:'While idle' };
+
+  var currentUser = null, canSell = false;
+  var cur = null;              // the character being edited (row) or null
+  var poses = [], faces = {}, lines = [];
+  var NOVELS = {}, workId = null;
+
+  var ERRORS = {
+    needs_character_donation: 'To sell characters, first donate one to the free randomizer and have it approved. A donated banner doesn\u2019t count.',
+    needs_art: 'Pose 1 needs both a full figure and a portrait before you can submit.',
+    needs_story: 'Please write a short story for your character.',
+    story_not_published: 'That novel isn\u2019t published, so a character can\u2019t come from it yet.',
+    author_minor_paid: 'That novel\u2019s author is under 18, so they can\u2019t share in sales. You can still donate a character from their novel.',
+    already_submitted: 'This character has already been submitted.',
+    not_yours: 'This character isn\u2019t yours.',
+  };
+
+  function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function showToast(msg, err) {
+    var t = document.getElementById('toast');
+    t.className = 'toast' + (err ? ' err' : '');
+    document.getElementById('toast-icon').className = 'ti ' + (err ? 'ti-alert-circle' : 'ti-check');
+    document.getElementById('toast-msg').textContent = msg;
+    t.classList.add('show');
+    clearTimeout(showToast._t); showToast._t = setTimeout(function(){ t.classList.remove('show'); }, 3800);
+  }
+  function dbMsg(err) {
+    var m = (err && (err.message || err.details)) || '';
+    if (/18 or older/i.test(m)) return 'You need to be 18 or older to create characters.';
+    if (/Age & Liability/i.test(m)) return 'Please accept the Creator Age & Liability Agreement first.';
+    if (/row-level security/i.test(m)) return 'That can\u2019t be changed right now \u2014 a character can only be edited while it\u2019s a draft or has been sent back.';
+    if (/ds_characters_slug/i.test(m)) return 'Please try saving again.';
+    return m || 'Something went wrong.';
+  }
+  function artUrl(path){ return path ? db.storage.from('characters').getPublicUrl(path).data.publicUrl : ''; }
+  function slugify(s){
+    return String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0, 44) || 'character';
+  }
+  function editable(){ return !cur || cur.status === 'draft' || cur.status === 'rejected'; }
+
+  // ── INIT ────────────────────────────────────────────────────────
+  (async function init() {
+    var { data: { session } } = await db.auth.getSession();
+    if (!session) { document.getElementById('auth-wall').style.display = 'block'; return; }
+    currentUser = session.user;
+    var age = await window.DSAgeGate.status();
+    if (!age.is_adult) { window.DSAgeGate.showWall({ title: 'You need to be 18 to create characters' }); return; }
+    document.getElementById('main-content').style.display = 'block';
+    try { var r = await db.rpc('artist_sell_rights'); canSell = !!(r.data && r.data.can_sell_characters); } catch (e) {}
+    await loadList();
+    // story.html can link here with ?novel=<id> to start a character from that novel.
+    var qNovel = new URLSearchParams(location.search).get('novel');
+    if (qNovel) {
+      var { data: w } = await db.from('works').select('id,title,author_id').eq('id', qNovel).eq('is_published', true).neq('type', 'artwork').maybeSingle();
+      if (w) { startNew(); NOVELS[w.id] = w; document.getElementById('f-novel').value = w.title; novelPicked(); }
+    }
+  })();
+
+  // ── LIST ────────────────────────────────────────────────────────
+  async function loadList() {
+    var { data } = await db.from('ds_characters')
+      .select('id,slug,name,subtitle,story_blurb,availability,quill_price,status,work_id,rejection_note,author_note,updated_at,ds_character_poses(pose_order,portrait_path)')
+      .eq('creator_id', currentUser.id).order('created_at', { ascending: false });
+    var rows = data || [];
+    if (!rows.length) { startNew(); return; }
+    var wids = rows.map(function(r){ return r.work_id; }).filter(Boolean);
+    if (wids.length) {
+      var { data: ws } = await db.from('works').select('id,title,author_id').in('id', wids);
+      (ws || []).forEach(function(w){ NOVELS[w.id] = w; });
+    }
+    var LABEL = { draft:'Draft', awaiting_author:'Waiting for the author', pending:'In review', approved:'Live', rejected:'Needs changes', retired:'Retired' };
+    var CLS = { draft:'ds-draft', awaiting_author:'ds-pending', pending:'ds-pending', approved:'ds-approved', rejected:'ds-rejected', retired:'ds-draft' };
+    var list = document.getElementById('char-list');
+    list.innerHTML = '';
+    rows.forEach(function(c){
+      var p = (c.ds_character_poses || []).slice().sort(function(a,b){ return a.pose_order - b.pose_order; })[0];
+      var pic = p && p.portrait_path ? artUrl(p.portrait_path) : '';
+      var how = c.availability === 'randomizer' ? 'Donated \u00b7 free randomizer' : (c.quill_price || '\u2014') + ' Quills';
+      var el = document.createElement('div');
+      el.className = 'draft-row';
+      el.innerHTML =
+        '<div class="draft-row-thumb" style="border-radius:50%;">' + (pic ? '<img loading="lazy" src="' + esc(pic) + '" alt="" style="border-radius:50%;"/>' : '') + '</div>' +
+        '<div class="draft-row-info"><div class="draft-row-name">' + esc(c.name) + '</div>' +
+        '<div class="draft-row-meta">' + esc(how + (NOVELS[c.work_id] ? ' \u00b7 from ' + NOVELS[c.work_id].title : '')) + '</div></div>' +
+        '<span class="draft-status ' + (CLS[c.status] || 'ds-draft') + '">' + esc(LABEL[c.status] || c.status) + '</span>';
+      el.onclick = function(){ openCharacter(c.id); };
+      list.appendChild(el);
+    });
+    document.getElementById('list-section').style.display = 'block';
+    document.getElementById('editor').style.display = 'none';
+  }
+
+  // ── EDITOR ──────────────────────────────────────────────────────
+  window.startNew = function() { cur = null; poses = []; faces = {}; lines = []; workId = null; renderEditor(); };
+
+  async function openCharacter(id) {
+    var [c, p, f, l] = await Promise.all([
+      db.from('ds_characters').select('*').eq('id', id).single(),
+      db.from('ds_character_poses').select('*').eq('character_id', id).order('pose_order'),
+      db.from('ds_character_expressions').select('*').eq('character_id', id),
+      db.from('ds_character_lines').select('*').eq('character_id', id).order('min_affection').order('created_at'),
+    ]);
+    if (c.error) { showToast('Could not open that character.', true); return; }
+    cur = c.data; poses = p.data || []; lines = l.data || [];
+    faces = {}; (f.data || []).forEach(function(x){ faces[x.slug] = x; });
+    workId = cur.work_id;
+    if (workId && !NOVELS[workId]) {
+      var { data: w } = await db.from('works').select('id,title,author_id').eq('id', workId).maybeSingle();
+      if (w) NOVELS[w.id] = w;
+    }
+    renderEditor();
+  }
+
+  function renderEditor() {
+    document.getElementById('list-section').style.display = 'none';
+    document.getElementById('editor').style.display = 'block';
+    document.getElementById('submitted-area').style.display = 'none';
+    var c = cur || {};
+    document.getElementById('f-name').value = c.name || '';
+    document.getElementById('f-sub').value = c.subtitle || '';
+    document.getElementById('f-blurb').value = c.story_blurb || '';
+    document.getElementById('f-price').value = c.quill_price || 800;
+    document.getElementById('f-novel').value = workId && NOVELS[workId] ? NOVELS[workId].title : '';
+    novelPicked();
+    setMode(cur ? (cur.availability === 'purchase' ? 'sell' : 'donate') : (canSell ? 'sell' : 'donate'));
+    renderStatus();
+
+    var locked = !editable();
+    ['f-name','f-sub','f-blurb','f-price','f-novel'].forEach(function(id){ document.getElementById(id).disabled = locked; });
+    document.querySelectorAll('input[name="f-mode"]').forEach(function(r){ r.disabled = locked || (r.value === 'sell' && !canSell); });
+    document.getElementById('basics-actions').style.display = locked ? 'none' : 'flex';
+    document.getElementById('delete-btn').style.display = cur && !locked ? 'flex' : 'none';
+    document.getElementById('submit-area').style.display = cur && !locked ? 'flex' : 'none';
+    renderArt(); renderLines();
+    window.scrollTo(0, 0);
+  }
+
+  function renderStatus() {
+    var wrap = document.getElementById('status-wrap');
+    if (!cur) { wrap.innerHTML = ''; return; }
+    var novel = NOVELS[cur.work_id] ? NOVELS[cur.work_id].title : 'the novel';
+    var cfg = {
+      draft:           ['draft','ti-pencil','Draft','Add the art and a few lines, then submit.'],
+      awaiting_author: ['pending_review','ti-user-check','Waiting for the author','The author of ' + novel + ' has been asked to approve this character. Once they do, DawnScribe checks it.'],
+      pending:         ['pending_review','ti-clock','In review','DawnScribe is checking your character. Editing is locked until you hear back.'],
+      approved:        ['approved','ti-circle-check', cur.availability === 'randomizer' ? 'Live in the free randomizer' : 'Live in the Marketplace',
+                        cur.availability === 'randomizer' ? 'Readers can win this character. You can now sell characters and take character commissions.' : 'Your character is on sale.'],
+      rejected:        ['rejected','ti-alert-circle','Changes needed', cur.rejection_note || 'Please address the feedback and resubmit.'],
+      retired:         ['draft','ti-archive','Retired','No longer available. Everyone who has them keeps them.'],
+    }[cur.status] || ['draft','ti-pencil','Draft',''];
+    wrap.innerHTML = '<div class="status-banner ' + cfg[0] + '"><i class="ti ' + cfg[1] + '"></i><div><h4>' + esc(cfg[2]) + '</h4><p>' + esc(cfg[3]) + '</p></div></div>';
+  }
+
+  // ── DONATE / SELL, NOVEL ────────────────────────────────────────
+  function setMode(m){ document.querySelectorAll('input[name="f-mode"]').forEach(function(r){ r.checked = r.value === m; }); modeChanged(); }
+  function getMode(){ var r = document.querySelector('input[name="f-mode"]:checked'); return r ? r.value : 'donate'; }
+  window.modeChanged = function() {
+    document.getElementById('mode-sell-label').style.opacity = canSell ? '1' : '0.55';
+    document.querySelector('input[name="f-mode"][value="sell"]').disabled = !editable() || !canSell;
+    document.getElementById('mode-sell-hint').textContent = canSell
+      ? 'You keep 75% \u2014 or 55% if they\u2019re from someone else\u2019s novel.'
+      : 'Available once you have a donated character live.';
+    if (!canSell && getMode() === 'sell') { setMode('donate'); return; }
+    document.getElementById('price-field').style.display = getMode() === 'sell' ? '' : 'none';
+  };
+  var novelT;
+  window.searchNovels = function() {
+    clearTimeout(novelT);
+    novelT = setTimeout(async function(){
+      var q = document.getElementById('f-novel').value.trim();
+      if (q.length < 2) return;
+      var { data } = await db.from('works').select('id,title,author_id').eq('is_published', true).neq('type','artwork').ilike('title', '%' + q + '%').limit(8);
+      (data || []).forEach(function(w){ NOVELS[w.id] = w; });
+      document.getElementById('novel-opts').innerHTML = (data || []).map(function(w){ return '<option value="' + esc(w.title) + '">'; }).join('');
+    }, 250);
+  };
+  window.novelPicked = function() {
+    var v = document.getElementById('f-novel').value.trim().toLowerCase();
+    var hint = document.getElementById('novel-hint');
+    var hit = v ? Object.values(NOVELS).find(function(w){ return (w.title || '').toLowerCase() === v; }) : null;
+    workId = hit ? hit.id : null;
+    hint.textContent = !v ? 'Every character comes from a published novel on DawnScribe \u2014 yours, or someone else\u2019s with their approval.'
+      : !hit ? 'Pick the novel from the list as you type.'
+      : hit.author_id === currentUser.id ? 'Your own novel \u2014 it goes straight to DawnScribe for review.'
+      : 'Someone else\u2019s novel \u2014 its author will be asked to approve your character first.';
+  };
+
+  // ── SAVE / DELETE ───────────────────────────────────────────────
+  window.saveBasics = async function() {
+    var name = document.getElementById('f-name').value.trim();
+    var blurb = document.getElementById('f-blurb').value.trim();
+    var mode = getMode();
+    var price = parseInt(document.getElementById('f-price').value, 10);
+    if (!name) { showToast('Give your character a name.', true); return null; }
+    if (!blurb) { showToast('Write a short story for your character.', true); return null; }
+    if (!workId) { showToast('Pick the novel they\u2019re from, from the list.', true); return null; }
+    if (mode === 'sell' && !(price >= PRICE_MIN && price <= PRICE_MAX)) { showToast('Price must be between 50 and 5,000 Quills.', true); return null; }
+    var row = {
+      name: name, subtitle: document.getElementById('f-sub').value.trim() || null, story_blurb: blurb,
+      work_id: workId, availability: mode === 'sell' ? 'purchase' : 'randomizer',
+      quill_price: mode === 'sell' ? price : null,
+    };
+    var res;
+    if (cur) {
+      res = await db.from('ds_characters').update(row).eq('id', cur.id).select().single();
+    } else {
+      // The web name is fixed at creation: it names the folder the art lives in.
+      row.slug = slugify(name) + '-' + Math.random().toString(36).slice(2, 7);
+      row.source = 'creator'; row.creator_id = currentUser.id; row.status = 'draft';
+      res = await db.from('ds_characters').insert(row).select().single();
+    }
+    if (res.error) { showToast('Could not save: ' + dbMsg(res.error), true); return null; }
+    var wasNew = !cur;
+    cur = res.data;
+    showToast(wasNew ? 'Saved. Now add the art.' : 'Saved.');
+    renderEditor();
+    return cur.id;
+  };
+
+  window.deleteCharacter = async function() {
+    if (!cur || !confirm('Delete ' + cur.name + '? This removes the draft and its lines.')) return;
+    var { data, error } = await db.from('ds_characters').delete().eq('id', cur.id).select('id');
+    if (error || !data || !data.length) { showToast('Could not delete: ' + (error ? dbMsg(error) : 'only drafts can be deleted.'), true); return; }
+    showToast('Deleted.'); cur = null; await loadList();
+  };
+
+  // ── ART ─────────────────────────────────────────────────────────
+  function slotHTML(label, url, round, onPick, required) {
+    return '<label class="art-slot' + (url ? ' has' : '') + '">' +
+      '<div class="art-pic' + (round ? ' round' : '') + '">' + (url ? '<img src="' + esc(url) + '" alt=""/>' : '<i class="ti ti-upload"></i>') + '</div>' +
+      '<div class="art-lbl">' + esc(label) + (required ? ' <span class="req">*</span>' : '') + '</div>' +
+      '<div class="art-act">' + (url ? 'Replace' : 'Upload') + '</div>' +
+      (editable() ? '<input type="file" accept="image/png,image/webp,image/jpeg" onchange="' + onPick + '"/>' : '') + '</label>';
+  }
+  function renderArt() {
+    var body = document.getElementById('art-body');
+    var sub = document.getElementById('art-sub');
+    if (!cur) { body.innerHTML = ''; sub.style.display = ''; return; }
+    sub.style.display = 'none';
+    var html = '<div class="art-h">Poses</div><div class="hint" style="margin-bottom:10px;">Pose 1 is what everyone sees. Extra poses unlock as a reader\u2019s affection grows (up to ' + MAX_AFFECTION + ').</div>';
+    var list = poses.length ? poses : [{ id: null, pose_order: 1, min_affection: 0 }];
+    list.forEach(function(p){
+      html += '<div class="pose-row"><div class="pose-name">Pose ' + p.pose_order + (p.pose_order === 1 ? ' \u00b7 everyone' : ' \u00b7 unlocks at affection ' + p.min_affection) + '</div><div class="art-grid">' +
+        slotHTML('Full figure', artUrl(p.figure_path), false, "uploadPose(" + p.pose_order + ",'figure',this)", p.pose_order === 1) +
+        slotHTML('Portrait crop', artUrl(p.portrait_path), true, "uploadPose(" + p.pose_order + ",'portrait',this)", p.pose_order === 1) +
+        '</div>' + (p.id && p.pose_order > 1 && editable() ? '<button class="btn-danger" style="margin-top:6px;padding:6px 12px;font-size:12px;" onclick="removePose(\'' + p.id + '\')"><i class="ti ti-trash"></i> Remove pose</button>' : '') + '</div>';
+    });
+    if (editable() && poses.length) {
+      html += '<div class="field-row" style="align-items:end;margin-top:6px;"><div class="field" style="margin:0;"><label>Add a pose that unlocks at affection</label>' +
+        '<input type="number" id="new-pose-aff" min="1" max="' + MAX_AFFECTION + '" value="' + Math.min(MAX_AFFECTION, 7 * poses.length) + '"/></div>' +
+        '<button class="btn-secondary" onclick="addPose()"><i class="ti ti-plus"></i> Add pose</button></div>';
+    }
+    var missing = REQUIRED_FACES.filter(function(k){ return !faces[k]; });
+    html += '<div class="art-h" style="margin-top:18px;">Faces</div><div class="hint" style="margin-bottom:10px;">Swapped in when a line is spoken. Keep the head in exactly the same place in every one.' +
+      (missing.length ? ' <strong style="color:var(--amber);">Still needed: ' + missing.join(', ') + '.</strong>' : '') + '</div><div class="art-grid">';
+    FACES.forEach(function(k){
+      html += slotHTML(k.charAt(0).toUpperCase() + k.slice(1) + (REQUIRED_FACES.indexOf(k) < 0 ? ' (optional)' : ''), faces[k] ? artUrl(faces[k].image_path) : '', true, "uploadFace('" + k + "',this)", REQUIRED_FACES.indexOf(k) >= 0);
+    });
+    body.innerHTML = html + '</div>';
+  }
+
+  // Resize in the browser; WebP keeps transparency. Never enlarges.
+  function toWebp(file, maxEdge) {
+    return new Promise(function(resolve, reject){
+      var img = new Image();
+      img.onload = function(){
+        var scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+        var w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        cv.toBlob(function(b){ b ? resolve({ blob: b, w: img.width, h: img.height }) : reject(new Error('could not convert the image')); }, 'image/webp', WEBP_Q);
+        URL.revokeObjectURL(img.src);
+      };
+      img.onerror = function(){ reject(new Error('that file isn\u2019t a readable image')); };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  // A new file name every time: overwriting would leave the old picture cached,
+  // and the storage rules only let you ADD files to your character's folder.
+  async function putArt(base, file, maxEdge) {
+    if (file.size > 32 * 1024 * 1024) throw new Error('that file is far too large');
+    var r = await toWebp(file, maxEdge);
+    if (r.blob.size > 8 * 1024 * 1024) throw new Error('it\u2019s over 8 MB even after resizing');
+    var path = cur.slug + '/' + base + '-' + Date.now().toString(36) + '.webp';
+    var up = await db.storage.from('characters').upload(path, r.blob, { contentType: 'image/webp', upsert: false });
+    if (up.error) throw up.error;
+    return { path: path, w: r.w, h: r.h };
+  }
+
+  window.uploadPose = async function(order, kind, input) {
+    var file = input.files[0]; input.value = ''; if (!file) return;
+    showToast('Uploading\u2026');
+    try {
+      var r = await putArt((kind === 'figure' ? 'figure-' : 'portrait-') + order, file, kind === 'figure' ? FIGURE_MAX : CROP_MAX);
+      var p = poses.find(function(x){ return x.pose_order === order; });
+      var patch = kind === 'figure' ? { figure_path: r.path } : { portrait_path: r.path };
+      var res = p
+        ? await db.from('ds_character_poses').update(patch).eq('id', p.id)
+        : await db.from('ds_character_poses').insert(Object.assign({ character_id: cur.id, pose_order: order, label: 'Pose ' + order, min_affection: 0 }, patch));
+      if (res.error) throw res.error;
+      var warn = kind === 'figure' && Math.abs(r.w / r.h - 2/3) > 0.02 ? ' It isn\u2019t 2:3, so it will be letterboxed on profiles.'
+               : kind === 'portrait' && r.w !== r.h ? ' It isn\u2019t square, so the circle will crop it.' : '';
+      showToast('Uploaded.' + warn, !!warn);
+    } catch (e) { showToast('Upload failed: ' + dbMsg(e), true); }
+    await openCharacter(cur.id);
+  };
+  window.uploadFace = async function(slug, input) {
+    var file = input.files[0]; input.value = ''; if (!file) return;
+    showToast('Uploading\u2026');
+    try {
+      var r = await putArt('face-' + slug, file, CROP_MAX);
+      var res = faces[slug]
+        ? await db.from('ds_character_expressions').update({ image_path: r.path }).eq('id', faces[slug].id)
+        : await db.from('ds_character_expressions').insert({ character_id: cur.id, slug: slug, image_path: r.path });
+      if (res.error) throw res.error;
+      showToast(r.w !== r.h ? 'Uploaded \u2014 but it isn\u2019t square, so the circle will crop it.' : 'Uploaded.', r.w !== r.h);
+    } catch (e) { showToast('Upload failed: ' + dbMsg(e), true); }
+    await openCharacter(cur.id);
+  };
+  window.addPose = async function() {
+    var aff = parseInt(document.getElementById('new-pose-aff').value, 10);
+    if (!(aff >= 1 && aff <= MAX_AFFECTION)) { showToast('Affection must be between 1 and ' + MAX_AFFECTION + '.', true); return; }
+    var n = Math.max.apply(null, poses.map(function(p){ return p.pose_order; })) + 1;
+    var { error } = await db.from('ds_character_poses').insert({ character_id: cur.id, pose_order: n, label: 'Pose ' + n, min_affection: aff });
+    if (error) { showToast('Could not add a pose: ' + dbMsg(error), true); return; }
+    await openCharacter(cur.id);
+  };
+  window.removePose = async function(id) {
+    if (!confirm('Remove this pose?')) return;
+    var { error } = await db.from('ds_character_poses').delete().eq('id', id);
+    if (error) { showToast('Could not remove: ' + dbMsg(error), true); return; }
+    await openCharacter(cur.id);
+  };
+
+  // ── LINES ───────────────────────────────────────────────────────
+  function renderLines() {
+    var body = document.getElementById('lines-body');
+    if (!cur) { body.innerHTML = '<div class="hint">Save the details above first.</div>'; return; }
+    var start = lines.filter(function(l){ return l.min_affection === 0; }).length;
+    var html = '<div class="hint" style="margin-bottom:10px;">' + lines.length + ' line' + (lines.length === 1 ? '' : 's') + ', ' + start + ' available from the first day.</div>';
+    var ST = { pending:['ds-pending','Waiting for DawnScribe'], approved:['ds-approved','Live'], rejected:['ds-rejected','Sent back'] };
+    lines.forEach(function(l){
+      var st = ST[l.status] || ST.pending;
+      html += '<div class="line-row"><div class="line-body">\u201c' + esc(l.body) + '\u201d</div>' +
+        '<div class="line-meta">' + esc(TRIGGERS[l.trigger] || l.trigger) + ' \u00b7 affection ' + l.min_affection + '+' + (l.expression ? ' \u00b7 ' + esc(l.expression) + ' face' : '') +
+        ' \u00b7 <span class="draft-status ' + st[0] + '" style="padding:1px 7px;">' + st[1] + '</span>' +
+        (l.status !== 'approved' ? ' <button class="line-del" onclick="deleteLine(\'' + l.id + '\')" aria-label="Delete line"><i class="ti ti-trash"></i></button>' : '') + '</div>' +
+        (l.status === 'rejected' && l.rejection_note ? '<div class="line-note">' + esc(l.rejection_note) + '</div>' : '') + '</div>';
+    });
+    html += '<div class="line-add">' +
+      '<div class="field" style="margin-bottom:8px;"><label>New line</label><textarea id="nl-body" rows="2" maxlength="' + LINE_MAX + '" placeholder="Something they\u2019d say when tapped\u2026" oninput="document.getElementById(\'nl-count\').textContent=this.value.length+\'/' + LINE_MAX + '\'"></textarea>' +
+      '<div class="hint" style="text-align:right;" id="nl-count">0/' + LINE_MAX + '</div></div>' +
+      '<div class="field-row">' +
+        '<div class="field"><label>When</label><select id="nl-trigger">' + Object.keys(TRIGGERS).map(function(k){ return '<option value="' + k + '">' + TRIGGERS[k] + '</option>'; }).join('') + '</select></div>' +
+        '<div class="field"><label>Face</label><select id="nl-face"><option value="">Neutral</option>' + FACES.slice(1).map(function(k){ return '<option value="' + k + '">' + k.charAt(0).toUpperCase() + k.slice(1) + (faces[k] ? '' : ' (no art yet)') + '</option>'; }).join('') + '</select></div>' +
+        '<div class="field"><label>Affection needed</label><input type="number" id="nl-aff" min="0" max="' + MAX_AFFECTION + '" value="0"/></div>' +
+      '</div><button class="btn-secondary" onclick="addLine()"><i class="ti ti-plus"></i> Add line</button></div>';
+    body.innerHTML = html;
+  }
+  window.addLine = async function() {
+    var body = document.getElementById('nl-body').value.trim();
+    var aff = parseInt(document.getElementById('nl-aff').value, 10);
+    if (!body) { showToast('Write the line first.', true); return; }
+    if (body.length > LINE_MAX) { showToast('Lines can be up to ' + LINE_MAX + ' characters.', true); return; }
+    if (!(aff >= 0 && aff <= MAX_AFFECTION)) { showToast('Affection must be between 0 and ' + MAX_AFFECTION + '.', true); return; }
+    var { error } = await db.from('ds_character_lines').insert({
+      character_id: cur.id, trigger: document.getElementById('nl-trigger').value, body: body,
+      min_affection: aff, expression: document.getElementById('nl-face').value || null,
+      written_by: currentUser.id, status: 'pending',
+    });
+    if (error) { showToast('Could not add the line: ' + dbMsg(error), true); return; }
+    showToast('Line added. DawnScribe checks every line before readers hear it.');
+    await openCharacter(cur.id);
+  };
+  window.deleteLine = async function(id) {
+    if (!confirm('Delete this line?')) return;
+    var { data, error } = await db.from('ds_character_lines').delete().eq('id', id).select('id');
+    if (error || !data || !data.length) { showToast('Could not delete that line.', true); return; }
+    await openCharacter(cur.id);
+  };
+
+  // ── SUBMIT ──────────────────────────────────────────────────────
+  window.submitCharacter = async function() {
+    if (!cur) return;
+    var id = await saveBasics(); if (!id) return;
+    var p1 = poses.find(function(p){ return p.pose_order === 1; });
+    if (!p1 || !p1.figure_path || !p1.portrait_path) { showToast(ERRORS.needs_art, true); return; }
+    var missing = REQUIRED_FACES.filter(function(k){ return !faces[k]; });
+    if (missing.length && !confirm('These faces are still missing: ' + missing.join(', ') + '. Lines using them will show the neutral face. Submit anyway?')) return;
+    if (!lines.length && !confirm('Your character has no lines yet, so tapping them will do nothing. Submit anyway?')) return;
+    if (!(await window.DSAgeGate.ensureAttestation())) return;
+
+    var btn = document.getElementById('submit-btn');
+    btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Submitting\u2026';
+    var { data, error } = await db.rpc('ds_submit_character', { p_character_id: cur.id });
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Submit for Review';
+    if (error || !data || data.status !== 'success') { showToast(ERRORS[data && data.error] || dbMsg(error) || 'Submission failed.', true); return; }
+
+    var toAuthor = data.next === 'author';
+    document.getElementById('submitted-title').textContent = toAuthor ? 'Sent to the novel\u2019s author' : 'Submitted for review';
+    document.getElementById('submitted-body').textContent = toAuthor
+      ? 'The author has been notified. Once they approve, DawnScribe checks your character (usually 3\u20135 days). You\u2019ll be notified at each step.'
+      : 'DawnScribe will check your character within 3\u20135 days. You\u2019ll be notified when it\u2019s live or if anything needs changing.';
+    await openCharacter(cur.id);
+    document.getElementById('submitted-area').style.display = 'block';
+    document.getElementById('submitted-area').scrollIntoView({ behavior: 'smooth' });
+  };
+
+</script>
+<script src="footer.js"></script>
+<script src="muteFilter.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>
