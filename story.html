@@ -951,10 +951,9 @@
     </div>
   </div>
 
-  <!-- Banner collab: an artist offers a profile banner to be sold alongside this
-       novel. Split is artist 50 / author 30 / DawnScribe 20, enforced server-side
-       by purchase_scroll. The offer is written by request_banner_collab (DEFINER);
-       nothing here writes the scroll row directly. -->
+  <!-- Banner collab modal: no longer opened. The Collab menu now sends artists
+       to banner-create.html?novel=<id>. Left in place so nothing references a
+       missing element. -->
   <div class="collab-modal-backdrop" id="bcollab-modal-backdrop">
     <div class="collab-modal">
       <h3><i class="ti ti-photo" style="color:var(--accent);"></i> Offer a Profile Banner</h3>
@@ -1843,7 +1842,7 @@
         }
         if (canBanner) {
           addCollabOption('ti-photo', 'Profile Banner',
-            'Offer a banner that sells alongside this novel',
+            'Make a banner for this novel. Its author approves it, then you earn 55% of sales and they earn 20%',
             function(){ openBannerCollabModal(); });
         }
         // Licensed options: these ask the author for permission to use a
@@ -4545,81 +4544,13 @@
     var _bcollabSelected = null;
 
     // Same self-recursion as openCollabModal above — the wrapper is not needed.
-    async function openBannerCollabModal(){
+    // Banner collabs used to be built on Scrolls (now removed). They live on
+    // banner-create.html, which opens with this novel already picked; the
+    // artist submits, this novel's author approves, then DawnScribe reviews.
+    // Split: artist 55% / author 20% / DawnScribe 25%, set by ds_banner_payout().
+    function openBannerCollabModal(){
       if(!currentSession){ window.location.href=dsAuthNext(); return; }
-      _bcollabSelected = null;
-      document.getElementById('bcollab-submit-btn').disabled = true;
-      var body = document.getElementById('bcollab-body');
-      body.innerHTML = '<div style="text-align:center;padding:18px;color:var(--text3);font-size:12px;">'
-        + '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Loading your banner drafts…</div>';
-      document.getElementById('bcollab-modal-backdrop').classList.add('show');
-
-      // Only drafts/rejected banners with no novel attached can be offered —
-      // the same window request_banner_collab enforces.
-      var res = await db.from('scrolls')
-        .select('id,name,banner_url,banner_emoji,quill_price,status,novel_id')
-        .eq('creator_id', currentSession.user.id)
-        .eq('type', 'banner')
-        .eq('is_active', false)
-        .in('status', ['draft','rejected'])
-        .order('created_at', { ascending: false });
-
-      if(res.error){
-        body.innerHTML = '<div style="padding:14px;color:var(--red);font-size:12px;">'
-          + 'Could not load your banners. Please try again.</div>';
-        return;
-      }
-
-      var avail = (res.data || []).filter(function(b){ return !b.novel_id; });
-      var startNew = '<a href="banner-create.html" class="btn-outline" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;margin-top:4px;">'
-        + '<i class="ti ti-plus"></i> Create a new banner</a>';
-
-      if(!avail.length){
-        body.innerHTML = '<div style="padding:4px 0 10px;color:var(--text2);font-size:12px;line-height:1.6;">'
-          + 'You don\'t have any banner drafts free to offer yet. Create one first, then come back to this story and offer it.'
-          + '</div>' + startNew;
-        return;
-      }
-
-      var html = '<label class="collab-field-label">Choose a banner to offer</label>';
-      avail.forEach(function(b){
-        var price = parseInt(b.quill_price, 10) || 0;
-        // Mirror purchase_scroll exactly: platform takes round(25%) first, the
-        // artist receives 3/5 of what remains.
-        var platform = Math.round(price * 0.25);
-        var pool = price - platform;
-        var yours = Math.round(pool * (3.0/5.0));
-        var thumb = b.banner_url
-          ? '<img loading="lazy" decoding="async" src="' + escHtml(b.banner_url) + '" alt="" style="width:64px;height:26px;object-fit:cover;border-radius:5px;flex-shrink:0;"/>'
-          : '<span style="width:64px;height:26px;display:flex;align-items:center;justify-content:center;background:var(--bg4);border-radius:5px;flex-shrink:0;">' + escHtml(b.banner_emoji || '\uD83D\uDDBC\uFE0F') + '</span>';
-        html += '<button type="button" class="bcollab-opt" data-id="' + escHtml(b.id) + '" '
-          + 'style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--bg3);'
-          + 'border:1.5px solid var(--border);border-radius:10px;padding:9px 11px;margin-bottom:7px;cursor:pointer;'
-          + 'color:var(--text);font-family:inherit;">'
-          + thumb
-          + '<span style="flex:1;min-width:0;">'
-            + '<span style="display:block;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(b.name || 'Untitled banner') + '</span>'
-            + '<span style="display:block;font-size:11px;color:var(--text3);margin-top:1px;">' + price + ' Quills \u00b7 you\u2019d earn ' + yours + ' per sale</span>'
-          + '</span></button>';
-      });
-      html += '<div style="margin-top:2px;">' + startNew + '</div>';
-      body.innerHTML = html;
-
-      // onclick attributes rather than addEventListener: this markup is built as a
-      // string, and listeners do not survive innerHTML assignment.
-      var opts = body.querySelectorAll('.bcollab-opt');
-      for(var i=0;i<opts.length;i++){
-        opts[i].addEventListener('click', function(){
-          _bcollabSelected = this.getAttribute('data-id');
-          for(var j=0;j<opts.length;j++){
-            opts[j].style.borderColor = 'var(--border)';
-            opts[j].style.background = 'var(--bg3)';
-          }
-          this.style.borderColor = 'var(--accent)';
-          this.style.background = 'rgba(45,212,191,0.08)';
-          document.getElementById('bcollab-submit-btn').disabled = false;
-        });
-      }
+      window.location.href = 'banner-create.html?novel=' + encodeURIComponent(workData.id);
     }
 
     function closeBannerCollabModal(){
@@ -4627,28 +4558,8 @@
       _bcollabSelected = null;
     }
 
-    async function submitBannerCollab(){
-      if(!_bcollabSelected) return;
-      var btn = document.getElementById('bcollab-submit-btn');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Sending…';
-
-      var res = await db.rpc('request_banner_collab', {
-        p_scroll_id: _bcollabSelected,
-        p_work_id: workData.id
-      });
-      var err = res.error;
-      if(!err && res.data && res.data.ok === false) err = { message: res.data.error || 'Not permitted' };
-      if(err){
-        showToast('Could not send the offer: ' + err.message, 'ti-alert-circle');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="ti ti-send"></i> Send Offer';
-        return;
-      }
-
-      closeBannerCollabModal();
-      showToast('Offer sent \u2014 the author has been notified.', 'ti-check');
-    }
+    // Kept only so an old onclick can't throw; the modal is never opened now.
+    function submitBannerCollab(){ openBannerCollabModal(); }
 
     function promptCollabDelete(collabId,imageUrl){ collabDeleteTarget={id:collabId,imageUrl:imageUrl}; document.getElementById('collab-del-modal-backdrop').classList.add('show'); }
     function closeCollabDelModal(){ document.getElementById('collab-del-modal-backdrop').classList.remove('show'); collabDeleteTarget=null; }

@@ -145,7 +145,7 @@
   <div class="page">
     <div class="page-header">
       <h1 class="page-title">Creator <span>Payouts</span></h1>
-      <p class="page-subtitle">Track your earnings, set up bank payouts, and approve Artist Scroll listings.</p>
+      <p class="page-subtitle">Track your earnings and set up bank payouts. Approvals for art made from your novels are in your <a href="collab-inbox.html" style="color:var(--accent);">Collab Inbox</a>.</p>
     </div>
 
     <div id="auth-wall" style="display:none;">
@@ -255,10 +255,11 @@
       <!-- SALES HISTORY -->
       <div class="section-title"><i class="ti ti-receipt"></i> Sales history</div>
       <div class="intro-card">
-        <h3><i class="ti ti-info-circle"></i> How Artist Scroll revenue works</h3>
+        <h3><i class="ti ti-info-circle"></i> How sales revenue works</h3>
         <ul>
-          <li>When a reader unlocks an <strong>Artist Scroll</strong> with Quills, the sale splits <strong>60% to the Artist</strong>, <strong>30% to the Novelist</strong>, and 10% to DawnScribe.</li>
-          <li>An Artist Scroll can only be sold once <strong>both</strong> the Artist and Novelist approve the listing.</li>
+          <li><strong>Your own characters and banners:</strong> you keep <strong>75%</strong> of every sale. DawnScribe keeps 25%.</li>
+          <li><strong>Made from someone else's novel:</strong> the artist keeps <strong>55%</strong>, the novel's author gets <strong>20%</strong>, DawnScribe keeps 25%. The author approves it first.</li>
+          <li><strong>Gifts</strong> pay exactly like a sale &mdash; the person who sent the gift is the buyer.</li>
           <li>Your USD balance accumulates from Quill sales at the exchange rate active at time of purchase.</li>
           <li><strong>How Quills become dollars.</strong> Your share is a <strong>percentage of what readers actually paid</strong> for the Quills they spent on you. The conversion rate follows real Quill sales, so it shifts slightly as bundles and regional prices change — but your percentage never does, and the rate applied to an earning is locked in at the moment of sale and never recalculated.</li>
         </ul>
@@ -553,111 +554,35 @@
     }
 
     // ── PENDING APPROVALS ────────────────────────────────────────
+    // Scroll listing approvals lived here. Scrolls are gone, and approving
+    // art made from your novel now happens in collab-inbox.html.
     async function loadPendingApprovals() {
-      var uid = currentSession.user.id;
-      var artistPending = await db.from('scrolls')
-        .select('id, name, banner_emoji, artist_approved, novelist_approved, novel_id')
-        .eq('type', 'artist').eq('artist_id', uid).neq('artist_approved', true);
-
-      var myWorksRes = await db.from('works').select('id, title').eq('author_id', uid);
-      var myWorkIds = (myWorksRes.data || []).map(function(w){ return w.id; });
-      var myWorkMap = {};
-      (myWorksRes.data || []).forEach(function(w){ myWorkMap[w.id] = w.title; });
-
-      var novelistPending = { data: [] };
-      if (myWorkIds.length) {
-        novelistPending = await db.from('scrolls')
-          .select('id, name, banner_emoji, artist_approved, novelist_approved, novel_id')
-          .eq('type', 'artist').in('novel_id', myWorkIds).neq('novelist_approved', true);
-      }
-
-      var combined = {};
-      (artistPending.data || []).forEach(function(s){ combined[s.id] = { scroll: s, role: 'artist' }; });
-      (novelistPending.data || []).forEach(function(s){
-        if (combined[s.id]) combined[s.id].role = 'both';
-        else combined[s.id] = { scroll: s, role: 'novelist' };
-      });
-
-      var list = Object.values(combined);
       var section = document.getElementById('approvals-section');
-      var container = document.getElementById('approvals-list');
-      if (!list.length) { section.style.display = 'none'; return; }
-
-      section.style.display = 'block';
-      container.innerHTML = list.map(function(entry) {
-        var s = entry.scroll;
-        var workTitle = myWorkMap[s.novel_id] || '';
-        return '<div class="approval-card" id="approval-' + s.id + '">' +
-          '<div class="approval-row">' +
-            '<div>' +
-              '<div class="approval-name">' + (s.banner_emoji || '📜') + ' ' + escHtml(s.name) + '</div>' +
-              '<div class="approval-sub">' + (workTitle ? 'Based on "' + escHtml(workTitle) + '"' : 'Collaboration item') + '</div>' +
-              '<div class="approval-status">' +
-                '<span class="status-chip ' + (s.artist_approved ? 'done' : 'pending') + '"><i class="ti ti-' + (s.artist_approved ? 'check' : 'clock') + '"></i> Artist</span>' +
-                '<span class="status-chip ' + (s.novelist_approved ? 'done' : 'pending') + '"><i class="ti ti-' + (s.novelist_approved ? 'check' : 'clock') + '"></i> Novelist</span>' +
-              '</div>' +
-            '</div>' +
-            '<button class="approve-btn" onclick="approveScroll(\'' + escHtml(s.id) + '\')"><i class="ti ti-signature"></i> Approve listing</button>' +
-          '</div>' +
-        '</div>';
-      }).join('');
-    }
-
-    async function approveScroll(scrollId) {
-      var btn = document.querySelector('#approval-' + scrollId + ' .approve-btn');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="ti ti-loader"></i> Approving…';
-      try {
-        var result = await db.rpc('approve_scroll_listing', { p_user_id: currentSession.user.id, p_scroll_id: scrollId });
-        var data = result.data;
-        if (result.error || !data || data.ok === false) {
-          showToast('Error: ' + ((data && data.error) || (result.error && result.error.message) || 'Could not approve'), 'ti-x');
-          btn.disabled = false;
-          btn.innerHTML = '<i class="ti ti-signature"></i> Approve listing';
-          return;
-        }
-        showToast('Listing approved!', 'ti-check');
-        await loadPendingApprovals();
-      } catch(err) {
-        showToast('Something went wrong', 'ti-alert-triangle');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="ti ti-signature"></i> Approve listing';
-      }
+      if (section) section.style.display = 'none';
     }
 
     // ── SALES HISTORY ────────────────────────────────────────────
+    // Every sale that paid you -- characters, banners, commissions -- from the
+    // earnings ledger, via ds_my_sales(). The old version only read Scroll
+    // sales, so character and banner sales never appeared here.
     async function loadSalesHistory() {
-      var uid = currentSession.user.id;
-      var res = await db.from('scroll_revenue_splits')
-        .select('id, scroll_id, artist_id, novelist_id, quill_amount, artist_share, novelist_share, created_at, scrolls(name, banner_emoji)')
-        .or('artist_id.eq.' + uid + ',novelist_id.eq.' + uid)
-        .order('created_at', { ascending: false })
-        .limit(100);
-
+      var res = await db.rpc('ds_my_sales', { p_limit: 100 });
       document.getElementById('sales-loading').style.display = 'none';
       var list = document.getElementById('sales-list');
-
-      if (res.error || !res.data || !res.data.length) {
-        list.innerHTML = '<div class="empty-state"><i class="ti ti-receipt-off"></i><p>No sales yet. Earnings will show up here once one of your Artist Scrolls sells.</p></div>';
+      var rows = (res.data || []).filter(function(r){ return r.kind !== 'tip' && r.kind !== 'early_access'; });
+      if (res.error || !rows.length) {
+        list.innerHTML = '<div class="empty-state"><i class="ti ti-receipt-off"></i><p>No sales yet. Earnings will show up here once one of your characters, banners or commissions sells.</p></div>';
         return;
       }
-
-      list.innerHTML = res.data.map(function(row) {
-        var scroll = row.scrolls || {};
-        var role = '';
-        var myShare = 0;
-        if (row.artist_id === uid) { role = 'Artist'; myShare = row.artist_share; }
-        if (row.novelist_id === uid) {
-          role = role ? 'Artist + Novelist' : 'Novelist';
-          myShare = role === 'Artist + Novelist' ? (row.artist_share + row.novelist_share) : row.novelist_share;
-        }
-        return '<div class="sale-row">' +
+      var ICON = { character: 'ti-user-heart', banner: 'ti-photo', commission: 'ti-brush', other: 'ti-receipt' };
+      list.innerHTML = rows.map(function(row) {
+        return '<div class="sale-row"' + (row.reversed ? ' style="opacity:.55;"' : '') + '>' +
           '<div class="sale-info">' +
-            '<span class="sale-role">' + role + '</span>' +
-            '<strong>' + (scroll.banner_emoji || '📜') + ' ' + escHtml(scroll.name || 'Scroll') + '</strong>' +
-            '<div class="sale-date">' + fmtDate(row.created_at) + ' · unlocked for ' + row.quill_amount.toLocaleString() + ' Quills</div>' +
+            '<span class="sale-role">' + escHtml(row.role) + '</span>' +
+            '<strong><i class="ti ' + (ICON[row.kind] || 'ti-receipt') + '"></i> ' + escHtml(row.item_name || 'Sale') + '</strong>' +
+            '<div class="sale-date">' + fmtDate(row.created_at) + (row.reversed ? ' \u00b7 refunded' : '') + ' \u00b7 ' + fmtUsd(row.usd_cents) + '</div>' +
           '</div>' +
-          '<div class="sale-amount"><i class="ti ti-feather"></i>' + myShare.toLocaleString() + '</div>' +
+          '<div class="sale-amount"><i class="ti ti-feather"></i>' + Number(row.quill_share || 0).toLocaleString() + '</div>' +
         '</div>';
       }).join('');
     }

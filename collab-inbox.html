@@ -172,54 +172,40 @@
     if(rowEl){ rowEl.style.transition='opacity 0.3s,transform 0.3s'; rowEl.style.opacity='0'; rowEl.style.transform='translateX(-12px)'; setTimeout(function(){ rowEl.remove(); },300); }
   }
 
-  // Accept or decline a Collab Scroll invite. All authority lives in the
-  // respond_scroll_collab RPC (identity-guarded, and the only writer of
-  // collab_novelist_accepted) — this just calls it and reports honestly.
-  async function respondScrollCollab(scrollId, accept, btnEl){
-    if(!accept && !confirm('Decline this Scroll collab? The artist can still sell it on its own.')) return;
+  // Answer an artist who made a character or banner from one of your novels.
+  // All authority is in ds_author_review_character / ds_author_review_banner
+  // (identity-guarded: only this novel's author gets through). Declining
+  // needs a short reason, because the artist has to know what to change.
+  var AUTHOR_REVIEW_ERRORS = {
+    note_required: 'Please say briefly why, so the artist knows what to change.',
+    author_minor_paid: 'Because you are under 18, you can approve free (randomizer) pieces from your novel, but not ones that are sold.',
+    not_waiting: 'This has already been answered.',
+    not_your_story: 'This isn\u2019t one of your novels.',
+    not_your_novel: 'This isn\u2019t one of your novels.',
+  };
+  async function answerAuthorReview(kind, id, accept, btnEl){
+    var note = null;
+    if(!accept){
+      note = prompt('Why are you declining? The artist will see this.');
+      if(note === null) return;
+      note = note.trim();
+      if(!note){ showToast(AUTHOR_REVIEW_ERRORS.note_required, 'ti-x'); return; }
+    }
     var row = btnEl ? btnEl.closest('.collab-row') : null;
     var btns = row ? row.querySelectorAll('button') : [];
     for(var i=0;i<btns.length;i++){ btns[i].disabled = true; }
 
-    var res = await Promise.resolve(
-      db.rpc('respond_scroll_collab', { p_scroll_id: scrollId, p_accept: !!accept })
+    var res = await Promise.resolve(kind === 'character'
+      ? db.rpc('ds_author_review_character', { p_character_id: id, p_approve: !!accept, p_note: note })
+      : db.rpc('ds_author_review_banner',    { p_cosmetic_id:  id, p_approve: !!accept, p_note: note })
     ).catch(function(e){ return { error: e }; });
-    var err = res.error;
-    if(!err && res.data && res.data.ok === false) err = { message: res.data.error || 'Not permitted' };
+    var err = res.error ? res.error.message : (res.data && res.data.status !== 'success' ? (AUTHOR_REVIEW_ERRORS[res.data.error] || res.data.error || 'Not permitted') : null);
     if(err){
-      showToast('Could not answer: ' + err.message, 'ti-x');
+      showToast('Could not answer: ' + err, 'ti-x');
       for(var j=0;j<btns.length;j++){ btns[j].disabled = false; }
       return;
     }
-
-    showToast(accept ? 'Scroll collab accepted \u2014 the artist can submit it now.' : 'Scroll collab declined.', accept ? 'ti-check' : 'ti-x');
-    if(row){
-      row.style.transition = 'opacity 0.3s,transform 0.3s';
-      row.style.opacity = '0';
-      row.style.transform = 'translateX(-12px)';
-      setTimeout(function(){ row.remove(); }, 300);
-    }
-  }
-
-  // Accept or decline a banner collab. All authority lives in the
-  // respond_banner_collab RPC (identity-guarded, and the only writer of
-  // novelist_approved) — this just calls it and reports honestly.
-  async function respondBannerCollab(scrollId, accept, btnEl){
-    if(!accept && !confirm('Decline this banner collab? The artist can still sell it on its own.')) return;
-    var row = btnEl ? btnEl.closest('.collab-row') : null;
-    var btns = row ? row.querySelectorAll('button') : [];
-    for(var i=0;i<btns.length;i++){ btns[i].disabled = true; }
-
-    var res = await db.rpc('respond_banner_collab', { p_scroll_id: scrollId, p_accept: !!accept });
-    var err = res.error;
-    if(!err && res.data && res.data.ok === false) err = { message: res.data.error || 'Not permitted' };
-    if(err){
-      showToast('Could not answer: ' + err.message, 'ti-x');
-      for(var j=0;j<btns.length;j++){ btns[j].disabled = false; }
-      return;
-    }
-
-    showToast(accept ? 'Banner collab accepted \u2014 the artist can submit it now.' : 'Banner collab declined.', accept ? 'ti-check' : 'ti-x');
+    showToast(accept ? 'Approved \u2014 DawnScribe will give it a final check.' : 'Declined. The artist has been told why.', accept ? 'ti-check' : 'ti-x');
     if(row){
       row.style.transition = 'opacity 0.3s,transform 0.3s';
       row.style.opacity = '0';
@@ -390,38 +376,28 @@
       landscapeRequests = (lrRes.data || []).filter(function(r){ return !dsBlock.either(r.artist_id); });
     }
 
-    // ── BANNER COLLAB OFFERS ON YOUR NOVELS
-    // Table: scrolls (type='banner'). An artist offered a profile banner to be sold
-    // alongside one of your novels. Visible to you via the
-    // "invited novelist can view the collab scroll" policy; you answer through the
-    // respond_banner_collab RPC, never by writing the row.
-    var bannerOffers = [];
+    // -- BANNERS AND CHARACTERS MADE FROM YOUR NOVELS
+    // An artist made a banner or a character from one of your novels and it is
+    // waiting on you. RLS lets a novel's author see these rows (and a
+    // character's art) only while they are awaiting that author.
+    var bannerOffers = [], characterOffers = [];
     if(myNovelIds.length){
-      var boRes = await db.from('scrolls')
-        .select('id, name, description, banner_url, banner_emoji, quill_price, novel_id, artist_id, collab_novelist_accepted, created_at')
-        .eq('type', 'banner')
-        .eq('collab_novelist_accepted', false)
-        .in('novel_id', myNovelIds)
+      var boRes = await db.from('cosmetic_items')
+        .select('id, name, description, image_url, quill_price, is_randomizer_item, work_id, artist_id, submitted_at, created_at')
+        .eq('slot', 'banner').eq('status', 'awaiting_author')
+        .in('work_id', myNovelIds)
         .order('created_at', { ascending: false });
       if(boRes.error) throw boRes.error;
       bannerOffers = (boRes.data || []).filter(function(r){ return !dsBlock.either(r.artist_id); });
-    }
 
-    // ── COLLAB SCROLL INVITES TO YOU
-    // Table: scrolls (type='collab'). An artist invited you to co-create an
-    // avatar Scroll. Unlike banner collabs this is not tied to one of your
-    // novels, so it is keyed off collab_novelist_id. Visible via the
-    // "invited novelist can view the collab scroll" policy; you answer through
-    // the respond_scroll_collab RPC, never by writing the row.
-    var scrollInvites = [];
-    var siRes = await db.from('scrolls')
-      .select('id, name, description, banner_url, banner_emoji, quill_price, artist_id, creator_id, collab_novelist_accepted, created_at')
-      .eq('type', 'collab')
-      .eq('collab_novelist_id', uid)
-      .eq('collab_novelist_accepted', false)
-      .order('created_at', { ascending: false });
-    if(siRes.error) throw siRes.error;
-    scrollInvites = (siRes.data || []).filter(function(r){ return !dsBlock.either(r.artist_id || r.creator_id); });
+      var chRes = await db.from('ds_characters')
+        .select('id, name, subtitle, story_blurb, availability, quill_price, work_id, creator_id, updated_at, created_at, ds_character_poses(pose_order, portrait_path)')
+        .eq('status', 'awaiting_author')
+        .in('work_id', myNovelIds)
+        .order('updated_at', { ascending: false });
+      if(chRes.error) throw chRes.error;
+      characterOffers = (chRes.data || []).filter(function(r){ return !dsBlock.either(r.creator_id); });
+    }
 
     // ── FAN-ART SHOWCASE COLLABS ON YOUR NOVELS
     // Table: works (type='artwork') linked via collab_work_id. An artist posted
@@ -469,7 +445,7 @@
     // Artist profiles for artwork requests
     var artistIds = [...new Set(artRequests.concat(landscapeRequests).concat(bannerOffers)
       .map(function(r){ return r.artist_id; })
-      .concat(scrollInvites.map(function(r){ return r.artist_id || r.creator_id; }))
+      .concat(characterOffers.map(function(r){ return r.creator_id; }))
       .concat(showcaseOffers.map(function(r){ return r.author_id; }))
       .concat(coauthorInvites.map(function(r){ return r.invited_by; }))
       .filter(Boolean))];
@@ -681,100 +657,79 @@
     }
 
     // ── SECTION 5: Banner collab offers on your novels
-    if(myNovelIds.length){
-      var s5 = document.createElement('div');
-      s5.className = 'section';
-      s5.innerHTML =
+    // -- SECTIONS 5 & 6: art made from your novels, waiting on you
+    function earnLine(price, free){
+      if(free) return 'Free in the randomizer \u00b7 no earnings, but readers of your novel may discover it';
+      var p = parseInt(price, 10) || 0;
+      return p + ' Quills \u00b7 you would earn <strong>' + Math.round(p * 0.20) + ' Quills</strong> per sale (20%)';
+    }
+    function authorSection(icon, title, rows, emptyText, renderRow){
+      var sec = document.createElement('div');
+      sec.className = 'section';
+      sec.innerHTML =
         '<div class="section-header">'
-          + '<div class="section-icon teal"><i class="ti ti-photo"></i></div>'
-          + '<div class="section-title">Banner Collabs \u2014 Awaiting You</div>'
-          + '<div class="section-count' + (bannerOffers.length ? '' : ' zero') + '">' + bannerOffers.length + ' pending</div>'
+          + '<div class="section-icon teal"><i class="ti ' + icon + '"></i></div>'
+          + '<div class="section-title">' + title + '</div>'
+          + '<div class="section-count' + (rows.length ? '' : ' zero') + '">' + rows.length + ' pending</div>'
         + '</div>';
-      var s5body = document.createElement('div');
-      if(!bannerOffers.length){
-        s5body.innerHTML = '<div class="empty"><i class="ti ti-photo"></i><p>No banner collab offers.</p></div>';
-      } else {
-        bannerOffers.forEach(function(row){
-          var novel = novelMap[row.novel_id] || {};
-          var artist = artistMap[row.artist_id] || {};
-          var artistName = window.DSEscape.userDisplay(artist, 'Artist').name;
-          var stale = isStale(row.created_at);
+      var body = document.createElement('div');
+      if(!rows.length) body.innerHTML = '<div class="empty"><i class="ti ' + icon + '"></i><p>' + emptyText + '</p></div>';
+      else rows.forEach(function(r){ body.appendChild(renderRow(r)); });
+      sec.appendChild(body);
+      content.appendChild(sec);
+    }
+    if(myNovelIds.length){
+      authorSection('ti-user-heart', 'Characters from Your Novels \u2014 Awaiting You', characterOffers,
+        'No characters waiting on you.', function(row){
+          var novel = novelMap[row.work_id] || {};
+          var artistName = window.DSEscape.userDisplay(artistMap[row.creator_id] || {}, 'Artist').name;
+          var stale = isStale(row.updated_at || row.created_at);
+          var poses = (row.ds_character_poses || []).slice().sort(function(a,b){ return a.pose_order - b.pose_order; });
+          var pic = poses[0] && poses[0].portrait_path ? db.storage.from('characters').getPublicUrl(poses[0].portrait_path).data.publicUrl : '';
           var div = document.createElement('div');
           div.className = 'collab-row pending' + (stale ? ' stale' : '');
-          var sid = attrJson(row.id);
-          var price = parseInt(row.quill_price, 10) || 0;
-          // 30% of the sale price, matching purchase_scroll: platform takes
-          // round(25%) first, the author receives 2/5 of what remains.
-          var platform = Math.round(price * 0.25);
-          var pool = price - platform;
-          var yours = pool - Math.round(pool * (3.0 / 5.0));
+          var id = attrJson(row.id);
           div.innerHTML =
-            '<div class="collab-cover">'
-              + (row.banner_url ? '<img loading="lazy" decoding="async" src="' + esc(row.banner_url) + '" alt=""/>' : '<i class="ti ti-photo"></i>')
+            '<div class="collab-cover">' + (safeUrl(pic) ? '<img loading="lazy" decoding="async" src="' + safeUrl(pic) + '" alt="" style="border-radius:50%;object-fit:cover;"/>' : '<i class="ti ti-user-heart"></i>') + '</div>'
+            + '<div class="collab-info">'
+              + '<div class="collab-title">' + esc(row.name || 'Unnamed character') + (row.subtitle ? ' <span style="font-weight:400;color:var(--text3);">\u2014 ' + esc(row.subtitle) + '</span>' : '') + '</div>'
+              + '<div class="collab-meta">by <em>' + esc(artistName) + '</em> from your novel <em>' + esc(novel.title || 'Untitled') + '</em></div>'
+              + (row.story_blurb ? '<div class="collab-meta" style="margin-top:3px;">' + esc(String(row.story_blurb).slice(0, 220)) + '</div>' : '')
+              + '<div class="collab-meta" style="margin-top:3px;">' + earnLine(row.quill_price, row.availability === 'randomizer') + '</div>'
+              + '<div class="collab-meta" style="margin-top:3px;">' + esc(timeAgo(row.updated_at || row.created_at)) + (stale ? ' &nbsp;<span class="stale-chip">\u23f3 Awaiting your answer</span>' : '') + '</div>'
             + '</div>'
+            + '<div class="collab-actions">'
+              + '<a class="btn-view" href="story.html?id=' + esc(row.work_id) + '" title="View your novel"><i class="ti ti-book"></i> Novel</a>'
+              + '<button class="btn-review" onclick="answerAuthorReview(\'character\',' + id + ',true,this)"><i class="ti ti-check"></i> Approve</button>'
+              + '<button class="btn-delete" onclick="answerAuthorReview(\'character\',' + id + ',false,this)"><i class="ti ti-x"></i> Decline</button>'
+            + '</div>';
+          return div;
+        });
+
+      authorSection('ti-photo', 'Banners for Your Novels \u2014 Awaiting You', bannerOffers,
+        'No banners waiting on you.', function(row){
+          var novel = novelMap[row.work_id] || {};
+          var artistName = window.DSEscape.userDisplay(artistMap[row.artist_id] || {}, 'Artist').name;
+          var stale = isStale(row.submitted_at || row.created_at);
+          var div = document.createElement('div');
+          div.className = 'collab-row pending' + (stale ? ' stale' : '');
+          var id = attrJson(row.id);
+          div.innerHTML =
+            '<div class="collab-cover">' + (safeUrl(row.image_url) ? '<img loading="lazy" decoding="async" src="' + safeUrl(row.image_url) + '" alt=""/>' : '<i class="ti ti-photo"></i>') + '</div>'
             + '<div class="collab-info">'
               + '<div class="collab-title">' + esc(row.name || 'Untitled banner') + '</div>'
               + '<div class="collab-meta">by <em>' + esc(artistName) + '</em> for your novel <em>' + esc(novel.title || 'Untitled') + '</em></div>'
-              + '<div class="collab-meta" style="margin-top:3px;">' + price + ' Quills \u00b7 you would earn <strong>' + yours + ' Quills</strong> per sale (30%)</div>'
-              + '<div class="collab-meta" style="margin-top:3px;">' + esc(timeAgo(row.created_at)) + (stale ? ' &nbsp;<span class="stale-chip">\u23f3 Awaiting your answer</span>' : '') + '</div>'
+              + '<div class="collab-meta" style="margin-top:3px;">' + earnLine(row.quill_price, row.is_randomizer_item) + '</div>'
+              + '<div class="collab-meta" style="margin-top:3px;">' + esc(timeAgo(row.submitted_at || row.created_at)) + (stale ? ' &nbsp;<span class="stale-chip">\u23f3 Awaiting your answer</span>' : '') + '</div>'
             + '</div>'
             + '<div class="collab-actions">'
-              + '<a class="btn-view" href="story.html?id=' + esc(row.novel_id) + '" title="View your novel"><i class="ti ti-book"></i> Novel</a>'
-              + '<button class="btn-review" onclick="respondBannerCollab(' + sid + ',true,this)"><i class="ti ti-check"></i> Accept</button>'
-              + '<button class="btn-delete" onclick="respondBannerCollab(' + sid + ',false,this)"><i class="ti ti-x"></i> Decline</button>'
+              + '<a class="btn-view" href="story.html?id=' + esc(row.work_id) + '" title="View your novel"><i class="ti ti-book"></i> Novel</a>'
+              + '<button class="btn-review" onclick="answerAuthorReview(\'banner\',' + id + ',true,this)"><i class="ti ti-check"></i> Approve</button>'
+              + '<button class="btn-delete" onclick="answerAuthorReview(\'banner\',' + id + ',false,this)"><i class="ti ti-x"></i> Decline</button>'
             + '</div>';
-          s5body.appendChild(div);
+          return div;
         });
-      }
-      s5.appendChild(s5body);
-      content.appendChild(s5);
     }
-
-    // ── SECTION 6: Collab Scroll invites to you
-    var s6 = document.createElement('div');
-    s6.className = 'section';
-    s6.innerHTML =
-      '<div class="section-header">'
-        + '<div class="section-icon teal"><i class="ti ti-sparkles"></i></div>'
-        + '<div class="section-title">Scroll Collabs \u2014 Awaiting You</div>'
-        + '<div class="section-count' + (scrollInvites.length ? '' : ' zero') + '">' + scrollInvites.length + ' pending</div>'
-      + '</div>';
-    var s6body = document.createElement('div');
-    if(!scrollInvites.length){
-      s6body.innerHTML = '<div class="empty"><i class="ti ti-sparkles"></i><p>No Scroll collab invites.</p></div>';
-    } else {
-      scrollInvites.forEach(function(row){
-        var artist = artistMap[row.artist_id || row.creator_id] || {};
-        var artistName = window.DSEscape.userDisplay(artist, 'Artist').name;
-        var stale = isStale(row.created_at);
-        var div = document.createElement('div');
-        div.className = 'collab-row pending' + (stale ? ' stale' : '');
-        var sid = attrJson(row.id);
-        var price = parseInt(row.quill_price, 10) || 0;
-        // 30% of the sale price, matching purchase_scroll: platform takes
-        // round(25%) first, the novelist receives 2/5 of what remains.
-        var platform = Math.round(price * 0.25);
-        var pool = price - platform;
-        var yours = pool - Math.round(pool * (3.0 / 5.0));
-        div.innerHTML =
-          '<div class="collab-cover">'
-            + (row.banner_url ? '<img loading="lazy" decoding="async" src="' + esc(row.banner_url) + '" alt=""/>' : '<i class="ti ti-sparkles"></i>')
-          + '</div>'
-          + '<div class="collab-info">'
-            + '<div class="collab-title">' + esc(row.name || 'Untitled Scroll') + '</div>'
-            + '<div class="collab-meta">by <em>' + esc(artistName) + '</em> \u00b7 invites you to co-create</div>'
-            + '<div class="collab-meta" style="margin-top:3px;">' + price + ' Quills \u00b7 you would earn <strong>' + yours + ' Quills</strong> per sale (30%)</div>'
-            + '<div class="collab-meta" style="margin-top:3px;">' + esc(timeAgo(row.created_at)) + (stale ? ' &nbsp;<span class="stale-chip">\u23f3 Awaiting your answer</span>' : '') + '</div>'
-          + '</div>'
-          + '<div class="collab-actions">'
-            + '<button class="btn-review" onclick="respondScrollCollab(' + sid + ',true,this)"><i class="ti ti-check"></i> Accept</button>'
-            + '<button class="btn-delete" onclick="respondScrollCollab(' + sid + ',false,this)"><i class="ti ti-x"></i> Decline</button>'
-          + '</div>';
-        s6body.appendChild(div);
-      });
-    }
-    s6.appendChild(s6body);
-    content.appendChild(s6);
 
     // ── SECTION 7: Fan-art showcase collabs on your novels
     if(myNovelIds.length){
