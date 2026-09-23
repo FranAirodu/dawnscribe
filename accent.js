@@ -93,9 +93,14 @@ function dsApplyAccent(hex) {
     return c ? (c.r + ', ' + c.g + ', ' + c.b) : '45, 212, 191';
   }
 
+  // --aura-rgb is the UNCLAMPED colour the user picked, for decoration only:
+  // glows and washes. --accent below is clamped for text contrast and shifts
+  // hue to do it, so it must not be used for decoration. Keep in step with
+  // the identical block in nav.js.
   var st = document.createElement('style');
   st.id = 'ds-accent-override';
   st.textContent =
+    ':root { --aura-rgb: ' + dsRgbTriple(hex) + ' !important; }' +
     ':root { --accent: ' + accentDark + ' !important; --accent2: ' + dsShade(accentDark) + ' !important; --accent-rgb: ' + dsRgbTriple(accentDark) + ' !important; }' +
     'html[data-theme="dim"] { --accent: ' + accentDim + ' !important; --accent2: ' + dsShade(accentDim) + ' !important; --accent-rgb: ' + dsRgbTriple(accentDim) + ' !important; }' +
     'html[data-theme="light"] { --accent: ' + accentLight + ' !important; --accent2: ' + dsShade(accentLight) + ' !important; --accent-rgb: ' + dsRgbTriple(accentLight) + ' !important; }';

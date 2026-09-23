@@ -215,9 +215,14 @@ function dsApplyAccent(hex) {
     return c ? (c.r + ', ' + c.g + ', ' + c.b) : '45, 212, 191';
   }
 
+  // --aura-rgb is the UNCLAMPED colour the user picked, for decoration only:
+  // glows and washes. --accent below is clamped for text contrast and shifts
+  // hue to do it, so it must not be used for decoration. Keep in step with
+  // the identical block in accent.js.
   var st = document.createElement('style');
   st.id = 'ds-accent-override';
   st.textContent =
+    ':root { --aura-rgb: ' + dsRgbTriple(hex) + ' !important; }' +
     ':root { --accent: ' + accentDark + ' !important; --accent2: ' + dsShade(accentDark) + ' !important; --accent-rgb: ' + dsRgbTriple(accentDark) + ' !important; }' +
     'html[data-theme="dim"] { --accent: ' + accentDim + ' !important; --accent2: ' + dsShade(accentDim) + ' !important; --accent-rgb: ' + dsRgbTriple(accentDim) + ' !important; }' +
     'html[data-theme="light"] { --accent: ' + accentLight + ' !important; --accent2: ' + dsShade(accentLight) + ' !important; --accent-rgb: ' + dsRgbTriple(accentLight) + ' !important; }';
@@ -383,6 +388,59 @@ window.dsApplyAccent = dsApplyAccent;
     .ck-day.blank { background: transparent; }
     .ck-foot { margin-top: 12px; font-size: 12px; color: var(--text3); text-align: center; line-height: 1.5; }
     .ck-foot b { color: var(--gold); }
+    /* AURA GLOW ----------------------------------------------------
+       The user's aura washes in from both ends of the header bar and fades
+       out before the middle, so it never sits under the nav's own text.
+
+       Why here and not on the logo: the logo is fine blackletter, and
+       recolouring it per user leaves some auras unreadable against the bar.
+       The bar has far more room, and the text on top never changes.
+
+       --aura-rgb is the UNCLAMPED colour the user picked (set by accent.js
+       and nav.js). --accent is deliberately NOT used here: it is clamped for
+       text contrast, which shifts the hue -- on the light theme it turns
+       amber into olive. Right for text, wrong for a glow.
+
+       Light mode needs a STRONGER wash, not a weaker one: a translucent
+       colour over a near-white bar washes out instead of intensifying. */
+    nav { position: relative; --aura-a: 0.22; }
+    html[data-theme="light"] nav { --aura-a: 0.34; }
+    nav > * { position: relative; z-index: 1; }
+    nav::before, nav::after {
+      content: "";
+      position: absolute;
+      top: 0; bottom: 0;
+      max-width: 340px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    /* Narrower on the left: Publish / Showcase sit just inside that edge, and
+       a warm aura behind green buttons goes muddy. */
+    nav::before {
+      left: 0; width: 20%;
+      background: linear-gradient(to right, rgba(var(--aura-rgb, 45, 212, 191), var(--aura-a)), rgba(var(--aura-rgb, 45, 212, 191), 0) 100%);
+    }
+    nav::after {
+      right: 0; width: 26%;
+      background: linear-gradient(to left, rgba(var(--aura-rgb, 45, 212, 191), var(--aura-a)), rgba(var(--aura-rgb, 45, 212, 191), 0) 100%);
+    }
+
+    /* A near-black aura on a near-black bar is invisible, and a user who picks
+       one would just see nothing. On dark themes the glow colour is mixed
+       toward white so every pick shows something, while keeping its hue; on
+       light themes it is mixed toward black for the same reason in reverse.
+       Wrapped in @supports because the plain rgba() rules above are the
+       fallback for anything without color-mix. */
+    @supports (background: color-mix(in srgb, red 50%, white)) {
+      nav { --aura-glow: color-mix(in srgb, rgb(var(--aura-rgb, 45, 212, 191)) 62%, #ffffff); }
+      html[data-theme="light"] nav { --aura-glow: color-mix(in srgb, rgb(var(--aura-rgb, 45, 212, 191)) 78%, #000000); }
+      nav::before {
+        background: linear-gradient(to right, color-mix(in srgb, var(--aura-glow) calc(var(--aura-a) * 100%), transparent), transparent 100%);
+      }
+      nav::after {
+        background: linear-gradient(to left, color-mix(in srgb, var(--aura-glow) calc(var(--aura-a) * 100%), transparent), transparent 100%);
+      }
+    }
     @keyframes ds-fadeDown { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
   `;
   var styleEl = document.createElement('style');
