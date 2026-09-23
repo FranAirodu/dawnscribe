@@ -141,6 +141,22 @@
              transition:transform .28s, opacity .28s, visibility 0s .28s; }
     #toast.show { transform:translateX(-50%) translateY(0); opacity:1; visibility:visible;
                   pointer-events:auto; transition:transform .28s, opacity .28s, visibility 0s 0s; }
+      /* Aura picker (kept from the old avatar page) */
+    .aura-card{background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.07));border-radius:14px;padding:16px 18px;margin-top:18px;}
+    .aura-card.soon{opacity:.62;}
+    .aura-head{font-family:'Cinzel',serif;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
+    .aura-head i{color:var(--accent,#2dd4bf);}
+    .aura-sub{font-size:12.5px;color:var(--text3,#8a8aa8);margin-top:3px;}
+    .aura-row{display:flex;flex-wrap:wrap;gap:9px;margin:12px 0 4px;}
+    .aura-sw{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;box-shadow:0 0 0 1px rgba(255,255,255,.12) inset;}
+    .aura-sw.on{border-color:var(--text,#f1f0ff);transform:scale(1.08);}
+    .aura-sw:focus-visible{outline:2px solid var(--accent,#2dd4bf);outline-offset:2px;}
+    .aura-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .aura-roll,.aura-reset{font-family:'Lato',sans-serif;font-size:13px;font-weight:700;border-radius:9px;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+    .aura-roll{background:var(--accent,#2dd4bf);color:#0a0a0f;border:none;}
+    .aura-roll:disabled{opacity:.55;cursor:not-allowed;}
+    .aura-reset{background:transparent;color:var(--text2,#9b9bc0);border:1px solid var(--border,rgba(255,255,255,.07));}
+    .aura-note{font-size:12.5px;color:var(--text3,#8a8aa8);margin-top:8px;}
   </style>
 </head>
 <body>
@@ -171,6 +187,7 @@
 
   var ME = null;
   var CHARS = [];          // every character this viewer may see
+  var AURA = { hex: '#2dd4bf', unlocked: [] };
   var MINE = {};           // character_id -> ownership row
   var SLOTS = { total: 0, found: 0 };
   var VIEW = 'all';
@@ -221,12 +238,20 @@
     var res = await Promise.all([
       db.from('ds_characters').select('*').order('chain_order', { ascending:true, nullsFirst:false }),
       db.from('ds_user_characters').select('*').eq('user_id', ME.id),
-      db.rpc('ds_secret_slots')
+      db.rpc('ds_secret_slots'),
+      // The Aura outlived the dress-up avatar: it still recolours the whole
+      // site for its owner, and is still won with Embers.
+      db.from('user_avatars').select('accent_color, unlocked_accents').eq('user_id', ME.id).maybeSingle()
     ]);
     CHARS = res[0].data || [];
     MINE = {};
     (res[1].data || []).forEach(function(r){ MINE[r.character_id] = r; });
     SLOTS = res[2].data || { total:0, found:0 };
+    var av = res[3] && res[3].data ? res[3].data : {};
+    AURA = {
+      hex: (av.accent_color && av.accent_color.hex) || '#2dd4bf',
+      unlocked: Array.isArray(av.unlocked_accents) ? av.unlocked_accents : []
+    };
     render();
   }
 
@@ -247,6 +272,69 @@
 
   function setView(v){ VIEW = v; OPEN = null; render(); }
 
+  // ── AURA ──────────────────────────────────────────────────────
+  // A colour you win with Embers that repaints the site for you. Saved on its
+  // own through ds_set_accent_color(); the old save path also wanted a body
+  // type and skin tone, which no longer exist.
+  function auraHtml(){
+    var owned = AURA.unlocked.slice();
+    if (owned.indexOf('#2dd4bf') === -1) owned.unshift('#2dd4bf');
+    var swatches = owned.map(function(hex){
+      var on = String(hex).toLowerCase() === String(AURA.hex).toLowerCase();
+      return '<button class="aura-sw' + (on ? ' on' : '') + '" style="background:' + esc(hex) + ';"'
+        + ' onclick="setAura(\'' + esc(hex) + '\')" aria-label="Use this aura"'
+        + (on ? ' aria-current="true"' : '') + '></button>';
+    }).join('');
+    return '<div class="aura-card">'
+      + '<div class="aura-head"><i class="ti ti-flame"></i> Your Aura</div>'
+      + '<div class="aura-sub">The colour DawnScribe uses for you, everywhere you go.</div>'
+      + '<div class="aura-row">' + swatches + '</div>'
+      + '<div class="aura-actions">'
+        + '<button class="aura-roll" id="aura-roll" onclick="rollAura()"><i class="ti ti-wand"></i> Roll a new aura &middot; 10 Embers</button>'
+        + (String(AURA.hex).toLowerCase() !== '#2dd4bf'
+            ? '<button class="aura-reset" onclick="setAura(null)">Back to default</button>' : '')
+      + '</div>'
+      + '<div class="aura-note" id="aura-note"></div>'
+      + '</div>'
+      + '<div class="aura-card soon">'
+        + '<div class="aura-head"><i class="ti ti-photo"></i> Backgrounds</div>'
+        + '<div class="aura-sub">Scenes to stand your character against. Being commissioned now \u2014 they will appear here when they are ready.</div>'
+      + '</div>';
+  }
+
+  window.setAura = async function(hex){
+    var prev = AURA.hex;
+    AURA.hex = hex || '#2dd4bf';
+    if (window.dsApplyAccent) dsApplyAccent(hex || null);
+    try { localStorage.setItem('ds_accent_hex', hex || ''); } catch(e){}
+    render();
+    var r = await db.rpc('ds_set_accent_color', { p_hex: hex });
+    if (r.error || !r.data || r.data.status !== 'success'){
+      AURA.hex = prev;
+      if (window.dsApplyAccent) dsApplyAccent(prev === '#2dd4bf' ? null : prev);
+      render();
+      toast('Could not save that aura.', 'ti-alert-triangle', true);
+    }
+  };
+
+  window.rollAura = async function(){
+    var btn = document.getElementById('aura-roll');
+    var note = document.getElementById('aura-note');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader"></i> Rolling\u2026';
+    var r = await db.rpc('roll_accent_color', { p_user_id: ME.id });
+    var d = r.data || {};
+    if (r.error){ toast('Something went wrong.', 'ti-alert-triangle', true); btn.disabled = false; return; }
+    if (d.status === 'insufficient_embers'){ toast('You need 10 Embers for that.', 'ti-flame', true); btn.disabled = false; return; }
+    if (d.status === 'all_unlocked'){
+      if (note) note.textContent = 'You have every aura there is. More may arrive later.';
+      btn.disabled = false; return;
+    }
+    await load();
+    if (d.hex) { await setAura(d.hex); toast('New aura unlocked.', 'ti-flame'); }
+    var b2 = document.getElementById('aura-roll'); if (b2) b2.disabled = false;
+  };
+
   function render(){
     renderTabs();
     if(OPEN) return renderDetail();
@@ -256,6 +344,7 @@
     if(VIEW==='open')   list = list.filter(function(c){ return c.availability==='ember_unlock' && !c.unlocked_at; });
     if(VIEW==='secret') list = list.filter(function(c){ return c.availability==='secret'; });
 
+    var auraBlock = (VIEW === 'mine') ? auraHtml() : '';
     var html = '';
     if(!list.length && VIEW!=='secret'){
       html = '<div class="state"><i class="ti ti-users"></i>Nobody here yet.</div>';
@@ -271,7 +360,7 @@
             : '')
         + '</div>';
     }
-    document.getElementById('view').innerHTML = html;
+    document.getElementById('view').innerHTML = html + auraBlock;
   }
 
   function cardHtml(c){
