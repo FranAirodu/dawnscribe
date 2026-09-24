@@ -126,6 +126,12 @@
     .chapter-edit-btn{background:none;border:1px solid var(--accent);border-radius:7px;padding:4px 10px;color:var(--accent);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;display:none;align-items:center;gap:4px;flex-shrink:0;pointer-events:none;}
     /* The whole row opens the chapter; this pill only marks the open one. */
     .chapter-edit-btn.active-edit{display:flex;}
+    /* Find & Replace floats at the side so the text stays visible. */
+    #fr-modal-overlay.fr-float{background:transparent;backdrop-filter:none;pointer-events:none;align-items:flex-start;justify-content:flex-end;}
+    #fr-modal-overlay.fr-float .ds-modal{pointer-events:auto;margin:84px 20px 0 0;box-shadow:0 12px 40px rgba(0,0,0,0.55);}
+    @media (max-width: 700px){ #fr-modal-overlay.fr-float{justify-content:center;align-items:flex-end;} #fr-modal-overlay.fr-float .ds-modal{margin:0 8px 8px;} }
+    .fr-nav{background:none;border:1px solid var(--border);border-radius:7px;width:32px;height:34px;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .fr-nav:hover{border-color:var(--accent);color:var(--accent);}
     /* Brief dim while a chapter loads, so a click visibly registered. */
     #editor-panel.ch-loading .ql-editor, #editor-panel.ch-loading #chapter-title-input{opacity:0.45;transition:opacity 0.15s;}
     .chapter-row[role=button]{cursor:pointer;}
@@ -823,19 +829,26 @@
   <div class="ds-modal" style="position:relative;max-width:440px;">
     <button class="ds-modal-close" onclick="closeFindReplace()"><i class="ti ti-x"></i></button>
     <div class="ds-modal-title"><i class="ti ti-replace"></i> Find & Replace</div>
-    <div class="ds-modal-sub">Searches and replaces within the chapter currently open in the editor.</div>
+    <div class="ds-modal-sub">Searches the chapter open in the editor. <b>Enter</b> jumps to the next match, <b>Shift+Enter</b> the previous one.</div>
     <div class="field-group">
       <label class="field-label">Find</label>
-      <input class="field-input" type="text" id="fr-find" placeholder="Text to find…"/>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input class="field-input" type="text" id="fr-find" placeholder="Text to find…" style="flex:1;"
+               oninput="frSearch()" onkeydown="frKey(event)"/>
+        <span id="fr-count" style="font-size:12px;color:var(--text3);min-width:58px;text-align:center;"></span>
+        <button type="button" class="fr-nav" onclick="frStep(-1)" title="Previous match (Shift+Enter)"><i class="ti ti-chevron-up"></i></button>
+        <button type="button" class="fr-nav" onclick="frStep(1)" title="Next match (Enter)"><i class="ti ti-chevron-down"></i></button>
+      </div>
     </div>
     <div class="field-group">
       <label class="field-label">Replace With</label>
       <input class="field-input" type="text" id="fr-replace" placeholder="Replacement text…"/>
     </div>
-    <label class="check-row"><input type="checkbox" id="fr-case-sensitive"/> Case sensitive</label>
+    <label class="check-row"><input type="checkbox" id="fr-case-sensitive" onchange="frSearch()"/> Case sensitive</label>
     <div id="fr-result" style="font-size:12px;color:var(--text3);margin:8px 0;"></div>
     <div class="btn-row">
       <button class="btn-cancel" onclick="closeFindReplace()"><i class="ti ti-x"></i> Close</button>
+      <button class="btn-cancel" onclick="frReplaceOne()" title="Replace the highlighted match, then go to the next"><i class="ti ti-replace"></i> Replace</button>
       <button class="btn-publish" onclick="runFindReplace()"><i class="ti ti-replace"></i> Replace All</button>
     </div>
   </div>
@@ -2778,12 +2791,102 @@
   }
 
   // ── FIND & REPLACE ────────────────────────────────────────────
+  /* The box floats at the side instead of covering the page, so the author
+     can see where each match is. The current match is marked with a
+     highlight drawn OVER the editor (never written into the text), and the
+     page scrolls to it. Closing the box leaves that word selected in the
+     editor, ready to type over. */
+  var FR = { matches: [], cur: -1 };
+  function frMatches() {
+    var find = document.getElementById('fr-find').value;
+    if (!quill || !find) return [];
+    var caseSensitive = document.getElementById('fr-case-sensitive').checked;
+    var text = quill.getText();
+    var re = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? 'g' : 'gi');
+    var out = [], m;
+    while ((m = re.exec(text)) !== null) {
+      out.push({ index: m.index, len: m[0].length });
+      if (m.index === re.lastIndex) re.lastIndex++;
+    }
+    return out;
+  }
+  function frMark() {
+    var box = document.getElementById('fr-mark');
+    var c = FR.matches[FR.cur];
+    var countEl = document.getElementById('fr-count');
+    var find = document.getElementById('fr-find').value;
+    countEl.textContent = !find ? '' : (FR.matches.length ? (FR.cur + 1) + ' of ' + FR.matches.length : 'No matches');
+    if (!c || !quill) { if (box) box.style.display = 'none'; return; }
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'fr-mark';
+      quill.container.appendChild(box);
+    }
+    var b = quill.getBounds(c.index, c.len);
+    box.style.cssText = 'display:block;position:absolute;pointer-events:none;z-index:5;border-radius:3px;'
+      + 'background:rgba(250,204,21,0.38);box-shadow:0 0 0 2px rgba(250,204,21,0.9);'
+      + 'left:' + (b.left - 1) + 'px;top:' + (b.top - 1) + 'px;width:' + (b.width + 2) + 'px;height:' + (b.height + 2) + 'px;';
+    box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  function frSearch(keepPos) {
+    var prev = FR.matches[FR.cur];
+    FR.matches = frMatches();
+    FR.cur = -1;
+    if (FR.matches.length) {
+      // Start from the author's cursor, or stay near the match they were on.
+      var from = keepPos && prev ? prev.index : ((quill && quill.getSelection()) || { index: 0 }).index;
+      FR.cur = 0;
+      for (var i = 0; i < FR.matches.length; i++) { if (FR.matches[i].index >= from) { FR.cur = i; break; } }
+    }
+    frMark();
+  }
+  function frStep(dir) {
+    if (!FR.matches.length) frSearch();
+    if (!FR.matches.length) return;
+    FR.cur = (FR.cur + dir + FR.matches.length) % FR.matches.length;
+    frMark();
+  }
+  function frKey(e) {
+    if (e.key === 'Enter') { e.preventDefault(); frStep(e.shiftKey ? -1 : 1); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeFindReplace(); }
+  }
+  function frReplaceOne() {
+    var c = FR.matches[FR.cur];
+    if (!c || !quill) { frSearch(); return; }
+    var replace = document.getElementById('fr-replace').value;
+    quill.deleteText(c.index, c.len, Quill.sources.USER);
+    if (replace) quill.insertText(c.index, replace, Quill.sources.USER);
+    updateReadingStats();
+    if (editingChapterId) updateAutosaveIndicator('pending');
+    // Look again from just after what was put in, so the replacement itself
+    // is never matched again.
+    FR.matches = frMatches();
+    var after = c.index + (replace ? replace.length : 0);
+    FR.cur = -1;
+    for (var i = 0; i < FR.matches.length; i++) { if (FR.matches[i].index >= after) { FR.cur = i; break; } }
+    if (FR.cur < 0 && FR.matches.length) FR.cur = 0;
+    frMark();
+  }
   function openFindReplace() {
-    document.getElementById('fr-modal-overlay').classList.add('open');
+    var ov = document.getElementById('fr-modal-overlay');
+    ov.classList.add('open', 'fr-float');
     document.getElementById('fr-result').textContent = '';
+    // Pre-fill with selected text, the way find works in most editors.
+    var sel = quill && quill.getSelection();
+    if (sel && sel.length > 0 && sel.length < 80) {
+      document.getElementById('fr-find').value = quill.getText(sel.index, sel.length);
+    }
+    var inp = document.getElementById('fr-find');
+    inp.focus(); inp.select();
+    frSearch();
   }
   function closeFindReplace() {
-    document.getElementById('fr-modal-overlay').classList.remove('open');
+    document.getElementById('fr-modal-overlay').classList.remove('open', 'fr-float');
+    var c = FR.matches[FR.cur];
+    var box = document.getElementById('fr-mark');
+    if (box) box.style.display = 'none';
+    if (c && quill) quill.setSelection(c.index, c.len, Quill.sources.USER);
+    FR.matches = []; FR.cur = -1;
   }
   function runFindReplace() {
     if (!quill) return;
@@ -2818,6 +2921,7 @@
     updateReadingStats();
     if (editingChapterId) updateAutosaveIndicator('pending');
     document.getElementById('fr-result').textContent = 'Replaced ' + matches.length + ' occurrence(s).';
+    frSearch();
     showToast('Replaced ' + matches.length + ' occurrence(s)', 'ti-replace');
   }
 
