@@ -2726,6 +2726,15 @@ async function deleteRelation(){
 /* ── CHECKS ────────────────────────────────────────────────────────── */
 function renderChecks(){
   var body = document.getElementById('view-body');
+  // A finding whose suggestion is already on the card offers nothing, so it
+  // is closed quietly instead of shown. (New reads no longer create them.)
+  FINDINGS.forEach(function(f){
+    if(f.status === 'open' && findingAlreadyKnown(f) && !TIDIED[f.id]){
+      TIDIED[f.id] = true;
+      f.status = 'resolved';
+      respond(f.id, 'resolve', true).catch(function(){});
+    }
+  });
   var open = FINDINGS.filter(function(f){ return f.status === 'open'; });
   var fixing = FINDINGS.filter(function(f){ return f.status === 'fixing'; });
   var answered = FINDINGS.filter(function(f){ return f.status !== 'open' && f.status !== 'fixing'; });
@@ -2969,6 +2978,15 @@ async function takeChapterValue(findingId){
   toast(card.name + ' \u2014 ' + ci.label + ' is now ' + ci.chapVal, 'ti-check', false,
     function(){ return undoCardWrite(card.id, prevData, findingId, prevStatus); });
   render();
+}
+
+var TIDIED = {};
+function findingAlreadyKnown(f){
+  if(f.source !== 'ai' || (f.code !== 'new_fact' && f.code !== 'contradiction')) return false;
+  var hit = findingSuggest(f);
+  if(!hit || !hit.card || !hit.sg.fields.length) return false;
+  if(contradictionInfo(f)) return false;
+  return suggestWouldAdd(hit) === 0;
 }
 
 function suggestHtml(f){
