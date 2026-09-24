@@ -8,6 +8,37 @@
    change the other. If nav.js is on the page it wins (loaded later, same id).
    Load this in <head> so there is no teal flash.
 ──────────────────────────────────────────────────────────────────── */
+/* ── AURA GLOW ON THE HEADER BAR ──────────────────────────────────
+   Pages without nav.js (admin pages, auth, legal pages, chapters, lorebook)
+   never had the header glow. Same look as the block in nav.js: the user's
+   aura washes in from both ends of the bar and fades out before the middle.
+   Keep the two in step.
+
+   Every rule is wrapped in :where(), which weighs nothing, so a page's own
+   nav rules always win: a sticky header stays sticky, and a dropdown that
+   is positioned absolutely stays where it is. */
+(function () {
+  if (document.getElementById('ds-aura-glow')) return;
+  var css =
+    ':where(nav){position:relative;--aura-a:0.22;}' +
+    ':where(html[data-theme="light"]) :where(nav){--aura-a:0.34;}' +
+    ':where(nav > *){position:relative;z-index:1;}' +
+    ':where(nav)::before,:where(nav)::after{content:"";position:absolute;top:0;bottom:0;max-width:340px;pointer-events:none;z-index:0;}' +
+    ':where(nav)::before{left:0;width:20%;background:linear-gradient(to right,rgba(var(--aura-rgb,45,212,191),var(--aura-a)),rgba(var(--aura-rgb,45,212,191),0) 100%);}' +
+    ':where(nav)::after{right:0;width:26%;background:linear-gradient(to left,rgba(var(--aura-rgb,45,212,191),var(--aura-a)),rgba(var(--aura-rgb,45,212,191),0) 100%);}' +
+    '@supports (background: color-mix(in srgb, red 50%, white)){' +
+      ':where(nav){--aura-glow:color-mix(in srgb,rgb(var(--aura-rgb,45,212,191)) 62%,#ffffff);}' +
+      ':where(html[data-theme="light"]) :where(nav){--aura-glow:color-mix(in srgb,rgb(var(--aura-rgb,45,212,191)) 78%,#000000);}' +
+      ':where(nav)::before{background:linear-gradient(to right,color-mix(in srgb,var(--aura-glow) calc(var(--aura-a) * 100%),transparent),transparent 100%);}' +
+      ':where(nav)::after{background:linear-gradient(to left,color-mix(in srgb,var(--aura-glow) calc(var(--aura-a) * 100%),transparent),transparent 100%);}' +
+    '}';
+  var st = document.createElement('style');
+  st.id = 'ds-aura-glow';
+  st.textContent = css;
+  // Prepended, so anything the page itself writes comes later and wins.
+  (document.head || document.documentElement).insertBefore(st, (document.head || document.documentElement).firstChild);
+})();
+
 (function () {
 if (window.dsApplyAccent) return;
 function dsApplyAccent(hex) {
