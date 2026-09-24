@@ -1136,6 +1136,20 @@
   // Every open gets a number. If the author clicks another chapter before
   // this one has loaded, the older load stops instead of painting over the
   // newer one (which is how Ch.3 could end up showing Ch.2's title).
+  /* Putting a chapter into the editor. Setting quill.root.innerHTML makes
+     Quill re-read the whole document node by node, which on an 8,000-word
+     chapter froze the page for 10+ seconds. Converting the HTML first and
+     handing Quill the result takes about a tenth of a second, keeps bold,
+     italics, fonts and tooltips, and Quill's text is correct immediately. */
+  // Opening a chapter is silent (nothing changed). Restoring a backup or an
+  // old revision IS a change, so those announce it: word count, the
+  // "unsaved" dot and autosave all react exactly as they do to typing.
+  function setEditorHTML(html, announce){
+    if (!quill) return;
+    var delta = quill.clipboard.convert({ html: html || '' });
+    quill.setContents(delta, announce ? Quill.sources.USER : Quill.sources.SILENT);
+  }
+
   var _openSeq = 0;
 
   /* Everything one chapter needs, fetched in ONE parallel batch and kept for
@@ -1237,12 +1251,9 @@
     currentChapterStatus = ch.status || 'published';
     document.getElementById('chapter-title-input').value = ch.title || '';
     if (quill) {
-      quill.root.innerHTML = ch.content || '';
-      // Quill reads the new HTML on its NEXT tick. Without this, getText()
-      // below still returned the PREVIOUS chapter's text, so every chapter
-      // looked "changed" the moment it opened: the switch warning, the
-      // "unsaved work (just now)" banner, and a pointless autosave.
-      quill.update(Quill.sources.SILENT);
+      setEditorHTML(ch.content || '');
+      // A new chapter must not be able to Ctrl+Z back into the last one.
+      if (quill.history) quill.history.clear();
     }
     var w = quill ? quill.getText().trim().split(/\s+/).filter(Boolean).length : 0;
     document.getElementById('word-count').textContent = w;
@@ -1684,7 +1695,7 @@
   function restoreBackup() {
     if (!_pendingBackup) return;
     document.getElementById('chapter-title-input').value = _pendingBackup.title || '';
-    if (quill) quill.root.innerHTML = _pendingBackup.content || '<p></p>';
+    if (quill) setEditorHTML(_pendingBackup.content || '<p></p>', true);
     if (_pendingBackup.noteTop) {
       document.getElementById('author-note-top').value = _pendingBackup.noteTop;
       document.getElementById('author-note-top-wrap').style.display = 'flex';
@@ -2535,7 +2546,7 @@
       var paras = text.split(/\r?\n/).map(function(l){ return l.trim(); });
       // Empty lines → Quill-native empty paragraph; non-empty lines → paragraph with content
       var htmlOut = paras.map(function(l){ return l ? '<p>' + escXml(l) + '</p>' : '<p><br></p>'; }).join('');
-      quill.root.innerHTML = htmlOut || '<p></p>';
+      setEditorHTML(htmlOut || '<p></p>', true);
       afterImport(file.name);
     };
     reader.onerror = function(){ showToast('Could not read file.', 'ti-x'); };
@@ -2758,7 +2769,7 @@
     if (!rev) return;
     if (!confirm('Restore this version? Your current unsaved changes will be lost.')) return;
     document.getElementById('chapter-title-input').value = rev.title || '';
-    if (quill) quill.root.innerHTML = rev.content || '';
+    if (quill) setEditorHTML(rev.content || '', true);
     // Don't update originals — so hasUnsavedChanges() correctly treats the restore as unsaved
     updateReadingStats();
     closeRevisionHistory();
@@ -3857,9 +3868,8 @@
 
       // If this is the currently-open chapter in the editor, reload it
       if (m.chapterId === editingChapterId && quill) {
-        quill.root.innerHTML = newContent;
-        quill.update(Quill.sources.SILENT);
-        originalHTML = newContent;
+        setEditorHTML(newContent);
+        originalHTML = quill.root.innerHTML;   // what the editor shows, so it does not read as "changed"
         originalText = quill.getText().trim();
         updateReadingStats();
         updateAutosaveIndicator('saved');
