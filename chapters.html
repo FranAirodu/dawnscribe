@@ -1137,6 +1137,63 @@
   // this one has loaded, the older load stops instead of painting over the
   // newer one (which is how Ch.3 could end up showing Ch.2's title).
   var _openSeq = 0;
+
+  /* Everything one chapter needs, fetched in ONE parallel batch and kept for
+     a minute. Hovering (or touching) a chapter starts the batch, so by the
+     time the click lands the data is usually already here. Any save clears
+     the whole cache, so an opened chapter is never older than its last save. */
+  var _chCache = {};
+  var CH_CACHE_MS = 60000;
+  var CH_COLS = 'id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections,free_at,ea_quill_price';
+  function chapterBundle(chapterId){
+    var hit = _chCache[chapterId];
+    if (hit && Date.now() - hit.t < CH_CACHE_MS) return hit.p;
+    var soft = function(p, dflt){ return Promise.resolve(p).catch(function(){ return dflt; }); };
+    var p = Promise.all([
+      soft(db.from('chapters').select(CH_COLS).eq('id', chapterId).maybeSingle(), {}),
+      soft(db.rpc('get_chapter_content', { p_chapter_id: chapterId }), null),
+      soft(db.from('chapter_polls').select('*').eq('chapter_id', chapterId), { data: [] }),
+      soft(db.from('chapter_characters').select('character_id, status').eq('chapter_id', chapterId), { data: [] })
+    ]).then(function(r){
+      return { chRes: r[0], content: r[1], polls: r[2], cc: r[3] };
+    });
+    _chCache[chapterId] = { t: Date.now(), p: p };
+    // A failed load must not stay cached.
+    p.then(function(b){ if (!b.chRes || !b.chRes.data) delete _chCache[chapterId]; });
+    return p;
+  }
+  function forgetChapterCache(){ _chCache = {}; }
+  /* Belt and braces: ANY write this page makes to a chapter, its polls or
+     its characters empties the cache, wherever in the page it happens. */
+  (function(){
+    var WATCH = { chapters: 1, chapter_polls: 1, chapter_characters: 1, novel_characters: 1 };
+    var WRITE_RPCS = { reorder_chapters: 1, set_chapter_early_access: 1 };
+    var from0 = db.from.bind(db), rpc0 = db.rpc.bind(db);
+    db.from = function(table){
+      var q = from0(table);
+      if (WATCH[table]) ['insert', 'update', 'upsert', 'delete'].forEach(function(m){
+        var orig = q[m];
+        if (typeof orig !== 'function') return;
+        q[m] = function(){
+          forgetChapterCache();
+          if (table === 'novel_characters') _novelCharsP = null;
+          return orig.apply(q, arguments);
+        };
+      });
+      return q;
+    };
+    db.rpc = function(name){
+      if (WRITE_RPCS[name]) forgetChapterCache();
+      return rpc0.apply(null, arguments);
+    };
+  })();
+  // Things that never change while you switch chapters: asked once.
+  var _allowPollsP = null, _novelCharsP = null;
+  function worksAllowPolls(){
+    if (!_allowPollsP) _allowPollsP = Promise.resolve(db.from('works').select('allow_polls').eq('id', workId).maybeSingle()).catch(function(){ return {}; });
+    return _allowPollsP;
+  }
+
   async function setModeEdit(chapterId, btn, row) {
     // If already editing (or writing a new chapter) with unsaved changes, warn first
     if (editingChapterId !== chapterId) {
@@ -1164,18 +1221,17 @@
     // one after another (six round trips, ~0.8s); in parallel it is roughly
     // the time of the slowest one.
     // 'content' is no longer readable from the column — fetch it via the RPC.
-    var chP = db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections,free_at,ea_quill_price').eq('id', chapterId).maybeSingle();
-    var contentP = Promise.resolve(db.rpc('get_chapter_content', { p_chapter_id: chapterId })).catch(function(){ return null; });
-    var pollsP = Promise.resolve(db.from('chapter_polls').select('*').eq('chapter_id', chapterId)).catch(function(){ return { data: [] }; });
-    var worksP = Promise.resolve(db.from('works').select('allow_polls').eq('id', workId).maybeSingle()).catch(function(){ return {}; });
-    var both = await Promise.all([chP, contentP]);
+    var worksP = worksAllowPolls();
+    var bundle = await chapterBundle(chapterId);
     if (mySeq !== _openSeq) return;          // a newer chapter was clicked
     if (panel) panel.classList.remove('ch-loading');
-    var res = both[0];
+    var res = bundle.chRes;
     if (!res || !res.data) { showToast('Could not load chapter', 'ti-alert-triangle'); return; }
-    var ch = res.data;
-    var _cRes = both[1];
+    // A copy, so edits on screen never leak back into the cache.
+    var ch = Object.assign({}, res.data);
+    var _cRes = bundle.content;
     ch.content = (_cRes && _cRes.data) ? _cRes.data : '';
+    var pollsP = Promise.resolve(bundle.polls);
 
     editingChapterId = chapterId;
     currentChapterStatus = ch.status || 'published';
@@ -1295,7 +1351,9 @@
     }, 60000);
 
     // Scroll editor into view on mobile
-    document.getElementById('editor-panel').scrollIntoView({ behavior:'smooth', block:'start' });
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      document.getElementById('editor-panel').scrollIntoView({ behavior:'smooth', block:'start' });
+    }
 
     // Stop TTS if playing, re-prepare for new chapter content
     if (ttsOpen) { ttsStop(); ttsPrepare(); }
@@ -1303,7 +1361,7 @@
     updateTooltipBtnBadge();
 
     // Load character manager for this chapter
-    await ctInit(workId, chapterId);
+    await ctInit(workId, chapterId, bundle.cc);
     if (mySeq !== _openSeq) return;
 
     // Offer crash-recovery backup if one is newer than the last save
@@ -1478,6 +1536,11 @@
         if (e.target.closest('.chapter-checkbox, .drag-handle')) return;
         openRow();
       });
+      // Start loading on hover or touch, so the click finds it ready.
+      var warm = function(){ if (!row.classList.contains('active')) chapterBundle(ch.id); };
+      row.addEventListener('mouseenter', warm);
+      row.addEventListener('touchstart', warm, { passive: true });
+      row.addEventListener('focus', warm);
       row.addEventListener('keydown', function(e){
         if (e.target !== row) return;
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRow(); }
@@ -1836,6 +1899,7 @@
   }
 
   async function submitChapter(status, silent) {
+    forgetChapterCache();
     var title = document.getElementById('chapter-title-input').value.trim();
     var content = quill ? quill.root.innerHTML : '';
     var text = quill ? quill.getText().trim() : '';
@@ -3450,16 +3514,21 @@
   // ── CHARACTER MANAGER (chapters.html) ────────────────────────
   var ctCharacters = [];
 
-  async function ctInit(wId, chapterId) {
-    var { data } = await db.from('novel_characters')
-      .select('id, name, portrait_url, status, ended_reason')
-      .eq('work_id', wId)
-      .order('sort_order', { ascending: true });
+  async function ctInit(wId, chapterId, preCc) {
+    // The story's character list is asked for once per page (it is reset
+    // whenever a character is added or changed, see ctForget).
+    if (!_novelCharsP) {
+      _novelCharsP = Promise.resolve(db.from('novel_characters')
+        .select('id, name, portrait_url, status, ended_reason')
+        .eq('work_id', wId)
+        .order('sort_order', { ascending: true })).catch(function(){ _novelCharsP = null; return { data: [] }; });
+    }
+    var { data } = await _novelCharsP;
     ctCharacters = (data || []).map(function(c){
       return Object.assign({}, c, { chapter_status: 'active' });
     });
     if (chapterId) {
-      var { data: cc } = await db.from('chapter_characters')
+      var { data: cc } = preCc ? preCc : await db.from('chapter_characters')
         .select('character_id, status')
         .eq('chapter_id', chapterId);
       (cc || []).forEach(function(r){
