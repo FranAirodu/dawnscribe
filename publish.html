@@ -672,6 +672,9 @@
         </div>
         <div class="card-body">
         <div class="card-desc">Be honest — readers use this to filter their feed. You can select Gore and Erotica together.</div>
+        <div id="rating-lock-note" style="font-size:12px;color:var(--text3);margin:-4px 0 12px;line-height:1.5;">
+          <i class="ti ti-lock"></i> Choose carefully: once your story is live, a Gore or Erotica rating can be added later but never removed.
+        </div>
         <div class="rating-options">
           <div class="rating-option checked safe" id="rating-safe" onclick="toggleRating('safe')"><div class="rating-icon safe"><i class="ti ti-shield-check"></i></div><div class="rating-text"><div class="rating-label">Safe</div><div class="rating-sub">No graphic violence or explicit sexual content</div></div><div class="checkbox-box"><i class="ti ti-check"></i></div></div>
           <div class="rating-option gore" id="rating-gore" onclick="toggleRating('gore')"><div class="rating-icon gore"><i class="ti ti-droplet"></i></div><div class="rating-text"><div class="rating-label">Gore</div><div class="rating-sub">Contains graphic violence or disturbing imagery</div></div><div class="checkbox-box"></div></div>
@@ -1657,7 +1660,14 @@
     }
 
     // ── CONTENT RATING ─────────────────────────────────────────────
+    // Ratings the story went live with. The database refuses to remove them;
+    // the page says so up front instead of failing on save.
+    var ratingLocked = { gore: false, erotica: false };
     function toggleRating(key) {
+      if ((key === 'safe' && (ratingLocked.gore || ratingLocked.erotica)) || (ratingLocked[key] && ratings[key])) {
+        showToast('This story went live with this rating, so it can\u2019t be removed. Contact DawnScribe if it was set by mistake.', 'ti-lock');
+        return;
+      }
       if (key === 'safe') {
         ratings.safe = true; ratings.gore = false; ratings.erotica = false;
       } else {
@@ -1680,6 +1690,11 @@
       try {
         var { data } = await dsMyPrivate();
         if (!data) return;
+        myDefaultCommentsOpen = data.default_comments_open !== false;
+        // Defaults are for NEW stories only. When editing, the story's own
+        // rating is loaded instead; this call is async and could otherwise
+        // land after it and quietly swap the story's rating for the default.
+        if (typeof isEditMode !== 'undefined' && isEditMode) return;
         ratings.gore = !!data.default_rating_gore;
         ratings.erotica = !!data.default_rating_erotica;
         ratings.safe = !(ratings.gore || ratings.erotica);
@@ -2817,10 +2832,23 @@
         ratings.gore = !!w.content_rating_gore;
         ratings.erotica = !!w.content_rating_erotica;
         ratings.safe = !(ratings.gore || ratings.erotica);
+        ratingLocked.gore = !!w.rated_gore_locked;
+        ratingLocked.erotica = !!w.rated_erotica_locked;
         ['safe','gore','erotica'].forEach(function(k){
           var el = document.getElementById('rating-' + k);
           if (el) { el.classList.toggle('checked', ratings[k]); var box = el.querySelector('.checkbox-box'); if (box) box.innerHTML = ratings[k] ? '<i class="ti ti-check"></i>' : ''; }
+          var locked = (k === 'safe') ? (ratingLocked.gore || ratingLocked.erotica) : ratingLocked[k];
+          if (el && locked) { el.style.opacity = (k === 'safe') ? '0.45' : ''; el.style.cursor = 'not-allowed'; el.title = 'Locked: this story went live with this rating'; }
         });
+        if (ratingLocked.gore || ratingLocked.erotica) {
+          var _rn = document.getElementById('rating-lock-note');
+          if (_rn) {
+            _rn.style.color = '#f59e0b';
+            _rn.innerHTML = '<i class="ti ti-lock"></i> This story went live rated '
+              + [ratingLocked.gore ? 'Gore' : '', ratingLocked.erotica ? 'Erotica' : ''].filter(Boolean).join(' and ')
+              + ', so that can\u2019t be removed. You can still add a rating. Set by mistake? Contact DawnScribe.';
+          }
+        }
 
         // Content warnings.
         try { selectedContentWarnings = w.content_warnings ? (typeof w.content_warnings === 'string' ? JSON.parse(w.content_warnings) : w.content_warnings) : []; }
