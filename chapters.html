@@ -42,7 +42,7 @@
           css += 'content:"' + f.label + '";font-family:' + f.css + ';}';
         });
         css += '.ql-snow .ql-picker.ql-font .ql-picker-label::before,';
-        css += '.ql-snow .ql-picker.ql-font .ql-picker-item::before{content:"Default";}';
+        css += '.ql-snow .ql-picker.ql-font .ql-picker-item::before{content:"Book font";}';
         css += '.ql-snow .ql-picker.ql-font{width:170px;}';
         css += '.ql-snow .ql-picker.ql-header{width:120px;}';
         css += '.ql-snow .ql-picker.ql-font .ql-picker-options{max-height:260px;overflow-y:auto;}';
@@ -50,6 +50,29 @@
         styleTag.textContent = css;
         document.head.appendChild(styleTag);
       }
+
+      /* Tooltips as a real Quill format. Quill throws away any HTML it has no
+         format for, so the old way of pasting a raw <span> meant every tooltip
+         vanished the moment it was added (the audit found none saved, ever).
+         Registered here, before any editor exists, so loading, pasting and
+         saving all keep it. */
+      try {
+        var Inline = Quill.import('blots/inline');
+        class TooltipBlot extends Inline {
+          static create(value) {
+            var node = super.create();
+            var tip = String(value || '').slice(0, 500);
+            node.setAttribute('data-tooltip', tip);
+            node.setAttribute('title', tip);
+            return node;
+          }
+          static formats(node) { return node.getAttribute('data-tooltip') || ''; }
+        }
+        TooltipBlot.blotName = 'tooltip';
+        TooltipBlot.tagName = 'span';
+        TooltipBlot.className = 'ql-tooltip-term';
+        Quill.register(TooltipBlot, true);
+      } catch (e) { console.warn('tooltip format not registered', e); }
     })();
   </script>
   <script>(function(){ var t=localStorage.getItem('ds_theme'); if(t) document.documentElement.setAttribute('data-theme',t); })();</script>
@@ -429,6 +452,12 @@
       <div class="work-header-meta" id="work-meta-el"></div>
       <div class="work-header-meta" id="work-stats-el" style="margin-top:2px;"></div>
       <div id="book-card-area" style="margin-top:10px;"></div>
+      <div id="book-font-area" style="margin-top:10px;display:none;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--text3);">
+        <label for="book-font-select" style="font-weight:700;color:var(--text2);"><i class="ti ti-typography"></i> Book font</label>
+        <select id="book-font-select" onchange="saveBookFont(this.value)"
+          style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:5px 8px;font-size:13px;"></select>
+        <span>Every chapter of this book uses it. Readers can still choose their own font in their settings.</span>
+      </div>
     </div>
     <div id="complete-story-area" style="flex-shrink:0;margin-left:auto;"></div>
   </div>
@@ -1162,6 +1191,7 @@
     if (!quill) return;
     var delta = quill.clipboard.convert({ html: html || '' });
     quill.setContents(delta, announce ? Quill.sources.USER : Quill.sources.SILENT);
+    checkMixedFonts();
   }
 
   var _openSeq = 0;
@@ -1205,14 +1235,28 @@
         q[m] = function(){
           forgetChapterCache();
           if (table === 'novel_characters') _novelCharsP = null;
-          return orig.apply(q, arguments);
+          var b = orig.apply(q, arguments);
+          // ...and again when it finishes: anything fetched while the write
+          // was in flight holds the old version.
+          if (b && typeof b.then === 'function') {
+            var then0 = b.then.bind(b);
+            b.then = function(ok, bad){
+              return then0(function(v){
+                forgetChapterCache();
+                if (table === 'novel_characters') _novelCharsP = null;
+                return ok ? ok(v) : v;
+              }, bad);
+            };
+          }
+          return b;
         };
       });
       return q;
     };
     db.rpc = function(name){
-      if (WRITE_RPCS[name]) forgetChapterCache();
-      return rpc0.apply(null, arguments);
+      if (!WRITE_RPCS[name]) return rpc0.apply(null, arguments);
+      forgetChapterCache();
+      return Promise.resolve(rpc0.apply(null, arguments)).then(function(v){ forgetChapterCache(); return v; });
     };
   })();
   // Things that never change while you switch chapters: asked once.
@@ -1268,6 +1312,7 @@
       setEditorHTML(ch.content || '');
       // A new chapter must not be able to Ctrl+Z back into the last one.
       if (quill.history) quill.history.clear();
+      checkMixedFonts();
     }
     var w = quill ? quill.getText().trim().split(/\s+/).filter(Boolean).length : 0;
     document.getElementById('word-count').textContent = w;
@@ -1422,6 +1467,7 @@
     var res = await db.from('works').select('*').eq('id', workId).eq('author_id', currentSession.user.id).maybeSingle();
     if (!res.data) { document.getElementById('work-title-el').textContent = 'Work not found or access denied.'; return; }
     workData = res.data;
+    bookFontInit(workData.default_font || 'lato');
 
     /* Lorebook link. The open-finding count is read here rather than on the
        Lorebook page because this is where an author is when a contradiction
@@ -1837,6 +1883,81 @@
     if (ids.includes(editingChapterId)) setModeAdd();
     await loadChapters();
     updateBulkBar();
+  }
+
+  /* ── BOOK FONT ─────────────────────────────────────────────────
+     One font per book, so chapters never drift into different styles by
+     accident. The database stamps it on every chapter; this page shows it as
+     the editor's base font, and the toolbar's "Book font" option means it.
+     A different font can still be picked for a passage on purpose. */
+  var bookFont = 'lato';
+  function bookFontCss(key){
+    var f = window.READING_FONTS && window.READING_FONTS[key];
+    return f ? f.css : "'Lato',sans-serif";
+  }
+  function applyBookFont(key){
+    bookFont = key;
+    var st = document.getElementById('book-font-style');
+    if (!st) { st = document.createElement('style'); st.id = 'book-font-style'; document.head.appendChild(st); }
+    st.textContent = '#chapter-editor .ql-editor{font-family:' + bookFontCss(key) + ';}'
+      + '.ql-snow .ql-picker.ql-font .ql-picker-label:not([data-value])::before{content:"Book font";font-family:' + bookFontCss(key) + ';}';
+  }
+  function bookFontInit(key){
+    var sel = document.getElementById('book-font-select');
+    if (sel && window.READING_FONTS) {
+      var keys = Object.keys(window.READING_FONTS).sort(function(a, b){
+        return window.READING_FONTS[a].label.localeCompare(window.READING_FONTS[b].label);
+      });
+      sel.innerHTML = keys.map(function(k){
+        return '<option value="' + k + '" style="font-family:' + window.READING_FONTS[k].css.replace(/"/g, '&quot;') + '">'
+          + window.READING_FONTS[k].label + '</option>';
+      }).join('');
+      sel.value = key;
+      document.getElementById('book-font-area').style.display = 'flex';
+    }
+    applyBookFont(key);
+  }
+  async function saveBookFont(key){
+    var prev = bookFont;
+    applyBookFont(key);
+    var r = await db.from('works').update({ default_font: key }).eq('id', workId);
+    if (r.error) {
+      applyBookFont(prev);
+      document.getElementById('book-font-select').value = prev;
+      showToast('Could not change the book font', 'ti-alert-triangle');
+      return;
+    }
+    if (workData) workData.default_font = key;
+    var label = (window.READING_FONTS[key] || {}).label || key;
+    showToast('Every chapter now uses ' + label, 'ti-typography');
+    checkMixedFonts();
+  }
+  // Text given a different font by hand stands out once the book has one.
+  // Offer to put it all back in one tap.
+  function checkMixedFonts(){
+    if (!quill) return;
+    var bar = document.getElementById('mixed-font-bar');
+    var mixed = !!quill.root.querySelector('[class*="ql-font-"]');
+    if (!mixed) { if (bar) bar.style.display = 'none'; return; }
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'mixed-font-bar';
+      bar.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px;padding:8px 12px;border-radius:9px;'
+        + 'border:1px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.07);font-size:12.5px;color:var(--text2);';
+      bar.innerHTML = '<i class="ti ti-typography" style="color:#f59e0b;"></i>'
+        + '<span style="flex:1;min-width:200px;">Some of this chapter is in a different font from the rest of the book.</span>'
+        + '<button type="button" class="btn-cancel" style="padding:5px 12px;font-size:12px;" onclick="useBookFontEverywhere()">'
+        + '<i class="ti ti-wand"></i> Use the book font everywhere</button>';
+      var tb = quill.getModule('toolbar').container;
+      tb.parentNode.insertBefore(bar, tb);
+    }
+    bar.style.display = 'flex';
+  }
+  function useBookFontEverywhere(){
+    if (!quill) return;
+    quill.formatText(0, quill.getLength(), 'font', false, Quill.sources.USER);
+    checkMixedFonts();
+    showToast('This chapter now uses the book font throughout (Ctrl+Z to undo)', 'ti-check');
   }
 
   function initEditor() {
@@ -4068,12 +4189,9 @@
     // Since Quill doesn't have a built-in tooltip blot, we use the link format as a carrier
     // and style it differently. Actually: simplest approach is to manually insert HTML via
     // clipboard module's dangerouslyPasteHTML at the range.
-    var selectedText = quill.getText(_tooltipSelection.index, _tooltipSelection.length);
-    var safeText = selectedText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    var safeTip = tipText.replace(/"/g,'&quot;').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-    var tooltipHTML = '<span class="ql-tooltip-term" data-tooltip="' + safeTip + '" title="' + safeTip + '">' + safeText + '</span>';
-    quill.deleteText(_tooltipSelection.index, _tooltipSelection.length, Quill.sources.USER);
-    quill.clipboard.dangerouslyPasteHTML(_tooltipSelection.index, tooltipHTML, Quill.sources.USER);
+    // A real format now (see TooltipBlot): the text stays exactly as typed
+    // and Quill handles the escaping.
+    quill.formatText(_tooltipSelection.index, _tooltipSelection.length, 'tooltip', tipText, Quill.sources.USER);
     closeTooltipModal();
     updateReadingStats();
     updateTooltipBtnBadge();
