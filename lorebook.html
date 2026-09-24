@@ -265,6 +265,12 @@
     .sg-foot{font-size:11px;color:var(--text3);margin:6px 0 8px;}
     .sg-note{color:var(--text3);font-weight:400;}
     .sg-where{background:rgba(255,255,255,0.02);}
+    .sg-dest{border-left:2px solid rgba(var(--accent-rgb),0.5);padding:4px 0 4px 10px;margin:6px 0 8px;}
+    .sg-path{font-size:12.5px;color:var(--text2);}
+    .sg-path i{color:var(--accent);}
+    .sg-path b{color:var(--text);}
+    .sg-add{font-size:13px;margin-top:2px;}
+    .sg-how{font-size:11.5px;color:var(--text3);margin-top:1px;}
     .sg-where .sg-v{font-weight:400;flex:1;min-width:240px;line-height:1.5;}
     .sg-quote{font-size:12px;color:var(--text2);margin:6px 0 2px;line-height:1.5;}
     .sg-quote i{color:var(--accent);}
@@ -2971,11 +2977,29 @@ function suggestHtml(f){
   var ci = contradictionInfo(f);
   if(ci) return disagreeHtml(f, ci);
   var kindWord = hit.card ? deckTitle(hit.card.kind) : deckTitle(hit.sg.kind);
+  // Each line names the exact spot on the card: card > section > question,
+  // and what happens there (filled in, added to a list, or added under an
+  // answer that is already there).
+  var destName = hit.card ? hit.card.name + '\u2019s card'
+    : 'New ' + String(kindWord).toLowerCase().replace(/s$/, '') + ' card';
   var lines = hit.sg.fields.map(function(fl){
     var def = FIELDS_BY_KEY[fl.key];
-    return '<div class="sg-line"><span class="sg-q">' + esc(def ? def.label : fl.key) + '</span>'
-      + '<span class="sg-v">' + esc(fl.value) + '</span>'
-      + (fl.chapter ? '<span class="sg-ch">from ch.' + esc(fl.chapter) + '</span>' : '')
+    var label = def ? def.label : fl.key;
+    var isList = def && (def.input_type === 'list' || def.input_type === 'pairs');
+    var have = hit.card ? cardValueText(hit.card, fl.key) : '';
+    // Must match what quickAddSuggestion actually does.
+    var onList = isList && have.toLowerCase().split(', ').indexOf(String(fl.value).toLowerCase()) >= 0;
+    var how = !have ? 'Empty now \u2014 one tap fills it in.'
+      : isList ? (onList ? 'Already on this list \u2014 nothing to add.' : 'Added to the end of this list; what is there stays.')
+      : sameAnswer(have, fl.value) ? 'Already says this.'
+      : 'Already answered (\u201c' + (have.length > 60 ? have.slice(0, 60) + '\u2026' : have) + '\u201d). One tap leaves your answer as it is; use Edit the card instead to change it.';
+    return '<div class="sg-dest">'
+      + '<div class="sg-path"><i class="ti ti-map-pin"></i> ' + esc(destName)
+      + (def && def.group_label ? ' \u203a ' + esc(def.group_label) : '')
+      + ' \u203a <b>' + esc(label) + '</b></div>'
+      + '<div class="sg-add"><span class="sg-v">' + esc(fl.value) + '</span>'
+      + (fl.chapter ? ' <span class="sg-ch">from ch.' + esc(fl.chapter) + '</span>' : '') + '</div>'
+      + '<div class="sg-how">' + esc(how) + '</div>'
       + '</div>';
   }).join('');
   if(hit.card && !hit.sg.fields.length) return '';
@@ -3001,7 +3025,7 @@ function suggestHtml(f){
     + '</div>'
     + (lines || '<div class="sg-foot" style="margin-top:0;">No answers yet \u2014 just the card, so you can fill it in later.</div>')
     + quoteHtml(f)
-    + '<div class="sg-foot">Each line shows the question it will answer. Add it in one tap, or open the card to change the wording first. '
+    + '<div class="sg-foot">The pin shows exactly where each line lands. Add it in one tap, or open the card to change the wording first. '
     + 'Anything you have already answered is left alone.</div>'
     + '<div class="finding-acts">'
     + '<button class="btn primary" onclick="quickAddSuggestion(\'' + esc(f.id) + '\')"><i class="ti ti-bolt"></i> '
