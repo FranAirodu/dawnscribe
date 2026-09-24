@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Lorekeeper report</title>
+  <script src="accessibilityPrefs.js"></script>
+  <meta name="robots" content="noindex,nofollow" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // Same gate as every other admin page. It is a courtesy, not the lock:
+    // the real lock is ds_admin_lorekeeper_report(), which refuses anyone
+    // not in `admins`.
+    document.documentElement.style.visibility = 'hidden';
+    window.__adminReady = (async function() {
+      window.db = window.supabase.createClient(
+        'https://cajjyyskpmjnpcxcfeuk.supabase.co',
+        'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx'
+      );
+      var session = null;
+      for (var i = 0; i < 5; i++) {
+        var r = await window.db.auth.getSession();
+        session = r.data.session;
+        if (session) break;
+        await new Promise(function(res) { setTimeout(res, 350); });
+      }
+      var adminRow = session ? await window.db.from('admins').select('id').eq('id', session.user.id).maybeSingle() : null;
+      if (!session || !adminRow || !adminRow.data) {
+        document.documentElement.style.visibility = '';
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</div>';
+        return false;
+      }
+      window.__me = session.user.id;
+      document.documentElement.style.visibility = '';
+      return true;
+    })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
+  <style>
+    :root {
+      --bg:#0a0a0f; --bg2:#12121a; --bg3:#1a1a26; --bg4:#22223a;
+      --accent:#2dd4bf; --accent2:#0d9488;
+      --text:#f1f0ff; --text2:#9b9bc0; --text3:#8a8aa8;
+      --border:rgba(255,255,255,0.07); --red:#f87171; --green:#34d399; --gold:#f59e0b;
+    }
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--border:rgba(0,0,0,0.10);--text:#0a0a0f;--text2:#3a3a5c;--text3:#5a5a76;--accent:#0a6b63;--accent2:#075e56;--red:#b01818;--green:#036b4e;--gold:#7d5205;}
+    html[data-theme="dim"]{--bg:#1c1c21;--bg2:#24242c;--bg3:#2c2c38;--bg4:#34344c;--border:rgba(255,255,255,0.12);--text2:#9b9bc0;--text3:#9e9eb4;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:var(--text);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .page{max-width:960px;margin:0 auto;padding:40px 24px 80px;}
+    .page-title{font-family:'Cinzel',serif;font-size:26px;font-weight:700;margin-bottom:6px;}
+    .page-sub{font-size:14px;color:var(--text3);margin-bottom:24px;max-width:640px;}
+
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px;}
+    select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Lato',sans-serif;font-size:13px;padding:8px 10px;}
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:26px;}
+    .stat{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;}
+    .stat-n{font-family:'Cinzel',serif;font-size:24px;font-weight:700;}
+    .stat-l{font-size:12px;color:var(--text3);}
+    h2{font-family:'Cinzel',serif;font-size:17px;margin:26px 0 6px;}
+    .hint{font-size:13px;color:var(--text3);margin-bottom:12px;max-width:720px;}
+    .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;}
+    table{width:100%;border-collapse:collapse;font-size:13.5px;}
+    th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+    th{color:var(--text3);font-weight:700;font-size:12px;background:var(--bg2);}
+    td.wrap{white-space:normal;}
+    tr:last-child td{border-bottom:none;}
+    .bar{height:7px;border-radius:4px;background:var(--bg4);min-width:90px;overflow:hidden;}
+    .bar > span{display:block;height:100%;background:var(--red);}
+    .bad{color:var(--red);font-weight:700;}
+    .ok{color:var(--green);}
+    .ex{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:10px;padding:10px 14px;margin-bottom:8px;}
+    .ex-msg{font-size:14px;}
+    .ex-meta{font-size:12px;color:var(--text3);margin-top:4px;}
+    .empty{color:var(--text3);font-size:14px;padding:20px;text-align:center;}
+    @media (prefers-reduced-motion:reduce){*{transition:none !important;}}
+  </style>
+</head>
+<body>
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" href="admin-stats.html"><i class="ti ti-arrow-left"></i> Admin</a>
+  </nav>
+
+  <div class="page">
+    <div class="page-title">Lorekeeper report</div>
+    <p class="page-sub">Where the beta reader goes wrong, across every author. Fix a pattern here once, in the reader's instructions, and every book gets better. Never try to fix one book at a time.</p>
+
+    <div class="toolbar">
+      <label for="days" style="font-size:13px;color:var(--text3);">Period</label>
+      <select id="days" onchange="load()">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last year</option>
+      </select>
+    </div>
+
+    <div id="out"><div class="empty"><i class="ti ti-loader"></i> Loading…</div></div>
+  </div>
+
+  <script>
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  var CODE_WORDS = {
+    contradiction: 'Contradiction', new_fact: 'New fact', loose_thread: 'Loose thread',
+    drift: 'Character drift', repeated_beat: 'Repeated beat'
+  };
+  function pct(a, b){ return b ? Math.round(100 * a / b) : 0; }
+  function barHtml(p){ return '<div class="bar"><span style="width:' + Math.min(100, p) + '%"></span></div>'; }
+
+  async function load(){
+    var ok = await window.__adminReady;
+    if(!ok) return;
+    var out = document.getElementById('out');
+    var days = Number(document.getElementById('days').value) || 30;
+    var res = await db.rpc('ds_admin_lorekeeper_report', { p_days: days });
+    if(res.error || !res.data || res.data.ok !== true){
+      out.innerHTML = '<div class="empty">' + esc((res.data && res.data.error) || (res.error && res.error.message) || 'Could not load') + '</div>';
+      return;
+    }
+    var d = res.data, r = d.reads || {};
+    var codes = d.by_code || [], fields = d.by_field || [], wrong = d.recent_wrong || [];
+    var answered = codes.reduce(function(n, c){ return n + c.wrong + c.kept; }, 0);
+    var wrongAll = codes.reduce(function(n, c){ return n + c.wrong; }, 0);
+
+    var html = '<div class="stats">'
+      + stat(r.total || 0, 'Reads') + stat(r.authors || 0, 'Authors using it')
+      + stat((r.words || 0).toLocaleString(), 'Words read (paid)') + stat(r.failed || 0, 'Failed reads (not charged)')
+      + stat(pct(wrongAll, answered) + '%', 'Marked wrong, of findings answered')
+      + '</div>';
+
+    html += '<h2>By kind of finding</h2>'
+      + '<p class="hint"><b>Wrong</b> = the author pressed <i>The check is wrong</i>. <b>Kept</b> = they filed it, fixed the chapter, or left it as part of the story. Skipped and unanswered are not counted either way.</p>'
+      + (codes.length ? '<div class="tbl-wrap"><table><tr><th>Kind</th><th>Total</th><th>Kept</th><th>Wrong</th><th>Wrong rate</th><th></th><th>Skipped</th><th>Open</th></tr>'
+        + codes.map(function(c){
+            var p = pct(c.wrong, c.wrong + c.kept);
+            return '<tr><td>' + esc(CODE_WORDS[c.code] || c.code) + '</td><td>' + c.total + '</td>'
+              + '<td class="ok">' + c.kept + '</td><td' + (c.wrong ? ' class="bad"' : '') + '>' + c.wrong + '</td>'
+              + '<td>' + p + '%</td><td>' + barHtml(p) + '</td><td>' + c.skipped + '</td><td>' + c.open + '</td></tr>';
+          }).join('') + '</table></div>'
+        : '<div class="empty">No findings in this period.</div>');
+
+    html += '<h2>By card question</h2>'
+      + '<p class="hint">Which question the reader was trying to answer. A question with a high wrong rate usually means the reader misunderstands what the question asks. The fix is a line in its instructions, like the one added for <i>Who they answer to</i>.</p>'
+      + (fields.length ? '<div class="tbl-wrap"><table><tr><th>Question</th><th>Total</th><th>Kept</th><th>Wrong</th><th>Wrong rate</th><th></th></tr>'
+        + fields.map(function(f){
+            var p = pct(f.wrong, f.wrong + f.kept);
+            return '<tr><td>' + esc(f.label) + ' <span style="color:var(--text3);font-size:11px;">' + esc(f.field) + '</span></td>'
+              + '<td>' + f.total + '</td><td class="ok">' + f.kept + '</td><td' + (f.wrong ? ' class="bad"' : '') + '>' + f.wrong + '</td>'
+              + '<td>' + p + '%</td><td>' + barHtml(p) + '</td></tr>';
+          }).join('') + '</table></div>'
+        : '<div class="empty">No suggestions in this period.</div>');
+
+    html += '<h2>Recently marked wrong</h2>'
+      + '<p class="hint">Read these for the pattern, not the book. These come from authors\u2019 private Lorebooks: use them only to improve the reader, never quote them anywhere.</p>'
+      + (wrong.length ? wrong.map(function(w){
+          return '<div class="ex"><div class="ex-msg">' + esc(w.message) + '</div>'
+            + '<div class="ex-meta">' + esc(CODE_WORDS[w.code] || w.code)
+            + (w.field ? ' \u00b7 ' + esc(w.field) + (w.value ? ': ' + esc(w.value) : '') : '')
+            + (w.at ? ' \u00b7 ' + esc(new Date(w.at).toLocaleDateString()) : '')
+            + (w.note ? '<br>Author: ' + esc(w.note) : '') + '</div></div>';
+        }).join('')
+        : '<div class="empty">Nothing marked wrong in this period.</div>');
+
+    out.innerHTML = html;
+  }
+  function stat(n, l){ return '<div class="stat"><div class="stat-n">' + esc(n) + '</div><div class="stat-l">' + esc(l) + '</div></div>'; }
+  load();
+  </script>
+</body>
+</html>
