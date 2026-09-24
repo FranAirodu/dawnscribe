@@ -264,6 +264,8 @@
     .sg-ch{color:var(--accent);font-size:11px;}
     .sg-foot{font-size:11px;color:var(--text3);margin:6px 0 8px;}
     .sg-note{color:var(--text3);font-weight:400;}
+    .sg-where{background:rgba(255,255,255,0.02);}
+    .sg-where .sg-v{font-weight:400;flex:1;min-width:240px;line-height:1.5;}
     .sg-quote{font-size:12px;color:var(--text2);margin:6px 0 2px;line-height:1.5;}
     .sg-quote i{color:var(--accent);}
     .sg-quote q{color:var(--text);font-style:italic;}
@@ -3517,6 +3519,36 @@ function pendingFindingBanner(){
     + '<b>Save card</b>. The finding is marked as handled for you.</div></div>';
 }
 
+/* Every finding says what kind it is and where (if anywhere) it will end
+   up. Findings with a suggestion already show the card and question; this
+   covers the rest, which are about the chapter itself and change no card
+   unless the author writes something in. */
+var FINDING_KINDS = {
+  contradiction: ['Contradiction', 'The chapter and a card say different things.'],
+  new_fact:      ['New fact', 'Something the chapter says that no card has yet.'],
+  loose_thread:  ['Loose thread', 'Something the story raised and has not resolved yet. Often fine, if it is answered later on purpose.'],
+  drift:         ['Out of character', 'A character acting against what their card says, with no reason shown.'],
+  repeated_beat: ['Repeated beat', 'Two moments doing the same job. Worth checking that one of them is not doing it twice.']
+};
+function whereHtml(f){
+  var k = FINDING_KINDS[f.code];
+  var c = findingCard(f);
+  return '<div class="sg sg-where">'
+    + '<div class="sg-h"><i class="ti ti-map-pin"></i> Where this goes</div>'
+    + (k ? '<div class="sg-line"><span class="sg-q">What it is</span><span class="sg-v">' + esc(k[0])
+         + ' <span class="sg-note">\u2014 ' + esc(k[1]) + '</span></span></div>' : '')
+    + '<div class="sg-line"><span class="sg-q">On a card</span><span class="sg-v">'
+    + (c ? 'Nothing is added to <b>' + esc(c.name) + '</b>\u2019s card by itself. <b>Edit ' + esc(c.name)
+           + '\u2019s card</b> opens it so you can write in what you want kept.'
+         : 'Nothing is added to any card by itself. <b>Put this on a card</b> lets you choose which one.')
+    + '</span></div>'
+    + '<div class="sg-line"><span class="sg-q">In the chapter</span><span class="sg-v">'
+    + 'Nothing changes. <b>I changed the chapter</b> marks it fixed once you have edited it; <b>Leave it</b> means it is meant to be that way.'
+    + '</span></div>'
+    + quoteHtml(f)
+    + '</div>';
+}
+
 function findingHtml(f){
   var card = f.card_id ? cardById(f.card_id) : null;
   var answered = f.status !== 'open';
@@ -3534,6 +3566,7 @@ function findingHtml(f){
     + '<div class="finding-meta">'
       + '<span><i class="ti ' + (f.source === 'ai' ? 'ti-eye' : 'ti-shield-check') + '"></i> '
         + (f.source === 'ai' ? 'Lorekeeper' : 'Card check') + '</span>'
+      + (FINDING_KINDS[f.code] ? '<span><i class="ti ti-tag"></i> ' + esc(FINDING_KINDS[f.code][0]) + '</span>' : '')
       + (card ? '<span><i class="ti ti-cards"></i> ' + esc(card.name) + '</span>' : '')
       + (answered ? '<span><i class="ti ti-check"></i> ' + statusWord + '</span>' : '')
     + '</div>'
@@ -3565,7 +3598,7 @@ function findingHtml(f){
           + '</div>')
     + (answered
         ? (f.status === 'fixing' ? quoteHtml(f) : '')
-        : (suggestHtml(f) || (clash ? disagreeHtml(f, clash) : quoteHtml(f))))
+        : (suggestHtml(f) || (clash ? disagreeHtml(f, clash) : whereHtml(f))))
     + '<div id="cnf-' + f.id + '"></div>'
     + '</div>';
 }
