@@ -3451,6 +3451,44 @@ function findingToCard(findingId, force){
 }
 // The finding rides along so it sits at the top of the editor while you work.
 var PENDING_FINDING = null;
+/* Ask the reader which questions on a card a finding answers, WITHOUT
+   opening the card, so the author sees "Goes to Ashner's card > What the
+   reader should believe..." before anything is filled in. Free; never writes. */
+var NO_FIT = {};
+async function fetchCardFit(findingId, cardId){
+  var sess = await db.auth.getSession();
+  var token = sess.data.session ? sess.data.session.access_token : null;
+  if(!token) return { error: 'Please sign in again' };
+  var resp = await fetch(SUPABASE_URL + '/functions/v1/lorekeeper-suggest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ finding_id: findingId, card_id: cardId })
+  });
+  var out = await resp.json();
+  if(out && out.ok && out.fields && out.fields.length){
+    for(var i=0;i<FINDINGS.length;i++){
+      if(FINDINGS[i].id === findingId){
+        FINDINGS[i].detail = FINDINGS[i].detail || {};
+        FINDINGS[i].detail.raw = FINDINGS[i].detail.raw || {};
+        FINDINGS[i].detail.raw.suggest = { card_id: cardId, fields: out.fields };
+      }
+    }
+    return { fields: out.fields };
+  }
+  return out && out.ok ? { fields: [] } : { error: (out && out.error) || 'Could not work it out' };
+}
+async function previewCardFit(findingId, cardId, btn){
+  if(btn){ btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Working it out\u2026'; }
+  try {
+    var r = await fetchCardFit(findingId, cardId);
+    if(r.error) toast(r.error, 'ti-info-circle', true);
+    else if(!r.fields.length) NO_FIT[findingId] = cardId;
+  } catch(e) { toast('Could not work it out', 'ti-x', true); }
+  render();
+  var el = document.getElementById('fnd-' + findingId);
+  if(el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
 async function openFindingOnCard(findingId, cardId){
   PENDING_FINDING = findingId;
   var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
@@ -3538,9 +3576,13 @@ function whereHtml(f){
     + (k ? '<div class="sg-line"><span class="sg-q">What it is</span><span class="sg-v">' + esc(k[0])
          + ' <span class="sg-note">\u2014 ' + esc(k[1]) + '</span></span></div>' : '')
     + '<div class="sg-line"><span class="sg-q">On a card</span><span class="sg-v">'
-    + (c ? 'Nothing is added to <b>' + esc(c.name) + '</b>\u2019s card by itself. <b>Edit ' + esc(c.name)
-           + '\u2019s card</b> opens it so you can write in what you want kept.'
-         : 'Nothing is added to any card by itself. <b>Put this on a card</b> lets you choose which one.')
+    + (c
+        ? (NO_FIT[f.id] === c.id
+            ? 'No question on <b>' + esc(c.name) + '</b>\u2019s card fits this one \u2014 it is a note about the chapter. '
+              + 'You can still open the card and write something yourself.'
+            : 'Not decided yet. <b>Where would this go?</b> shows which question on <b>' + esc(c.name)
+              + '</b>\u2019s card it would answer, before anything is written.')
+        : 'Nothing is added to any card by itself. <b>Put this on a card</b> lets you choose which one.')
     + '</span></div>'
     + '<div class="sg-line"><span class="sg-q">In the chapter</span><span class="sg-v">'
     + 'Nothing changes. <b>I changed the chapter</b> marks it fixed once you have edited it; <b>Leave it</b> means it is meant to be that way.'
@@ -3579,8 +3621,11 @@ function findingHtml(f){
               : (function(){
                   var c = findingCard(f);
                   return c
-                    ? '<button class="btn ghost" onclick="openFindingOnCard(\'' + f.id + '\', \'' + c.id + '\')">'
-                      + '<i class="ti ti-cards"></i> Edit ' + esc(c.name) + '\u2019s card</button>'
+                    ? (NO_FIT[f.id] === c.id
+                        ? '<button class="btn ghost" onclick="openCard(\'' + c.id + '\')">'
+                          + '<i class="ti ti-cards"></i> Open ' + esc(c.name) + '\u2019s card</button>'
+                        : '<button class="btn ghost" onclick="previewCardFit(\'' + f.id + '\', \'' + c.id + '\', this)">'
+                          + '<i class="ti ti-map-pin"></i> Where would this go?</button>')
                       + '<button class="btn ghost" onclick="findingToCard(\'' + f.id + '\')">Another card\u2026</button>'
                     : '<button class="btn ghost" onclick="findingToCard(\'' + f.id + '\')">'
                       + '<i class="ti ti-cards"></i> Put this on a card</button>';
