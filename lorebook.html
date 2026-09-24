@@ -262,6 +262,20 @@
     .sg-v{color:var(--text);font-weight:700;}
     .sg-ch{color:var(--accent);font-size:11px;}
     .sg-foot{font-size:11px;color:var(--text3);margin:6px 0 8px;}
+    .sg-note{color:var(--text3);font-weight:400;}
+    .sg-quote{font-size:12px;color:var(--text2);margin:6px 0 2px;line-height:1.5;}
+    .sg-quote i{color:var(--accent);}
+    .sg-quote q{color:var(--text);font-style:italic;}
+    .sg-copy{background:none;border:1px solid var(--border);border-radius:6px;color:var(--text3);cursor:pointer;padding:1px 6px;font-size:11px;}
+    .sg-copy:hover{color:var(--text);}
+    .sg-clash{background:rgba(248,113,113,0.06);border-color:rgba(248,113,113,0.35);}
+    .sg-clash .sg-h i{color:#f87171;}
+    .clash-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;}
+    .clash-btn{display:flex;flex-direction:column;gap:3px;text-align:left;padding:10px 12px;border-radius:10px;
+      border:1px solid var(--border);background:var(--surface,transparent);color:var(--text);cursor:pointer;font:inherit;}
+    .clash-btn:hover{border-color:var(--accent);}
+    .clash-t{font-weight:700;font-size:13px;}
+    .clash-s{font-size:11.5px;color:var(--text3);line-height:1.45;}
     .f.suggested{background:rgba(var(--accent-rgb),0.06);border-radius:10px;padding:8px 10px;margin:-8px -10px;}
     /* Five-second flash on a question that was just filled in. The resting
        .suggested tint stays until the card is saved; this is louder and brief. */
@@ -2694,7 +2708,8 @@ async function deleteRelation(){
 function renderChecks(){
   var body = document.getElementById('view-body');
   var open = FINDINGS.filter(function(f){ return f.status === 'open'; });
-  var answered = FINDINGS.filter(function(f){ return f.status !== 'open'; });
+  var fixing = FINDINGS.filter(function(f){ return f.status === 'fixing'; });
+  var answered = FINDINGS.filter(function(f){ return f.status !== 'open' && f.status !== 'fixing'; });
 
   var intro =
     '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">'
@@ -2733,6 +2748,13 @@ function renderChecks(){
 
   body.innerHTML = intro + pitch
     + open.map(findingHtml).join('')
+    + (fixing.length
+        ? '<div class="grp"><div class="grp-h">To fix in your chapters'
+          + '<span class="gcount">' + fixing.length + '</span></div>'
+          + '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">These clear themselves the next time '
+          + 'Lorekeeper reads the chapter. If the mistake is still there, it is raised again.</div>'
+          + fixing.map(findingHtml).join('') + '</div>'
+        : '')
     + (answered.length
         ? '<div class="grp"><div class="grp-h">Already answered'
           + '<span class="gcount">' + answered.length + '</span></div>'
@@ -2743,13 +2765,136 @@ function renderChecks(){
 function findingSuggest(f){
   var sg = f && f.detail && f.detail.raw ? f.detail.raw.suggest : null;
   if(!sg || !Array.isArray(sg.fields) || !sg.fields.length) return null;
-  var card = sg.card_id ? cardById(sg.card_id) : (f.card_id ? cardById(f.card_id) : null);
+  // Where the facts go is the SUGGESTION's card, never the finding's. A fact
+  // about Melissa can surface in a line of Ashner's thoughts; the finding is
+  // filed under Ashner, but the facts belong to Melissa. A suggestion with no
+  // card but a name means "this subject", found by name or made new.
+  var card = null;
+  if(sg.card_id) card = cardById(sg.card_id);
+  else if(sg.name && sg.kind) card = cardByName(sg.name, sg.kind);
+  else if(f.card_id) card = cardById(f.card_id);
   if(!card && !(sg.name && sg.kind)) return null;
   return { sg: sg, card: card };
 }
+/* ── Card vs chapter ────────────────────────────────────────────────
+   When the chapter and a card disagree, neither side is assumed right.
+   The author picks: fix the chapter (the notice stays as a to-do until the
+   chapter is read again), or take the chapter's word and update the card. */
+function chapterNumOf(f){
+  var c = f && f.chapter_id ? CHAPTERS.filter(function(x){ return x.id === f.chapter_id; })[0] : null;
+  return c ? c.chapter_number : null;
+}
+function findingQuote(f){
+  var q = f && f.detail && f.detail.raw ? f.detail.raw.quote : null;
+  return q && String(q).trim() ? String(q).trim() : '';
+}
+function cardValueText(card, key){
+  var cur = (card && card.data || {})[key];
+  if(!cur || cur.v == null) return '';
+  if(Array.isArray(cur.v)){
+    return cur.v.map(function(x){ return Array.isArray(x) ? (x[0] || '') : String(x); })
+      .filter(function(x){ return String(x).trim(); }).join(', ');
+  }
+  return String(cur.v).trim();
+}
+function sameAnswer(a, b){
+  var n = function(x){ return String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+  return n(a) === n(b);
+}
+function contradictionInfo(f){
+  if(!f) return null;
+  // Card checks hand over the field and the chapter's value directly.
+  if(f.source !== 'ai' && f.detail && f.detail.field && f.detail.text_value && f.card_id){
+    var c0 = cardById(f.card_id);
+    if(!c0) return null;
+    var d0 = FIELDS_BY_KEY[f.detail.field];
+    return { card: c0, key: f.detail.field, label: d0 ? d0.label : f.detail.field,
+             list: !!(d0 && (d0.input_type === 'list' || d0.input_type === 'pairs')),
+             cardVal: cardValueText(c0, f.detail.field), chapVal: String(f.detail.text_value) };
+  }
+  var hit = findingSuggest(f);
+  if(!hit || !hit.card) return null;
+  for(var i = 0; i < hit.sg.fields.length; i++){
+    var fl = hit.sg.fields[i];
+    var def = (FIELDS[hit.card.kind] || []).filter(function(x){ return x.field_key === fl.key; })[0];
+    if(!def) continue;
+    var isList = def.input_type === 'list' || def.input_type === 'pairs';
+    var have = cardValueText(hit.card, fl.key);
+    if(!have || sameAnswer(have, fl.value)) continue;
+    // A list gaining a new item is a new fact, not a disagreement, unless
+    // the reader called it a contradiction.
+    if(isList && f.code !== 'contradiction') continue;
+    return { card: hit.card, key: fl.key, label: def.label, list: isList,
+             cardVal: have, chapVal: fl.value };
+  }
+  return null;
+}
+function quoteHtml(f){
+  var q = findingQuote(f);
+  if(!q) return '';
+  var n = chapterNumOf(f);
+  return '<div class="sg-quote"><i class="ti ti-search"></i> '
+    + (n ? 'Find it in chapter ' + esc(n) + ': ' : 'Find it: ')
+    + '<q>' + esc(q) + '</q>'
+    + ' <button class="sg-copy" title="Copy, then paste into your editor\u2019s search" '
+    + 'onclick="copyQuote(\'' + esc(f.id) + '\')"><i class="ti ti-copy"></i></button></div>';
+}
+function copyQuote(id){
+  var f = FINDINGS.filter(function(x){ return x.id === id; })[0];
+  var q = findingQuote(f);
+  if(!q) return;
+  try { navigator.clipboard.writeText(q).then(function(){ toast('Copied \u2014 paste it into your editor\u2019s search'); }); }
+  catch(e) { toast('Could not copy', 'ti-x', true); }
+}
+function disagreeHtml(f, ci){
+  var n = chapterNumOf(f);
+  var chWord = n ? 'chapter ' + n : 'the chapter';
+  return '<div class="sg sg-clash">'
+    + '<div class="sg-h"><i class="ti ti-arrows-diff"></i> '
+    + 'Card and ' + esc(chWord) + ' disagree \u2014 <b>' + esc(ci.card.name) + '</b> \u203a ' + esc(ci.label) + '</div>'
+    + '<div class="sg-line"><span class="sg-q">The card says</span><span class="sg-v">' + esc(ci.cardVal) + '</span></div>'
+    + '<div class="sg-line"><span class="sg-q">' + esc(n ? 'Chapter ' + n : 'The chapter') + ' says</span>'
+    + '<span class="sg-v">' + esc(ci.chapVal) + '</span></div>'
+    + quoteHtml(f)
+    + '<div class="sg-foot">Which one is right?</div>'
+    + '<div class="clash-choices">'
+    + '<button class="clash-btn" onclick="respond(\'' + esc(f.id) + '\',\'fixing\')">'
+    +   '<span class="clash-t"><i class="ti ti-pencil"></i> The card is right</span>'
+    +   '<span class="clash-s">I\u2019ll fix ' + esc(chWord) + '. This stays on your list until '
+    +   esc(chWord) + ' is read again.</span></button>'
+    + '<button class="clash-btn" onclick="takeChapterValue(\'' + esc(f.id) + '\')">'
+    +   '<span class="clash-t"><i class="ti ti-arrow-back-up"></i> The chapter is right</span>'
+    +   '<span class="clash-s">' + esc(ci.card.name) + ' \u203a ' + esc(ci.label) + ': '
+    +   esc(ci.cardVal) + ' \u2192 ' + esc(ci.chapVal)
+    +   (ci.list ? ' (opens the card so you can check the list)' : '') + '</span></button>'
+    + '</div></div>';
+}
+async function takeChapterValue(findingId){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  var ci = contradictionInfo(f);
+  if(!ci) return;
+  // A list is edited by hand: which item the new answer replaces is the
+  // author's call, not a guess.
+  if(ci.list) return openFindingOnCard(findingId, ci.card.id);
+  var card = ci.card;
+  var prevData = JSON.parse(JSON.stringify(card.data || {}));
+  var prevStatus = f.status;
+  var data = JSON.parse(JSON.stringify(card.data || {}));
+  data[ci.key] = Object.assign({}, data[ci.key] || {}, { v: ci.chapVal });
+  var res = await db.from('lore_cards').update({ data: data }).eq('id', card.id).select().maybeSingle();
+  if(res.error || !res.data){ toast(res.error ? res.error.message : 'Could not save that', 'ti-x', true); return; }
+  for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === card.id) CARDS[i] = res.data;
+  try { await respond(findingId, 'resolve', true); } catch(e) {}
+  toast(card.name + ' \u2014 ' + ci.label + ' is now ' + ci.chapVal, 'ti-check', false,
+    function(){ return undoCardWrite(card.id, prevData, findingId, prevStatus); });
+  render();
+}
+
 function suggestHtml(f){
   var hit = findingSuggest(f);
   if(!hit) return '';
+  var ci = contradictionInfo(f);
+  if(ci) return disagreeHtml(f, ci);
   var kindWord = hit.card ? deckTitle(hit.card.kind) : deckTitle(hit.sg.kind);
   var lines = hit.sg.fields.map(function(fl){
     var def = FIELDS_BY_KEY[fl.key];
@@ -2771,11 +2916,13 @@ function suggestHtml(f){
   return '<div class="sg">'
     + '<div class="sg-h"><i class="ti ti-wand"></i> '
     + (hit.card
-        ? 'Ready to add to <b>' + esc(hit.card.name) + '</b>'
-        : 'Ready to make a new ' + esc(String(kindWord).toLowerCase().replace(/s$/, '')) + ' card: <b>' + esc(hit.sg.name) + '</b>')
+        ? 'Goes to <b>' + esc(hit.card.name) + '</b>\u2019s card'
+          + (hit.card.id !== f.card_id && f.card_id ? ' <span class="sg-note">(not ' + esc((cardById(f.card_id) || {}).name || 'the card above') + '\u2019s)</span>' : '')
+        : 'Goes on a <b>new ' + esc(String(kindWord).toLowerCase().replace(/s$/, '')) + ' card: ' + esc(hit.sg.name) + '</b>')
     + '</div>'
     + lines
-    + '<div class="sg-foot">Add it in one tap, or open the card to change the wording first. '
+    + quoteHtml(f)
+    + '<div class="sg-foot">Each line shows the question it will answer. Add it in one tap, or open the card to change the wording first. '
     + 'Anything you have already answered is left alone.</div>'
     + '<div class="finding-acts">'
     + '<button class="btn primary" onclick="quickAddSuggestion(\'' + esc(f.id) + '\')"><i class="ti ti-bolt"></i> '
@@ -3193,8 +3340,10 @@ function findingHtml(f){
     ignored_once: 'ignored here',
     accepted: 'part of the story now',
     dismissed: 'check switched off',
-    resolved: 'fixed'
+    resolved: 'fixed',
+    fixing: 'you are fixing ' + (chapterNumOf(f) ? 'chapter ' + chapterNumOf(f) : 'the chapter')
   }[f.status];
+  var clash = !answered && contradictionInfo(f);
 
   return '<div class="finding' + (f.source === 'ai' ? ' ai' : '') + (answered ? ' answered' : '') + '" id="fnd-' + f.id + '">'
     + '<div class="finding-msg">' + esc(f.message) + '</div>'
@@ -3219,18 +3368,20 @@ function findingHtml(f){
                     : '<button class="btn ghost" onclick="findingToCard(\'' + f.id + '\')">'
                       + '<i class="ti ti-cards"></i> Put this on a card</button>';
                 })())
-          + ((f.card_id && ((f.detail && f.detail.field && f.detail.text_value) || !findingSuggest(f)))
+          + ((!clash && f.card_id && ((f.detail && f.detail.field && f.detail.text_value) || !findingSuggest(f)))
               ? '<button class="btn ghost" onclick="acceptChapterValue(\'' + f.id + '\')">'
                 + '<i class="ti ti-arrow-back-up"></i> This is true \u2014 update the card</button>'
               : '')
-          + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'resolve\')">'
-          + '<i class="ti ti-check"></i> I changed the chapter</button>'
+          + (clash ? '' : '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'resolve\')">'
+          + '<i class="ti ti-check"></i> I changed the chapter</button>')
           + '<button class="btn ghost" onclick="respond(\'' + f.id + '\',\'ignore_once\')">Skip for now</button>'
           + '<button class="btn ghost" title="Nothing is written to a card \u2014 this only stops the reader raising it again" '
           + 'onclick="respond(\'' + f.id + '\',\'accept\')">Leave it \u2014 stop asking</button>'
           + '<button class="btn danger" onclick="dismissAsk(\'' + f.id + '\')">The check is wrong</button>'
           + '</div>')
-    + (answered ? '' : suggestHtml(f))
+    + (answered
+        ? (f.status === 'fixing' ? quoteHtml(f) : '')
+        : (suggestHtml(f) || (clash ? disagreeHtml(f, clash) : quoteHtml(f))))
     + '<div id="cnf-' + f.id + '"></div>'
     + '</div>';
 }
@@ -3319,8 +3470,8 @@ function renderReader(){
             + '50 chapter reads or 150,000 words, whichever you use up first. It never expires.')
     + '</div>'
     + '<div style="font-size:12px;color:var(--text3);margin-top:7px;line-height:1.55;">'
-    +   'A chapter you edit and come back to later counts as another read. Re-reading the same '
-    +   'text is always free, and so is anything you read again within a week.'
+    +   'Every read of a chapter costs one read, including after you edit it. '
+    +   'Reading the exact same text again is free, because nothing changed and the findings on file still stand.'
     + '</div>'
     + '<div class="finding-meta"><span><i class="ti ti-infinity"></i> Blocks never expire</span>'
     +   (CREDIT && CREDIT.lifetime_blocks
@@ -3348,8 +3499,8 @@ function renderReader(){
       ? (q.ok === false
           ? esc(q.error || 'Cannot read this one')
           : (q.free ? 'Free \u2014 ' + (q.reason === 'already_read'
-                        ? 'already read, findings are still on file'
-                        : 'read this week')
+                        ? 'unchanged since the last read, findings are still on file'
+                        : 'nothing changed')
                     : q.words.toLocaleString() + ' words of your block'))
       : (c.word_count ? Number(c.word_count).toLocaleString() + ' words' : '');
 
@@ -3395,8 +3546,8 @@ function renderReader(){
     + '<div class="grp"><div class="grp-h">Your chapters'
     + '<span class="gcount">' + CHAPTERS.length + '</span></div>'
     + '<div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;line-height:1.6;">'
-    + 'A chapter you have already had read is free to read again \u2014 and if nothing in it changed, '
-    + 'the reader is not even asked, because the findings on file are still right.'
+    + 'Each read costs one read from your block. After you edit a chapter, reading it again is a new read. '
+    + 'If nothing in it changed, it is free: the reader is not asked, because the findings on file are still right.'
     + '</div>' + rows + '</div>';
 }
 
@@ -3763,6 +3914,7 @@ async function respond(id, action, quiet){
     toast({
       open: 'Back in the queue',
       resolved: 'Marked fixed',
+      fixing: 'On your list \u2014 it clears when the chapter is read again',
       ignored_once: 'Ignored here only',
       accepted: 'Left as is \u2014 it will not be raised again',
       dismissed: 'Check switched off'
