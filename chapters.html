@@ -126,6 +126,8 @@
     .chapter-edit-btn{background:none;border:1px solid var(--accent);border-radius:7px;padding:4px 10px;color:var(--accent);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;display:none;align-items:center;gap:4px;flex-shrink:0;pointer-events:none;}
     /* The whole row opens the chapter; this pill only marks the open one. */
     .chapter-edit-btn.active-edit{display:flex;}
+    /* Brief dim while a chapter loads, so a click visibly registered. */
+    #editor-panel.ch-loading .ql-editor, #editor-panel.ch-loading #chapter-title-input{opacity:0.45;transition:opacity 0.15s;}
     .chapter-row[role=button]{cursor:pointer;}
     .chapter-row[role=button]:hover{border-color:rgba(var(--accent-rgb),0.45);}
     .chapter-row[role=button]:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
@@ -1131,6 +1133,10 @@
     if (hasUnsavedChanges()) { e.preventDefault(); e.returnValue = ''; }
   });
 
+  // Every open gets a number. If the author clicks another chapter before
+  // this one has loaded, the older load stops instead of painting over the
+  // newer one (which is how Ch.3 could end up showing Ch.2's title).
+  var _openSeq = 0;
   async function setModeEdit(chapterId, btn, row) {
     // If already editing (or writing a new chapter) with unsaved changes, warn first
     if (editingChapterId !== chapterId) {
@@ -1145,26 +1151,43 @@
         // 'discard' falls through
       }
     }
+    var mySeq = ++_openSeq;
     // Highlight active row
     document.querySelectorAll('.chapter-row').forEach(function(r){ r.classList.remove('active'); });
     document.querySelectorAll('.chapter-edit-btn').forEach(function(b){ b.classList.remove('active-edit'); });
     row.classList.add('active');
     btn.classList.add('active-edit');
+    var panel = document.getElementById('editor-panel');
+    if (panel) panel.classList.add('ch-loading');
 
-    // Load chapter content
+    // Everything this chapter needs is asked for AT ONCE. These used to go
+    // one after another (six round trips, ~0.8s); in parallel it is roughly
+    // the time of the slowest one.
     // 'content' is no longer readable from the column — fetch it via the RPC.
-    var res = await db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections,free_at,ea_quill_price').eq('id', chapterId).maybeSingle();
-    if (!res.data) { showToast('Could not load chapter', 'ti-alert-triangle'); return; }
+    var chP = db.from('chapters').select('id,created_at,work_id,author_id,title,chapter_number,word_count,status,updated_at,author_note_top,author_note_bottom,scheduled_for,font,comments_open,published_at,allow_corrections,free_at,ea_quill_price').eq('id', chapterId).maybeSingle();
+    var contentP = Promise.resolve(db.rpc('get_chapter_content', { p_chapter_id: chapterId })).catch(function(){ return null; });
+    var pollsP = Promise.resolve(db.from('chapter_polls').select('*').eq('chapter_id', chapterId)).catch(function(){ return { data: [] }; });
+    var worksP = Promise.resolve(db.from('works').select('allow_polls').eq('id', workId).maybeSingle()).catch(function(){ return {}; });
+    var both = await Promise.all([chP, contentP]);
+    if (mySeq !== _openSeq) return;          // a newer chapter was clicked
+    if (panel) panel.classList.remove('ch-loading');
+    var res = both[0];
+    if (!res || !res.data) { showToast('Could not load chapter', 'ti-alert-triangle'); return; }
     var ch = res.data;
-    try {
-      var _cRes = await db.rpc('get_chapter_content', { p_chapter_id: chapterId });
-      ch.content = (_cRes && _cRes.data) ? _cRes.data : '';
-    } catch(e) { ch.content = ''; }
+    var _cRes = both[1];
+    ch.content = (_cRes && _cRes.data) ? _cRes.data : '';
 
     editingChapterId = chapterId;
     currentChapterStatus = ch.status || 'published';
     document.getElementById('chapter-title-input').value = ch.title || '';
-    if (quill) quill.root.innerHTML = ch.content || '';
+    if (quill) {
+      quill.root.innerHTML = ch.content || '';
+      // Quill reads the new HTML on its NEXT tick. Without this, getText()
+      // below still returned the PREVIOUS chapter's text, so every chapter
+      // looked "changed" the moment it opened: the switch warning, the
+      // "unsaved work (just now)" banner, and a pointless autosave.
+      quill.update(Quill.sources.SILENT);
+    }
     var w = quill ? quill.getText().trim().split(/\s+/).filter(Boolean).length : 0;
     document.getElementById('word-count').textContent = w;
     originalTitle = ch.title || '';
@@ -1187,8 +1210,9 @@
     // Disable poll button if author has disabled polls for this work
     (async function() {
       try {
-        var _wRes = await db.from('works').select('allow_polls').eq('id', workId).maybeSingle();
-        if (_wRes.data && _wRes.data.allow_polls === false) {
+        var _wRes = await worksP;
+        if (mySeq !== _openSeq) return;
+        if (_wRes && _wRes.data && _wRes.data.allow_polls === false) {
           document.getElementById('poll-btn').disabled = true;
           document.getElementById('poll-btn').title = 'Polls are disabled for this story (toggle on the story page)';
         }
@@ -1231,8 +1255,9 @@
     updateNavArrows();
 
     // ── Active polls ──
-    var { data: polls } = await db.from('chapter_polls').select('*').eq('chapter_id', chapterId);
-    activePolls = polls || [];
+    var _pRes = await pollsP;
+    if (mySeq !== _openSeq) return;
+    activePolls = (_pRes && _pRes.data) || [];
     renderActivePolls();
 
     // ── Reading stats / word goal ──
@@ -1279,6 +1304,7 @@
 
     // Load character manager for this chapter
     await ctInit(workId, chapterId);
+    if (mySeq !== _openSeq) return;
 
     // Offer crash-recovery backup if one is newer than the last save
     checkForBackup(ch.updated_at || ch.created_at);
@@ -3763,6 +3789,7 @@
       // If this is the currently-open chapter in the editor, reload it
       if (m.chapterId === editingChapterId && quill) {
         quill.root.innerHTML = newContent;
+        quill.update(Quill.sources.SILENT);
         originalHTML = newContent;
         originalText = quill.getText().trim();
         updateReadingStats();
