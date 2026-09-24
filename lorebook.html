@@ -254,7 +254,8 @@
     .note-pin-tip{font-size:11.5px;color:var(--text2);margin-top:6px;line-height:1.55;}
     .note-pin-tip b{color:var(--text);}
     .sg{background:rgba(var(--accent-rgb),0.07);border:1px solid rgba(var(--accent-rgb),0.3);border-radius:10px;padding:10px 12px;margin-top:10px;}
-    .sg-h{font-size:12.5px;color:var(--text2);margin-bottom:7px;display:flex;align-items:center;gap:6px;}
+    .sg-h{font-size:12.5px;color:var(--text2);margin-bottom:7px;line-height:1.5;}
+    .sg-h > i:first-child{margin-right:5px;vertical-align:-1px;}
     .sg-h i{color:var(--accent);}
     .sg-h b{color:var(--text);}
     .sg-line{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px;padding:3px 0;}
@@ -270,7 +271,8 @@
     .sg-copy:hover{color:var(--text);}
     .sg-clash{background:rgba(248,113,113,0.06);border-color:rgba(248,113,113,0.35);}
     .sg-clash .sg-h i{color:#f87171;}
-    .clash-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;}
+    .clash-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;}
+    .name-in{flex:1;min-width:200px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg,transparent);color:var(--text);font:inherit;}
     .clash-btn{display:flex;flex-direction:column;gap:3px;text-align:left;padding:10px 12px;border-radius:10px;
       border:1px solid var(--border);background:var(--surface,transparent);color:var(--text);cursor:pointer;font:inherit;}
     .clash-btn:hover{border-color:var(--accent);}
@@ -2764,7 +2766,17 @@ function renderChecks(){
 
 function findingSuggest(f){
   var sg = f && f.detail && f.detail.raw ? f.detail.raw.suggest : null;
-  if(!sg || !Array.isArray(sg.fields) || !sg.fields.length) return null;
+  if(!sg) return null;
+  if(!Array.isArray(sg.fields)) sg.fields = [];
+  // Older reads sometimes wrote notes to themselves into the answer
+  // ("Doctor (as stated in chapter 1)"). Only the fact goes on a card.
+  sg.fields.forEach(function(fl){
+    if(fl && typeof fl.value === 'string'){
+      fl.value = fl.value.replace(/\s*\((?:as |per |implied|inferred|stated|mentioned|from ch|contradicts|according|see )[^)]*\)/gi, '').trim() || fl.value;
+    }
+  });
+  // No answers is fine only for "this named subject needs a card" (Jean).
+  if(!sg.fields.length && (sg.card_id || !(sg.name && sg.kind))) return null;
   // Where the facts go is the SUGGESTION's card, never the finding's. A fact
   // about Melissa can surface in a line of Ashner's thoughts; the finding is
   // filed under Ashner, but the facts belong to Melissa. A suggestion with no
@@ -2856,18 +2868,66 @@ function disagreeHtml(f, ci){
     + '<div class="sg-line"><span class="sg-q">' + esc(n ? 'Chapter ' + n : 'The chapter') + ' says</span>'
     + '<span class="sg-v">' + esc(ci.chapVal) + '</span></div>'
     + quoteHtml(f)
-    + '<div class="sg-foot">Which one is right?</div>'
+    + '<div class="sg-foot">Old facts = what the card says now. New facts = what the chapter says.</div>'
     + '<div class="clash-choices">'
-    + '<button class="clash-btn" onclick="respond(\'' + esc(f.id) + '\',\'fixing\')">'
-    +   '<span class="clash-t"><i class="ti ti-pencil"></i> The card is right</span>'
-    +   '<span class="clash-s">I\u2019ll fix ' + esc(chWord) + '. This stays on your list until '
-    +   esc(chWord) + ' is read again.</span></button>'
+    + '<button class="clash-btn" onclick="keepOldFacts(\'' + esc(f.id) + '\')">'
+    +   '<span class="clash-t"><i class="ti ti-history"></i> Old facts are right</span>'
+    +   '<span class="clash-s">Keep \u201c' + esc(ci.cardVal) + '\u201d. I\u2019ll fix ' + esc(chWord)
+    +   ' \u2014 a note goes in your Notes so you can find the line and change it.</span></button>'
     + '<button class="clash-btn" onclick="takeChapterValue(\'' + esc(f.id) + '\')">'
-    +   '<span class="clash-t"><i class="ti ti-arrow-back-up"></i> The chapter is right</span>'
+    +   '<span class="clash-t"><i class="ti ti-sparkles"></i> New facts are right</span>'
     +   '<span class="clash-s">' + esc(ci.card.name) + ' \u203a ' + esc(ci.label) + ': '
     +   esc(ci.cardVal) + ' \u2192 ' + esc(ci.chapVal)
     +   (ci.list ? ' (opens the card so you can check the list)' : '') + '</span></button>'
+    + '<button class="clash-btn" onclick="keepBothValues(\'' + esc(f.id) + '\')">'
+    +   '<span class="clash-t"><i class="ti ti-arrows-join"></i> Both are right</span>'
+    +   '<span class="clash-s">They can both be true. Opens ' + esc(ci.card.name)
+    +   '\u2019s card with the new fact added next to the old one, for you to word and save.</span></button>'
     + '</div></div>';
+}
+/* Old facts right: the chapter has the mistake. The finding waits under "To
+   fix in your chapters" until the chapter is read again, and a note with the
+   exact line goes in Notes, which is where the author works through edits. */
+async function keepOldFacts(findingId){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  var ci = contradictionInfo(f);
+  if(!f) return;
+  var n = chapterNumOf(f);
+  var q = findingQuote(f);
+  var body = (n ? 'Fix in chapter ' + n : 'Fix in the chapter')
+    + (q ? ': \u201c' + q + '\u201d' : '')
+    + (ci ? '\nIt says ' + ci.chapVal + ', but ' + ci.card.name + '\u2019s card says ' + ci.cardVal
+            + ' (' + ci.label + '). The card is right.' : '\n' + f.message);
+  var ins = await db.from('lore_notes').insert({
+    work_id: workId, author_id: uid, chapter_id: f.chapter_id || null, body: body.slice(0, 4000)
+  }).select().maybeSingle();
+  if(ins.data) NOTES.unshift(ins.data);
+  await respond(findingId, 'fixing', true);
+  toast(ins.error ? 'On your fix list (the note could not be saved)' : 'On your fix list, and a note is in Notes',
+    ins.error ? 'ti-alert-triangle' : 'ti-check', !!ins.error,
+    function(){
+      var undo = [respond(findingId, 'reopen', true)];
+      if(ins.data){
+        NOTES = NOTES.filter(function(x){ return x.id !== ins.data.id; });
+        undo.push(db.from('lore_notes').delete().eq('id', ins.data.id));
+      }
+      return Promise.all(undo).then(render);
+    });
+  render();
+}
+
+// Both true: nothing is overwritten. The card opens with the chapter's fact
+// added beside the old one (prose answers get a new line, lists a new item)
+// and the author words it and saves.
+function keepBothValues(findingId){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  var ci = contradictionInfo(f);
+  if(!ci) return;
+  var n = chapterNumOf(f);
+  PENDING_FILL = { fields: [{ key: ci.key, value: ci.chapVal, chapter: n }], finding_id: findingId };
+  FILL_FINDING = findingId;
+  PENDING_FINDING = findingId;
+  openCard(ci.card.id);
 }
 async function takeChapterValue(findingId){
   var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
@@ -2903,6 +2963,7 @@ function suggestHtml(f){
       + (fl.chapter ? '<span class="sg-ch">from ch.' + esc(fl.chapter) + '</span>' : '')
       + '</div>';
   }).join('');
+  if(hit.card && !hit.sg.fields.length) return '';
   var nAdd = suggestWouldAdd(hit);
   if(nAdd === 0){
     // Already on the card. Offering to add it again only leads to a dead end
@@ -2918,9 +2979,12 @@ function suggestHtml(f){
     + (hit.card
         ? 'Goes to <b>' + esc(hit.card.name) + '</b>\u2019s card'
           + (hit.card.id !== f.card_id && f.card_id ? ' <span class="sg-note">(not ' + esc((cardById(f.card_id) || {}).name || 'the card above') + '\u2019s)</span>' : '')
-        : 'Goes on a <b>new ' + esc(String(kindWord).toLowerCase().replace(/s$/, '')) + ' card: ' + esc(hit.sg.name) + '</b>')
+        : 'Goes on a <b>new ' + esc(String(kindWord).toLowerCase().replace(/s$/, '')) + ' card: '
+          + esc(looksUnnamed(hit.sg.name) ? 'you name it' : hit.sg.name) + '</b>'
+          + (similarCards(hit.sg.name, hit.sg.kind).length
+              ? ' <span class="sg-note">\u2014 or one you already have? You will be asked.</span>' : ''))
     + '</div>'
-    + lines
+    + (lines || '<div class="sg-foot" style="margin-top:0;">No answers yet \u2014 just the card, so you can fill it in later.</div>')
     + quoteHtml(f)
     + '<div class="sg-foot">Each line shows the question it will answer. Add it in one tap, or open the card to change the wording first. '
     + 'Anything you have already answered is left alone.</div>'
@@ -2930,7 +2994,8 @@ function suggestHtml(f){
     // suggestion. It used to read only "Add to X's card", so the two looked
     // like different things and this one looked like a missing option.
     + (hit.card ? 'This is true \u2014 add to ' + esc(hit.card.name) + '\u2019s card'
-                : 'This is true \u2014 make the card') + '</button>'
+                : (hit.sg.fields.length ? 'This is true \u2014 make the card' : 'Make a card for '
+                   + esc(looksUnnamed(hit.sg.name) ? 'them' : hit.sg.name))) + '</button>'
     + '<button class="btn ghost" onclick="applySuggestion(\'' + esc(f.id) + '\')">'
     + '<i class="ti ti-pencil"></i> Edit the card instead</button>'
     + (hit.card
@@ -2951,6 +3016,36 @@ function cardByName(name, kind){
     return String(c.name || '').trim().toLowerCase() === n && (!kind || c.kind === kind);
   })[0] || null;
 }
+/* Authors write "Melissa" in one chapter and "Melissa Raven" in the next.
+   Cards that share a name word with the new name are probably the same
+   subject, but only the author knows, so they are asked, never guessed. */
+function nameWords(n){
+  return String(n || '').toLowerCase().replace(/[^a-z0-9\u00c0-\u024f' ]+/g, ' ')
+    .split(/\s+/).filter(function(w){ return w.length > 1 && ['the','a','an','of','de','van','von'].indexOf(w) < 0; });
+}
+function similarCards(name, kind){
+  var mine = nameWords(name);
+  if(!mine.length) return [];
+  var exact = String(name).trim().toLowerCase();
+  return CARDS.filter(function(c){
+    if(kind && c.kind !== kind) return false;
+    if(String(c.name || '').trim().toLowerCase() === exact) return false;
+    var theirs = nameWords(c.name);
+    if(!theirs.length) return false;
+    var short = mine.length <= theirs.length ? mine : theirs;
+    var long  = mine.length <= theirs.length ? theirs : mine;
+    return short.every(function(w){ return long.indexOf(w) >= 0; });
+  });
+}
+// A name the reader made up to describe someone ("Ensley's large
+// accomplice") is not a name. The author is asked for the real one.
+function looksUnnamed(n){
+  n = String(n || '').trim();
+  if(!n) return true;
+  if(/^[a-z]/.test(n)) return true;
+  return /^(the|a|an)\s|['\u2019]s\s|\b(unnamed|unknown|nameless|stranger|accomplice|guard|soldier|man|woman|boy|girl|owner|clerk)\b/i.test(n);
+}
+
 // Two cards in a work can no longer share a kind and a name (enforced in the
 // database too), so a clash means "use the one already there".
 async function findOrMakeCard(name, kind){
@@ -3020,15 +3115,84 @@ function suggestWouldAdd(hit){
 /* One-tap filing: the suggested answers are written straight to the card.
    Answers already on the card are never touched, and the toast says what
    landed so a wrong guess is easy to spot and undo by hand. */
+/* Before a card is MADE, the author confirms its name: the reader may have
+   described someone instead of naming them, or the name may be a longer or
+   shorter form of a card that already exists. */
+var NAME_OK = {};
+function askCardName(findingId, mode){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  var hit = f && findingSuggest(f);
+  var box = document.getElementById('cnf-' + findingId);
+  if(!hit || !box) return;
+  var guess = looksUnnamed(hit.sg.name) ? '' : hit.sg.name;
+  var alike = similarCards(hit.sg.name, hit.sg.kind);
+  var kindWord = String(deckTitle(hit.sg.kind)).toLowerCase().replace(/s$/, '');
+  var q = '\'';
+  box.innerHTML = '<div class="sg name-ask">'
+    + (alike.length
+        ? '<div class="sg-h"><i class="ti ti-users"></i> Is <b>' + esc(hit.sg.name) + '</b> someone you already have a card for?</div>'
+          + '<div class="clash-choices" style="margin-bottom:10px;">'
+          + alike.map(function(c){
+              return '<button class="clash-btn" onclick="pickSameCard(' + q + esc(findingId) + q + ',' + q + esc(c.id) + q + ',' + q + mode + q + ')">'
+                + '<span class="clash-t"><i class="ti ti-link"></i> Same as ' + esc(c.name) + '</span>'
+                + '<span class="clash-s">Add this to ' + esc(c.name) + '\u2019s card. No new card is made.</span></button>';
+            }).join('')
+          + '</div><div class="sg-foot" style="margin-top:0;">Or it is someone different:</div>'
+        : '<div class="sg-h"><i class="ti ti-id"></i> Name the new ' + esc(kindWord) + ' card</div>')
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+    + '<input class="name-in" id="nm-' + esc(findingId) + '" value="' + esc(guess) + '" '
+    + 'placeholder="Their name, or a nickname for now" '
+    + 'onkeydown="if(event.key===' + q + 'Enter' + q + ')confirmCardName(' + q + esc(findingId) + q + ',' + q + mode + q + ')">'
+    + '<button class="btn primary" onclick="confirmCardName(' + q + esc(findingId) + q + ',' + q + mode + q + ')">'
+    + '<i class="ti ti-plus"></i> Make a new card</button>'
+    + '<button class="btn ghost" onclick="document.getElementById(' + q + 'cnf-' + esc(findingId) + q + ').innerHTML=' + q + q + '">Cancel</button>'
+    + '</div>'
+    + (guess ? '' : '<div class="sg-foot">The story has not named them yet. You can rename the card any time.</div>')
+    + '</div>';
+  var inp = document.getElementById('nm-' + findingId);
+  if(inp){ inp.focus(); inp.select(); }
+}
+function continueSuggestion(findingId, mode){
+  NAME_OK[findingId] = true;
+  var box = document.getElementById('cnf-' + findingId);
+  if(box) box.innerHTML = '';
+  return mode === 'edit' ? applySuggestion(findingId) : quickAddSuggestion(findingId);
+}
+function confirmCardName(findingId, mode){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  var inp = document.getElementById('nm-' + findingId);
+  var name = inp ? inp.value.trim() : '';
+  if(!f || !f.detail || !f.detail.raw || !f.detail.raw.suggest) return;
+  if(!name){ toast('Give the card a name first', 'ti-alert-triangle', true); if(inp) inp.focus(); return; }
+  var sg = f.detail.raw.suggest;
+  // A typed name can itself match a card ("Melissa"): ask again for that one.
+  if(name.toLowerCase() !== String(sg.name || '').toLowerCase()
+     && !cardByName(name, sg.kind) && similarCards(name, sg.kind).length){
+    sg.name = name;
+    return askCardName(findingId, mode);
+  }
+  sg.name = name;
+  return continueSuggestion(findingId, mode);
+}
+function pickSameCard(findingId, cardId, mode){
+  var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
+  if(!f || !f.detail || !f.detail.raw || !f.detail.raw.suggest) return;
+  f.detail.raw.suggest.card_id = cardId;
+  return continueSuggestion(findingId, mode);
+}
+
 async function quickAddSuggestion(findingId){
   var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
   var hit = f && findingSuggest(f);
   if(!hit) return;
   var card = hit.card;
+  if(!card && !NAME_OK[findingId]) return askCardName(findingId, 'quick');
+  var madeNow = false;
   if(!card){
     var made = await findOrMakeCard(hit.sg.name, hit.sg.kind);
     if(!made.card){ toast(made.error, 'ti-x', true); return; }
     card = made.card;
+    madeNow = made.made;
   }
 
   var data = JSON.parse(JSON.stringify(card.data || {}));
@@ -3062,6 +3226,12 @@ async function quickAddSuggestion(findingId){
     added.push(def.label);
   });
 
+  if(!added.length && madeNow){
+    try { await respond(findingId, 'resolve', true); } catch(e) {}
+    toast('Card made: ' + card.name, 'ti-check');
+    render();
+    return;
+  }
   if(!added.length){
     // Nothing to write: the card already says it. Clear it from the queue
     // instead of leaving a button that can only ever say "nothing changed".
@@ -3095,6 +3265,7 @@ async function applySuggestion(findingId){
   var hit = f && findingSuggest(f);
   if(!hit) return;
   var card = hit.card;
+  if(!card && !NAME_OK[findingId]) return askCardName(findingId, 'edit');
 
   if(!card){
     var made = await findOrMakeCard(hit.sg.name, hit.sg.kind);
