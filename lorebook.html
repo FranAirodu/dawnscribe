@@ -270,7 +270,9 @@
     .sg-path i{color:var(--accent);}
     .sg-path b{color:var(--text);}
     .sg-add{font-size:13px;margin-top:2px;}
-    .sg-how{font-size:11.5px;color:var(--text3);margin-top:1px;}
+    .sg-how{font-size:11.5px;color:var(--text3);margin-top:1px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+    .sg-deny{background:none;border:1px solid rgba(248,113,113,0.45);color:#f87171;border-radius:7px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+    .sg-deny:hover{background:rgba(248,113,113,0.1);}
     .sg-where .sg-v{font-weight:400;flex:1;min-width:240px;line-height:1.5;}
     .sg-quote{font-size:12px;color:var(--text2);margin:6px 0 2px;line-height:1.5;}
     .sg-quote i{color:var(--accent);}
@@ -2794,10 +2796,30 @@ function renderChecks(){
         : '');
 }
 
+/* Lines the author turned down ("Don't add this"). Kept per finding in this
+   browser, so a wrong line stays gone while the right ones can still be added. */
+function deniedLines(fid){
+  try { return JSON.parse(localStorage.getItem('ds_lore_denied_' + fid) || '{}') || {}; } catch(e) { return {}; }
+}
+function denyLine(fid, key){
+  var d = deniedLines(fid);
+  d[key] = 1;
+  try { localStorage.setItem('ds_lore_denied_' + fid, JSON.stringify(d)); } catch(e) {}
+  render();
+  toast('Left out \u2014 it will not be added', 'ti-x', false, function(){
+    var d2 = deniedLines(fid); delete d2[key];
+    try { localStorage.setItem('ds_lore_denied_' + fid, JSON.stringify(d2)); } catch(e) {}
+    render();
+    return Promise.resolve();
+  });
+}
+
 function findingSuggest(f){
-  var sg = f && f.detail && f.detail.raw ? f.detail.raw.suggest : null;
-  if(!sg) return null;
-  if(!Array.isArray(sg.fields)) sg.fields = [];
+  var sg0 = f && f.detail && f.detail.raw ? f.detail.raw.suggest : null;
+  if(!sg0) return null;
+  if(!Array.isArray(sg0.fields)) sg0.fields = [];
+  var denied = deniedLines(f.id);
+  var sg = Object.assign({}, sg0, { fields: sg0.fields.filter(function(fl){ return fl && !denied[fl.key]; }) });
   // Older reads sometimes wrote notes to themselves into the answer
   // ("Doctor (as stated in chapter 1)"). Only the fact goes on a card.
   sg.fields.forEach(function(fl){
@@ -3017,7 +3039,11 @@ function suggestHtml(f){
       + ' \u203a <b>' + esc(label) + '</b></div>'
       + '<div class="sg-add"><span class="sg-v">' + esc(fl.value) + '</span>'
       + (fl.chapter ? ' <span class="sg-ch">from ch.' + esc(fl.chapter) + '</span>' : '') + '</div>'
-      + '<div class="sg-how">' + esc(how) + '</div>'
+      + '<div class="sg-how">' + esc(how)
+      + (hit.sg.fields.length > 1 || hit.card
+          ? ' <button type="button" class="sg-deny" onclick="denyLine(\'' + esc(f.id) + '\',\'' + esc(fl.key) + '\')">'
+            + '<i class="ti ti-x"></i> Don\u2019t add this</button>' : '')
+      + '</div>'
       + '</div>';
   }).join('');
   if(hit.card && !hit.sg.fields.length) return '';
