@@ -694,6 +694,10 @@
         </div>
         <div class="card-body">
         <div class="card-desc">Pick 3 Gold tags (Prestige), 5 Silver tags (community search), then up to 20 extra tags. First click = Gold, second click = Silver, third click = Extra, fourth click = remove.</div>
+        <div id="tag-lock-note" style="font-size:12px;color:var(--text3);margin:-4px 0 12px;line-height:1.5;">
+          <i class="ti ti-clock"></i> Once your story is live, its tags can be changed once a week. Reading counts toward
+          genre badges under the tags a story had when it was read, so re-tagging never changes what readers already earned.
+        </div>
         <div class="tag-section-label"><i class="ti ti-star" style="color:var(--gold);"></i> Gold Tags — Prestige &amp; Avatar unlocks (pick exactly 3)</div>
         <div class="main-tags-slots" id="gold-tag-slots">
           <div class="main-tag-slot gold" id="gold-slot-0">Gold 1</div>
@@ -2753,6 +2757,7 @@
     // chapter 1 into the editor, and makes the publish button UPDATE in place.
     var isEditMode = false;
     var editWorkId = null;
+    var editTagsOriginal = null, editTagsUntil = null;
     var editChapterId = null;      // existing chapter 1 row (novels only)
     var editExistingCoverUrl = null;
     var editExistingBannerUrl = null;
@@ -2841,6 +2846,21 @@
         selectedGoldTags = allTags.slice(0, 3);
         selectedSilverTags = allTags.slice(3, 8);
         selectedExtraTags = allTags.slice(8);
+
+        // Weekly tag limit (enforced in the database; this only explains it
+        // before the author spends time re-tagging).
+        editTagsOriginal = JSON.stringify(allTags);
+        editTagsUntil = null;
+        if (w.is_published && w.tags_changed_at) {
+          var _until = new Date(new Date(w.tags_changed_at).getTime() + 7 * 86400000);
+          if (_until > new Date()) editTagsUntil = _until;
+        }
+        var _note = document.getElementById('tag-lock-note');
+        if (_note && editTagsUntil) {
+          _note.style.color = '#f59e0b';
+          _note.innerHTML = '<i class="ti ti-lock"></i> You changed this story\u2019s tags recently. You can change them again on <b>'
+            + editTagsUntil.toLocaleDateString(undefined, { month: 'long', day: 'numeric' }) + '</b>. Everything else can still be edited.';
+        }
 
         // Novel-only fields.
         if (!isArt) {
@@ -3008,6 +3028,17 @@
           delete insertPayload.author_id;
           delete insertPayload.is_published;
           delete insertPayload.awaiting_first_chapter;
+          // Tags inside the weekly limit: save everything else, keep the old
+          // tags, and say so, rather than failing the whole save.
+          if (editTagsUntil && insertPayload.tags_all !== editTagsOriginal) {
+            var _day = editTagsUntil.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+            if (!confirm('Tags can only be changed once a week. You can change them again on ' + _day
+                + '.\n\nSave your other changes and keep the current tags?')) {
+              throw new Error('Nothing saved. Your tag changes are still on the page.');
+            }
+            delete insertPayload.tags_all;
+            delete insertPayload.tags_main;
+          }
           // Only overwrite cover/banner if a real re-upload happened this session.
           if (coverFile === 'EXISTING') { insertPayload.cover_url = editExistingCoverUrl; }
           if (!fullArtworkFile) { insertPayload.banner_url = editExistingBannerUrl; }
