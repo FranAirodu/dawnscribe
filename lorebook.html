@@ -265,6 +265,14 @@
     .sg-foot{font-size:11px;color:var(--text3);margin:6px 0 8px;}
     .sg-note{color:var(--text3);font-weight:400;}
     .sg-where{background:rgba(255,255,255,0.02);}
+    .gaps{border:1px dashed rgba(var(--accent-rgb),0.45);border-radius:12px;padding:12px 16px;margin-bottom:18px;background:rgba(var(--accent-rgb),0.04);}
+    .gaps-h{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;}
+    .gaps-h i{color:var(--accent);}
+    .gaps-sub{font-size:12.5px;color:var(--text3);margin:4px 0 8px;line-height:1.5;}
+    .gap-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border);font-size:13px;}
+    .gap-miss{flex:1;min-width:200px;color:var(--text2);font-size:12.5px;}
+    .gap-row .btn{padding:4px 10px;font-size:12px;}
+    .gaps-more{background:none;border:none;color:var(--accent);cursor:pointer;font:inherit;font-size:12.5px;padding:6px 0 0;}
     .sg-dest{border-left:2px solid rgba(var(--accent-rgb),0.5);padding:4px 0 4px 10px;margin:6px 0 8px;}
     .sg-path{font-size:12.5px;color:var(--text2);}
     .sg-path i{color:var(--accent);}
@@ -279,6 +287,7 @@
     .sg-quote q{color:var(--text);font-style:italic;}
     .sg-copy{background:none;border:1px solid var(--border);border-radius:6px;color:var(--text3);cursor:pointer;padding:1px 6px;font-size:11px;}
     .sg-copy:hover{color:var(--text);}
+    .sg-goto{text-decoration:none;display:inline-flex;align-items:center;gap:4px;color:var(--accent);border-color:rgba(var(--accent-rgb),0.45);}
     .sg-clash{background:rgba(248,113,113,0.06);border-color:rgba(248,113,113,0.35);}
     .sg-clash .sg-h i{color:#f87171;}
     .clash-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;}
@@ -2725,6 +2734,46 @@ async function deleteRelation(){
   render();
 }
 
+/* ── CARD GAPS ─────────────────────────────────────────────────────
+   The reader can only catch a contradiction the cards know about: an empty
+   "Eyes" means wrong eye colours go unnoticed. So the Checks tab lists the
+   hard facts missing from each character, busiest characters first. A fact
+   marked "I do not know yet" counts as answered. */
+var GAP_KEYS = ['status','age','sex','species','eyes','hair','height','build','scars'];
+var GAPS_OPEN = false;
+function cardGaps(c){
+  var defs = FIELDS[c.kind] || [];
+  return GAP_KEYS.map(function(k){ return defs.filter(function(d){ return d.field_key === k; })[0]; })
+    .filter(function(d){ return d && !cardValueText(c, d.field_key) && !fskipped(c, d.field_key); });
+}
+function gapsHtml(){
+  var mentions = {};
+  FINDINGS.forEach(function(f){ if(f.card_id) mentions[f.card_id] = (mentions[f.card_id] || 0) + 1; });
+  var rows = CARDS.filter(function(c){ return c.kind === 'character'; })
+    .map(function(c){ return { c: c, miss: cardGaps(c), n: mentions[c.id] || 0 }; })
+    .filter(function(r){ return r.miss.length; })
+    .sort(function(a, b){ return b.n - a.n || b.miss.length - a.miss.length; });
+  if(!rows.length) return '';
+  var total = rows.reduce(function(t, r){ return t + r.miss.length; }, 0);
+  var shown = GAPS_OPEN ? rows : rows.slice(0, 3);
+  return '<div class="gaps">'
+    + '<div class="gaps-h"><i class="ti ti-puzzle"></i> Help the checks see more'
+    + '<span class="gcount">' + total + '</span></div>'
+    + '<div class="gaps-sub">Contradictions can only be caught for facts a card knows. '
+    + 'These characters are missing a few of the facts writers most often slip on. '
+    + 'Fill them in, or tick <b>I do not know yet</b> on the card.</div>'
+    + shown.map(function(r){
+        return '<div class="gap-row"><b>' + esc(r.c.name) + '</b>'
+          + '<span class="gap-miss">' + r.miss.map(function(d){ return esc(d.label); }).join(' \u00b7 ') + '</span>'
+          + '<button class="btn ghost" onclick="openCard(\'' + esc(r.c.id) + '\')"><i class="ti ti-pencil"></i> Fill in</button></div>';
+      }).join('')
+    + (rows.length > 3
+        ? '<button class="gaps-more" onclick="GAPS_OPEN=!GAPS_OPEN;render()">'
+          + (GAPS_OPEN ? 'Show fewer' : 'Show all ' + rows.length + ' characters') + '</button>'
+        : '')
+    + '</div>';
+}
+
 /* ── CHECKS ────────────────────────────────────────────────────────── */
 function renderChecks(){
   var body = document.getElementById('view-body');
@@ -2772,7 +2821,7 @@ function renderChecks(){
       + '<div class="finding-acts"><a class="btn ghost" href="marketplace.html">See Lorekeeper</a></div></div>';
 
   if(!FINDINGS.length){
-    body.innerHTML = intro + pitch
+    body.innerHTML = intro + pitch + gapsHtml()
       + '<div class="state-wrap"><i class="ti ti-shield-check state-icon" style="color:var(--green);"></i>'
       + '<div class="state-title">Nothing to look at</div>'
       + '<div class="state-body">No contradictions between your chapters and your cards. '
@@ -2780,7 +2829,7 @@ function renderChecks(){
     return;
   }
 
-  body.innerHTML = intro + pitch
+  body.innerHTML = intro + pitch + gapsHtml()
     + open.map(findingHtml).join('')
     + (fixing.length
         ? '<div class="grp"><div class="grp-h">To fix in your chapters'
@@ -2901,7 +2950,13 @@ function quoteHtml(f){
     + (n ? 'Find it in chapter ' + esc(n) + ': ' : 'Find it: ')
     + '<q>' + esc(q) + '</q>'
     + ' <button class="sg-copy" title="Copy, then paste into your editor\u2019s search" '
-    + 'onclick="copyQuote(\'' + esc(f.id) + '\')"><i class="ti ti-copy"></i></button></div>';
+    + 'onclick="copyQuote(\'' + esc(f.id) + '\')"><i class="ti ti-copy"></i></button>'
+    + (f.chapter_id
+        ? ' <a class="sg-copy sg-goto" href="chapters.html?edit=' + encodeURIComponent(workId)
+          + '&chapter=' + encodeURIComponent(f.chapter_id) + '&find=' + encodeURIComponent(q) + '" '
+          + 'title="Open the chapter with this line highlighted"><i class="ti ti-external-link"></i> Show me in the chapter</a>'
+        : '')
+    + '</div>';
 }
 function copyQuote(id){
   var f = FINDINGS.filter(function(x){ return x.id === id; })[0];

@@ -1535,6 +1535,8 @@
     await loadChapters();
     initEditor();
     initToolbarTooltips();
+    // Arrived from a Lorekeeper finding: open that chapter at that line.
+    await openFromLorebookLink();
     // Offer crash-recovery backup for an unsaved new chapter from a prior session
     if (!editingChapterId) checkForBackup(null);
     // Show linked novels card for novels only
@@ -2989,6 +2991,34 @@
     if (FR.cur < 0 && FR.matches.length) FR.cur = 0;
     frMark();
   }
+  /* "Show me in the chapter" from the Lorebook arrives as
+     ?chapter=<id>&find=<quoted line>. The quote is the reader's copy of the
+     line, so it may have ellipses or a small slip: if the whole thing is not
+     found, the longest piece of it is tried, then its first few words. */
+  async function openFromLorebookLink() {
+    var p = new URLSearchParams(window.location.search);
+    var chId = p.get('chapter'), q = (p.get('find') || '').trim();
+    if (!chId) return;
+    var row = document.querySelector('.chapter-row[data-id="' + chId + '"]');
+    if (!row) { showToast('That chapter is not in this book any more', 'ti-alert-triangle'); return; }
+    await setModeEdit(chId, row.querySelector('.chapter-edit-btn'), row);
+    // Clean the address so a reload does not jump again.
+    try { history.replaceState(null, '', location.pathname + '?edit=' + encodeURIComponent(workId)); } catch(e) {}
+    if (!q || !quill) return;
+    var text = quill.getText().toLowerCase();
+    var tries = [q].concat(q.split(/\s*(?:\.\.\.|\u2026)\s*/).sort(function(a, b){ return b.length - a.length; }));
+    tries.push(q.split(/\s+/).slice(0, 5).join(' '));
+    var pick = '';
+    for (var i = 0; i < tries.length; i++) {
+      var t = (tries[i] || '').replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '').trim();
+      if (t.length >= 6 && text.indexOf(t.toLowerCase()) >= 0) { pick = t; break; }
+    }
+    openFindReplace();
+    document.getElementById('fr-find').value = pick || q;
+    frSearch();
+    if (!pick) showToast('That exact line was not found \u2014 it may have been edited already', 'ti-info-circle');
+  }
+
   function openFindReplace() {
     var ov = document.getElementById('fr-modal-overlay');
     ov.classList.add('open', 'fr-float');
