@@ -214,6 +214,47 @@
     .aura-legend{font-size:11.5px;color:var(--text3,#8a8aa8);display:flex;align-items:center;gap:7px;margin-top:2px;}
     .lg-spark{width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 5px 2px rgba(255,255,255,.5);}
     .aura-reset:disabled{opacity:.5;cursor:not-allowed;}
+    /* ── ROLL REVEAL (restored from the old avatar page) ───────────────
+       One fire reveal for every random roll: aura, banner, character.
+       Charging: the flame burns in your CURRENT aura, sparks rise, a ring
+       pulses, "The ink takes flame". Revealed: the ring bursts and, for an
+       aura roll, the flame becomes the colour you just won. */
+    .roll-overlay{position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;
+      background:rgba(6,7,12,.88);backdrop-filter:blur(3px);opacity:0;transition:opacity .25s ease;--roll-hex:#2dd4bf;}
+    .roll-overlay.open{opacity:1;}
+    .roll-stage{position:relative;width:280px;height:300px;display:flex;align-items:center;justify-content:center;}
+    .roll-flame{position:relative;width:120px;height:150px;transform-origin:50% 90%;
+      animation:rollFlicker 1.05s ease-in-out infinite;filter:drop-shadow(0 0 24px var(--roll-hex));}
+    .roll-flame svg{width:100%;height:100%;overflow:visible;}
+    .roll-ring,.roll-burst{position:absolute;left:50%;top:50%;width:110px;height:110px;margin:-55px 0 0 -55px;
+      border-radius:50%;border:2px solid var(--roll-hex);opacity:0;}
+    .roll-overlay.charging .roll-ring{animation:rollPulse 1.4s ease-out infinite;}
+    .roll-overlay.revealed .roll-burst{border-width:3px;animation:rollBurst .85s cubic-bezier(.2,.7,.3,1) forwards;}
+    .roll-overlay.revealed .roll-flame{animation:rollLand .7s cubic-bezier(.2,.7,.3,1) forwards;}
+    .roll-spark{position:absolute;left:50%;top:38%;width:5px;height:5px;border-radius:50%;background:var(--roll-hex);
+      box-shadow:0 0 6px var(--roll-hex);opacity:0;animation:rollRise 1.6s ease-out infinite;}
+    .roll-label,.roll-charging-text{position:absolute;top:100%;left:0;right:0;text-align:center;}
+    .roll-charging-text{font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:var(--text3,#8a8aa8);}
+    .roll-overlay.revealed .roll-charging-text{display:none;}
+    .roll-label{opacity:0;transform:translateY(8px);}
+    .roll-overlay.revealed .roll-label{animation:rollLabel .5s ease-out .3s forwards;}
+    .roll-kicker{font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--text3,#8a8aa8);margin-bottom:6px;}
+    .roll-name{font-family:'Cinzel',serif;font-size:26px;font-weight:700;}
+    .roll-rare{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;
+      padding:2px 10px;border-radius:999px;border:1px solid var(--roll-hex);color:#fff;}
+    .roll-sub{font-size:13px;color:var(--text2,#9b9bc0);margin:8px auto 0;line-height:1.6;max-width:300px;}
+    .roll-dismiss{margin-top:16px;font-size:11px;color:var(--text3,#8a8aa8);}
+    @keyframes rollFlicker{0%,100%{transform:scale(1) skewX(0)}30%{transform:scale(.97,1.06) skewX(-3deg)}65%{transform:scale(1.04,.96) skewX(2deg)}}
+    @keyframes rollPulse{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.2);opacity:0}}
+    @keyframes rollRise{0%{transform:translate(0,0) scale(1);opacity:0}15%{opacity:.9}100%{transform:translate(var(--dx,0px),-130px) scale(.2);opacity:0}}
+    @keyframes rollBurst{0%{transform:scale(1);opacity:.9}100%{transform:scale(3.6);opacity:0}}
+    @keyframes rollLand{0%{transform:scale(1.35)}60%{transform:scale(.94)}100%{transform:scale(1)}}
+    @keyframes rollLabel{to{opacity:1;transform:translateY(0)}}
+    @media (prefers-reduced-motion:reduce){
+      .roll-flame,.roll-ring,.roll-spark,.roll-burst{animation:none !important;}
+      .roll-spark{display:none;}
+      .roll-label{opacity:1 !important;transform:none !important;animation:none !important;}
+    }
     .aura-pick{font-size:13px;color:var(--text2,#9b9bc0);margin:10px 0 2px;min-height:18px;}
     .aura-pick b{color:var(--text,#f1f0ff);}
     .aura-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
@@ -632,16 +673,21 @@
   window.rollRandom = async function(kind){
     var btn = document.getElementById('roll-' + kind);
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Rolling\u2026'; }
+    dsRollOpen();
     var r = await db.rpc('ds_randomizer_roll', { p_kind: kind });
     var d = r.data || {};
-    if (r.error || d.status === 'error') { toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); await load(); return; }
-    if (d.status === 'insufficient_embers') { toast('You need ' + d.cost + ' Embers for that.', 'ti-flame', true); await load(); return; }
-    if (d.status === 'empty' || d.status === 'all_owned') { await load(); return; }
+    if (r.error || d.status === 'error') { dsRollClose(); toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); await load(); return; }
+    if (d.status === 'insufficient_embers') { dsRollClose(); toast('You need ' + d.cost + ' Embers for that.', 'ti-flame', true); await load(); return; }
+    if (d.status === 'empty' || d.status === 'all_owned') { dsRollClose(); await load(); return; }
+    await dsRollReveal({
+      label: d.name || (kind === 'banner' ? 'A new banner' : 'A new character'),
+      kicker: kind === 'banner' ? 'Banner unlocked' : 'Character unlocked',
+      sub: kind === 'banner' ? 'Set it from your profile whenever you like.' : 'They\u2019ve joined your crew.'
+    });
     await load();
     // Update the Ember count in the top bar straight away.
     var emEl = document.getElementById('ds-ember-count');
     if (emEl && typeof d.balance === 'number') emEl.textContent = d.balance.toLocaleString();
-    toast('You won ' + (d.name || (kind === 'banner' ? 'a banner' : 'a character')) + '!', 'ti-confetti');
     var note = document.getElementById('rand-note');
     if (note) note.innerHTML = 'You won <b>' + esc(d.name || '') + '</b>. '
       + (kind === 'banner' ? '<a href="profile.html" style="color:var(--accent);">Set it on your profile</a>.' : 'It is in your collection above.');
@@ -662,22 +708,112 @@
     }
   };
 
+  /* ── ROLL REVEAL ─────────────────────────────────────────────────
+     dsRollOpen() goes up the moment Embers are committed; dsRollReveal()
+     resolves once the user dismisses; dsRollClose() backs out silently when
+     the roll fails or there was nothing left to win. The charge has a floor
+     (1.2s, 0.5s with reduced motion): rolls often return in under 200ms and
+     the reveal would be over before anyone noticed it. */
+  var ROLL_MIN_CHARGE = 1200;
+  var rollState = null;
+  function reducedMotion(){ try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e) { return false; } }
+  function dsRollOpen(){
+    dsRollClose();
+    var hex = AURA.hex || '#2dd4bf';
+    var ov = document.createElement('div');
+    ov.className = 'roll-overlay charging';
+    ov.style.setProperty('--roll-hex', hex);
+    var sparks = '';
+    for (var i = 0; i < 7; i++) {
+      sparks += '<div class="roll-spark" style="--dx:' + ((i - 3) * 14) + 'px;animation-delay:' + (i * 0.19).toFixed(2) + 's;"></div>';
+    }
+    ov.innerHTML = '<div class="roll-stage">' + sparks
+      + '<div class="roll-ring"></div><div class="roll-burst"></div>'
+      + '<div class="roll-flame" id="roll-flame">' + flameSvg(hex, 900, false) + '</div>'
+      + '<div class="roll-charging-text">The ink takes flame</div>'
+      + '<div class="roll-label" id="roll-label"></div></div>';
+    document.body.appendChild(ov);
+    void ov.offsetWidth;          // make the fade-in actually run
+    ov.classList.add('open');
+    rollState = { el: ov, t0: Date.now() };
+  }
+  function dsRollClose(){
+    if (!rollState) return;
+    var el = rollState.el; rollState = null;
+    el.classList.remove('open');
+    setTimeout(function(){ el.remove(); }, 250);
+  }
+  // A name in a very dark colour is lightened for reading; the flame keeps the true colour.
+  function readableHex(hex){
+    var h = hexHsl(hex);
+    return h.l < 0.45 ? lighten(hex, 0.45) : hex;
+  }
+  function dsRollReveal(opts){
+    return new Promise(function(resolve){
+      if (!rollState) { resolve(); return; }
+      var st = rollState;
+      var floor = reducedMotion() ? 500 : ROLL_MIN_CHARGE;
+      var wait = Math.max(0, floor - (Date.now() - st.t0));
+      setTimeout(function(){
+        if (rollState !== st) { resolve(); return; }
+        if (opts.hex) {
+          st.el.style.setProperty('--roll-hex', opts.hex);
+          var fl = document.getElementById('roll-flame');
+          if (fl) fl.innerHTML = flameSvg(opts.hex, 901, false);
+        }
+        document.getElementById('roll-label').innerHTML =
+          '<div class="roll-kicker">' + esc(opts.kicker || 'Unlocked') + '</div>'
+          + '<div class="roll-name" style="color:' + esc(readableHex(opts.hex || AURA.hex || '#2dd4bf')) + ';">' + esc(opts.label || '') + '</div>'
+          + (opts.rare ? '<div class="roll-rare">\u2726 Rare</div>' : '')
+          + (opts.sub ? '<div class="roll-sub">' + opts.sub + '</div>' : '')
+          + '<div class="roll-dismiss">Tap anywhere to continue</div>';
+        st.el.classList.remove('charging');
+        st.el.classList.add('revealed');
+        function done(){
+          st.el.removeEventListener('click', done);
+          document.removeEventListener('keydown', onKey);
+          if (rollState === st) dsRollClose();
+          resolve();
+        }
+        function onKey(e){ if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') done(); }
+        // A beat before a tap counts, so a finger still on the Roll button
+        // doesn't dismiss its own reveal.
+        setTimeout(function(){
+          if (rollState !== st) return;
+          st.el.addEventListener('click', done);
+          document.addEventListener('keydown', onKey);
+        }, 450);
+      }, wait);
+    });
+  }
+
   window.rollAura = async function(){
     var btn = document.getElementById('aura-roll');
     var note = document.getElementById('aura-note');
     btn.disabled = true;
     btn.innerHTML = '<i class="ti ti-loader"></i> Rolling\u2026';
+    dsRollOpen();
     var r = await db.rpc('roll_accent_color', { p_user_id: ME.id });
     var d = r.data || {};
-    if (r.error){ toast('Something went wrong.', 'ti-alert-triangle', true); btn.disabled = false; return; }
-    if (d.status === 'insufficient_embers'){ toast('You need 10 Embers for that.', 'ti-flame', true); btn.disabled = false; return; }
+    if (r.error){ dsRollClose(); toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); btn.disabled = false; return; }
+    if (d.status === 'insufficient_embers'){ dsRollClose(); toast('You need 10 Embers for that.', 'ti-flame', true); btn.disabled = false; return; }
     if (d.status === 'all_unlocked'){
-      if (note) note.textContent = 'You have every aura there is. More may arrive later.';
+      dsRollClose();
+      if (note) note.textContent = 'You have them all, for now.';
       btn.disabled = false; return;
     }
+    var info = AURA_INFO[String(d.hex || '').toLowerCase()] || {};
+    await dsRollReveal({
+      hex: d.hex, label: d.label || info.name || 'A new aura', rare: !!info.rare,
+      kicker: 'Aura unlocked',
+      sub: 'It\u2019s selected below. Press <b>Accept aura colour</b> to wear it.'
+    });
+    // The new flame is picked (and dancing) but not applied: the same
+    // tap-then-Accept rule as every other aura change.
+    AURA_PICK = d.hex || null;
     await load();
-    if (d.hex) { await setAura(d.hex); toast('New aura unlocked.', 'ti-flame'); }
-    var b2 = document.getElementById('aura-roll'); if (b2) b2.disabled = false;
+    var bt = document.querySelector('.flame.picked');
+    if (bt) { bt.classList.add('dance'); bt.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   };
 
   function cardHtml(c){
