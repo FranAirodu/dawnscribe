@@ -182,7 +182,7 @@
     .aura-roll{background:var(--accent,#2dd4bf);color:#0a0a0f;border:none;}
     .aura-roll:disabled{opacity:.55;cursor:not-allowed;}
     .rand-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--border);}
-    .rand-row:first-of-type{border-top:none;}
+    .aura-sub + .rand-row{border-top:none;}
     .rand-info{flex:1;min-width:220px;}
     .rand-name{font-weight:700;font-size:14px;display:flex;align-items:center;gap:6px;}
     .aura-reset{background:transparent;color:var(--text2,#9b9bc0);border:1px solid var(--border,rgba(255,255,255,.07));}
@@ -380,9 +380,39 @@
   // A colour you win with Embers that repaints the site for you. Saved on its
   // own through ds_set_accent_color(); the old save path also wanted a body
   // type and skin tone, which no longer exist.
+  function hexHsl(hex){
+    var h = String(hex || '').replace('#', '');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var r = parseInt(h.slice(0,2),16)/255, g = parseInt(h.slice(2,4),16)/255, b = parseInt(h.slice(4,6),16)/255;
+    if (isNaN(r+g+b)) return { h: 999, s: 0, l: 0 };
+    var mx = Math.max(r,g,b), mn = Math.min(r,g,b), l = (mx+mn)/2, d = mx - mn, hue = 0, sat = 0;
+    if (d) {
+      sat = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+      hue = mx === r ? ((g - b) / d + (g < b ? 6 : 0)) : mx === g ? ((b - r) / d + 2) : ((r - g) / d + 4);
+      hue *= 60;
+    }
+    // Pinks-into-reds (330°+) count as the start of the wheel, so every red sits together first.
+    if (hue >= 330) hue -= 360;
+    return { h: hue, s: sat, l: l };
+  }
+
   function auraHtml(){
     var owned = AURA.unlocked.slice();
     if (owned.indexOf('#2dd4bf') === -1) owned.unshift('#2dd4bf');
+    // Laid out like a colour wheel: red, orange, yellow, green, teal, blue,
+    // purple, pink, and back round to red. Within the same hue, lighter first.
+    // Near-greys (almost no colour) go at the end.
+    owned = owned.filter(function(h, i, a){ return a.indexOf(h) === i; })
+      .map(function(h){ return { hex: h, hsl: hexHsl(h) }; })
+      .sort(function(a, b){
+        var ga = a.hsl.s < 0.12, gb = b.hsl.s < 0.12;
+        if (ga !== gb) return ga ? 1 : -1;
+        if (ga) return b.hsl.l - a.hsl.l;
+        var ha = Math.round(a.hsl.h / 12), hb = Math.round(b.hsl.h / 12);   // 30 hue bands
+        if (ha !== hb) return ha - hb;
+        return b.hsl.l - a.hsl.l;
+      })
+      .map(function(x){ return x.hex; });
     var swatches = owned.map(function(hex){
       var on = String(hex).toLowerCase() === String(AURA.hex).toLowerCase();
       return '<button class="aura-sw' + (on ? ' on' : '') + '" style="background:' + esc(hex) + ';"'
