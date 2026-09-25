@@ -207,6 +207,13 @@
     @keyframes dance{0%{transform:scale(1)}30%{transform:scale(1.18,.9) rotate(-6deg)}60%{transform:scale(.94,1.12) rotate(5deg)}100%{transform:scale(1) rotate(0)}}
     @keyframes twinkle{0%,100%{opacity:.25;transform:scale(.7)}50%{opacity:1;transform:scale(1.15)}}
     @media (prefers-reduced-motion:reduce){ .flame, .flame *{animation:none !important;transition:none !important;} }
+.aura-sort{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0;}
+    .aura-sort button{background:none;border:1px solid var(--border,rgba(255,255,255,.1));color:var(--text2,#9b9bc0);border-radius:999px;
+      padding:4px 11px;font-size:12px;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+    .aura-sort button.on{border-color:var(--accent,#2dd4bf);color:var(--accent,#2dd4bf);}
+    .aura-legend{font-size:11.5px;color:var(--text3,#8a8aa8);display:flex;align-items:center;gap:7px;margin-top:2px;}
+    .lg-spark{width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 5px 2px rgba(255,255,255,.5);}
+    .aura-reset:disabled{opacity:.5;cursor:not-allowed;}
     .aura-pick{font-size:13px;color:var(--text2,#9b9bc0);margin:10px 0 2px;min-height:18px;}
     .aura-pick b{color:var(--text,#f1f0ff);}
     .aura-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
@@ -251,6 +258,18 @@
   var AURA = { hex: '#2dd4bf', unlocked: [] };
   var AURA_INFO = {};      // hex -> { name, rare } from the aura list
   var AURA_PICK = null;    // the flame tapped but not yet accepted
+  var AURA_SORT = 'wheel'; // 'wheel' (colour spectrum) or 'rare' (rare first)
+  try { if (localStorage.getItem('ds_aura_sort') === 'rare') AURA_SORT = 'rare'; } catch(e) {}
+  window.setAuraSort = function(m){ AURA_SORT = m; try { localStorage.setItem('ds_aura_sort', m); } catch(e) {} render(); };
+  // True once the viewer owns every aura that exists right now. Worked out
+  // from the live list, so the moment a new aura is added the roll button
+  // wakes up again by itself. The total is never shown.
+  function allAurasOwned(){
+    var have = {};
+    AURA.unlocked.concat(['#2dd4bf']).forEach(function(h){ have[String(h).toLowerCase()] = 1; });
+    var keys = Object.keys(AURA_INFO);
+    return keys.length > 0 && keys.every(function(h){ return have[h]; });
+  }
   // The free randomizer: DawnScribe's own banners and characters, won with Embers.
   var RAND = { banner: { cost: 10, pool: 0, owned: 0 }, character: { cost: 500, pool: 0, owned: 0 } };
   var MINE = {};           // character_id -> ownership row
@@ -308,7 +327,7 @@
       // site for its owner, and is still won with Embers.
       db.from('user_avatars').select('accent_color, unlocked_accents').eq('user_id', ME.id).maybeSingle(),
       db.rpc('ds_randomizer_pool'),
-      db.from('reroll_color_palette').select('hex,label,rarity_weight').eq('region_type', 'accent'),
+      db.from('reroll_color_palette').select('hex,label,is_rare').eq('region_type', 'accent'),
       db.rpc('ds_character_teasers')
     ]);
     CHARS = res[0].data || [];
@@ -330,7 +349,7 @@
     TEASERS = (res[6] && res[6].data) || [];
     AURA_INFO = {};
     ((res[5] && res[5].data) || []).forEach(function(p){
-      AURA_INFO[String(p.hex).toLowerCase()] = { name: p.label, rare: (p.rarity_weight || 10) <= 4 };
+      AURA_INFO[String(p.hex).toLowerCase()] = { name: p.label, rare: !!p.is_rare };
     });
     // Progress for every campaign on the page, so the bar shows without a click.
     var opening = CHARS.filter(isOpening);
@@ -471,6 +490,11 @@
         return b.hsl.l - a.hsl.l;
       })
       .map(function(x){ return x.hex; });
+    if (AURA_SORT === 'rare') {
+      // Rare first, then common; each group keeps its colour-wheel order.
+      owned = owned.filter(function(h){ return (AURA_INFO[String(h).toLowerCase()] || {}).rare; })
+        .concat(owned.filter(function(h){ return !(AURA_INFO[String(h).toLowerCase()] || {}).rare; }));
+    }
     var cur = String(AURA.hex).toLowerCase();
     var pick = AURA_PICK ? String(AURA_PICK).toLowerCase() : null;
     var flames = owned.map(function(hex, i){
@@ -479,7 +503,7 @@
       var cls = 'flame' + (h === cur ? ' current' : '') + (h === pick ? ' picked' : '') + (info.rare ? ' rare' : '');
       var nm = info.name || 'Aura';
       return '<button class="' + cls + '" style="--fc:' + esc(hex) + ';--fcore:' + esc(lighten(hex, 0.62)) + ';"'
-        + ' onclick="pickAura(\'' + esc(hex) + '\', this)" title="' + esc(nm) + (h === cur ? ' (your aura)' : '') + '"'
+        + ' onclick="pickAura(\'' + esc(hex) + '\', this)" title="' + esc(nm) + (info.rare ? ' \u00b7 Rare' : '') + (h === cur ? ' (your aura)' : '') + '"'
         + ' aria-label="' + esc(nm) + '"' + (h === pick ? ' aria-pressed="true"' : '') + '>'
         + flameSvg(hex, i, h === pick) + (info.rare ? '<span class="spark" aria-hidden="true"></span>' : '') + '</button>';
     }).join('');
@@ -489,7 +513,12 @@
       + '<div class="aura-head"><i class="ti ti-flame"></i> Your Aura</div>'
       + '<div class="aura-sub">The colour DawnScribe uses for you, everywhere you go. '
       +   'Tap the flame you want, then press <b>Accept aura colour</b>.</div>'
+      + '<div class="aura-sort" role="group" aria-label="Arrange flames">'
+      +   '<button class="' + (AURA_SORT === 'wheel' ? 'on' : '') + '" onclick="setAuraSort(\'wheel\')"><i class="ti ti-color-swatch"></i> Colour spectrum</button>'
+      +   '<button class="' + (AURA_SORT === 'rare' ? 'on' : '') + '" onclick="setAuraSort(\'rare\')"><i class="ti ti-sparkles"></i> Rare to common</button>'
+      + '</div>'
       + '<div class="aura-row">' + flames + '</div>'
+      + '<div class="aura-legend"><span class="lg-spark"></span> Flames with a spark are rare.</div>'
       + '<div class="aura-pick">'
       +   (pick ? (canAccept ? 'Selected: <b>' + esc(pickName) + '</b>' : '<b>' + esc(pickName) + '</b> is already your aura.')
                 : 'Your aura: <b>' + esc((AURA_INFO[cur] || {}).name || 'Default teal') + '</b>')
@@ -497,7 +526,10 @@
       + '<div class="aura-actions">'
       +   '<button class="aura-roll" onclick="acceptAura()"' + (canAccept ? '' : ' disabled') + '>'
       +     '<i class="ti ti-check"></i> Accept aura colour</button>'
-      +   '<button class="aura-reset" id="aura-roll" onclick="rollAura()"><i class="ti ti-wand"></i> Roll a new aura &middot; 10 Embers</button>'
+      +   (allAurasOwned()
+            ? '<button class="aura-reset" id="aura-roll" disabled title="You have every aura for now. This wakes up when new ones arrive.">'
+              + '<i class="ti ti-check"></i> You have them all, for now</button>'
+            : '<button class="aura-reset" id="aura-roll" onclick="rollAura()"><i class="ti ti-wand"></i> Roll a new aura &middot; 10 Embers</button>')
       +   (cur !== '#2dd4bf' ? '<button class="aura-reset" onclick="pickAura(\'#2dd4bf\')">Back to default</button>' : '')
       + '</div>'
       + '<div class="aura-note" id="aura-note"></div>'
@@ -576,9 +608,11 @@
   function randRow(kind, label, icon, where){
     var r = RAND[kind];
     var left = Math.max(0, r.pool - r.owned);
-    var status = !r.pool ? 'Nothing in the pool yet. Check back soon.'
-      : !left ? 'You have all ' + r.pool + '. More may arrive later.'
-      : 'You have ' + r.owned + ' of ' + r.pool + '. Every roll is something new.';
+    // Totals are deliberately never shown. The button sleeps when you own
+    // everything and wakes by itself when something new is added.
+    var status = !r.pool ? 'Nothing to win yet. Check back soon.'
+      : !left ? 'You have them all, for now. New ones will wake this button up.'
+      : 'Every roll is something you don\u2019t have yet.';
     return '<div class="rand-row">'
       + '<div class="rand-info"><div class="rand-name"><i class="ti ' + icon + '"></i> ' + label + '</div>'
       + '<div class="aura-sub" style="margin:2px 0 0;">' + status + ' ' + where + '</div></div>'
