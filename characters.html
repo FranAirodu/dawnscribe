@@ -298,6 +298,7 @@
   var CHARS = [];          // every character this viewer may see
   var AURA = { hex: '#2dd4bf', unlocked: [] };
   var AURA_INFO = {};      // hex -> { name, rare } from the aura list
+  var AURA_COST = 15;      // from admin settings; the page never hard-codes a price
   var AURA_PICK = null;    // the flame tapped but not yet accepted
   var AURA_SORT = 'wheel'; // 'wheel' (colour spectrum) or 'rare' (rare first)
   try { if (localStorage.getItem('ds_aura_sort') === 'rare') AURA_SORT = 'rare'; } catch(e) {}
@@ -368,6 +369,7 @@
       // site for its owner, and is still won with Embers.
       db.from('user_avatars').select('accent_color, unlocked_accents').eq('user_id', ME.id).maybeSingle(),
       db.rpc('ds_randomizer_pool'),
+      db.rpc('ds_randomizer_cost', { p_kind: 'aura' }),
       db.from('reroll_color_palette').select('hex,label,is_rare').eq('region_type', 'accent'),
       db.rpc('ds_character_teasers')
     ]);
@@ -387,9 +389,10 @@
       banner: rp.banner || RAND.banner,
       character: rp.character || RAND.character
     };
-    TEASERS = (res[6] && res[6].data) || [];
+    TEASERS = (res[7] && res[7].data) || [];
+    AURA_COST = (res[5] && res[5].data) || 15;
     AURA_INFO = {};
-    ((res[5] && res[5].data) || []).forEach(function(p){
+    ((res[6] && res[6].data) || []).forEach(function(p){
       AURA_INFO[String(p.hex).toLowerCase()] = { name: p.label, rare: !!p.is_rare };
     });
     // Progress for every campaign on the page, so the bar shows without a click.
@@ -570,7 +573,7 @@
       +   (allAurasOwned()
             ? '<button class="aura-reset" id="aura-roll" disabled title="You have every aura for now. This wakes up when new ones arrive.">'
               + '<i class="ti ti-check"></i> You have them all, for now</button>'
-            : '<button class="aura-reset" id="aura-roll" onclick="rollAura()"><i class="ti ti-wand"></i> Roll a new aura &middot; 10 Embers</button>')
+            : '<button class="aura-reset" id="aura-roll" onclick="rollAura()"><i class="ti ti-wand"></i> Roll a new aura &middot; ' + AURA_COST + ' Embers</button>')
       +   (cur !== '#2dd4bf' ? '<button class="aura-reset" onclick="pickAura(\'#2dd4bf\')">Back to default</button>' : '')
       + '</div>'
       + '<div class="aura-note" id="aura-note"></div>'
@@ -796,7 +799,7 @@
     var r = await db.rpc('roll_accent_color', { p_user_id: ME.id });
     var d = r.data || {};
     if (r.error){ dsRollClose(); toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); btn.disabled = false; return; }
-    if (d.status === 'insufficient_embers'){ dsRollClose(); toast('You need 10 Embers for that.', 'ti-flame', true); btn.disabled = false; return; }
+    if (d.status === 'insufficient_embers'){ dsRollClose(); toast('You need ' + (d.cost || AURA_COST) + ' Embers for that.', 'ti-flame', true); btn.disabled = false; return; }
     if (d.status === 'all_unlocked'){
       dsRollClose();
       if (note) note.textContent = 'You have them all, for now.';
