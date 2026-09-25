@@ -53,6 +53,8 @@
     .ch-art { aspect-ratio:2/3; background:var(--bg3); display:flex; align-items:flex-end; justify-content:center; overflow:hidden; position:relative; }
     .ch-art img { width:100%; height:100%; object-fit:contain; object-position:bottom; }
     .ch-glyph { font-family:'Cinzel',serif; font-size:40px; color:var(--text3); opacity:.5; align-self:center; }
+    .ch-sil { width:100%; height:100%; display:flex; align-items:flex-end; justify-content:center; }
+    .ch-sil svg { width:78%; max-width:220px; height:auto; filter:drop-shadow(0 0 18px rgba(var(--aura-rgb,45,212,191),.35)); }
     .ch-body { padding:11px 13px 13px; }
     .ch-name { font-family:'Cinzel',serif; font-size:15px; font-weight:700; }
     .ch-from { font-size:11.5px; color:var(--text3); margin-top:2px; }
@@ -302,6 +304,25 @@
     render();
   }
 
+  /* Placeholder until a character's art exists: a softly glowing silhouette
+     in the viewer's aura colour, instead of a bare initial. Also used when an
+     art file is missing, so a broken image never shows. */
+  function silhouetteHtml(extra){
+    return '<div class="ch-sil"' + (extra ? ' style="' + extra + '"' : '') + ' aria-hidden="true">'
+      + '<svg viewBox="0 0 100 120" preserveAspectRatio="xMidYMax meet">'
+      +   '<defs><radialGradient id="silg" cx="50%" cy="40%" r="60%">'
+      +     '<stop offset="0" stop-color="rgb(var(--aura-rgb,45,212,191))" stop-opacity=".55"/>'
+      +     '<stop offset="1" stop-color="rgb(var(--aura-rgb,45,212,191))" stop-opacity="0"/></radialGradient></defs>'
+      +   '<ellipse cx="50" cy="55" rx="48" ry="55" fill="url(#silg)"/>'
+      +   '<circle cx="50" cy="38" r="17" fill="rgba(10,10,15,.82)"/>'
+      +   '<path d="M14 120 C16 86 32 66 50 66 C68 66 84 86 86 120 Z" fill="rgba(10,10,15,.82)"/>'
+      + '</svg></div>';
+  }
+  window.silFallback = function(img){
+    var d = document.createElement('div'); d.innerHTML = silhouetteHtml('margin:auto;');
+    img.replaceWith(d.firstChild);
+  };
+
   function isOpening(c){ return c.availability === 'ember_unlock' && !c.unlocked_at && !MINE[c.id]; }
   function backToList(){ OPEN = null; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
 
@@ -317,7 +338,7 @@
   function openingCard(c){
     var g = progressOf(c);
     return '<div class="op-card" onclick="openChar(\'' + esc(c.id) + '\')">'
-      + '<div class="op-art"><div class="ch-glyph">' + esc((c.name || '?').charAt(0)) + '</div></div>'
+      + '<div class="op-art">' + silhouetteHtml() + '</div>'
       + '<div class="op-body">'
       +   '<div class="op-kicker"><i class="ti ti-flame"></i> Being opened by the community</div>'
       +   '<div class="op-name">' + esc(c.name) + '</div>'
@@ -514,7 +535,7 @@
     return '<div class="ch-card' + (own ? '' : ' ch-locked') + '" onclick="openChar(\'' + esc(c.id) + '\')">'
       + '<div class="ch-art">'
       +   (art ? '<img loading="lazy" src="' + esc(art) + '" alt=""/>'
-               : '<div class="ch-glyph">' + esc((c.name||'?').charAt(0)) + '</div>')
+               : silhouetteHtml())
       +   (own ? '<div class="ch-tag mine">Yours</div>'
               : (c.availability==='ember_unlock' && !c.unlocked_at
                   ? '<div class="ch-tag">Opening</div>' : ''))
@@ -561,8 +582,8 @@
       '<div class="stage">'
       + '<div class="figure-wrap">'
       +   (pose.figure_path
-            ? '<img class="fig" src="' + esc(assetUrl(pose.figure_path)) + '" alt="' + esc(c.name) + '"/>'
-            : '<div class="ch-glyph" style="margin:auto;">' + esc((c.name||'?').charAt(0)) + '</div>')
+            ? '<img class="fig" src="' + esc(assetUrl(pose.figure_path)) + '" alt="' + esc(c.name) + '" onerror="silFallback(this)"/>'
+            : silhouetteHtml('margin:auto;'))
       +   '<div class="face" id="face"><img id="face-img" src="" alt=""/></div>'
       +   (own ? '<button class="zone head" aria-label="Their head"  onclick="say(\'head\')"></button>'
                + '<button class="zone arm"  aria-label="Their arm"   onclick="say(\'arm\')"></button>'
