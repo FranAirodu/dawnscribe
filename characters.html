@@ -141,6 +141,33 @@
              transition:transform .28s, opacity .28s, visibility 0s .28s; }
     #toast.show { transform:translateX(-50%) translateY(0); opacity:1; visibility:visible;
                   pointer-events:auto; transition:transform .28s, opacity .28s, visibility 0s 0s; }
+    /* ── sections ── */
+    .sec-head{margin:30px 0 12px;}
+    .sec-head:first-child{margin-top:8px;}
+    .sec-title{font-family:'Cinzel',serif;font-size:19px;display:flex;align-items:center;gap:9px;}
+    .sec-title i{color:var(--accent);}
+    .sec-title .cnt{font-family:'Lato',sans-serif;font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:999px;padding:1px 9px;color:var(--text2);}
+    .sec-sub{font-size:13px;color:var(--text3);margin-top:3px;}
+    .op-card{display:flex;gap:20px;align-items:stretch;background:linear-gradient(135deg,rgba(var(--aura-rgb,45,212,191),0.10),rgba(255,255,255,0.01));
+      border:1px solid rgba(var(--aura-rgb,45,212,191),0.35);border-radius:18px;padding:16px;cursor:pointer;margin-bottom:12px;
+      transition:transform .15s, box-shadow .15s;}
+    .op-card:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,0,0,0.35);}
+    .op-art{width:150px;min-height:170px;border-radius:13px;background:radial-gradient(circle at 50% 35%,rgba(var(--aura-rgb,45,212,191),0.25),var(--bg3) 70%);
+      display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .op-body{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;}
+    .op-kicker{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-weight:700;}
+    .op-name{font-family:'Cinzel',serif;font-size:24px;margin-top:4px;}
+    .op-sub{font-size:13px;color:var(--text2);margin-bottom:12px;}
+    .op-cta{font-size:12.5px;color:var(--text3);margin-top:10px;line-height:1.5;}
+    .op-go{color:var(--accent);font-weight:700;white-space:nowrap;}
+    @media (max-width:560px){ .op-card{flex-direction:column;} .op-art{width:100%;min-height:140px;} }
+    .empty-crew{display:flex;align-items:center;gap:12px;padding:18px;border:1px dashed var(--border);border-radius:14px;color:var(--text2);font-size:13.5px;}
+    .empty-crew i{font-size:26px;color:var(--text3);}
+    .mystery{border-radius:14px;min-height:230px;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+      background:repeating-linear-gradient(135deg,rgba(255,255,255,0.025) 0 10px,transparent 10px 20px),var(--bg2);border:1px dashed rgba(255,255,255,0.14);}
+    .mystery .q{font-family:'Cinzel',serif;font-size:58px;color:var(--text3);opacity:.55;line-height:1;}
+    .mystery .m1{font-family:'Cinzel',serif;font-size:15px;margin-top:10px;}
+    .mystery .m2{font-size:12px;color:var(--text3);margin-top:4px;line-height:1.5;}
       /* Aura picker (kept from the old avatar page) */
     .aura-card{background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.07));border-radius:14px;padding:16px 18px;margin-top:18px;}
     .aura-head{font-family:'Cinzel',serif;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
@@ -173,10 +200,9 @@
 <div class="page-wrap">
   <div id="head-area">
     <div class="page-title">Dawn<span>Scribe</span> Characters</div>
-    <div class="page-sub">Everyone the ship has met on its way between universes. Give Embers to
-      open a locked one — it belongs to everybody who helped.</div>
+    <div class="page-sub">Everyone the ship has met on its way between universes. Some you win, some the
+      whole community opens together, and a few you have to find.</div>
   </div>
-  <div class="tabs" id="tabs"></div>
   <div id="view"></div>
 </div>
 
@@ -195,7 +221,7 @@
   var RAND = { banner: { cost: 10, pool: 0, owned: 0 }, character: { cost: 500, pool: 0, owned: 0 } };
   var MINE = {};           // character_id -> ownership row
   var SLOTS = { total: 0, found: 0 };
-  var VIEW = 'all';
+  var TEASERS = [];        // characters not open yet: only "after whom" is known
   var OPEN = null;         // the character being looked at
   var LINES = [];          // lines the viewer has earned on OPEN
   var POSES = [];
@@ -247,10 +273,8 @@
       // The Aura outlived the dress-up avatar: it still recolours the whole
       // site for its owner, and is still won with Embers.
       db.from('user_avatars').select('accent_color, unlocked_accents').eq('user_id', ME.id).maybeSingle(),
-      db.from('cosmetic_items').select('id').eq('slot', 'banner').eq('status', 'approved').eq('is_randomizer_item', true),
-      db.from('user_unlocked_items').select('cosmetic_item_id').eq('user_id', ME.id),
-      db.rpc('ds_randomizer_cost', { p_kind: 'banner' }),
-      db.rpc('ds_randomizer_cost', { p_kind: 'character' })
+      db.rpc('ds_randomizer_pool'),
+      db.rpc('ds_character_teasers')
     ]);
     CHARS = res[0].data || [];
     MINE = {};
@@ -261,35 +285,96 @@
       hex: (av.accent_color && av.accent_color.hex) || '#2dd4bf',
       unlocked: Array.isArray(av.unlocked_accents) ? av.unlocked_accents : []
     };
-    var bPool = (res[4] && res[4].data) || [];
-    var myItems = {};
-    ((res[5] && res[5].data) || []).forEach(function(u){ myItems[u.cosmetic_item_id] = 1; });
-    var cPool = CHARS.filter(function(c){ return c.availability === 'randomizer'; });
+    // Pool sizes come from the server: the randomizer's characters are not
+    // readable one by one until you own them.
+    var rp = (res[4] && res[4].data) || {};
     RAND = {
-      banner: { cost: (res[6] && res[6].data) || 10, pool: bPool.length,
-                owned: bPool.filter(function(b){ return myItems[b.id]; }).length },
-      character: { cost: (res[7] && res[7].data) || 500, pool: cPool.length,
-                   owned: cPool.filter(function(c){ return MINE[c.id]; }).length }
+      banner: rp.banner || RAND.banner,
+      character: rp.character || RAND.character
     };
+    TEASERS = (res[5] && res[5].data) || [];
+    // Progress for every campaign on the page, so the bar shows without a click.
+    var opening = CHARS.filter(isOpening);
+    var progs = await Promise.all(opening.map(function(c){
+      return db.rpc('ds_character_progress', { p_character_id: c.id });
+    }));
+    opening.forEach(function(c, i){ c._progress = (progs[i] && progs[i].data) || null; });
     render();
   }
 
-  function renderTabs(){
-    var mine = CHARS.filter(function(c){ return MINE[c.id]; }).length;
-    var open = CHARS.filter(function(c){ return c.availability==='ember_unlock' && !c.unlocked_at; }).length;
-    var tabs = [
-      ['all','Everyone', CHARS.length],
-      ['mine','Yours', mine],
-      ['open','Being opened', open],
-      ['secret','Secrets', SLOTS.found + '/' + SLOTS.total]
-    ];
-    document.getElementById('tabs').innerHTML = tabs.map(function(t){
-      return '<button class="tab' + (VIEW===t[0] ? ' on' : '') + '" onclick="setView(\'' + t[0] + '\')">'
-        + esc(t[1]) + '<span class="n">' + esc(String(t[2])) + '</span></button>';
-    }).join('');
+  function isOpening(c){ return c.availability === 'ember_unlock' && !c.unlocked_at && !MINE[c.id]; }
+  function backToList(){ OPEN = null; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+
+  function sectionHead(icon, title, sub){
+    return '<div class="sec-head"><div class="sec-title"><i class="ti ' + icon + '"></i> ' + title + '</div>'
+      + (sub ? '<div class="sec-sub">' + sub + '</div>' : '') + '</div>';
+  }
+  function progressOf(c){
+    var p = c._progress || {};
+    var goal = p.goal || c.ember_unlock_price || 0, have = p.pledged || 0;
+    return { goal: goal, have: have, pct: goal ? Math.min(100, Math.round(have / goal * 100)) : 0, backers: p.backers || 0 };
+  }
+  function openingCard(c){
+    var g = progressOf(c);
+    return '<div class="op-card" onclick="openChar(\'' + esc(c.id) + '\')">'
+      + '<div class="op-art"><div class="ch-glyph">' + esc((c.name || '?').charAt(0)) + '</div></div>'
+      + '<div class="op-body">'
+      +   '<div class="op-kicker"><i class="ti ti-flame"></i> Being opened by the community</div>'
+      +   '<div class="op-name">' + esc(c.name) + '</div>'
+      +   '<div class="op-sub">' + esc(c.subtitle || sourceLabel(c)) + '</div>'
+      +   '<div class="bar"><i style="width:' + g.pct + '%"></i></div>'
+      +   '<div class="bar-note">' + g.have.toLocaleString() + ' of ' + g.goal.toLocaleString() + ' Embers'
+      +     ' \u00b7 ' + g.backers + ' helping</div>'
+      +   '<div class="op-cta">Give a few Embers. Everyone who helps gets them when the bar fills.'
+      +     ' <span class="op-go">Take a look <i class="ti ti-arrow-right"></i></span></div>'
+      + '</div></div>';
+  }
+  function mysteryCard(line1, line2){
+    return '<div class="mystery"><div class="q">?</div>'
+      + '<div class="m1">' + line1 + '</div><div class="m2">' + line2 + '</div></div>';
   }
 
-  function setView(v){ VIEW = v; OPEN = null; render(); }
+  function render(){
+    if(OPEN) return renderDetail();
+
+    var mine = CHARS.filter(function(c){ return MINE[c.id]; });
+    var opening = CHARS.filter(isOpening);
+    var secretsLeft = Math.max(0, SLOTS.total - SLOTS.found);
+
+    var html = '';
+
+    // 1. Opening now: the thing everyone can do together, first.
+    if (opening.length) {
+      html += sectionHead('ti-flame', 'Opening now',
+        'The whole community fills the bar together. Everyone who gave Embers gets the character.')
+        + opening.map(openingCard).join('');
+    }
+
+    // 2. Your crew.
+    html += sectionHead('ti-users', 'Your crew' + (mine.length ? ' <span class="cnt">' + mine.length + '</span>' : ''),
+      mine.length ? 'Tap one to talk, see their poses, and make them your character.' : '');
+    html += mine.length
+      ? '<div class="roster">' + mine.map(cardHtml).join('') + '</div>'
+      : '<div class="empty-crew"><i class="ti ti-user-heart"></i><div>Nobody yet. Help open a character above, '
+        + 'or try the randomizer below.</div></div>';
+
+    // 3. Still to come: silhouettes only. Names and art stay on the server
+    //    until each one steps forward.
+    if (TEASERS.length || secretsLeft) {
+      html += sectionHead('ti-sparkles', 'Still to come', 'Nobody knows who these are yet.')
+        + '<div class="roster">'
+        + TEASERS.map(function(t){
+            return mysteryCard('Someone new', t.after ? 'Steps forward once ' + esc(t.after) + ' is opened.' : 'Arrives soon.');
+          }).join('')
+        + Array(secretsLeft).fill(0).map(function(){
+            return mysteryCard('A secret', 'Found by readers who read the right things. Nobody will tell you which.');
+          }).join('')
+        + '</div>';
+    }
+
+    html += randomizerHtml() + auraHtml();
+    document.getElementById('view').innerHTML = html;
+  }
 
   // ── AURA ──────────────────────────────────────────────────────
   // A colour you win with Embers that repaints the site for you. Saved on its
@@ -393,35 +478,6 @@
     var b2 = document.getElementById('aura-roll'); if (b2) b2.disabled = false;
   };
 
-  function render(){
-    renderTabs();
-    if(OPEN) return renderDetail();
-
-    var list = CHARS.slice();
-    if(VIEW==='mine')   list = list.filter(function(c){ return MINE[c.id]; });
-    if(VIEW==='open')   list = list.filter(function(c){ return c.availability==='ember_unlock' && !c.unlocked_at; });
-    if(VIEW==='secret') list = list.filter(function(c){ return c.availability==='secret'; });
-
-    var auraBlock = (VIEW === 'mine') ? randomizerHtml() + auraHtml()
-                  : (VIEW === 'all') ? randomizerHtml() : '';
-    var html = '';
-    if(!list.length && VIEW!=='secret'){
-      html = '<div class="state"><i class="ti ti-users"></i>Nobody here yet.</div>';
-    } else {
-      html = '<div class="roster">' + list.map(cardHtml).join('')
-        // Unfound secrets appear as ??? so the community knows to look. The
-        // condition itself is never sent to the browser.
-        + (VIEW==='secret' || VIEW==='all'
-            ? Array(Math.max(0, SLOTS.total - SLOTS.found)).fill(0).map(function(){
-                return '<div class="secret-slot"><div class="q">?</div>'
-                  + '<div class="t">Someone out there, not yet found.</div></div>';
-              }).join('')
-            : '')
-        + '</div>';
-    }
-    document.getElementById('view').innerHTML = html + auraBlock;
-  }
-
   function cardHtml(c){
     var own = MINE[c.id];
     var art = ''; // the roster shows the base portrait only
@@ -495,8 +551,8 @@
       +   '<p style="margin-top:8px;color:var(--text3);font-size:12px;">' + esc(sourceLabel(c)) + '</p>'
       + '</div>'
       + (own ? affectionPanel(own) : unlockPanel(c, prog))
-      + '<div class="btn-row"><button class="btn" onclick="setView(\'' + esc(VIEW) + '\')">'
-      +   '<i class="ti ti-arrow-left"></i> Back to everyone</button></div>'
+      + '<div class="btn-row"><button class="btn" onclick="backToList()">'
+      +   '<i class="ti ti-arrow-left"></i> Back to all characters</button></div>'
       + '</div>';
 
     document.getElementById('view').innerHTML = '<div class="detail">' + stage + side + '</div>';
