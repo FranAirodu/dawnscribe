@@ -265,6 +265,8 @@
     .sg-foot{font-size:11px;color:var(--text3);margin:6px 0 8px;}
     .sg-note{color:var(--text3);font-weight:400;}
     .sg-where{background:rgba(255,255,255,0.02);}
+    .tier-pick{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin-top:10px;font-size:12.5px;color:var(--text2);line-height:1.55;}
+    .tier-pick > div{border:1px solid var(--border);border-radius:9px;padding:8px 10px;background:var(--bg3);}
     .gaps{border:1px dashed rgba(var(--accent-rgb),0.45);border-radius:12px;padding:12px 16px;margin-bottom:18px;background:rgba(var(--accent-rgb),0.04);}
     .gaps-h{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;}
     .gaps-h i{color:var(--accent);}
@@ -418,7 +420,8 @@ var FINDINGS = [];
 var NOTES = [];
 var IMG_URLS = {};   // image_path -> short-lived signed URL (private bucket)
 var NOTES_SHOW_DONE = false;
-var LOREKEEPER = false;
+var LOREKEEPER = false;   // full-tier membership (also gates manuscript export)
+var LORESCOUT = false;    // Lorescout membership
 var CHAPTERS = [];
 var CREDIT = null;      // { chapters_remaining, words_remaining, ... }
 var QUOTES = {};        // chapter_id -> what a read would cost
@@ -629,7 +632,8 @@ function openFindingsFor(cardId){
           try {
             var b = await db.rpc('my_lorekeeper_balance');
             if(b.data && b.data.ok){
-              var grew = !CREDIT || b.data.chapters_remaining > (CREDIT.chapters_remaining || 0);
+              var grew = !CREDIT || (b.data.chapters_remaining + (b.data.scout_chapters_remaining || 0))
+                > ((CREDIT.chapters_remaining || 0) + (CREDIT.scout_chapters_remaining || 0));
               CREDIT = b.data;
               if(grew){
                 toast('Block added \u2014 50 chapter reads or 150,000 words.', 'ti-check');
@@ -715,6 +719,7 @@ async function loadWork(){
     return;
   }
   LOREKEEPER = sum.data.lorekeeper === true;
+  LORESCOUT = sum.data.lorescout === true;
 
   var out = await Promise.all([
     Promise.resolve(db.from('works').select('id,title').eq('id', workId).maybeSingle()).catch(function(){ return {}; }),
@@ -2806,9 +2811,13 @@ function renderChecks(){
   // Lorekeeper is not a lock on this page: the rule-based checks are part of
   // the Lorebook. The membership adds the prose read, so it is offered here
   // as an extra rather than as a paywall over what is already working.
-  var pitch = LOREKEEPER
+  var hasKeeper = LOREKEEPER || ((CREDIT && CREDIT.chapters_remaining) || 0) > 0;
+  var hasScout = LORESCOUT || ((CREDIT && CREDIT.scout_chapters_remaining) || 0) > 0;
+  var pitch = (hasKeeper || hasScout)
     ? '<div class="finding ai" style="border-left-color:#a78bfa;">'
-      + '<div class="finding-msg"><i class="ti ti-eye"></i> Lorekeeper is reading your drafts. '
+      + '<div class="finding-msg"><i class="ti ti-eye"></i> '
+      + (hasKeeper ? 'Lorekeeper is reading your drafts. '
+                   : 'Lorescout is fact-checking your drafts against your cards. ')
       + 'Anything it notices appears here alongside the card checks.</div>'
       + '<div style="font-size:12.5px;color:var(--text3);margin-top:6px;line-height:1.55;">'
       + 'Like any beta reader, it will sometimes be wrong. Nothing reaches a card until you choose, '
@@ -3836,7 +3845,13 @@ function renderReader(){
   var body = document.getElementById('view-body');
   var ch = (CREDIT && CREDIT.chapters_remaining) || 0;
   var wd = (CREDIT && CREDIT.words_remaining) || 0;
-  var hasCredit = ch > 0 && wd > 0;
+  var sch = (CREDIT && CREDIT.scout_chapters_remaining) || 0;
+  var swd = (CREDIT && CREDIT.scout_words_remaining) || 0;
+  var hasCredit = (ch > 0 && wd > 0) || (sch > 0 && swd > 0);
+  var line = function(name, c, w, what){
+    return '<div style="margin:3px 0;"><b>' + name + ':</b> ' + c + ' chapter read' + (c === 1 ? '' : 's')
+      + ' and ' + w.toLocaleString() + ' words left <span style="color:var(--text3);font-size:12px;">\u2014 ' + what + '</span></div>';
+  };
 
   var intro =
     '<div class="board-help">A beta reader that has read the whole thing. It tells you what it '
@@ -3851,10 +3866,19 @@ function renderReader(){
     '<div class="finding" style="border-left-color:var(--gold);">'
     + '<div class="finding-msg">'
     +   (hasCredit
-          ? '<b>' + ch + ' chapter read' + (ch === 1 ? '' : 's') + '</b> and <b>'
-            + wd.toLocaleString() + ' words</b> left.'
-          : '<b>Nothing left to read with.</b> A block is $5 or 700 Quills: '
-            + '50 chapter reads or 150,000 words, whichever you use up first. It never expires.')
+          ? (ch > 0 ? line('Lorekeeper', ch, wd, 'full beta read') : '')
+            + (sch > 0 ? line('Lorescout', sch, swd, 'fact-check against your cards') : '')
+            + (ch > 0 && sch > 0 ? '<div style="font-size:12px;color:var(--text3);margin-top:4px;">'
+                + 'Lorekeeper reads are used first. Lorescout reads are used when those run out.</div>' : '')
+          : '<b>Nothing left to read with.</b> Each block is 50 chapter reads or 150,000 words, '
+            + 'whichever you use up first, and never expires.')
+    + '</div>'
+    + '<div class="tier-pick">'
+    +   '<div><b>Lorescout</b> \u2014 $5 or 700 Quills. Checks every chapter against your cards (eyes, deaths, scars, names\u2026) '
+    +     'and hands you new facts to file. Runs on a smaller AI model that only does this job. '
+    +     '<i>It can only check facts your cards know, so fill them in.</i></div>'
+    +   '<div><b>Lorekeeper</b> \u2014 $9 or 1,260 Quills. The full beta read: the same fact-check done twice on a larger model, '
+    +     'plus loose threads, characters acting out of character, and repeated beats.</div>'
     + '</div>'
     + '<div style="font-size:12px;color:var(--text3);margin-top:7px;line-height:1.55;">'
     +   'Every read of a chapter costs one read, including after you edit it. '
@@ -3865,8 +3889,10 @@ function renderReader(){
           ? '<span><i class="ti ti-receipt"></i> ' + CREDIT.lifetime_blocks + ' bought so far</span>' : '')
     + '</div>'
     + '<div class="finding-acts">'
-    +   '<button class="btn primary" onclick="buyBlockCard(this)"><i class="ti ti-credit-card"></i> 50 chapter reads \u2014 $5</button>'
-    +   '<button class="btn" onclick="buyBlockQuills(this)"><i class="ti ti-feather"></i> 700 Quills</button>'
+    +   '<button class="btn" onclick="buyBlockCard(this,\'scout\')"><i class="ti ti-credit-card"></i> Lorescout \u2014 $5</button>'
+    +   '<button class="btn" onclick="buyBlockQuills(this,\'scout\')"><i class="ti ti-feather"></i> Lorescout \u2014 700 Quills</button>'
+    +   '<button class="btn primary" onclick="buyBlockCard(this,\'keeper\')"><i class="ti ti-credit-card"></i> Lorekeeper \u2014 $9</button>'
+    +   '<button class="btn" onclick="buyBlockQuills(this,\'keeper\')"><i class="ti ti-feather"></i> Lorekeeper \u2014 1,260 Quills</button>'
     + '</div></div>';
 
   if(!CHAPTERS.length){
@@ -3888,7 +3914,9 @@ function renderReader(){
           : (q.free ? 'Free \u2014 ' + (q.reason === 'already_read'
                         ? 'unchanged since the last read, findings are still on file'
                         : 'nothing changed')
-                    : q.words.toLocaleString() + ' words of your block'))
+                    : q.words.toLocaleString() + ' words \u2014 '
+                      + (q.tier === 'scout' ? 'a Lorescout read (fact-check only)'
+                         : q.tier === 'keeper' ? 'a Lorekeeper read (full beta read)' : 'not enough left')))
       : (c.word_count ? Number(c.word_count).toLocaleString() + ' words' : '');
 
     var disabled = q && (q.ok === false || q.affordable === false);
@@ -3996,7 +4024,7 @@ async function askForRead(chapterId, btn){
       toast('Nothing changed since the last read \u2014 findings are unchanged, nothing charged.', 'ti-check');
     } else if((r.findings || 0) === 0){
       READ_RESULT[chapterId] = { state: 'clean' };
-      toast('Finished reading \u2014 nothing worth raising.', 'ti-check');
+      toast((r.tier === 'scout' ? 'Lorescout' : 'Lorekeeper') + ' finished \u2014 nothing worth raising.', 'ti-check');
     } else {
       READ_RESULT[chapterId] = { state: 'found', findings: r.findings };
       toast('Finished reading \u2014 ' + r.findings + ' thing' + (r.findings === 1 ? '' : 's')
@@ -4019,7 +4047,7 @@ async function askForRead(chapterId, btn){
   }
 }
 
-async function buyBlockCard(btn){
+async function buyBlockCard(btn, tier){
   var original = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Redirecting\u2026';
@@ -4030,7 +4058,7 @@ async function buyBlockCard(btn){
     var resp = await fetch(SUPABASE_URL + '/functions/v1/create-block-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ blocks: 1 })
+      body: JSON.stringify({ blocks: 1, tier: tier === 'keeper' ? 'keeper' : 'scout' })
     });
     var result = await resp.json();
     if(!resp.ok || !result.ok){
@@ -4046,18 +4074,18 @@ async function buyBlockCard(btn){
   }
 }
 
-async function buyBlockQuills(btn){
+async function buyBlockQuills(btn, tier){
   var original = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> Working\u2026';
   try {
-    var res = await db.rpc('buy_lorekeeper_block_with_quills');
+    var res = await db.rpc('buy_lorekeeper_block_with_quills', { p_tier: tier === 'keeper' ? 'keeper' : 'scout' });
     if(res.error || !res.data || res.data.ok !== true){
       toast((res.data && res.data.error) || (res.error && res.error.message) || 'Could not buy a block', 'ti-x', true);
       btn.disabled = false; btn.innerHTML = original;
       return;
     }
-    toast('Block added \u2014 50 chapter reads or 150,000 words.', 'ti-check');
+    toast((res.data.tier === 'keeper' ? 'Lorekeeper' : 'Lorescout') + ' block added \u2014 50 chapter reads or 150,000 words.', 'ti-check');
     var balRes = await db.rpc('my_lorekeeper_balance');
     if(balRes.data && balRes.data.ok) CREDIT = balRes.data;
     render();

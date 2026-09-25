@@ -1761,7 +1761,7 @@
     try {
       const [planRes, statusRes] = await Promise.all([
         db.from('lorebook_plans')
-          .select('code,label,blurb,kind,duration_days,price_cents,quill_price')
+          .select('code,label,blurb,kind,duration_days,price_cents,quill_price,tier')
           .eq('is_active', true).order('sort_order'),
         db.rpc('my_lorebook_status'),
       ]);
@@ -1781,9 +1781,16 @@
       { year: 'numeric', month: 'long', day: 'numeric' });
   }
 
+  // Two tiers, sold side by side:
+  //   LORESCOUT  ($5)  fact-checks chapters against the cards, on a smaller AI
+  //   LOREKEEPER ($9)  the full beta read + manuscript export + badge
+  const LB_TIER_NAME = { scout: 'Lorescout', keeper: 'Lorekeeper' };
+  function lbTierName(t) { return LB_TIER_NAME[t] || 'Lorekeeper'; }
+
   function renderLorebook() {
     const box = document.getElementById('lorebook-block');
     const active = LB_STATUS.active === true;
+    const tierName = lbTierName(LB_STATUS.tier);
 
     let inner;
     if (active) {
@@ -1798,9 +1805,17 @@
 
       inner =
         '<div style="font-family:\'Cinzel\',serif;font-size:19px;color:var(--text);display:flex;align-items:center;gap:9px;">'
-        +   '<i class="ti ti-book-2" style="color:var(--gold);"></i> Your Lorekeeper membership is active'
+        +   '<i class="ti ti-book-2" style="color:var(--gold);"></i> Your ' + esc(tierName) + ' membership is active'
         + '</div>'
         + '<div style="font-size:13px;color:var(--text2);margin-top:7px;line-height:1.6;">' + when + '</div>'
+        + (LB_STATUS.tier === 'scout'
+            ? '<div style="font-size:12.5px;color:var(--text3);margin-top:6px;line-height:1.55;">'
+              + 'Lorescout fact-checks your chapters against your cards. Lorekeeper ($9) adds the full beta read: '
+              + 'loose threads, characters acting out of character, repeated beats, and manuscript export. '
+              + (LB_STATUS.is_recurring
+                  ? 'To switch, cancel renewal here and subscribe to Lorekeeper; you keep the time you have paid for.'
+                  : 'You can buy a Lorekeeper month any time from the plans.') + '</div>'
+            : '')
         + '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:15px;">'
         +   (LB_STATUS.is_recurring
               ? (LB_STATUS.cancel_at_period_end
@@ -1808,22 +1823,32 @@
                   : '<button class="filter-btn" onclick="lorebookCancel(this,false)"><i class="ti ti-x"></i> Cancel renewal</button>')
                 + '<button class="filter-btn" onclick="lorebookPortal(this)" style="opacity:0.8;"><i class="ti ti-credit-card"></i> Payment details</button>'
               : '<button class="filter-btn" onclick="openLorebookModal()"><i class="ti ti-plus"></i> Add more time</button>')
+        +   (LB_STATUS.is_recurring ? '<button class="filter-btn" onclick="openLorebookModal()" style="opacity:0.8;"><i class="ti ti-list"></i> See plans</button>' : '')
         + '</div>';
     } else {
       inner =
         '<div style="font-family:\'Cinzel\',serif;font-size:21px;color:var(--text);display:flex;align-items:center;gap:9px;">'
-        +   '<i class="ti ti-book-2" style="color:var(--gold);"></i> Lorekeeper'
+        +   '<i class="ti ti-book-2" style="color:var(--gold);"></i> Lorescout &amp; Lorekeeper'
         + '</div>'
         + '<div style="font-size:13px;color:var(--text2);margin-top:8px;line-height:1.65;max-width:640px;">'
-        +   'Your Lorebook comes with your author account. Lorekeeper adds a beta reader that reads the '
-        +   'draft itself \u2014 loose threads, drifting characters, repeated beats. It never writes for you.'
+        +   'Your Lorebook comes with your author account. Two paid readers go further, and neither ever writes for you:'
+        + '</div>'
+        + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-top:10px;max-width:700px;">'
+        +   '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--bg3);">'
+        +     '<div style="font-weight:700;color:var(--text);">Lorescout <span style="color:var(--gold);">$5</span></div>'
+        +     '<div style="font-size:12.5px;color:var(--text2);line-height:1.55;margin-top:3px;">Keeps your facts straight: checks every chapter against your cards '
+        +     '(eyes, deaths, scars, names\u2026) and hands you new facts to file.</div></div>'
+        +   '<div style="border:1px solid rgba(245,158,11,0.35);border-radius:10px;padding:10px 12px;background:var(--bg3);">'
+        +     '<div style="font-weight:700;color:var(--text);">Lorekeeper <span style="color:var(--gold);">$9</span></div>'
+        +     '<div style="font-size:12.5px;color:var(--text2);line-height:1.55;margin-top:3px;">A real beta reader: everything Lorescout does, checked twice, plus loose threads, '
+        +     'characters acting out of character, repeated beats, and manuscript export.</div></div>'
         + '</div>'
         + '<div style="font-size:12.5px;color:var(--text3);margin-top:8px;line-height:1.6;max-width:640px;">'
         +   'It is a careful second pair of eyes, not a guarantee: it will catch a lot, miss some things, '
         +   'and now and then flag something that is not a problem. You decide what to keep.'
         + '</div>'
         + '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;align-items:center;">'
-        +   '<button class="buy-quills-btn" onclick="openLorebookModal()"><i class="ti ti-book-2"></i> See plans</button>'
+        +   '<button class="buy-quills-btn" onclick="openLorebookModal()"><i class="ti ti-book-2"></i> Compare plans</button>'
         +   '<span style="font-size:12px;color:var(--text3);">Cancel any time. No effect on your stories or readers.</span>'
         + '</div>';
     }
@@ -1838,7 +1863,7 @@
     const body = document.getElementById('lorebook-modal-body');
     const spendable = LB_STATUS ? (LB_STATUS.spendable || 0) : 0;
 
-    const cards = LB_PLANS.map(p => {
+    const planCard = p => {
       const price = '$' + (p.price_cents / 100).toFixed(2);
       const recurring = p.kind === 'recurring';
       const sub = recurring ? 'per month, renews automatically'
@@ -1871,6 +1896,19 @@
         +     '<i class="ti ti-credit-card"></i> ' + (recurring ? 'Subscribe' : 'Pay ' + price) + '</button>'
         +   quillBtn
         + '</div></div>';
+    };
+    const TIER_HEAD = {
+      scout: ['Lorescout', 'Fact-checks every chapter against your cards and hands you new facts to file. '
+        + 'Runs on a smaller, cheaper AI model that only does this one job.'],
+      keeper: ['Lorekeeper', 'The full beta read: everything Lorescout does, checked a second time on a larger AI model, plus '
+        + 'loose threads, characters acting out of character, repeated beats, manuscript export (EPUB + Word), and the Lorekeeper badge.']
+    };
+    const cards = ['scout', 'keeper'].map(t => {
+      const ps = LB_PLANS.filter(p => (p.tier || 'keeper') === t);
+      if (!ps.length) return '';
+      return '<div style="margin:6px 0 4px;font-family:\'Cinzel\',serif;font-size:16px;color:var(--text);">' + TIER_HEAD[t][0] + '</div>'
+        + '<div style="font-size:12.5px;color:var(--text2);line-height:1.55;margin-bottom:9px;">' + TIER_HEAD[t][1] + '</div>'
+        + ps.map(planCard).join('');
     }).join('');
 
     body.innerHTML =
@@ -1883,10 +1921,11 @@
       + '<div style="border:1px solid rgba(245,158,11,0.3);background:rgba(245,158,11,0.06);border-radius:11px;'
       +   'padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.6;">'
       +   '<div style="font-weight:700;color:var(--text);margin-bottom:4px;"><i class="ti ti-info-circle" style="color:var(--gold);"></i> What to expect</div>'
-      +   'Lorekeeper reads closely, but no reader \u2014 human or AI \u2014 catches everything. It will sometimes miss '
+      +   'Both read closely, but no reader \u2014 human or AI \u2014 catches everything. They will sometimes miss '
       +   'a mistake, and sometimes point at something that is exactly how you meant it. Every finding is a suggestion: '
       +   'nothing in your story or your Lorebook changes unless you choose it. A read that fails is never charged, '
-      +   'and it gets better as authors tell it when it is wrong.'
+      +   'and it gets better as authors tell it when it is wrong. Every plan is 50 chapter reads or 150,000 words a month, '
+      +   'whichever runs out first; editing a chapter and reading it again uses another read.'
       + '</div>'
       + cards
       + '<div style="font-size:11.5px;color:var(--text3);margin-top:4px;line-height:1.55;">'
@@ -1945,7 +1984,8 @@
         btnEl.disabled = false; btnEl.innerHTML = original;
         return;
       }
-      showToast('Lorekeeper active until ' + lbDate(data.period_end), 'ti-check');
+      const bought = LB_PLANS.filter(p => p.code === planCode)[0];
+      showToast(lbTierName(bought && bought.tier) + ' active until ' + lbDate(data.period_end), 'ti-check');
       closeLorebookModal(null, true);
       await loadCurrencies();
       await loadLorebook();
@@ -1980,7 +2020,7 @@
         return;
       }
       showToast(resume
-        ? 'Your Lorekeeper membership will keep renewing.'
+        ? 'Your ' + lbTierName(LB_STATUS && LB_STATUS.tier) + ' membership will keep renewing.'
         : 'Cancelled. You keep everything until ' + lbDate(result.period_end) + ' — no further charges.',
         'ti-check');
       await loadLorebook();
