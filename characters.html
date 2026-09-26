@@ -349,6 +349,22 @@
   var TAB = 'characters';
   try { var _h = (location.hash || '').replace('#', ''); if (['characters','banners','aura'].indexOf(_h) >= 0) TAB = _h;
         else if (localStorage.getItem('ds_collection_tab')) TAB = localStorage.getItem('ds_collection_tab'); } catch(e) {}
+  // Keep the top bar's Ember count honest after any roll or pledge. The aura
+  // roll does not return a balance, so ask for it when none is given.
+  async function refreshEmbers(bal){
+    var el = document.getElementById('ds-ember-count');
+    if (!el) return;
+    if (typeof bal !== 'number') {
+      var r = await db.from('user_embers').select('balance').eq('user_id', ME.id).maybeSingle();
+      bal = r && r.data ? r.data.balance : null;
+    }
+    if (typeof bal === 'number') el.textContent = bal.toLocaleString();
+  }
+  // A link to characters.html#banners from this same page switches tab too.
+  window.addEventListener('hashchange', function(){
+    var h = (location.hash || '').replace('#', '');
+    if (['characters','banners','aura'].indexOf(h) >= 0 && h !== TAB) setTab(h);
+  });
   window.setTab = function(t){ TAB = t; OPEN = null; try { localStorage.setItem('ds_collection_tab', t); history.replaceState(null, '', '#' + t); } catch(e) {} render(); };
   // Banners
   var BANNERS = [];        // owned banners
@@ -873,9 +889,7 @@
       sub: kind === 'banner' ? 'Set it from your profile whenever you like.' : 'They\u2019ve joined your crew.'
     });
     await load();
-    // Update the Ember count in the top bar straight away.
-    var emEl = document.getElementById('ds-ember-count');
-    if (emEl && typeof d.balance === 'number') emEl.textContent = d.balance.toLocaleString();
+    refreshEmbers(d.balance);
     var note = document.getElementById('rand-note');
     if (note) note.innerHTML = 'You won <b>' + esc(d.name || '') + '</b>. '
       + (kind === 'banner' ? '<a href="profile.html" style="color:var(--accent);">Set it on your profile</a>.' : 'It is in your collection above.');
@@ -1000,6 +1014,7 @@
     // tap-then-Accept rule as every other aura change.
     AURA_PICK = d.hex || null;
     await load();
+    refreshEmbers();
     var bt = document.querySelector('.flame.picked');
     if (bt) { bt.classList.add('dance'); bt.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   };
@@ -1185,6 +1200,7 @@
       toast((r.data && r.data.error) || (r.error && r.error.message) || 'Could not give that', 'ti-x', true);
       return;
     }
+    refreshEmbers(typeof r.data.balance === 'number' ? r.data.balance : undefined);
     if(r.data.unlocked){
       toast('Open! They belong to everyone who helped.', 'ti-sparkles');
       await load();
