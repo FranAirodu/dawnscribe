@@ -255,6 +255,33 @@
       .roll-spark{display:none;}
       .roll-label{opacity:1 !important;transform:none !important;animation:none !important;}
     }
+    /* ── collection tabs ── */
+    .ctabs{display:flex;gap:6px;margin:6px 0 18px;border-bottom:1px solid var(--border,rgba(255,255,255,.08));}
+    .ctab{background:none;border:none;border-bottom:2px solid transparent;color:var(--text2,#9b9bc0);font:inherit;font-size:14px;font-weight:700;
+      padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;margin-bottom:-1px;}
+    .ctab.on{color:var(--text,#f1f0ff);border-bottom-color:var(--accent);}
+    .ctab.on i{color:var(--accent);}
+    /* ── banners ── */
+    .bn-tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+    .bn-tools input,.bn-tools select,.rot-row select{background:var(--bg3,#1a1a26);border:1px solid var(--border,rgba(255,255,255,.1));border-radius:9px;
+      color:var(--text,#f1f0ff);font:inherit;font-size:13px;padding:8px 10px;}
+    .bn-tools input{flex:1;min-width:200px;}
+    .bn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;}
+    .bn{background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.08));border-radius:12px;overflow:hidden;}
+    .bn.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+    .bn.sel{border-color:rgba(var(--aura-rgb,45,212,191),.55);}
+    .bn-img{display:block;width:100%;aspect-ratio:4/1;padding:0;border:none;background:var(--bg3,#1a1a26);cursor:pointer;position:relative;}
+    .bn-img img{width:100%;height:100%;object-fit:cover;display:block;}
+    .bn-tag{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;}
+    .bn-foot{display:flex;align-items:center;gap:8px;padding:8px 10px;}
+    .bn-name{flex:1;font-size:13px;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .bn-name span{font-weight:400;color:var(--text3,#8a8aa8);}
+    .bn-tick{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text2,#9b9bc0);cursor:pointer;}
+    .bn-tick b{color:var(--accent);min-width:14px;}
+    .rot-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--text2,#9b9bc0);}
+    .rot-now{margin-top:10px;font-size:13px;color:var(--text2,#9b9bc0);}
+    .rot-now i{color:var(--accent);}
+    .rot-now b{color:var(--text,#f1f0ff);}
     .aura-pick{font-size:13px;color:var(--text2,#9b9bc0);margin:10px 0 2px;min-height:18px;}
     .aura-pick b{color:var(--text,#f1f0ff);}
     .aura-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
@@ -318,6 +345,17 @@
   var SLOTS = { total: 0, found: 0 };
   var TEASERS = [];        // characters not open yet: only "after whom" is known
   var OPEN = null;         // the character being looked at
+  // Tabs by WHAT you collect. Remembered, and reachable as characters.html#banners.
+  var TAB = 'characters';
+  try { var _h = (location.hash || '').replace('#', ''); if (['characters','banners','aura'].indexOf(_h) >= 0) TAB = _h;
+        else if (localStorage.getItem('ds_collection_tab')) TAB = localStorage.getItem('ds_collection_tab'); } catch(e) {}
+  window.setTab = function(t){ TAB = t; OPEN = null; try { localStorage.setItem('ds_collection_tab', t); history.replaceState(null, '', '#' + t); } catch(e) {} render(); };
+  // Banners
+  var BANNERS = [];        // owned banners
+  var BROT = { active: null, ids: [], mode: 'manual', index: 0, last: null };
+  var BSEL = null;         // ids ticked for a rotation (in order)
+  var BMODE = null;        // chosen interval
+  var BQ = '', BSORT = 'new', BSHOWN = 24;
   var LINES = [];          // lines the viewer has earned on OPEN
   var POSES = [];
   var FACES = {};          // slug -> image_path
@@ -371,7 +409,11 @@
       db.rpc('ds_randomizer_pool'),
       db.rpc('ds_randomizer_cost', { p_kind: 'aura' }),
       db.from('reroll_color_palette').select('hex,label,is_rare').eq('region_type', 'accent'),
-      db.rpc('ds_character_teasers')
+      db.rpc('ds_character_teasers'),
+      db.from('user_unlocked_items').select('cosmetic_item_id, unlocked_at, cosmetic_items(id, name, image_url, artist_name, slot)')
+        .eq('user_id', ME.id),
+      db.from('user_avatars').select('equipped, banner_rotation_ids, banner_rotation_mode, banner_rotation_index, banner_last_rotated_at')
+        .eq('user_id', ME.id).maybeSingle()
     ]);
     CHARS = res[0].data || [];
     MINE = {};
@@ -390,6 +432,19 @@
       character: rp.character || RAND.character
     };
     TEASERS = (res[7] && res[7].data) || [];
+    BANNERS = ((res[8] && res[8].data) || [])
+      .filter(function(u){ return u.cosmetic_items && u.cosmetic_items.slot === 'banner'; })
+      .map(function(u){ var c = u.cosmetic_items; return { id: c.id, name: c.name || 'Banner', url: c.image_url, artist: c.artist_name || '', at: u.unlocked_at }; });
+    var ba = (res[9] && res[9].data) || {};
+    BROT = {
+      active: ba.equipped && ba.equipped.banner ? String(ba.equipped.banner) : null,
+      ids: Array.isArray(ba.banner_rotation_ids) ? ba.banner_rotation_ids.map(String) : [],
+      mode: ba.banner_rotation_mode || 'manual',
+      index: ba.banner_rotation_index || 0,
+      last: ba.banner_last_rotated_at || null
+    };
+    if (!BSEL) BSEL = BROT.mode !== 'manual' ? BROT.ids.slice() : [];
+    if (!BMODE) BMODE = BROT.mode !== 'manual' ? BROT.mode : 'daily';
     AURA_COST = (res[5] && res[5].data) || 15;
     AURA_INFO = {};
     ((res[6] && res[6].data) || []).forEach(function(p){
@@ -455,9 +510,7 @@
       + '<div class="m1">' + line1 + '</div><div class="m2">' + line2 + '</div></div>';
   }
 
-  function render(){
-    if(OPEN) return renderDetail();
-
+  function charactersHtml(){
     var mine = CHARS.filter(function(c){ return MINE[c.id]; });
     var opening = CHARS.filter(isOpening);
     var secretsLeft = Math.max(0, SLOTS.total - SLOTS.found);
@@ -493,9 +546,150 @@
         + '</div>';
     }
 
-    html += randomizerHtml() + auraHtml();
+    html += '<div class="aura-card">'
+      + '<div class="aura-head"><i class="ti ti-dice-5"></i> Win a character</div>'
+      + '<div class="aura-sub">DawnScribe\u2019s own characters, never sold, only won with Embers.</div>'
+      + randRow('character', 'Characters', 'ti-user-heart', 'Winners join your crew.')
+      + '<div class="aura-note" id="rand-note"></div></div>';
+    return html;
+  }
+
+  function tabsHtml(){
+    var t = function(key, icon, label){
+      return '<button class="ctab' + (TAB === key ? ' on' : '') + '" onclick="setTab(\'' + key + '\')"'
+        + ' role="tab" aria-selected="' + (TAB === key) + '"><i class="ti ' + icon + '"></i> ' + label + '</button>';
+    };
+    return '<div class="ctabs" role="tablist">' + t('characters', 'ti-users', 'Characters')
+      + t('banners', 'ti-photo', 'Banners') + t('aura', 'ti-flame', 'Aura') + '</div>';
+  }
+
+  function render(){
+    if (OPEN) return renderDetail();
+    var html = tabsHtml();
+    if (TAB === 'banners') html += bannersHtml();
+    else if (TAB === 'aura') html += auraHtml();
+    else html += charactersHtml();
     document.getElementById('view').innerHTML = html;
   }
+
+  // ── BANNERS TAB ───────────────────────────────────────────────
+  /* Every banner you own, built to cope with hundreds: search, sort, and a
+     page at a time. Tap one to wear it. Tick several to time-shift: the
+     database already rotates them (every 5 minutes it checks whose turn is
+     up), this is only the control panel for it. */
+  var ROT_MODES = [['15min','Every 15 minutes'],['hourly','Every hour'],['6h','Every 6 hours'],['12h','Every 12 hours'],['daily','Every day'],['weekly','Every week']];
+  function bannerList(){
+    var q = BQ.trim().toLowerCase();
+    var list = BANNERS.filter(function(b){ return !q || (b.name + ' ' + b.artist).toLowerCase().indexOf(q) >= 0; });
+    list.sort(function(a, b){
+      if (BSORT === 'az') return a.name.localeCompare(b.name);
+      if (BSORT === 'artist') return (a.artist || '~').localeCompare(b.artist || '~') || a.name.localeCompare(b.name);
+      return String(b.at || '').localeCompare(String(a.at || ''));
+    });
+    return list;
+  }
+  function bannerCard(b){
+    var on = BROT.active === b.id;
+    var pos = BSEL.indexOf(b.id);
+    return '<div class="bn' + (on ? ' on' : '') + (pos >= 0 ? ' sel' : '') + '">'
+      + '<button class="bn-img" onclick="useBanner(\'' + esc(b.id) + '\')" title="Use on my profile">'
+      +   '<img src="' + esc(b.url || '') + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'"/>'
+      +   (on ? '<span class="bn-tag"><i class="ti ti-check"></i> On your profile</span>' : '')
+      + '</button>'
+      + '<div class="bn-foot"><div class="bn-name">' + esc(b.name) + (b.artist ? '<span> \u00b7 ' + esc(b.artist) + '</span>' : '') + '</div>'
+      +   '<label class="bn-tick" title="Add to your rotation"><input type="checkbox"' + (pos >= 0 ? ' checked' : '')
+      +     ' onchange="toggleRot(\'' + esc(b.id) + '\', this.checked)"/>' + (pos >= 0 ? '<b>' + (pos + 1) + '</b>' : 'Rotate') + '</label>'
+      + '</div></div>';
+  }
+  function rotationHtml(){
+    var running = BROT.mode !== 'manual' && BROT.ids.length > 1;
+    var nameOf = function(id){ var b = BANNERS.filter(function(x){ return x.id === id; })[0]; return b ? b.name : 'a banner'; };
+    var now = '', next = '';
+    if (running) {
+      now = nameOf(BROT.ids[BROT.index % BROT.ids.length]);
+      next = nameOf(BROT.ids[(BROT.index + 1) % BROT.ids.length]);
+    }
+    var modeLabel = (ROT_MODES.filter(function(m){ return m[0] === BROT.mode; })[0] || [0, ''])[1].toLowerCase();
+    return '<div class="aura-card">'
+      + '<div class="aura-head"><i class="ti ti-refresh"></i> Time shifting</div>'
+      + '<div class="aura-sub">Tick <b>Rotate</b> on up to 20 banners, pick how often they change, and your profile cycles through them in that order.</div>'
+      + (running
+          ? '<div class="rot-now"><i class="ti ti-player-play"></i> Running: <b>' + esc(now) + '</b> now, then <b>' + esc(next) + '</b> \u00b7 ' + esc(modeLabel) + '</div>'
+          : '')
+      + '<div class="rot-row">'
+      +   '<span>' + BSEL.length + ' of 20 ticked</span>'
+      +   '<select id="rot-mode" onchange="BMODE=this.value">'
+      +     ROT_MODES.map(function(m){ return '<option value="' + m[0] + '"' + (BMODE === m[0] ? ' selected' : '') + '>' + m[1] + '</option>'; }).join('')
+      +   '</select>'
+      +   '<button class="aura-roll" onclick="saveRotation()"' + (BSEL.length >= 2 ? '' : ' disabled') + '><i class="ti ti-check"></i> Start rotation</button>'
+      +   (running ? '<button class="aura-reset" onclick="stopRotation()">Stop rotating</button>' : '')
+      +   (BSEL.length ? '<button class="aura-reset" onclick="BSEL=[];render()">Clear ticks</button>' : '')
+      + '</div>'
+      + (BSEL.length === 1 ? '<div class="aura-pick">Tick at least one more to rotate.</div>' : '')
+      + '</div>';
+  }
+  function bannersHtml(){
+    var list = bannerList();
+    var shown = list.slice(0, BSHOWN);
+    return '<div class="aura-card">'
+      + '<div class="aura-head"><i class="ti ti-dice-5"></i> Win a banner</div>'
+      + '<div class="aura-sub">DawnScribe\u2019s own banners, never sold, only won with Embers.</div>'
+      + randRow('banner', 'Profile banners', 'ti-photo', 'New ones appear below.')
+      + '<div class="aura-note" id="rand-note"></div></div>'
+      + (BANNERS.length ? rotationHtml() : '')
+      + sectionHead('ti-photo', 'Your banners', BANNERS.length ? 'Tap a banner to put it on your profile.' : '')
+      + (BANNERS.length
+          ? '<div class="bn-tools"><input id="bn-q" placeholder="Search by name or artist" value="' + esc(BQ) + '"'
+            + ' oninput="BQ=this.value;BSHOWN=24;renderBannersOnly()"/>'
+            + '<select onchange="BSORT=this.value;render()">'
+            +   '<option value="new"' + (BSORT === 'new' ? ' selected' : '') + '>Newest first</option>'
+            +   '<option value="az"' + (BSORT === 'az' ? ' selected' : '') + '>A to Z</option>'
+            +   '<option value="artist"' + (BSORT === 'artist' ? ' selected' : '') + '>By artist</option>'
+            + '</select></div>'
+            + '<div class="bn-grid" id="bn-grid">' + (shown.length ? shown.map(bannerCard).join('') : '<div class="aura-pick">No banners match that.</div>') + '</div>'
+            + (list.length > shown.length
+                ? '<div style="text-align:center;margin-top:14px;"><button class="aura-reset" onclick="BSHOWN+=24;render()">Show more</button></div>' : '')
+          : '<div class="empty-crew"><i class="ti ti-photo"></i><div>No banners yet. Try the roll above.</div></div>');
+  }
+  // Searching redraws only the grid, so the search box keeps its cursor.
+  window.renderBannersOnly = function(){
+    var g = document.getElementById('bn-grid');
+    if (!g) return render();
+    var shown = bannerList().slice(0, BSHOWN);
+    g.innerHTML = shown.length ? shown.map(bannerCard).join('') : '<div class="aura-pick">No banners match that.</div>';
+  };
+  window.toggleRot = function(id, on){
+    BSEL = BSEL.filter(function(x){ return x !== id; });
+    if (on) {
+      if (BSEL.length >= 20) { toast('A rotation holds up to 20 banners.', 'ti-info-circle', true); render(); return; }
+      BSEL.push(id);
+    }
+    render();
+  };
+  // Wearing one banner is a rotation of one that never changes, so it also
+  // stops any rotation that was running.
+  window.useBanner = async function(id){
+    var r = await db.rpc('save_banner_rotation', { p_item_ids: [id], p_mode: 'manual' });
+    if (r.error) { toast('Could not set that banner.', 'ti-alert-triangle', true); return; }
+    var b = BANNERS.filter(function(x){ return x.id === id; })[0];
+    toast((b ? b.name : 'Banner') + ' is on your profile' + (BROT.mode !== 'manual' ? ' (rotation stopped)' : ''), 'ti-photo');
+    await load();
+  };
+  window.saveRotation = async function(){
+    var sel = document.getElementById('rot-mode'); if (sel) BMODE = sel.value;
+    if (BSEL.length < 2) return;
+    var r = await db.rpc('save_banner_rotation', { p_item_ids: BSEL.slice(0, 20), p_mode: BMODE || 'daily' });
+    if (r.error) { toast('Could not start the rotation.', 'ti-alert-triangle', true); return; }
+    toast('Rotation started. Your profile shows the first one now.', 'ti-refresh');
+    await load();
+  };
+  window.stopRotation = async function(){
+    var keep = BROT.active || BSEL[0];
+    var r = await db.rpc('save_banner_rotation', { p_item_ids: keep ? [keep] : [], p_mode: 'manual' });
+    if (r.error) { toast('Could not stop it.', 'ti-alert-triangle', true); return; }
+    toast('Rotation stopped. Your current banner stays.', 'ti-player-stop');
+    await load();
+  };
 
   // ── AURA ──────────────────────────────────────────────────────
   // A colour you win with Embers that repaints the site for you. Saved on its
@@ -662,15 +856,6 @@
       + '<div class="aura-sub" style="margin:2px 0 0;">' + status + ' ' + where + '</div></div>'
       + '<button class="aura-roll" id="roll-' + kind + '" onclick="rollRandom(\'' + kind + '\')"'
       + (!left ? ' disabled' : '') + '><i class="ti ti-dice-5"></i> Roll &middot; ' + r.cost + ' Embers</button>'
-      + '</div>';
-  }
-  function randomizerHtml(){
-    return '<div class="aura-card">'
-      + '<div class="aura-head"><i class="ti ti-dice-5"></i> The Randomizer</div>'
-      + '<div class="aura-sub">Win DawnScribe\u2019s own banners and characters with Embers. They\u2019re never sold, only won.</div>'
-      + randRow('banner', 'Profile banners', 'ti-photo', 'Set yours from your profile.')
-      + randRow('character', 'Characters', 'ti-user-heart', 'Winners join your collection here.')
-      + '<div class="aura-note" id="rand-note"></div>'
       + '</div>';
   }
   window.rollRandom = async function(kind){
