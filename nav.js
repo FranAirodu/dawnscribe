@@ -1,3 +1,5 @@
+/* Monthly background — shared by every page. See monthlyBg.js. Kept at the TOP so an error further down can never stop it. */
+(function(){if(window.__dsMonthlyBgLoader)return;window.__dsMonthlyBgLoader=true;var s=document.createElement("script");s.src="monthlyBg.js";s.defer=true;(document.head||document.documentElement).appendChild(s);})();
 /* ── DAWNSCRIBE SHARED NAV ─────────────────────────────────────────
    Include this file on every page AFTER the Supabase client is set up.
    The page must have a <nav> element. This script appends the right-side
@@ -2193,3 +2195,4 @@ window.dsScopeCacheToUser = function (uid) {
   }); // dsWaitForDb
 
 })();
+

@@ -1,3 +1,5 @@
+/* Monthly background — shared by every page. See monthlyBg.js. Kept at the TOP so an error further down can never stop it. */
+(function(){if(window.__dsMonthlyBgLoader)return;window.__dsMonthlyBgLoader=true;var s=document.createElement("script");s.src="monthlyBg.js";s.defer=true;(document.head||document.documentElement).appendChild(s);})();
 /* ── DAWNSCRIBE ACCENT (AURA) ───────────────────────────────────────
    For full-screen tool pages that do NOT load nav.js (chapters.html,
    lorebook.html). nav.js applies the user's aura colour itself; these pages
@@ -147,3 +149,4 @@ window.addEventListener('storage', function (e) {
   if (e.key === 'ds_accent_hex') dsApplyAccent(e.newValue || null);
 });
 })();
+
