@@ -924,9 +924,21 @@
       updateChecklist();
     }
 
-    function addArtTag(raw) {
+    /* Tags the payment processor forbids are refused as they are typed, with
+       one plain message. The list lives on the server and is never sent to
+       the page; the same check also runs when the work is saved. */
+    async function tagAllowed(tag){
+      try {
+        var r = await db.rpc('ds_tag_is_blocked', { p_tag: tag });
+        if (r && r.data === true) { showToast('Sorry, that tag goes against our regulations.', 'ti-ban'); return false; }
+      } catch(e) {}
+      return true;
+    }
+    async function addArtTag(raw) {
       var tag = raw.trim().toLowerCase().replace(/[^a-z0-9\s\-]/g, '').trim();
       if (!tag || artworkTags.indexOf(tag) !== -1 || artworkTags.length >= 30) return;
+      if (!(await tagAllowed(tag))) return;
+      if (artworkTags.indexOf(tag) !== -1) return;
       artworkTags.push(tag);
       renderArtworkTags();
     }
@@ -975,12 +987,13 @@
       updateChecklist();
     }
 
-    function addFandomTag(raw) {
+    async function addFandomTag(raw) {
       var tag = raw.trim().replace(/\s+/g, ' ');
       if (!tag || fandomTags.length >= 10) return;
       // Case-insensitive duplicate check
       var exists = fandomTags.some(function(t){ return t.toLowerCase() === tag.toLowerCase(); });
       if (exists) return;
+      if (!(await tagAllowed(tag))) return;
       fandomTags.push(tag);
       renderFandomTags();
       closeFandomDropdown();
