@@ -432,6 +432,8 @@
 </style>
 <style>
   .ct-mgr-item{margin-bottom:8px;}
+  .ct-mv{padding:4px 7px !important;}
+  .ct-mv[disabled]{opacity:0.3;cursor:default;}
   .ct-mgr-item .ct-mgr-row{margin-bottom:0;}
   .gl-slot:empty{display:none;}
   .gl-slot .gl-ed-card{margin:-1px 0 0 22px;border-top-left-radius:0;border-top-right-radius:0;}
@@ -487,6 +489,7 @@
         <label for="book-font-select" style="font-weight:700;color:var(--text2);"><i class="ti ti-typography"></i> Book font</label>
         <select id="book-font-select" onchange="saveBookFont(this.value)"
           style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:5px 8px;font-size:13px;"></select>
+        <button type="button" id="my-font-btn" onclick="saveMyWritingFont()" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text2);padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Lato',sans-serif;"></button>
         <span>Every chapter of this book uses it. Readers can still choose their own font in their settings.</span>
       </div>
     </div>
@@ -1505,6 +1508,7 @@
     if (!res.data) { document.getElementById('work-title-el').textContent = 'Work not found or access denied.'; return; }
     workData = res.data;
     bookFontInit(workData.default_font || 'lato');
+    loadMyWritingFont();
 
     /* Lorebook link. The open-finding count is read here rather than on the
        Lorebook page because this is where an author is when a contradiction
@@ -1942,6 +1946,33 @@
     st.textContent = '#chapter-editor .ql-editor{font-family:' + bookFontCss(key) + ';}'
       + '.ql-snow .ql-picker.ql-font .ql-picker-label:not([data-value])::before{content:"Book font";font-family:' + bookFontCss(key) + ';}';
   }
+  // The author's own default: new books start in it (set by the database
+  // when the book is created), so they don't have to pick it every time.
+  var myWritingFont = null;
+  function myFontBtnRender(){
+    var b = document.getElementById('my-font-btn');
+    if (!b || !window.READING_FONTS) return;
+    b.style.display = 'inline-flex';
+    if (myWritingFont === bookFont) {
+      b.innerHTML = '<i class="ti ti-check" style="color:var(--accent);margin-right:4px;"></i> Your default for new books';
+      b.disabled = true; b.style.cursor = 'default'; b.style.opacity = '0.8';
+    } else {
+      b.innerHTML = '<i class="ti ti-star" style="margin-right:4px;"></i> Make this my default font';
+      b.disabled = false; b.style.cursor = 'pointer'; b.style.opacity = '1';
+    }
+  }
+  async function saveMyWritingFont(){
+    var r = await db.rpc('set_my_writing_font', { p_font: bookFont });
+    if (r.error) { showToast('Could not save your default font', 'ti-alert-triangle'); return; }
+    myWritingFont = bookFont;
+    myFontBtnRender();
+    var label = (window.READING_FONTS[bookFont] || {}).label || bookFont;
+    showToast('Your new books will start in ' + label, 'ti-typography');
+  }
+  async function loadMyWritingFont(){
+    try { var r = await db.rpc('get_my_writing_font'); myWritingFont = r.data || null; } catch (e) {}
+    myFontBtnRender();
+  }
   function bookFontInit(key){
     var sel = document.getElementById('book-font-select');
     if (sel && window.READING_FONTS) {
@@ -1970,6 +2001,7 @@
     if (workData) workData.default_font = key;
     var label = (window.READING_FONTS[key] || {}).label || key;
     showToast('Every chapter now uses ' + label, 'ti-typography');
+    myFontBtnRender();
     checkMixedFonts();
   }
   // Text given a different font by hand stands out once the book has one.
@@ -3853,7 +3885,7 @@
       return;
     }
     list.innerHTML = '';
-    ctCharacters.forEach(function(char) {
+    ctCharacters.forEach(function(char, idx) {
       var row = document.createElement('div');
       row.className = 'ct-mgr-row';
       var statusLabel = char.chapter_status === 'skipped' ? 'Skipped' : (char.status === 'ended' ? 'Ended' : 'Active');
@@ -3865,6 +3897,8 @@
         '<div class="ct-mgr-name">' + esc(char.name) + '</div>' +
         '<span class="ct-mgr-status ' + statusClass + '">' + statusLabel + '</span>' +
         '<div class="ct-mgr-actions">' +
+          '<button class="ct-mgr-btn ct-mv" title="Move up" aria-label="Move ' + esc(char.name) + ' up" onclick="ctMove(\''+char.id+'\',-1)"' + (idx === 0 ? ' disabled' : '') + '><i class="ti ti-arrow-up"></i></button>' +
+          '<button class="ct-mgr-btn ct-mv" title="Move down" aria-label="Move ' + esc(char.name) + ' down" onclick="ctMove(\''+char.id+'\',1)"' + (idx === ctCharacters.length - 1 ? ' disabled' : '') + '><i class="ti ti-arrow-down"></i></button>' +
           (char.chapter_status !== 'skipped' && char.status !== 'ended'
             ? '<button class="ct-mgr-btn" onclick="ctSkipChar(\''+char.id+'\')">Skip<span class="ct-tooltip">Character isn\'t present in this chapter</span></button>'
             : (char.chapter_status === 'skipped' ? '<button class="ct-mgr-btn" onclick="ctActivateChar(\''+char.id+'\')">Include<span class="ct-tooltip">Mark character as present in this chapter</span></button>' : '')) +
@@ -3898,6 +3932,23 @@
     showToast(name + ' added!', 'ti-user-plus');
   }
 
+  var _ctMoveTimer = null;
+  function ctMove(id, dir) {
+    var i = ctCharacters.findIndex(function(c){ return c.id === id; });
+    var j = i + dir;
+    if (i < 0 || j < 0 || j >= ctCharacters.length) return;
+    var t = ctCharacters[i]; ctCharacters[i] = ctCharacters[j]; ctCharacters[j] = t;
+    // keep the glossary list in the same order
+    var order = ctCharacters.map(function(c){ return c.id; });
+    if (typeof gl !== 'undefined') gl.chars.sort(function(a, b){ return order.indexOf(a.id) - order.indexOf(b.id); });
+    ctRender();
+    clearTimeout(_ctMoveTimer);
+    _ctMoveTimer = setTimeout(async function(){
+      var r = await db.rpc('reorder_novel_characters', { p_work_id: workId, p_ids: order });
+      if (r.error) { console.error('[reorder]', r.error); showToast("Couldn't save the new order — please try again.", 'ti-alert-triangle'); return; }
+      _novelCharsP = null;
+    }, 600);
+  }
   function ctSkipChar(id) {
     var c = ctCharacters.find(function(c){ return c.id === id; });
     if (c) { c.chapter_status = 'skipped'; ctRender(); }
