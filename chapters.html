@@ -431,7 +431,11 @@
     @media (prefers-reduced-motion: reduce){.lore-glow{animation:none;box-shadow:0 0 0 1px rgba(var(--accent-rgb,45,212,191),.7),0 0 14px rgba(var(--accent-rgb,45,212,191),.5);}}
 </style>
 <style>
-  .gl-ed-wrap{border-top:1px solid var(--border);padding-top:16px;margin-top:4px;}
+  .ct-mgr-item{margin-bottom:8px;}
+  .ct-mgr-item .ct-mgr-row{margin-bottom:0;}
+  .gl-slot:empty{display:none;}
+  .gl-slot .gl-ed-card{margin:-1px 0 0 22px;border-top-left-radius:0;border-top-right-radius:0;}
+  .gl-ed-card[open] .ti-chevron-down{transform:rotate(180deg);}
   .gl-ed-intro{font-size:12px;color:var(--text2);line-height:1.55;margin:2px 0 6px;}
   .gl-ed-warn{font-size:12px;color:#e0a83a;display:flex;align-items:center;gap:5px;margin-bottom:10px;}
   .gl-ed-foot{font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;}
@@ -588,7 +592,7 @@
       </div>
       <div class="field-group">
         <label class="field-label">Chapter Title</label>
-        <input class="field-input" type="text" id="chapter-title-input" placeholder='e.g. "Chapter 2 — Into the Dark"' maxlength="100"/>
+        <input class="field-input" type="text" id="chapter-title-input" placeholder='' maxlength="100"/>
       </div>
       <!-- AUTHOR'S NOTE — TOP -->
       <div class="field-group" id="author-note-top-wrap" style="display:none;">
@@ -730,20 +734,14 @@
       </div>
       <div class="field-group" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px;">
         <label class="field-label" style="display:flex;align-items:center;gap:6px;"><i class="ti ti-users" style="color:var(--accent);"></i> Characters in this Chapter <span style="font-weight:400;color:var(--text3);font-size:11px;text-transform:none;letter-spacing:0;">(optional)</span></label>
+        <div class="gl-ed-intro"><strong>Character card</strong> — the name and picture. These go to your story's main page.<br><strong>Glossary</strong> — open it on any character to add what readers learn in this chapter. These are the glossary cards readers can use as a quick reference for your characters; readers only see what you've added up to the chapter they're on.</div>
+        <div class="gl-ed-warn"><i class="ti ti-alert-triangle"></i> Be careful not to spoil too much.</div>
         <div class="ct-mgr-list" id="ct-mgr-list"></div>
         <div class="ct-mgr-add-row">
           <input class="ct-mgr-add-input" id="ct-mgr-input" type="text" placeholder="Character name…" maxlength="60"/>
           <button class="ct-mgr-add-btn" onclick="ctAddCharacter()"><i class="ti ti-plus"></i> Add</button>
         </div>
-        <div class="ct-chapter-char-note" style="margin-bottom:4px;"><i class="ti ti-info-circle"></i> These go to your story's main page.</div>
         <div class="ct-chapter-char-note">Characters carry forward to each new chapter automatically. You can skip or end them per chapter.</div>
-      </div>
-      <!-- GLOSSARY CARDS -->
-      <div class="field-group gl-ed-wrap" id="gl-ed-wrap">
-        <label class="field-label" style="display:flex;align-items:center;gap:6px;"><i class="ti ti-cards" style="color:var(--accent);"></i> Glossary Cards <span style="font-weight:400;color:var(--text3);font-size:11px;text-transform:none;letter-spacing:0;">(optional)</span></label>
-        <div class="gl-ed-intro">These are the glossary cards readers can use as a quick reference for your characters. Readers only see what you've added up to the chapter they're on.</div>
-        <div class="gl-ed-warn"><i class="ti ti-alert-triangle"></i> Be careful not to spoil too much.</div>
-        <div id="gl-ed-list"></div>
         <div class="gl-ed-foot">Each chapter adds to a character's card — earlier lines stay, so readers remember what they read. Once a chapter is published, its lines can be reworded but not removed.</div>
         <input type="file" id="gl-ed-file" accept="image/png,image/jpeg,image/webp" style="display:none;"/>
       </div>
@@ -3872,8 +3870,15 @@
             ? '<button class="ct-mgr-btn danger" onclick="ctEndChar(\''+char.id+'\')">End<span class="ct-tooltip">Character has passed away and/or will never return</span></button>'
             : '') +
         '</div>';
-      list.appendChild(row);
+      var wrap = document.createElement('div');
+      wrap.className = 'ct-mgr-item';
+      wrap.appendChild(row);
+      var slot = document.createElement('div');
+      slot.className = 'gl-slot'; slot.id = 'gl-slot-' + char.id;
+      wrap.appendChild(slot);
+      list.appendChild(wrap);
     });
+    if (typeof glRender === 'function') glRender();
   }
 
   async function ctAddCharacter() {
@@ -3887,7 +3892,7 @@
     ctCharacters.push(Object.assign({}, data, { chapter_status: 'active' }));
     input.value = '';
     ctRender();
-    if (typeof gl !== 'undefined' && !data.is_book_card) { gl.chars.push(data); glRender(); }
+    if (typeof gl !== 'undefined' && !data.is_book_card) { gl.chars.push(data); gl.open[data.id] = true; glRender(); }
     showToast(name + ' added!', 'ti-user-plus');
   }
 
@@ -3945,9 +3950,7 @@
   async function glInit(chapterId) {
     var seq = ++gl.loadSeq;
     gl.chapterId = chapterId || null; gl.mine = {}; gl.dirty = {};
-    var list = document.getElementById('gl-ed-list');
-    if (!list || !workId) return;
-    list.innerHTML = '<div class="gl-ed-empty">Loading…</div>';
+    if (!workId) return;
     try {
       var r = await Promise.all([
         db.from('novel_characters').select('id,name,portrait_url,is_book_card,sort_order').eq('work_id', workId).order('sort_order', { ascending: true }),
@@ -3964,7 +3967,6 @@
       });
     } catch (e) {
       console.error('[glossary]', e);
-      list.innerHTML = '<div class="gl-ed-empty">Couldn\'t load glossary cards.</div>';
       return;
     }
     glRender();
@@ -3984,31 +3986,34 @@
     return out;
   }
 
+  gl.open = {};
   function glRender() {
-    var list = document.getElementById('gl-ed-list');
-    if (!list) return;
-    if (!gl.chars.length) { list.innerHTML = '<div class="gl-ed-empty">Add a character above to start their glossary card.</div>'; return; }
     var cur = glChapterNumber(gl.chapterId);
-    list.innerHTML = gl.chars.map(function(c) {
+    gl.chars.forEach(function(c) {
+      var slot = document.getElementById('gl-slot-' + c.id);
+      if (!slot) return;
       var b = glBefore(c.id);
       var m = gl.mine[c.id] || { summary: '', image_path: null, badge: null };
       var pic = m.image_path || b.image_path;
       var picUrl = pic ? DSStorage.url(db, DSStorage.BUCKETS.COVERS, pic) : '';
       var effBadge = m.badge ? (m.badge === 'clear' ? null : m.badge) : b.badge;
-      var open = !!(m.summary || m.image_path || m.badge || b.lines.length);
       var badgeTxt = effBadge === 'deceased' ? '<span class="gl-ed-badge dead"><i class="ti ti-skull"></i> Deceased</span>'
         : (effBadge === 'missing' ? '<span class="gl-ed-badge missing"><i class="ti ti-question-mark"></i> Missing</span>' : '');
       var prior = b.lines.map(function(l){ return '<div class="gl-ed-prior"><span>Ch. ' + l.n + '</span>' + esc(l.text) + '</div>'; }).join('');
       var sel = function(v){ return (m.badge || '') === v ? ' selected' : ''; };
-      return '<details class="gl-ed-card"' + (open ? ' open' : '') + ' data-id="' + c.id + '">' +
-        '<summary><div class="gl-ed-pic">' + (picUrl ? '<img src="' + esc(picUrl) + '" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
-          '<div class="gl-ed-name">' + esc(c.name) + '</div>' + badgeTxt +
-          (b.lines.length ? '<span class="gl-ed-count">' + b.lines.length + ' earlier line' + (b.lines.length === 1 ? '' : 's') + '</span>' : (m.summary ? '' : '<span class="gl-ed-count">Not on the glossary yet</span>')) +
-        '</summary>' +
+      var info = b.lines.length ? b.lines.length + ' earlier line' + (b.lines.length === 1 ? '' : 's') : (m.summary ? 'Added this chapter' : 'Not on the glossary yet');
+      slot.innerHTML = '<details class="gl-ed-card" data-id="' + c.id + '"' + (gl.open[c.id] ? ' open' : '') + '>' +
+        '<summary><i class="ti ti-book-2" style="color:var(--accent);"></i> <span class="gl-ed-name">Glossary</span>' + badgeTxt +
+          '<span class="gl-ed-count">' + info + ' <i class="ti ti-chevron-down"></i></span></summary>' +
         '<div class="gl-ed-body">' +
           (prior ? '<div class="gl-ed-priors">' + prior + '</div>' : '') +
-          '<label class="gl-ed-lbl">Add for Chapter ' + cur + '</label>' +
-          '<textarea class="field-input gl-ed-text" rows="2" maxlength="600" placeholder="' + (b.lines.length ? 'What do readers learn about ' + esc(c.name) + ' in this chapter?' : 'A short summary of ' + esc(c.name) + '…') + '">' + esc(m.summary || '') + '</textarea>' +
+          '<div style="display:flex;gap:10px;align-items:flex-start;">' +
+            '<div class="gl-ed-pic" title="Glossary picture">' + (picUrl ? '<img src="' + esc(picUrl) + '" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+            '<div style="flex:1;min-width:0;">' +
+              '<label class="gl-ed-lbl">Add for Chapter ' + cur + '</label>' +
+              '<textarea class="field-input gl-ed-text" rows="2" maxlength="600" placeholder="' + (b.lines.length ? 'What do readers learn about ' + esc(c.name) + ' in this chapter?' : 'A short summary of ' + esc(c.name) + '…') + '">' + esc(m.summary || '') + '</textarea>' +
+            '</div>' +
+          '</div>' +
           '<div class="gl-ed-row">' +
             '<button type="button" class="ct-mgr-btn gl-ed-pic-btn"><i class="ti ti-photo"></i> ' + (m.image_path ? 'Change picture' : (b.image_path ? 'New picture from this chapter' : 'Add picture')) + '</button>' +
             (m.image_path ? '<button type="button" class="ct-mgr-btn gl-ed-pic-undo">Undo picture</button>' : '') +
@@ -4020,8 +4025,12 @@
             '</select>' +
           '</div>' +
         '</div></details>';
-    }).join('');
+    });
   }
+  document.addEventListener('toggle', function(e){
+    var d = e.target;
+    if (d && d.classList && d.classList.contains('gl-ed-card')) gl.open[d.dataset.id] = d.open;
+  }, true);
 
   function glMark(id){ gl.mine[id] = gl.mine[id] || { summary: '', image_path: null, badge: null }; gl.dirty[id] = true; }
 
