@@ -568,6 +568,21 @@
   </style>
   <script src="accessibilityPrefs.js"></script>
   <script src="contentWarnings.js"></script>
+<style>
+  .gl-card{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:10px 11px;margin:8px 2px;}
+  .gl-card.is-dead .gl-pic img{filter:grayscale(1);}
+  .gl-head{display:flex;gap:10px;align-items:center;}
+  .gl-pic{width:54px;height:54px;flex-shrink:0;border-radius:10px;overflow:hidden;background:var(--bg2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:22px;}
+  .gl-pic img{width:100%;height:100%;object-fit:cover;}
+  .gl-name{font-family:'Cinzel',serif;font-weight:700;font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .gl-first{font-size:11px;color:var(--text3);margin:1px 0 3px;}
+  .gl-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;padding:2px 7px;border-radius:20px;}
+  .gl-dead{background:rgba(220,60,60,0.14);color:#e06666;border:1px solid rgba(220,60,60,0.35);}
+  .gl-missing{background:rgba(230,170,40,0.14);color:#e0a83a;border:1px solid rgba(230,170,40,0.35);}
+  .gl-lines{margin-top:8px;border-top:1px solid var(--border);padding-top:6px;}
+  .gl-line{font-size:13px;color:var(--text2);line-height:1.55;padding:3px 0;white-space:pre-wrap;word-break:break-word;}
+  .gl-ch{display:inline-block;font-size:10px;font-weight:700;color:var(--accent);margin-right:6px;letter-spacing:0.3px;}
+</style>
 </head>
 <body>
 
@@ -738,6 +753,7 @@
           <button id="spt-comments" onclick="spSwitch('comments')" style="padding:5px 12px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:none;background:none;color:var(--text2);border-bottom:2px solid transparent;">Comments</button>
           <button id="spt-echoes" onclick="spSwitch('echoes')" style="padding:5px 12px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:none;background:none;color:var(--text2);border-bottom:2px solid transparent;">🔮 Echoes</button>
           <button id="spt-toc" onclick="spSwitch('toc')" style="padding:5px 12px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:none;background:none;color:var(--text2);border-bottom:2px solid transparent;">Chapters</button>
+          <button id="spt-cast" onclick="spSwitch('cast')" style="padding:5px 12px;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;border:none;background:none;color:var(--text2);border-bottom:2px solid transparent;">Characters</button>
         </div>
         <button onclick="spClose()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;padding:4px;line-height:1;">✕</button>
       </div>
@@ -759,6 +775,7 @@
       <button id="stb-toc" onclick="spOpen('toc')" title="Chapters" style="width:38px;height:52px;background:var(--bg2);border:1px solid var(--border);border-right:none;border-radius:8px 0 0 8px;cursor:pointer;color:var(--text2);font-size:16px;display:flex;align-items:center;justify-content:center;transition:all 0.15s;"><i class="ti ti-list"></i></button>
       <button id="stb-comments" onclick="spOpen('comments')" title="Comments" style="width:38px;height:52px;background:var(--bg2);border:1px solid var(--border);border-right:none;border-radius:8px 0 0 8px;cursor:pointer;color:var(--text2);font-size:16px;display:flex;align-items:center;justify-content:center;transition:all 0.15s;position:relative;"><i class="ti ti-message-circle"></i><span id="sp-comment-count" style="position:absolute;top:3px;right:5px;font-size:9px;font-weight:700;color:var(--accent);line-height:1;"></span></button>
       <button id="stb-echoes" onclick="spOpen('echoes')" title="Echoes" style="width:38px;height:52px;background:var(--bg2);border:1px solid var(--border);border-right:none;border-radius:8px 0 0 8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all 0.15s;">🔮</button>
+      <button id="stb-cast" onclick="spOpen('cast')" title="Characters" style="width:38px;height:52px;background:var(--bg2);border:1px solid var(--border);border-right:none;border-radius:8px 0 0 8px;cursor:pointer;color:var(--text2);font-size:16px;display:flex;align-items:center;justify-content:center;transition:all 0.15s;"><i class="ti ti-users"></i></button>
     </div>
     <!-- KEEP hidden FAB for internal echo logic compatibility -->
     <div class="echo-fab" id="echo-fab" style="display:none;">
@@ -3187,7 +3204,7 @@
 
     window.spSwitch = function spSwitch(tab) {
       spTab = tab;
-      ['toc','comments','echoes'].forEach(function(t) {
+      ['toc','comments','echoes','cast'].forEach(function(t) {
         var btn = document.getElementById('spt-' + t);
         if (!btn) return;
         btn.style.color = t === tab ? 'var(--accent)' : 'var(--text3)';
@@ -3201,6 +3218,63 @@
       if (tab === 'toc') spRenderToc();
       else if (tab === 'comments') spRenderComments();
       else if (tab === 'echoes') spRenderEchoes();
+      else if (tab === 'cast') spRenderCast();
+    }
+
+    // ── CHARACTERS (glossary cards) ────────────────────────────────
+    // The server only hands out what was written up to THIS chapter, so a
+    // reader can never see a later chapter's line, picture or status —
+    // not even by reading the page's code.
+    var _castCache = {};
+    async function spRenderCast() {
+      var body = document.getElementById('sp-body');
+      if (!chapterData || !chapterData.id) { body.innerHTML = ''; return; }
+      var cid = chapterData.id;
+      if (!_castCache[cid]) {
+        body.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text3);">Loading characters…</div>';
+        try {
+          var r = await db.rpc('get_chapter_glossary', { p_chapter_id: cid });
+          if (r.error) throw r.error;
+          _castCache[cid] = r.data || [];
+        } catch (e) {
+          body.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text3);">Couldn\'t load characters. Please try again.</div>';
+          return;
+        }
+      }
+      if (spTab !== 'cast' || !chapterData || chapterData.id !== cid) return;
+      var cards = _castCache[cid];
+      if (!cards.length) {
+        body.innerHTML = '<div style="padding:18px 16px;font-size:13px;color:var(--text3);line-height:1.6;"><i class="ti ti-users" style="font-size:22px;display:block;margin-bottom:6px;opacity:0.6;"></i>The author hasn\'t added character cards up to this chapter yet.</div>';
+        return;
+      }
+      var q = '';
+      function draw() {
+        var list = cards.filter(function(c){ return !q || (c.name || '').toLowerCase().indexOf(q) !== -1; });
+        var html = list.map(function(c) {
+          var img = c.image_path ? DSStorage.url(db, DSStorage.BUCKETS.COVERS, c.image_path) : '';
+          var badge = c.badge === 'deceased'
+            ? '<span class="gl-badge gl-dead"><i class="ti ti-skull"></i> Deceased</span>'
+            : (c.badge === 'missing' ? '<span class="gl-badge gl-missing"><i class="ti ti-question-mark"></i> Missing</span>' : '');
+          var lines = (c.lines || []).map(function(l) {
+            return '<div class="gl-line"><span class="gl-ch">Ch. ' + escHtml(String(l.chapter)) + '</span>' + escHtml(l.text || '') + '</div>';
+          }).join('');
+          return '<div class="gl-card' + (c.badge === 'deceased' ? ' is-dead' : '') + '">' +
+            '<div class="gl-head">' +
+              '<div class="gl-pic">' + (img ? '<img loading="lazy" decoding="async" src="' + escHtml(img) + '" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+              '<div style="min-width:0;"><div class="gl-name">' + escHtml(c.name || '') + '</div>' +
+              '<div class="gl-first">First seen in Ch. ' + escHtml(String(c.first_chapter)) + '</div>' + badge + '</div>' +
+            '</div>' + (lines ? '<div class="gl-lines">' + lines + '</div>' : '') +
+          '</div>';
+        }).join('') || '<div style="padding:12px 4px;font-size:13px;color:var(--text3);">No match.</div>';
+        document.getElementById('gl-list').innerHTML = html;
+      }
+      body.innerHTML =
+        '<div style="padding:10px 12px 4px;font-size:11px;color:var(--text3);line-height:1.5;">Quick reference — only what you\'ve read up to Chapter ' + escHtml(String(chapterData.chapter_number || '')) + '.</div>' +
+        (cards.length > 6 ? '<div style="padding:4px 12px 6px;"><input id="gl-search" type="search" placeholder="Find a character…" style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:13px;font-family:Lato,sans-serif;outline:none;"/></div>' : '') +
+        '<div id="gl-list" style="padding:4px 10px 16px;"></div>';
+      var s = document.getElementById('gl-search');
+      if (s) s.addEventListener('input', function(){ q = s.value.trim().toLowerCase(); draw(); });
+      draw();
     }
 
     function spRenderToc() {

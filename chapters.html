@@ -430,6 +430,31 @@
     .lore-glow .lore-pip{display:inline-block;background:var(--accent);color:var(--bg);border-radius:999px;font-size:10px;font-weight:800;padding:0 6px;margin-left:4px;line-height:16px;}
     @media (prefers-reduced-motion: reduce){.lore-glow{animation:none;box-shadow:0 0 0 1px rgba(var(--accent-rgb,45,212,191),.7),0 0 14px rgba(var(--accent-rgb,45,212,191),.5);}}
 </style>
+<style>
+  .gl-ed-wrap{border-top:1px solid var(--border);padding-top:16px;margin-top:4px;}
+  .gl-ed-intro{font-size:12px;color:var(--text2);line-height:1.55;margin:2px 0 6px;}
+  .gl-ed-warn{font-size:12px;color:#e0a83a;display:flex;align-items:center;gap:5px;margin-bottom:10px;}
+  .gl-ed-foot{font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;}
+  .gl-ed-empty{font-size:12px;color:var(--text3);padding:6px 0;}
+  .gl-ed-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;}
+  .gl-ed-card summary{display:flex;align-items:center;gap:9px;padding:8px 10px;cursor:pointer;list-style:none;flex-wrap:wrap;}
+  .gl-ed-card summary::-webkit-details-marker{display:none;}
+  .gl-ed-pic{width:34px;height:34px;border-radius:8px;overflow:hidden;background:var(--bg2);display:flex;align-items:center;justify-content:center;color:var(--text3);flex-shrink:0;}
+  .gl-ed-pic img{width:100%;height:100%;object-fit:cover;}
+  .gl-ed-name{font-weight:700;font-size:13px;color:var(--text);}
+  .gl-ed-count{font-size:11px;color:var(--text3);margin-left:auto;}
+  .gl-ed-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;padding:2px 7px;border-radius:20px;display:inline-flex;align-items:center;gap:3px;}
+  .gl-ed-badge.dead{background:rgba(220,60,60,0.14);color:#e06666;}
+  .gl-ed-badge.missing{background:rgba(230,170,40,0.14);color:#e0a83a;}
+  .gl-ed-body{padding:0 10px 10px;}
+  .gl-ed-priors{border-left:2px solid var(--border);padding-left:8px;margin-bottom:8px;}
+  .gl-ed-prior{font-size:12px;color:var(--text2);line-height:1.5;padding:2px 0;white-space:pre-wrap;}
+  .gl-ed-prior span{font-size:10px;font-weight:700;color:var(--accent);margin-right:6px;}
+  .gl-ed-lbl{display:block;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;}
+  .gl-ed-text{resize:vertical;}
+  .gl-ed-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;}
+  .gl-ed-status{background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12px;padding:5px 8px;font-family:'Lato',sans-serif;}
+</style>
 </head>
 <body>
 
@@ -710,7 +735,17 @@
           <input class="ct-mgr-add-input" id="ct-mgr-input" type="text" placeholder="Character name…" maxlength="60"/>
           <button class="ct-mgr-add-btn" onclick="ctAddCharacter()"><i class="ti ti-plus"></i> Add</button>
         </div>
+        <div class="ct-chapter-char-note" style="margin-bottom:4px;"><i class="ti ti-info-circle"></i> These go to your story's main page.</div>
         <div class="ct-chapter-char-note">Characters carry forward to each new chapter automatically. You can skip or end them per chapter.</div>
+      </div>
+      <!-- GLOSSARY CARDS -->
+      <div class="field-group gl-ed-wrap" id="gl-ed-wrap">
+        <label class="field-label" style="display:flex;align-items:center;gap:6px;"><i class="ti ti-cards" style="color:var(--accent);"></i> Glossary Cards <span style="font-weight:400;color:var(--text3);font-size:11px;text-transform:none;letter-spacing:0;">(optional)</span></label>
+        <div class="gl-ed-intro">These are the glossary cards readers can use as a quick reference for your characters. Readers only see what you've added up to the chapter they're on.</div>
+        <div class="gl-ed-warn"><i class="ti ti-alert-triangle"></i> Be careful not to spoil too much.</div>
+        <div id="gl-ed-list"></div>
+        <div class="gl-ed-foot">Each chapter adds to a character's card — earlier lines stay, so readers remember what they read. Once a chapter is published, its lines can be reworded but not removed.</div>
+        <input type="file" id="gl-ed-file" accept="image/png,image/jpeg,image/webp" style="display:none;"/>
       </div>
       <div class="btn-row">
         <button class="btn-cancel" id="cancel-btn" onclick="setModeAdd()" style="display:none;"><i class="ti ti-x"></i> Cancel Edit</button>
@@ -956,6 +991,7 @@
 
   function setModeAdd() {
     editingChapterId = null;
+    setTimeout(function(){ if (!editingChapterId) glInit(null); }, 0);
     originalTitle = '';
     originalText = '';
     originalHTML = '';
@@ -1433,6 +1469,7 @@
     // Load character manager for this chapter
     await ctInit(workId, chapterId, bundle.cc);
     if (mySeq !== _openSeq) return;
+    glInit(chapterId);
 
     // Offer crash-recovery backup if one is newer than the last save
     checkForBackup(ch.updated_at || ch.created_at);
@@ -1564,6 +1601,7 @@
     var chapters = res.data || [];
     chapterCount = chapters.length;
     allChapters = chapters;
+    if (!editingChapterId && typeof glInit === 'function' && gl.chapterId === null && !Object.keys(gl.dirty).length) glInit(null);
 
     // Total story stats in the work header
     var statsEl = document.getElementById('work-total-stats');
@@ -2180,6 +2218,7 @@
     // Save chapter characters
     var savedChapterId = editingChapterId || (res.data && res.data.id);
     if (savedChapterId) await ctSaveChapterCharacters(savedChapterId, workId);
+    if (savedChapterId) await glSave(savedChapterId, workId, silent);
 
     // ── AUTHOR BADGE AWARDS ──────────────────────────────────────
     // Only fire on actual publish, not drafts or scheduled saves.
@@ -3848,6 +3887,7 @@
     ctCharacters.push(Object.assign({}, data, { chapter_status: 'active' }));
     input.value = '';
     ctRender();
+    if (typeof gl !== 'undefined' && !data.is_book_card) { gl.chars.push(data); glRender(); }
     showToast(name + ' added!', 'ti-user-plus');
   }
 
@@ -3886,6 +3926,178 @@
     char.status = 'ended'; char.chapter_status = 'skipped';
     ctRender();
     showToast(char.name + ' marked as ended.', 'ti-skull');
+  }
+
+  // ── GLOSSARY CARDS ───────────────────────────────────────────
+  // One row per character per chapter. Reader sees every line up to their
+  // chapter, plus the newest picture / Deceased / Missing badge.
+  var gl = { chapterId: null, chars: [], entries: [], mine: {}, dirty: {}, loadSeq: 0, uploadFor: null };
+
+  function glChapterNumber(chapterId) {
+    if (chapterId) {
+      var c = (allChapters || []).find(function(x){ return x.id === chapterId; });
+      if (c) return c.chapter_number;
+    }
+    return (allChapters && allChapters.length)
+      ? Math.max.apply(null, allChapters.map(function(x){ return x.chapter_number || 0; })) + 1 : 1;
+  }
+
+  async function glInit(chapterId) {
+    var seq = ++gl.loadSeq;
+    gl.chapterId = chapterId || null; gl.mine = {}; gl.dirty = {};
+    var list = document.getElementById('gl-ed-list');
+    if (!list || !workId) return;
+    list.innerHTML = '<div class="gl-ed-empty">Loading…</div>';
+    try {
+      var r = await Promise.all([
+        db.from('novel_characters').select('id,name,portrait_url,is_book_card,sort_order').eq('work_id', workId).order('sort_order', { ascending: true }),
+        db.from('glossary_entries').select('id,chapter_id,character_id,summary,image_path,badge').eq('work_id', workId)
+      ]);
+      if (seq !== gl.loadSeq) return;
+      if (r[0].error || r[1].error) throw (r[0].error || r[1].error);
+      gl.chars = (r[0].data || []).filter(function(c){ return !c.is_book_card; });
+      var numOf = {}; (allChapters || []).forEach(function(c){ numOf[c.id] = c.chapter_number; });
+      gl.entries = (r[1].data || []).map(function(e){ return Object.assign({}, e, { n: numOf[e.chapter_id] }); })
+        .filter(function(e){ return e.n != null; });
+      gl.entries.forEach(function(e){
+        if (chapterId && e.chapter_id === chapterId) gl.mine[e.character_id] = { summary: e.summary || '', image_path: e.image_path || null, badge: e.badge || null, exists: true };
+      });
+    } catch (e) {
+      console.error('[glossary]', e);
+      list.innerHTML = '<div class="gl-ed-empty">Couldn\'t load glossary cards.</div>';
+      return;
+    }
+    glRender();
+  }
+
+  function glBefore(charId) {
+    var cur = glChapterNumber(gl.chapterId);
+    var prior = gl.entries.filter(function(e){ return e.character_id === charId && e.n < cur; })
+      .sort(function(a,b){ return a.n - b.n; });
+    var out = { lines: [], image_path: null, badge: null };
+    prior.forEach(function(e){
+      if (e.summary && e.summary.trim()) out.lines.push({ n: e.n, text: e.summary });
+      if (e.image_path) out.image_path = e.image_path;
+      if (e.badge) out.badge = e.badge;
+    });
+    if (out.badge === 'clear') out.badge = null;
+    return out;
+  }
+
+  function glRender() {
+    var list = document.getElementById('gl-ed-list');
+    if (!list) return;
+    if (!gl.chars.length) { list.innerHTML = '<div class="gl-ed-empty">Add a character above to start their glossary card.</div>'; return; }
+    var cur = glChapterNumber(gl.chapterId);
+    list.innerHTML = gl.chars.map(function(c) {
+      var b = glBefore(c.id);
+      var m = gl.mine[c.id] || { summary: '', image_path: null, badge: null };
+      var pic = m.image_path || b.image_path;
+      var picUrl = pic ? DSStorage.url(db, DSStorage.BUCKETS.COVERS, pic) : '';
+      var effBadge = m.badge ? (m.badge === 'clear' ? null : m.badge) : b.badge;
+      var open = !!(m.summary || m.image_path || m.badge || b.lines.length);
+      var badgeTxt = effBadge === 'deceased' ? '<span class="gl-ed-badge dead"><i class="ti ti-skull"></i> Deceased</span>'
+        : (effBadge === 'missing' ? '<span class="gl-ed-badge missing"><i class="ti ti-question-mark"></i> Missing</span>' : '');
+      var prior = b.lines.map(function(l){ return '<div class="gl-ed-prior"><span>Ch. ' + l.n + '</span>' + esc(l.text) + '</div>'; }).join('');
+      var sel = function(v){ return (m.badge || '') === v ? ' selected' : ''; };
+      return '<details class="gl-ed-card"' + (open ? ' open' : '') + ' data-id="' + c.id + '">' +
+        '<summary><div class="gl-ed-pic">' + (picUrl ? '<img src="' + esc(picUrl) + '" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
+          '<div class="gl-ed-name">' + esc(c.name) + '</div>' + badgeTxt +
+          (b.lines.length ? '<span class="gl-ed-count">' + b.lines.length + ' earlier line' + (b.lines.length === 1 ? '' : 's') + '</span>' : (m.summary ? '' : '<span class="gl-ed-count">Not on the glossary yet</span>')) +
+        '</summary>' +
+        '<div class="gl-ed-body">' +
+          (prior ? '<div class="gl-ed-priors">' + prior + '</div>' : '') +
+          '<label class="gl-ed-lbl">Add for Chapter ' + cur + '</label>' +
+          '<textarea class="field-input gl-ed-text" rows="2" maxlength="600" placeholder="' + (b.lines.length ? 'What do readers learn about ' + esc(c.name) + ' in this chapter?' : 'A short summary of ' + esc(c.name) + '…') + '">' + esc(m.summary || '') + '</textarea>' +
+          '<div class="gl-ed-row">' +
+            '<button type="button" class="ct-mgr-btn gl-ed-pic-btn"><i class="ti ti-photo"></i> ' + (m.image_path ? 'Change picture' : (b.image_path ? 'New picture from this chapter' : 'Add picture')) + '</button>' +
+            (m.image_path ? '<button type="button" class="ct-mgr-btn gl-ed-pic-undo">Undo picture</button>' : '') +
+            '<select class="gl-ed-status">' +
+              '<option value=""' + sel('') + '>Status: no change</option>' +
+              '<option value="deceased"' + sel('deceased') + '>Mark Deceased</option>' +
+              '<option value="missing"' + sel('missing') + '>Mark Missing</option>' +
+              ((b.badge || m.badge === 'clear') ? '<option value="clear"' + sel('clear') + '>Back / alive again</option>' : '') +
+            '</select>' +
+          '</div>' +
+        '</div></details>';
+    }).join('');
+  }
+
+  function glMark(id){ gl.mine[id] = gl.mine[id] || { summary: '', image_path: null, badge: null }; gl.dirty[id] = true; }
+
+  document.addEventListener('input', function(e){
+    if (!e.target.classList || !e.target.classList.contains('gl-ed-text')) return;
+    var id = e.target.closest('.gl-ed-card').dataset.id;
+    glMark(id); gl.mine[id].summary = e.target.value;
+  });
+  document.addEventListener('change', function(e){
+    if (!e.target.classList || !e.target.classList.contains('gl-ed-status')) return;
+    var id = e.target.closest('.gl-ed-card').dataset.id;
+    glMark(id); gl.mine[id].badge = e.target.value || null; glRender();
+  });
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest && e.target.closest('.gl-ed-pic-btn, .gl-ed-pic-undo');
+    if (!btn) return;
+    e.preventDefault();
+    var id = btn.closest('.gl-ed-card').dataset.id;
+    if (btn.classList.contains('gl-ed-pic-undo')) { glMark(id); gl.mine[id].image_path = null; glRender(); return; }
+    gl.uploadFor = id;
+    document.getElementById('gl-ed-file').click();
+  });
+  document.addEventListener('change', async function(e){
+    if (e.target.id !== 'gl-ed-file') return;
+    var file = e.target.files && e.target.files[0]; e.target.value = '';
+    var id = gl.uploadFor; gl.uploadFor = null;
+    if (!file || !id || !currentSession) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { showToast('Please choose a PNG, JPEG or WebP image.', 'ti-x'); return; }
+    if (file.size > 32 * 1024 * 1024) { showToast('That image is too large.', 'ti-x'); return; }
+    showToast('Uploading picture…', 'ti-upload');
+    try {
+      file = await DSStorage.shrinkIfNeeded(DSStorage.BUCKETS.COVERS, file);
+      file = await DSStorage.convertToWebpIfWorthwhile(DSStorage.BUCKETS.COVERS, file);
+      if (file.size > 8 * 1024 * 1024) { showToast('That image is larger than 8 MB even after resizing.', 'ti-x'); return; }
+      var ext = file.type === 'image/png' ? 'png' : (file.type === 'image/webp' ? 'webp' : 'jpg');
+      var path = currentSession.user.id + '/glossary-' + Date.now() + '.' + ext;
+      var res = await DSStorage.upload(db, DSStorage.BUCKETS.COVERS, path, file, { noResize: true, noConvert: true });
+      if (res.error) throw res.error;
+      glMark(id); gl.mine[id].image_path = res.path || path;
+      glRender();
+      showToast('Picture added — it shows once you save the chapter.', 'ti-photo');
+    } catch (err) {
+      console.error('[glossary upload]', err);
+      showToast('Upload failed — please try again.', 'ti-x');
+    }
+  });
+
+  async function glSave(chapterId, wId, silent) {
+    var ids = Object.keys(gl.dirty);
+    if (!ids.length || !chapterId || !wId) return;
+    if (gl.chapterId && gl.chapterId !== chapterId) return; // stale state from another chapter
+    gl.chapterId = chapterId;
+    var ups = [], dels = [];
+    ids.forEach(function(id){
+      var m = gl.mine[id];
+      var text = (m.summary || '').trim();
+      if (!text && !m.image_path && !m.badge) { if (m.exists) dels.push(id); }
+      else ups.push({ work_id: wId, chapter_id: chapterId, character_id: id, summary: text || null, image_path: m.image_path || null, badge: m.badge || null });
+    });
+    var failed = false;
+    if (ups.length) {
+      var r = await db.from('glossary_entries').upsert(ups, { onConflict: 'chapter_id,character_id' });
+      if (r.error) { failed = r.error; }
+      else ups.forEach(function(u){ gl.mine[u.character_id].exists = true; });
+    }
+    for (var i = 0; i < dels.length; i++) {
+      var d = await db.from('glossary_entries').delete().eq('chapter_id', chapterId).eq('character_id', dels[i]);
+      if (d.error) failed = d.error; else gl.mine[dels[i]].exists = false;
+    }
+    if (failed) {
+      console.error('[glossary save]', failed);
+      var msg = /cannot be removed/i.test(failed.message || '') ? 'Glossary lines from a published chapter can be reworded, not removed.' : "Couldn't save glossary cards — please try again.";
+      showToast(msg, 'ti-alert-triangle');
+      return;
+    }
+    gl.dirty = {};
   }
 
   async function ctSaveChapterCharacters(chapterId, wId) {
