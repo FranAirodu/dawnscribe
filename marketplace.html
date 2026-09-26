@@ -387,6 +387,13 @@
 
   <div id="comm-artist-panel" style="display:none;margin-bottom:20px;"></div>
 
+  <div class="filter-bar" id="comm-filter-bar" style="margin-bottom:18px;">
+    <button class="filter-btn active" data-cfilter="all" onclick="commSetFilter('all')"><i class="ti ti-layout-grid"></i> All</button>
+    <button class="filter-btn" data-cfilter="cover" onclick="commSetFilter('cover')"><i class="ti ti-book"></i> Book covers</button>
+    <button class="filter-btn" data-cfilter="banner" onclick="commSetFilter('banner')"><i class="ti ti-photo"></i> Banners</button>
+    <button class="filter-btn" data-cfilter="character" onclick="commSetFilter('character')"><i class="ti ti-user-heart"></i> Characters</button>
+  </div>
+
   <div class="scrolls-grid" id="comm-grid">
     <div class="loading-spinner"><i class="ti ti-loader"></i> Loading commissions…</div>
   </div>
@@ -573,7 +580,12 @@
       checkVisitMarketplaceMission();
     }
     await loadShop();
-    loadCommissions();
+    loadCommissions().then(() => {
+      if (new URLSearchParams(location.search).get('commission')) {
+        const fb = document.getElementById('comm-filter-bar');
+        if (fb) fb.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
     loadCommissionRights();
     loadQuillBundles();
     loadLorebook();
@@ -618,13 +630,41 @@
         return true;
       });
 
-      if (!commOffers.length) {
+      commById = byId;
+      commRenderGrid();
+    } catch (e) {
+      grid.innerHTML = '<div class="loading-spinner" style="opacity:0.7;">' +
+        '<i class="ti ti-alert-circle"></i> Could not load commissions.</div>';
+    }
+  }
+
+  const COMM_KIND = {
+    banner:    ['Banner commission', 'var(--gold)'],
+    character: ['Character commission', 'var(--purple,#a78bfa)'],
+    cover:     ['Book cover commission', 'var(--accent)']
+  };
+  let commFilter = (new URLSearchParams(location.search).get('commission')) || 'all';
+  let commById = {};
+  function commSetFilter(f) {
+    commFilter = f;
+    document.querySelectorAll('[data-cfilter]').forEach(b => b.classList.toggle('active', b.dataset.cfilter === f));
+    commRenderGrid();
+  }
+  function commRenderGrid() {
+    const grid = document.getElementById('comm-grid');
+    const byId = commById;
+    document.querySelectorAll('[data-cfilter]').forEach(b => b.classList.toggle('active', b.dataset.cfilter === commFilter));
+    const list = commFilter === 'all' ? commOffers : commOffers.filter(o => o.kind === commFilter);
+    {
+      if (!list.length) {
         grid.innerHTML = '<div class="loading-spinner" style="opacity:0.7;">' +
-          '<i class="ti ti-palette-off"></i> No open commissions right now.</div>';
+          '<i class="ti ti-palette-off"></i> ' + (commFilter === 'cover'
+            ? 'No artists are taking book covers right now. Check back soon.'
+            : 'No open commissions right now.') + '</div>';
         return;
       }
 
-      grid.innerHTML = commOffers.map(o => {
+      grid.innerHTML = list.map(o => {
         const p = byId[o.artist_id] || {};
         const who = esc(p.display_name || p.username || 'Artist');
         const mine = currentUser && currentUser.id === o.artist_id;
@@ -633,8 +673,8 @@
             '<div style="font-family:\'Cinzel\',serif;font-size:16px;font-weight:700;margin-bottom:4px;">' +
               esc(o.title) + '</div>' +
             '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">by ' + who +
-              ' &middot; <span style="color:' + (o.kind === 'character' ? 'var(--purple,#a78bfa)' : 'var(--gold)') + ';">' +
-              (o.kind === 'character' ? 'Character commission' : 'Banner commission') + '</span></div>' +
+              ' &middot; <span style="color:' + (COMM_KIND[o.kind] || COMM_KIND.banner)[1] + ';">' +
+              (COMM_KIND[o.kind] || COMM_KIND.banner)[0] + '</span></div>' +
             (o.description
               ? '<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:12px;">' +
                   esc(o.description).slice(0, 220) + '</div>'
@@ -652,9 +692,6 @@
           '</div>' +
         '</div>';
       }).join('');
-    } catch (e) {
-      grid.innerHTML = '<div class="loading-spinner" style="opacity:0.7;">' +
-        '<i class="ti ti-alert-circle"></i> Could not load commissions.</div>';
     }
   }
 
@@ -679,7 +716,7 @@
       panel.innerHTML =
         '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;">' +
           '<div style="font-weight:700;margin-bottom:6px;"><i class="ti ti-palette" style="color:var(--gold);"></i> You can take ' +
-            (canB && canC ? 'banner and character' : canB ? 'banner' : 'character') + ' commissions</div>' +
+            (canB && canC ? 'banner, character' : canB ? 'banner' : 'character') + ' and book cover commissions</div>' +
           '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;">You keep 75% of every commission. Set a price and a delivery window — miss the window and the buyer is refunded automatically.' +
             (canB && canC ? '' : ' To take ' + (canB ? 'character' : 'banner') + ' commissions too, donate a ' + (canB ? 'character' : 'banner') + ' to the free randomizer.') + '</div>' +
           '<button class="filter-btn" onclick="commOfferModal()"><i class="ti ti-plus"></i> New listing</button> ' +
@@ -698,6 +735,7 @@
         '<ul style="font-size:13px;color:var(--text2);line-height:1.8;margin:0 0 12px 18px;">' +
           '<li>' + tick(commRights.donated_banner) + ' A <strong>banner</strong> unlocks selling banners and banner commissions</li>' +
           '<li>' + tick(commRights.donated_character) + ' A <strong>character</strong> unlocks selling characters and character commissions</li>' +
+          '<li>' + tick(commRights.donated_banner || commRights.donated_character) + ' Either one also unlocks <strong>book cover</strong> commissions</li>' +
         '</ul>' +
         '<a class="filter-btn" href="banner-create.html"><i class="ti ti-photo"></i> Submit a banner</a>' +
       '</div>';
@@ -762,6 +800,7 @@
       '<select id="co-kind" style="width:100%;padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;">' +
         (commRights && commRights.can_commission_banners ? '<option value="banner">Banner commission</option>' : '') +
         (commRights && commRights.can_commission_characters ? '<option value="character">Character commission</option>' : '') +
+        (commRights && (commRights.can_commission_banners || commRights.can_commission_characters) ? '<option value="cover">Book cover commission</option>' : '') +
       '</select>' +
       '<input id="co-title" maxlength="80" placeholder="What you are offering" ' +
         'style="width:100%;padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
@@ -778,7 +817,7 @@
           'style="width:90px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
       '</div>' +
       '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:12px;">' +
-        'Price 100–50,000 Quills. Days is your delivery window once you accept — it cannot be extended, and ' +
+        'Price 100–50,000 Quills. <strong>Book covers</strong> start at 1,500 Quills; most sell between 3,000 and 8,000 (about $30–$80). Days is your delivery window once you accept — it cannot be extended, and ' +
         'missing it refunds the buyer. Revisions is how many times the buyer may send it back; the deadline ' +
         'does not move when they do. Slots caps how many commissions you can have open at once.</div>' +
       '<div id="co-err" style="color:#ef4444;font-size:13px;display:none;margin-bottom:10px;"></div>' +
@@ -836,6 +875,12 @@
         return;
       }
 
+      const offerIds = [...new Set(orders.map(o => o.offer_id).filter(Boolean))];
+      const kindOf = {};
+      if (offerIds.length) {
+        const { data: offs } = await db.from('commission_offers').select('id,kind').in('id', offerIds);
+        (offs || []).forEach(x => { kindOf[x.id] = x.kind; });
+      }
       const ids = [...new Set(orders.flatMap(o => [o.buyer_id, o.artist_id]))];
       const byId = {};
       const { data: profs } = await db.from('profiles').select('id,username,display_name').in('id', ids);
@@ -873,7 +918,10 @@
                       : '');
         } else if (!iAmArtist && o.status === 'complete') {
           actions = '<a class="filter-btn" href="' + esc(o.delivered_url || '#') + '" target="_blank" rel="noopener">' +
-                    '<i class="ti ti-download"></i> Final file</a>';
+                    '<i class="ti ti-download"></i> Final file</a>' +
+                    (kindOf[o.offer_id] === 'cover'
+                      ? ' <button class="filter-btn active" onclick="commCreditPrompt(\'' + o.id + '\')"><i class="ti ti-book"></i> Credit on my book</button>'
+                      : '');
         }
         html += '<div style="border-top:1px solid var(--border);padding:12px 0;">' +
           '<div style="font-size:13px;font-weight:700;">' + (iAmArtist ? 'From ' : 'To ') + who + '</div>' +
@@ -951,6 +999,42 @@
       p_order_id: id, p_url: fin,
       p_preview_url: document.getElementById('cd-preview').value || null
     }, 'Delivered');
+  }
+
+  // Puts "Cover art by …" on one of the buyer's stories. Upload the cover
+  // on the story first — replacing the cover later removes the credit.
+  async function commCreditPrompt(orderId) {
+    commShowModal('<div class="loading-spinner"><i class="ti ti-loader"></i> Loading your books…</div>');
+    const { data: works } = await db.from('works').select('id,title,cover_url,cover_order_id')
+      .eq('author_id', currentUser.id).eq('type', 'novel').order('created_at', { ascending: false });
+    const list = works || [];
+    commShowModal(
+      '<div style="font-family:\'Cinzel\',serif;font-size:18px;font-weight:700;margin-bottom:8px;">Credit the artist on a book</div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;">' +
+        'Upload the new cover to your story first, then pick the book here. Readers will see ' +
+        '<strong>Cover art by</strong> the artist under the cover. If you change the cover later, the credit is removed automatically.</div>' +
+      (list.length ? list.map(w =>
+        '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border);">' +
+          (safeUrl(w.cover_url) ? '<img src="' + safeUrl(w.cover_url) + '" style="width:34px;height:50px;object-fit:cover;border-radius:4px;" alt=""/>' : '<div style="width:34px;height:50px;border-radius:4px;background:var(--bg3);"></div>') +
+          '<div style="flex:1;font-size:13px;font-weight:700;">' + esc(w.title || 'Untitled') + '</div>' +
+          (w.cover_order_id === orderId
+            ? '<span style="font-size:12px;color:var(--accent);"><i class="ti ti-check"></i> Credited</span>'
+            : '<button class="filter-btn" onclick="commDoCredit(\'' + orderId + '\',\'' + w.id + '\')">Credit here</button>') +
+        '</div>').join('')
+        : '<div style="font-size:13px;color:var(--text3);">You have no stories yet.</div>') +
+      '<div style="margin-top:14px;"><button class="filter-btn" onclick="commOpenOrders()">Back</button></div>'
+    );
+  }
+  async function commDoCredit(orderId, workId) {
+    try {
+      const res = await db.rpc('credit_cover_artist', { p_order_id: orderId, p_work_id: workId });
+      if (res.error) throw res.error;
+      if (!res.data || !res.data.ok) throw new Error((res.data && res.data.error) || 'Could not credit');
+      showToast('Artist credited on your cover', 'ti-brush');
+      commCreditPrompt(orderId);
+    } catch (e) {
+      showToast((e && e.message) ? e.message : 'Something went wrong', 'ti-x', true);
+    }
   }
 
   function commRevisePrompt(id) {
