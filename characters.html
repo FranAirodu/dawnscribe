@@ -276,6 +276,11 @@
     .bn-foot{display:flex;align-items:center;gap:8px;padding:8px 10px;}
     .bn-name{flex:1;font-size:13px;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .bn-name span{font-weight:400;color:var(--text3,#8a8aa8);}
+.bn-fav{background:none;border:none;padding:2px;cursor:pointer;color:var(--text3,#8a8aa8);font-size:17px;line-height:1;display:inline-flex;}
+    .bn-fav:hover{color:#f472b6;}
+    .bn-fav.on{color:#f472b6;}
+    .heart-on{font-size:19px;line-height:1;}
+    .aura-sort .cnt{font-size:11px;background:var(--bg3,#1a1a26);border-radius:999px;padding:0 7px;margin-left:2px;}
     .bn-tick{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text2,#9b9bc0);cursor:pointer;}
     .bn-tick b{color:var(--accent);min-width:14px;}
     .rot-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--text2,#9b9bc0);}
@@ -372,6 +377,23 @@
   var BSEL = null;         // ids ticked for a rotation (in order)
   var BMODE = null;        // chosen interval
   var BQ = '', BSORT = 'new', BSHOWN = 24;
+  var BFAV = {};           // favourite banner ids
+  var BVIEW = 'all';       // 'all' or 'fav'
+  try { if (localStorage.getItem('ds_banner_view') === 'fav') BVIEW = 'fav'; } catch(e) {}
+  window.setBannerView = function(v){ BVIEW = v; BSHOWN = 24; try { localStorage.setItem('ds_banner_view', v); } catch(e) {} render(); };
+  window.toggleFav = async function(id, btn){
+    var on = !BFAV[id];
+    if (on) BFAV[id] = 1; else delete BFAV[id];
+    render();                                   // instant; undone below if the save fails
+    var r = on
+      ? await db.from('user_banner_favorites').insert({ user_id: ME.id, cosmetic_item_id: id })
+      : await db.from('user_banner_favorites').delete().eq('user_id', ME.id).eq('cosmetic_item_id', id);
+    if (r.error && !(on && /duplicate/i.test(r.error.message || ''))) {
+      if (on) delete BFAV[id]; else BFAV[id] = 1;
+      render();
+      toast('Could not save that favourite.', 'ti-alert-triangle', true);
+    }
+  };
   var LINES = [];          // lines the viewer has earned on OPEN
   var POSES = [];
   var FACES = {};          // slug -> image_path
@@ -429,7 +451,8 @@
       db.from('user_unlocked_items').select('cosmetic_item_id, unlocked_at, cosmetic_items(id, name, image_url, artist_name, slot)')
         .eq('user_id', ME.id),
       db.from('user_avatars').select('equipped, banner_rotation_ids, banner_rotation_mode, banner_rotation_index, banner_last_rotated_at')
-        .eq('user_id', ME.id).maybeSingle()
+        .eq('user_id', ME.id).maybeSingle(),
+      db.from('user_banner_favorites').select('cosmetic_item_id').eq('user_id', ME.id)
     ]);
     CHARS = res[0].data || [];
     MINE = {};
@@ -452,6 +475,8 @@
       .filter(function(u){ return u.cosmetic_items && u.cosmetic_items.slot === 'banner'; })
       .map(function(u){ var c = u.cosmetic_items; return { id: c.id, name: c.name || 'Banner', url: c.image_url, artist: c.artist_name || '', at: u.unlocked_at }; });
     var ba = (res[9] && res[9].data) || {};
+    BFAV = {};
+    ((res[10] && res[10].data) || []).forEach(function(f){ BFAV[String(f.cosmetic_item_id)] = 1; });
     BROT = {
       active: ba.equipped && ba.equipped.banner ? String(ba.equipped.banner) : null,
       ids: Array.isArray(ba.banner_rotation_ids) ? ba.banner_rotation_ids.map(String) : [],
@@ -596,7 +621,10 @@
   var ROT_MODES = [['15min','Every 15 minutes'],['hourly','Every hour'],['6h','Every 6 hours'],['12h','Every 12 hours'],['daily','Every day'],['weekly','Every week']];
   function bannerList(){
     var q = BQ.trim().toLowerCase();
-    var list = BANNERS.filter(function(b){ return !q || (b.name + ' ' + b.artist).toLowerCase().indexOf(q) >= 0; });
+    var list = BANNERS.filter(function(b){
+      if (BVIEW === 'fav' && !BFAV[b.id]) return false;
+      return !q || (b.name + ' ' + b.artist).toLowerCase().indexOf(q) >= 0;
+    });
     list.sort(function(a, b){
       if (BSORT === 'az') return a.name.localeCompare(b.name);
       if (BSORT === 'artist') return (a.artist || '~').localeCompare(b.artist || '~') || a.name.localeCompare(b.name);
@@ -612,7 +640,11 @@
       +   '<img src="' + esc(b.url || '') + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'"/>'
       +   (on ? '<span class="bn-tag"><i class="ti ti-check"></i> On your profile</span>' : '')
       + '</button>'
-      + '<div class="bn-foot"><div class="bn-name">' + esc(b.name) + (b.artist ? '<span> \u00b7 ' + esc(b.artist) + '</span>' : '') + '</div>'
+      + '<div class="bn-foot">'
+      +   '<button class="bn-fav' + (BFAV[b.id] ? ' on' : '') + '" onclick="toggleFav(\'' + esc(b.id) + '\', this)"'
+      +     ' title="' + (BFAV[b.id] ? 'Remove from favourites' : 'Add to favourites') + '" aria-pressed="' + (!!BFAV[b.id]) + '">'
+      +     (BFAV[b.id] ? '<span class="heart-on">\u2665</span>' : '<i class="ti ti-heart"></i>') + '</button>'
+      +   '<div class="bn-name">' + esc(b.name) + (b.artist ? '<span> \u00b7 ' + esc(b.artist) + '</span>' : '') + '</div>'
       +   '<label class="bn-tick" title="Add to your rotation"><input type="checkbox"' + (pos >= 0 ? ' checked' : '')
       +     ' onchange="toggleRot(\'' + esc(b.id) + '\', this.checked)"/>' + (pos >= 0 ? '<b>' + (pos + 1) + '</b>' : 'Rotate') + '</label>'
       + '</div></div>';
@@ -653,7 +685,14 @@
       + randRow('banner', 'Profile banners', 'ti-photo', 'New ones appear below.')
       + '<div class="aura-note" id="rand-note"></div></div>'
       + (BANNERS.length ? rotationHtml() : '')
-      + sectionHead('ti-photo', 'Your banners', BANNERS.length ? 'Tap a banner to put it on your profile.' : '')
+      + sectionHead('ti-photo', 'Your banners', BANNERS.length ? 'Tap a banner to put it on your profile. Tap the heart to keep it in Favourites.' : '')
+      + (BANNERS.length
+          ? '<div class="aura-sort" style="margin:0 0 12px;">'
+            + '<button class="' + (BVIEW === 'all' ? 'on' : '') + '" onclick="setBannerView(\'all\')"><i class="ti ti-photo"></i> All</button>'
+            + '<button class="' + (BVIEW === 'fav' ? 'on' : '') + '" onclick="setBannerView(\'fav\')"><i class="ti ti-heart"></i> Favourites'
+            +   (Object.keys(BFAV).length ? ' <span class="cnt">' + Object.keys(BFAV).length + '</span>' : '') + '</button>'
+            + '</div>'
+          : '')
       + (BANNERS.length
           ? '<div class="bn-tools"><input id="bn-q" placeholder="Search by name or artist" value="' + esc(BQ) + '"'
             + ' oninput="BQ=this.value;BSHOWN=24;renderBannersOnly()"/>'
@@ -662,7 +701,7 @@
             +   '<option value="az"' + (BSORT === 'az' ? ' selected' : '') + '>A to Z</option>'
             +   '<option value="artist"' + (BSORT === 'artist' ? ' selected' : '') + '>By artist</option>'
             + '</select></div>'
-            + '<div class="bn-grid" id="bn-grid">' + (shown.length ? shown.map(bannerCard).join('') : '<div class="aura-pick">No banners match that.</div>') + '</div>'
+            + '<div class="bn-grid" id="bn-grid">' + (shown.length ? shown.map(bannerCard).join('') : emptyBannersMsg()) + '</div>'
             + (list.length > shown.length
                 ? '<div style="text-align:center;margin-top:14px;"><button class="aura-reset" onclick="BSHOWN+=24;render()">Show more</button></div>' : '')
           : '<div class="empty-crew"><i class="ti ti-photo"></i><div>No banners yet. Try the roll above.</div></div>');
@@ -672,8 +711,13 @@
     var g = document.getElementById('bn-grid');
     if (!g) return render();
     var shown = bannerList().slice(0, BSHOWN);
-    g.innerHTML = shown.length ? shown.map(bannerCard).join('') : '<div class="aura-pick">No banners match that.</div>';
+    g.innerHTML = shown.length ? shown.map(bannerCard).join('') : emptyBannersMsg();
   };
+  function emptyBannersMsg(){
+    if (BVIEW === 'fav' && !Object.keys(BFAV).length)
+      return '<div class="aura-pick">No favourites yet. Tap the <i class="ti ti-heart"></i> on any banner to keep it here.</div>';
+    return '<div class="aura-pick">No banners match that.</div>';
+  }
   window.toggleRot = function(id, on){
     BSEL = BSEL.filter(function(x){ return x !== id; });
     if (on) {
