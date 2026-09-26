@@ -436,6 +436,8 @@
   .gl-slot:empty{display:none;}
   .gl-slot .gl-ed-card{margin:-1px 0 0 22px;border-top-left-radius:0;border-top-right-radius:0;}
   .gl-ed-card[open] .ti-chevron-down{transform:rotate(180deg);}
+  .gl-ed-save{padding:6px 12px;font-size:12px;}
+  .gl-ed-save[disabled]{opacity:0.55;cursor:default;}
   .gl-ed-intro{font-size:12px;color:var(--text2);line-height:1.55;margin:2px 0 6px;}
   .gl-ed-warn{font-size:12px;color:#e0a83a;display:flex;align-items:center;gap:5px;margin-bottom:10px;}
   .gl-ed-foot{font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;}
@@ -4001,7 +4003,10 @@
         : (effBadge === 'missing' ? '<span class="gl-ed-badge missing"><i class="ti ti-question-mark"></i> Missing</span>' : '');
       var prior = b.lines.map(function(l){ return '<div class="gl-ed-prior"><span>Ch. ' + l.n + '</span>' + esc(l.text) + '</div>'; }).join('');
       var sel = function(v){ return (m.badge || '') === v ? ' selected' : ''; };
-      var info = b.lines.length ? b.lines.length + ' earlier line' + (b.lines.length === 1 ? '' : 's') : (m.summary ? 'Added this chapter' : 'Not on the glossary yet');
+      var saved = !!m.exists && !gl.dirty[c.id];
+      var info = saved ? 'On the glossary' + (b.lines.length ? ' · ' + b.lines.length + ' earlier line' + (b.lines.length === 1 ? '' : 's') : '')
+        : (b.lines.length ? b.lines.length + ' earlier line' + (b.lines.length === 1 ? '' : 's') : 'Not on the glossary yet');
+      if (gl.dirty[c.id]) info += ' · unsaved';
       slot.innerHTML = '<details class="gl-ed-card" data-id="' + c.id + '"' + (gl.open[c.id] ? ' open' : '') + '>' +
         '<summary><i class="ti ti-book-2" style="color:var(--accent);"></i> <span class="gl-ed-name">Glossary</span>' + badgeTxt +
           '<span class="gl-ed-count">' + info + ' <i class="ti ti-chevron-down"></i></span></summary>' +
@@ -4015,6 +4020,7 @@
             '</div>' +
           '</div>' +
           '<div class="gl-ed-row">' +
+            '<button type="button" class="ct-mgr-add-btn gl-ed-save"' + (gl.dirty[c.id] ? '' : ' disabled') + '><i class="ti ti-' + (saved ? 'check' : 'plus') + '"></i> ' + (saved && !gl.dirty[c.id] ? 'Added' : (m.exists ? 'Update glossary' : 'Add to glossary')) + '</button>' +
             '<button type="button" class="ct-mgr-btn gl-ed-pic-btn"><i class="ti ti-photo"></i> ' + (m.image_path ? 'Change picture' : (b.image_path ? 'New picture from this chapter' : 'Add picture')) + '</button>' +
             (m.image_path ? '<button type="button" class="ct-mgr-btn gl-ed-pic-undo">Undo picture</button>' : '') +
             '<select class="gl-ed-status">' +
@@ -4038,6 +4044,24 @@
     if (!e.target.classList || !e.target.classList.contains('gl-ed-text')) return;
     var id = e.target.closest('.gl-ed-card').dataset.id;
     glMark(id); gl.mine[id].summary = e.target.value;
+    var sb = e.target.closest('.gl-ed-card').querySelector('.gl-ed-save');
+    if (sb) { sb.disabled = false; sb.innerHTML = '<i class="ti ti-plus"></i> ' + (gl.mine[id].exists ? 'Update glossary' : 'Add to glossary'); }
+  });
+  document.addEventListener('click', async function(e){
+    var sb = e.target.closest && e.target.closest('.gl-ed-save');
+    if (!sb) return;
+    e.preventDefault();
+    var id = sb.closest('.gl-ed-card').dataset.id;
+    if (!editingChapterId) { showToast('Save the chapter once first — the glossary saves with it.', 'ti-info-circle'); return; }
+    sb.disabled = true;
+    var ok = await glSave(editingChapterId, workId, false, id);
+    if (ok) {
+      var m = gl.mine[id]; var cur = editingChapterId;
+      gl.entries = gl.entries.filter(function(x){ return !(x.chapter_id === cur && x.character_id === id); });
+      if (m.exists) gl.entries.push({ chapter_id: cur, character_id: id, summary: m.summary, image_path: m.image_path, badge: m.badge, n: glChapterNumber(cur) });
+      showToast(m.exists ? 'Added to the glossary.' : 'Removed from this chapter\'s glossary.', 'ti-check');
+    }
+    glRender();
   });
   document.addEventListener('change', function(e){
     if (!e.target.classList || !e.target.classList.contains('gl-ed-status')) return;
@@ -4078,10 +4102,10 @@
     }
   });
 
-  async function glSave(chapterId, wId, silent) {
-    var ids = Object.keys(gl.dirty);
-    if (!ids.length || !chapterId || !wId) return;
-    if (gl.chapterId && gl.chapterId !== chapterId) return; // stale state from another chapter
+  async function glSave(chapterId, wId, silent, onlyId) {
+    var ids = onlyId ? (gl.dirty[onlyId] ? [onlyId] : []) : Object.keys(gl.dirty);
+    if (!ids.length || !chapterId || !wId) return true;
+    if (gl.chapterId && gl.chapterId !== chapterId) return false; // stale state from another chapter
     gl.chapterId = chapterId;
     var ups = [], dels = [];
     ids.forEach(function(id){
@@ -4104,9 +4128,11 @@
       console.error('[glossary save]', failed);
       var msg = /cannot be removed/i.test(failed.message || '') ? 'Glossary lines from a published chapter can be reworded, not removed.' : "Couldn't save glossary cards — please try again.";
       showToast(msg, 'ti-alert-triangle');
-      return;
+      return false;
     }
-    gl.dirty = {};
+    ids.forEach(function(id){ delete gl.dirty[id]; });
+    if (!onlyId) glRender();
+    return true;
   }
 
   async function ctSaveChapterCharacters(chapterId, wId) {
