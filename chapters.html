@@ -3831,6 +3831,19 @@
   </div>
 </div>
 
+<!-- DELETE CHARACTER MODAL -->
+<div id="del-char-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:600;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:440px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.5);">
+    <div style="font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:8px;"><i class="ti ti-trash" style="color:var(--red);"></i> Delete Character</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.55;">Delete <strong id="del-char-modal-name"></strong> from this story? Their character card, glossary lines in every chapter, and anything readers added to them (quotes, votes, songs) will be removed.</p>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:18px;line-height:1.5;">This can't be undone. If the character just left the story, use <strong>End</strong> instead.</p>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button id="del-char-cancel-btn" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 18px;color:var(--text2);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;">Cancel</button>
+      <button id="del-char-confirm-btn" style="background:var(--red);border:none;border-radius:8px;padding:9px 18px;color:white;font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;"><i class="ti ti-trash"></i> Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- END CHARACTER MODAL -->
 <div id="end-char-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:600;align-items:center;justify-content:center;">
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:420px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.5);">
@@ -3857,7 +3870,7 @@
     // whenever a character is added or changed, see ctForget).
     if (!_novelCharsP) {
       _novelCharsP = Promise.resolve(db.from('novel_characters')
-        .select('id, name, portrait_url, status, ended_reason')
+        .select('id, name, portrait_url, status, ended_reason, is_book_card')
         .eq('work_id', wId)
         .order('sort_order', { ascending: true })).catch(function(){ _novelCharsP = null; return { data: [] }; });
     }
@@ -3905,6 +3918,7 @@
           (char.status !== 'ended'
             ? '<button class="ct-mgr-btn danger" onclick="ctEndChar(\''+char.id+'\')">End<span class="ct-tooltip">Character has passed away and/or will never return</span></button>'
             : '') +
+          (char.is_book_card ? '' : '<button class="ct-mgr-btn danger ct-mv" title="Delete character" aria-label="Delete ' + esc(char.name) + '" onclick="ctDeleteChar(\''+char.id+'\')"><i class="ti ti-trash"></i><span class="ct-tooltip">Added by mistake? Delete this character everywhere</span></button>') +
         '</div>';
       var wrap = document.createElement('div');
       wrap.className = 'ct-mgr-item';
@@ -3948,6 +3962,30 @@
       if (r.error) { console.error('[reorder]', r.error); showToast("Couldn't save the new order — please try again.", 'ti-alert-triangle'); return; }
       _novelCharsP = null;
     }, 600);
+  }
+  function ctDeleteChar(id) {
+    var char = ctCharacters.find(function(c){ return c.id === id; });
+    if (!char) return;
+    var modal = document.getElementById('del-char-modal');
+    document.getElementById('del-char-modal-name').textContent = char.name;
+    modal.style.display = 'flex';
+    document.getElementById('del-char-cancel-btn').onclick = function(){ modal.style.display = 'none'; };
+    document.getElementById('del-char-confirm-btn').onclick = async function(){
+      var b = this; b.disabled = true;
+      var r = await db.rpc('delete_novel_character', { p_id: id });
+      b.disabled = false;
+      modal.style.display = 'none';
+      if (r.error) { showToast(r.error.message || "Couldn't delete — please try again.", 'ti-alert-triangle'); return; }
+      ctCharacters = ctCharacters.filter(function(c){ return c.id !== id; });
+      if (typeof gl !== 'undefined') {
+        gl.chars = gl.chars.filter(function(c){ return c.id !== id; });
+        gl.entries = gl.entries.filter(function(e){ return e.character_id !== id; });
+        delete gl.mine[id]; delete gl.dirty[id];
+      }
+      _novelCharsP = null;
+      ctRender();
+      showToast(char.name + ' deleted.', 'ti-trash');
+    };
   }
   function ctSkipChar(id) {
     var c = ctCharacters.find(function(c){ return c.id === id; });
