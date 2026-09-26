@@ -255,7 +255,7 @@ window.dsApplyAccent = dsApplyAccent;
     .quill-count { color: var(--text); font-family: 'Lato', sans-serif; font-size: 13px; }
     .dm-wrap { position: relative; }
     .dm-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); font-size: 18px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; position: relative; text-decoration: none; }
-    .dm-btn.has-unread { border-color: var(--accent); color: var(--accent); background: rgba(45,212,191,0.08); }
+    .dm-btn.has-unread { border-color: var(--accent); color: var(--accent); background: rgba(var(--aura-rgb,45,212,191),0.08); }
     .dm-btn:hover { border-color: var(--accent); color: var(--accent); }
     .dm-badge { position: absolute; top: -6px; right: -6px; background: var(--accent2); color: white; font-size: 10px; font-weight: 700; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
     .notif-wrap { position: relative; }
@@ -275,7 +275,7 @@ window.dsApplyAccent = dsApplyAccent;
     .notif-feed::-webkit-scrollbar { width: 4px; }
     .notif-feed::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 4px; }
     .notif-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border-radius: 8px; background: var(--bg3); transition: background 0.15s; }
-    .notif-item.unread { background: rgba(45,212,191,0.05); border: 1px solid rgba(45,212,191,0.1); }
+    .notif-item.unread { background: rgba(var(--aura-rgb,45,212,191),0.05); border: 1px solid rgba(var(--aura-rgb,45,212,191),0.1); }
     .notif-cover { width: 36px; height: 36px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; overflow: hidden; }
     .notif-body { flex: 1; min-width: 0; }
     .notif-title { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -289,7 +289,7 @@ window.dsApplyAccent = dsApplyAccent;
     .nav-login-btn { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; color: var(--text2); font-size: 13px; font-weight: 700; font-family: 'Lato', sans-serif; cursor: pointer; transition: all 0.2s; text-decoration: none; display: flex; align-items: center; }
     .nav-login-btn:hover { border-color: var(--accent); color: var(--accent); }
     .user-nav-wrap { position: relative; display: none; }
-    .user-avatar-btn { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg,#1e0040,#6b21a8); border: 2px solid rgba(45,212,191,0.4); display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 15px; font-weight: 700; color: #c084fc; cursor: pointer; overflow: hidden; transition: border-color 0.2s, box-shadow 0.2s; flex-shrink: 0; }
+    .user-avatar-btn { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg,#1e0040,#6b21a8); border: 2px solid rgba(var(--aura-rgb,45,212,191),0.4); display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 15px; font-weight: 700; color: #c084fc; cursor: pointer; overflow: hidden; transition: border-color 0.2s, box-shadow 0.2s; flex-shrink: 0; }
     .user-avatar-btn:hover { border-color: var(--accent); }
     .user-avatar-btn img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
     /* gold aura on avatar removed — pending items now live in notifications page */
@@ -851,8 +851,8 @@ window.dsScopeCacheToUser = function (uid) {
               var seeAll = document.createElement('a');
               seeAll.className = 'search-preview-item';
               seeAll.href = 'search.html?q='+encodeURIComponent(q)+'&type=titles&tagmode=1';
-              seeAll.style.cssText = 'background:rgba(45,212,191,0.07);border-bottom:1px solid var(--border);';
-              seeAll.innerHTML = '<div class="search-preview-cover" style="background:rgba(45,212,191,0.15);"><i class="ti ti-tag" style="font-size:14px;color:var(--accent);"></i></div>'
+              seeAll.style.cssText = 'background:rgba(var(--aura-rgb,45,212,191),0.07);border-bottom:1px solid var(--border);';
+              seeAll.innerHTML = '<div class="search-preview-cover" style="background:rgba(var(--aura-rgb,45,212,191),0.15);"><i class="ti ti-tag" style="font-size:14px;color:var(--accent);"></i></div>'
                 + '<div class="search-preview-info"><div class="search-preview-title" style="color:var(--accent);">See all "'+dsEsc(q)+'" novels</div>'
                 + '<div class="search-preview-sub">'+items.length+' match'+(items.length!==1?'es':'')+' in tag search</div></div>';
               preview.appendChild(seeAll);
@@ -1217,11 +1217,11 @@ window.dsScopeCacheToUser = function (uid) {
             // Shared broadcast row — clear locally only, never mark is_read globally
           };
           item.innerHTML =
-            '<div class="notif-cover" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;color:#2dd4bf;">'+
+            '<div class="notif-cover" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--accent);">'+
               '<i class="ti ti-speakerphone"></i>'+
             '</div>'+
             '<div class="notif-body">'+
-              '<div class="notif-title" style="color:#2dd4bf;">📣 Announcement</div>'+
+              '<div class="notif-title" style="color:var(--accent);">📣 Announcement</div>'+
               '<div class="notif-text">'+dsEsc((n.message||'').slice(0,80))+(n.message&&n.message.length>80?'...':'')+'</div>'+
               '<div class="notif-time"><i class="ti ti-clock"></i> '+dsTimeAgo(n.created_at)+'</div>'+
             '</div><div class="notif-dot"></div>';
@@ -1231,15 +1231,15 @@ window.dsScopeCacheToUser = function (uid) {
           var iconColor, icon, title;
           if(n.type==='song_approved')         { iconColor='#22c55e'; icon='ti-music';             title='🎵 Song Approved'; }
           else if(n.type==='song_rejected')    { iconColor='#ef4444'; icon='ti-music-off';         title='🎵 Song Not Approved'; }
-          else if(n.type==='fan_translation_linked') { iconColor='#2dd4bf'; icon='ti-language';   title='🌐 Fan Translation'; }
+          else if(n.type==='fan_translation_linked') { iconColor='var(--accent)'; icon='ti-language';   title='🌐 Fan Translation'; }
           else if(n.type==='opinion_submitted')  { iconColor='#ec4899'; icon='ti-message-heart';     title='💬 New Character Opinion'; }
           else if(n.type==='opinion_approved') { iconColor='#ec4899'; icon='ti-message-heart';     title='💬 Opinion Approved'; }
           else if(n.type==='opinion_featured') { iconColor='#f59e0b'; icon='ti-star';              title='⭐ Opinion Featured'; }
           else if(n.type==='quote_submitted')  { iconColor='var(--gold,#f5c542)'; icon='ti-quote'; title='❝ New Quote Nomination'; }
           else if(n.type==='quote_approved')   { iconColor='#22c55e'; icon='ti-quote';            title='❝ Quote Approved'; }
           else if(n.type==='quote_rejected')   { iconColor='#ef4444'; icon='ti-quote';            title='❝ Quote Not Approved'; }
-          else if(n.type==='question_submitted'){ iconColor='#2dd4bf'; icon='ti-help-circle';     title='❓ New Character Question'; }
-          else if(n.type==='question_answered'){ iconColor='#2dd4bf'; icon='ti-message-check';    title='💬 Question Answered'; }
+          else if(n.type==='question_submitted'){ iconColor='var(--accent)'; icon='ti-help-circle';     title='❓ New Character Question'; }
+          else if(n.type==='question_answered'){ iconColor='var(--accent)'; icon='ti-message-check';    title='💬 Question Answered'; }
           else if(n.type==='question_declined'){ iconColor='var(--text3)'; icon='ti-x';           title='❓ Question Declined'; }
           else if(n.type==='collab_request')   { iconColor='#f59e0b'; icon='ti-git-merge';         title='🤝 Collab Request'; }
           else if(n.type==='showcase_collab_request'){ iconColor='#f59e0b'; icon='ti-photo';        title='🎨 Fan Art Awaiting You'; }
@@ -1347,7 +1347,7 @@ window.dsScopeCacheToUser = function (uid) {
       document.body.innerHTML = [
         '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;',
         'height:100vh;background:#0a0a0f;color:#f1f0ff;font-family:Lato,sans-serif;text-align:center;padding:24px;">',
-        '<div style="font-family:Cinzel,serif;font-size:28px;color:#2dd4bf;margin-bottom:16px;">DawnScribe</div>',
+        '<div style="font-family:Cinzel,serif;font-size:28px;color:var(--accent);margin-bottom:16px;">DawnScribe</div>',
         '<div style="font-size:18px;font-weight:700;margin-bottom:8px;">We\'re doing some maintenance</div>',
         '<div style="font-size:14px;color:#9b9bc0;max-width:400px;">The site will be back up shortly. Thank you for your patience.</div>',
         '<a href="auth.html" style="margin-top:22px;font-size:12px;color:#6b6b8f;text-decoration:none;">Sign in</a>',
