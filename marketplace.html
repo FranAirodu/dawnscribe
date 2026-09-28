@@ -631,6 +631,13 @@
       });
 
       commById = byId;
+      // Artists who donated a banner/character rank above cover-only artists.
+      commDonor = {};
+      try {
+        const rk = await db.rpc('commission_artist_ranks', { p_ids: ids });
+        (rk.data || []).forEach(r => { commDonor[r.artist_id] = r.donor_level || 0; });
+      } catch (e) {}
+      commOffers.sort((a, b) => (commDonor[b.artist_id] || 0) - (commDonor[a.artist_id] || 0));
       commRenderGrid();
     } catch (e) {
       grid.innerHTML = '<div class="loading-spinner" style="opacity:0.7;">' +
@@ -645,6 +652,7 @@
   };
   let commFilter = (new URLSearchParams(location.search).get('commission')) || 'all';
   let commById = {};
+  let commDonor = {};
   function commSetFilter(f) {
     commFilter = f;
     document.querySelectorAll('[data-cfilter]').forEach(b => b.classList.toggle('active', b.dataset.cfilter === f));
@@ -673,6 +681,7 @@
             '<div style="font-family:\'Cinzel\',serif;font-size:16px;font-weight:700;margin-bottom:4px;">' +
               esc(o.title) + '</div>' +
             '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">by ' + who +
+              (commDonor[o.artist_id] ? ' <span title="Has donated art to DawnScribe" style="color:var(--gold);font-weight:700;"><i class="ti ti-sparkles"></i> Donor artist</span>' : '') +
               ' &middot; <span style="color:' + (COMM_KIND[o.kind] || COMM_KIND.banner)[1] + ';">' +
               (COMM_KIND[o.kind] || COMM_KIND.banner)[0] + '</span></div>' +
             (o.description
@@ -735,9 +744,15 @@
         '<ul style="font-size:13px;color:var(--text2);line-height:1.8;margin:0 0 12px 18px;">' +
           '<li>' + tick(commRights.donated_banner) + ' A <strong>banner</strong> unlocks selling banners and banner commissions</li>' +
           '<li>' + tick(commRights.donated_character) + ' A <strong>character</strong> unlocks selling characters and character commissions</li>' +
-          '<li>' + tick(commRights.donated_banner || commRights.donated_character) + ' Either one also unlocks <strong>book cover</strong> commissions</li>' +
+          '<li>' + tick(commRights.donated_banner || commRights.donated_character) + ' Either one also puts you <strong>first in the book cover list</strong></li>' +
         '</ul>' +
         '<a class="filter-btn" href="banner-create.html"><i class="ti ti-photo"></i> Submit a banner</a>' +
+        '<div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px;">' +
+          '<div style="font-weight:700;margin-bottom:4px;"><i class="ti ti-book" style="color:var(--accent);"></i> Book covers are open to every artist</div>' +
+          '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:10px;">You can take book cover commissions right now, no donation needed. Artists who have donated a banner or character are listed first.</div>' +
+          '<button class="filter-btn active" onclick="commOfferModal()"><i class="ti ti-plus"></i> New book cover listing</button> ' +
+          '<button class="filter-btn" onclick="commOpenOrders()"><i class="ti ti-inbox"></i> My queue</button>' +
+        '</div>' +
       '</div>';
   }
 
@@ -800,7 +815,7 @@
       '<select id="co-kind" style="width:100%;padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;">' +
         (commRights && commRights.can_commission_banners ? '<option value="banner">Banner commission</option>' : '') +
         (commRights && commRights.can_commission_characters ? '<option value="character">Character commission</option>' : '') +
-        (commRights && (commRights.can_commission_banners || commRights.can_commission_characters) ? '<option value="cover">Book cover commission</option>' : '') +
+        '<option value="cover">Book cover commission</option>' +
       '</select>' +
       '<input id="co-title" maxlength="80" placeholder="What you are offering" ' +
         'style="width:100%;padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:\'Lato\',sans-serif;font-size:13px;"/>' +
