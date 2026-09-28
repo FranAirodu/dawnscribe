@@ -120,6 +120,25 @@
 
     /* COVER */
     .story-cover-wrap{flex-shrink:0;}
+    .ctx-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+    .ctx-search{flex:1;min-width:180px;display:flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:0 10px;color:var(--text3);}
+    .ctx-search input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;padding:8px 0;}
+    .ctx-btn{display:inline-flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
+    .ctx-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .ctx-btn[disabled]{opacity:0.35;cursor:default;}
+    .ctx-btn.ctx-main{background:var(--accent);color:#0a0a0f;border-color:var(--accent);}
+    .ctx-chev{position:absolute;top:8px;right:8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text3);cursor:pointer;padding:2px 5px;font-size:13px;}
+    .ctx-chev:hover{color:var(--accent);}
+    .ct-story-char-card.ctx-collapsed > *:not(.ct-story-char-top){display:none !important;}
+    .ct-story-char-card.ctx-collapsed .ct-story-char-top > *:not(.ct-story-portrait):not(.ct-story-portrait-placeholder):not(.ct-story-char-name):not(.ctx-chev){display:none !important;}
+    .ct-story-char-card.ctx-collapsed .ctx-chev i{transform:rotate(180deg);display:inline-block;}
+    .ctx-modal{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:700;display:none;align-items:center;justify-content:center;padding:20px;}
+    .ctx-modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:440px;width:100%;max-height:85vh;overflow-y:auto;}
+    .ctx-modal-t{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;gap:8px;align-items:center;}
+    .ctx-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border);}
+    .ctx-row img,.ctx-ph{width:34px;height:34px;border-radius:50%;object-fit:cover;background:var(--bg3);display:flex;align-items:center;justify-content:center;color:var(--text3);}
+    .ctx-name{flex:1;font-size:13px;font-weight:700;color:var(--text);}
+    .ctx-mv{padding:5px 8px;}
     .story-cover{width:180px;aspect-ratio:2/3;border-radius:12px;object-fit:cover;border:3px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,0.6);background:var(--bg3);}
     .story-cover-placeholder{width:180px;aspect-ratio:2/3;border-radius:12px;background:var(--bg3);border:3px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:40px;}
     @media(max-width:640px){.story-cover,.story-cover-placeholder{width:120px;}}
@@ -776,6 +795,12 @@
           <button id="book-card-toggle-btn" onclick="toggleBookCard()" style="display:none;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;padding:7px 13px;border-radius:8px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'"></button>
         </div>
         <div id="ct-main-note" style="display:none;font-size:12px;color:var(--text3);margin:-4px 0 10px;"><i class="ti ti-info-circle"></i> These go to your story's main page. For quick-reference cards readers see while reading, use Glossary Cards in the chapter editor.</div>
+        <div class="ctx-bar" id="ctx-bar" style="display:none;">
+          <div class="ctx-search"><i class="ti ti-search"></i><input id="ctx-search" type="search" placeholder="Find a character…" oninput="ctxApply()"/></div>
+          <button class="ctx-btn" id="ctx-collapse-btn" onclick="ctxToggleAll()"><i class="ti ti-arrows-minimize"></i> Collapse all</button>
+          <button class="ctx-btn" id="ctx-arrange-btn" onclick="ctxOpenArrange()" style="display:none;"><i class="ti ti-arrows-sort"></i> Arrange cards</button>
+        </div>
+        <div id="ctx-empty" style="display:none;font-size:13px;color:var(--text3);padding:10px 2px;">No character by that name.</div>
         <div id="character-cards-container"></div>
       </div>
 
@@ -3371,6 +3396,115 @@
     // The Book Card is a novel_characters row flagged is_book_card, so it
     // flows through the same aura/song/opinion/quote/vibe/ask pipeline as
     // characters — just rendered first and with character-only facets hidden.
+    // ── CHARACTER CARD TOOLS: search, collapse, arrange ────────────
+    // characterTitles.js re-renders the cards often (after every vote), so
+    // these re-apply themselves through a MutationObserver.
+    var _ctx = { workId: null, isAuthor: false, collapsed: {}, allCollapsed: false, obs: null, busy: false };
+    function ctxStoreKey() { return 'ds_ct_collapsed_' + _ctx.workId; }
+    function ctxInit(workId, isAuthor) {
+      _ctx.workId = workId; _ctx.isAuthor = isAuthor;
+      try { var saved = JSON.parse(localStorage.getItem(ctxStoreKey()) || 'null'); if (saved) { _ctx.collapsed = saved.c || {}; _ctx.allCollapsed = !!saved.all; } } catch (e) {}
+      var box = document.getElementById('character-cards-container');
+      document.getElementById('ctx-arrange-btn').style.display = isAuthor ? '' : 'none';
+      if (!_ctx.obs && window.MutationObserver) {
+        _ctx.obs = new MutationObserver(function(){ if (!_ctx.busy) ctxApply(); });
+        _ctx.obs.observe(box, { childList: true, subtree: true });
+      }
+      ctxApply();
+    }
+    function ctxCardId(card) {
+      var el = card.querySelector('[data-char]');
+      return el ? el.getAttribute('data-char') : null;
+    }
+    function ctxSave() { try { localStorage.setItem(ctxStoreKey(), JSON.stringify({ c: _ctx.collapsed, all: _ctx.allCollapsed })); } catch (e) {} }
+    function ctxApply() {
+      _ctx.busy = true;
+      try {
+        var box = document.getElementById('character-cards-container');
+        var cards = box.querySelectorAll('.ct-story-char-card');
+        document.getElementById('ctx-bar').style.display = cards.length ? 'flex' : 'none';
+        var q = (document.getElementById('ctx-search').value || '').trim().toLowerCase();
+        var shown = 0;
+        cards.forEach(function(card) {
+          var id = ctxCardId(card);
+          var nameEl = card.querySelector('.ct-story-char-name');
+          var name = (nameEl ? nameEl.textContent : card.textContent).toLowerCase();
+          var match = !q || name.indexOf(q) !== -1;
+          card.style.display = match ? '' : 'none';
+          if (match) shown++;
+          var col = id && (id in _ctx.collapsed) ? _ctx.collapsed[id] : _ctx.allCollapsed;
+          card.classList.toggle('ctx-collapsed', !!col);
+          var top = card.querySelector('.ct-story-char-top');
+          if (top && !top.querySelector('.ctx-chev')) {
+            var b = document.createElement('button');
+            b.type = 'button'; b.className = 'ctx-chev'; b.title = 'Collapse / expand';
+            b.innerHTML = '<i class="ti ti-chevron-up"></i>';
+            b.addEventListener('click', function(ev){
+              ev.stopPropagation();
+              var cid = ctxCardId(card); if (!cid) return;
+              _ctx.collapsed[cid] = !card.classList.contains('ctx-collapsed');
+              ctxSave(); ctxApply();
+            });
+            top.style.position = 'relative';
+            top.appendChild(b);
+          }
+        });
+        document.getElementById('ctx-empty').style.display = (q && !shown) ? '' : 'none';
+        var anyOpen = Array.prototype.some.call(cards, function(c){ return !c.classList.contains('ctx-collapsed'); });
+        document.getElementById('ctx-collapse-btn').innerHTML = anyOpen
+          ? '<i class="ti ti-arrows-minimize"></i> Collapse all' : '<i class="ti ti-arrows-maximize"></i> Expand all';
+      } finally { setTimeout(function(){ _ctx.busy = false; }, 0); }
+    }
+    function ctxToggleAll() {
+      var cards = document.querySelectorAll('#character-cards-container .ct-story-char-card');
+      var anyOpen = Array.prototype.some.call(cards, function(c){ return !c.classList.contains('ctx-collapsed'); });
+      _ctx.allCollapsed = anyOpen; _ctx.collapsed = {};
+      ctxSave(); ctxApply();
+    }
+    async function ctxOpenArrange() {
+      var r = await db.from('novel_characters').select('id,name,portrait_url,is_book_card').eq('work_id', _ctx.workId).order('sort_order', { ascending: true });
+      var list = (r.data || []).filter(function(c){ return !c.is_book_card; });
+      var m = document.getElementById('ctx-modal');
+      if (!m) {
+        m = document.createElement('div'); m.id = 'ctx-modal'; m.className = 'ctx-modal';
+        m.innerHTML = '<div class="ctx-modal-box"><div class="ctx-modal-t"><i class="ti ti-arrows-sort"></i> Arrange character cards</div>' +
+          '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Use the arrows to set the order readers see. The Book Card always stays first.</div>' +
+          '<div id="ctx-list"></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">' +
+          '<button class="ctx-btn" id="ctx-cancel">Cancel</button><button class="ctx-btn ctx-main" id="ctx-save"><i class="ti ti-check"></i> Save order</button></div></div>';
+        document.body.appendChild(m);
+        m.addEventListener('click', function(e){ if (e.target === m) m.style.display = 'none'; });
+        document.getElementById('ctx-cancel').onclick = function(){ m.style.display = 'none'; };
+      }
+      function draw() {
+        document.getElementById('ctx-list').innerHTML = list.map(function(c, i){
+          var img = safeUrl(c.portrait_url);
+          return '<div class="ctx-row">' + (img ? '<img src="' + escHtml(img) + '" alt=""/>' : '<span class="ctx-ph"><i class="ti ti-user"></i></span>') +
+            '<span class="ctx-name">' + escHtml(c.name) + '</span>' +
+            '<button class="ctx-btn ctx-mv" data-i="' + i + '" data-d="-1"' + (i === 0 ? ' disabled' : '') + '><i class="ti ti-arrow-up"></i></button>' +
+            '<button class="ctx-btn ctx-mv" data-i="' + i + '" data-d="1"' + (i === list.length - 1 ? ' disabled' : '') + '><i class="ti ti-arrow-down"></i></button></div>';
+        }).join('') || '<div style="font-size:13px;color:var(--text3);">No characters yet.</div>';
+      }
+      document.getElementById('ctx-list').onclick = function(e){
+        var b = e.target.closest('.ctx-mv'); if (!b) return;
+        var i = +b.dataset.i, j = i + (+b.dataset.d);
+        var t = list[i]; list[i] = list[j]; list[j] = t; draw();
+      };
+      document.getElementById('ctx-save').onclick = async function(){
+        var btn = this; btn.disabled = true;
+        var res = await db.rpc('reorder_novel_characters', { p_work_id: _ctx.workId, p_ids: list.map(function(c){ return c.id; }) });
+        btn.disabled = false;
+        if (res.error) { showToast("Couldn't save the order — please try again.", 'ti-alert-triangle'); return; }
+        m.style.display = 'none';
+        showToast('Character order saved', 'ti-check');
+        var box = document.getElementById('character-cards-container');
+        await CharacterTitles.renderStoryCharacterCards(box, _ctx.workId, true, (workData && workData.author_id) || null);
+        injectManageLandscapeBtn();
+        ctxApply();
+      };
+      draw();
+      m.style.display = 'flex';
+    }
+
     var _bookCardId = null;
     async function setupBookCardToggle(workId, work) {
       var btn = document.getElementById('book-card-toggle-btn');
@@ -3659,6 +3793,7 @@
           // Show the section if it has any cards, OR if the author is viewing
           // (so they can reach the "Add Book Card" control even with no chars).
           if (ctContainer.innerHTML.trim() || isAuthor) ctSection.style.display = 'block';
+          ctxInit(workId, isAuthor);
           if (isAuthor) await setupBookCardToggle(workId, workData);
         }
       }
