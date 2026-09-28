@@ -439,6 +439,11 @@
   .gl-slot .gl-ed-card{margin:-1px 0 0 22px;border-top-left-radius:0;border-top-right-radius:0;}
   .gl-ed-card[open] .ti-chevron-down{transform:rotate(180deg);}
   .gl-ed-save{padding:6px 12px;font-size:12px;}
+  .gl-start-opt{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text2);line-height:1.5;margin:8px 0 4px;cursor:pointer;}
+  .gl-start-opt input{margin-top:3px;accent-color:var(--accent);}
+  .gl-ed-later{display:flex;align-items:center;gap:8px;padding:8px 10px;flex-wrap:wrap;}
+  .gl-ed-startline{font-size:11px;color:var(--text3);margin-bottom:8px;display:flex;align-items:center;gap:5px;}
+  .gl-ed-start{background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:11px;padding:2px 6px;font-family:'Lato',sans-serif;}
   .gl-ed-save[disabled]{opacity:0.55;cursor:default;}
   .gl-ed-intro{font-size:12px;color:var(--text2);line-height:1.55;margin:2px 0 6px;}
   .gl-ed-warn{font-size:12px;color:#e0a83a;display:flex;align-items:center;gap:5px;margin-bottom:10px;}
@@ -746,6 +751,8 @@
           <input class="ct-mgr-add-input" id="ct-mgr-input" type="text" placeholder="Character name…" maxlength="60"/>
           <button class="ct-mgr-add-btn" onclick="ctAddCharacter()"><i class="ti ti-plus"></i> Add</button>
         </div>
+        <label class="gl-start-opt"><input type="checkbox" id="ct-gl-start" checked/>
+          <span><strong>Does this character's glossary start in this chapter?</strong> If yes, readers will only see this character's glossary card once they reach this chapter. (Their card on your story's main page isn't affected.)</span></label>
         <div class="ct-chapter-char-note">Characters carry forward to each new chapter automatically. You can skip or end them per chapter.</div>
         <div class="gl-ed-foot">Each chapter adds to a character's card — earlier lines stay, so readers remember what they read. Once a chapter is published, its lines can be reworded but not removed.</div>
         <input type="file" id="gl-ed-file" accept="image/png,image/jpeg,image/webp" style="display:none;"/>
@@ -3936,7 +3943,8 @@
     var name = input ? input.value.trim() : '';
     if (!name || !workId) return;
     var { data, error } = await db.from('novel_characters').insert({
-      work_id: workId, name: name, sort_order: ctCharacters.length
+      work_id: workId, name: name, sort_order: ctCharacters.length,
+      glossary_start_chapter: (document.getElementById('ct-gl-start') || {}).checked ? glChapterNumber(editingChapterId) : null
     }).select().single();
     if (error) { showToast('Error: ' + error.message, 'ti-x'); return; }
     ctCharacters.push(Object.assign({}, data, { chapter_status: 'active' }));
@@ -4044,7 +4052,7 @@
     if (!workId) return;
     try {
       var r = await Promise.all([
-        db.from('novel_characters').select('id,name,portrait_url,is_book_card,sort_order').eq('work_id', workId).order('sort_order', { ascending: true }),
+        db.from('novel_characters').select('id,name,portrait_url,is_book_card,sort_order,glossary_start_chapter').eq('work_id', workId).order('sort_order', { ascending: true }),
         db.from('glossary_entries').select('id,chapter_id,character_id,summary,image_path,badge').eq('work_id', workId)
       ]);
       if (seq !== gl.loadSeq) return;
@@ -4083,6 +4091,13 @@
     gl.chars.forEach(function(c) {
       var slot = document.getElementById('gl-slot-' + c.id);
       if (!slot) return;
+      var startSel = glStartSelect(c);
+      if (c.glossary_start_chapter && cur < c.glossary_start_chapter) {
+        slot.innerHTML = '<div class="gl-ed-card gl-ed-later"><i class="ti ti-lock" style="color:var(--text3);"></i> ' +
+          '<span class="gl-ed-name" style="color:var(--text3);">Glossary</span>' +
+          '<span class="gl-ed-count">Hidden from readers until Chapter ' + c.glossary_start_chapter + ' · ' + startSel + '</span></div>';
+        return;
+      }
       var b = glBefore(c.id);
       var m = gl.mine[c.id] || { summary: '', image_path: null, badge: null };
       var pic = m.image_path || b.image_path;
@@ -4100,6 +4115,7 @@
         '<summary><i class="ti ti-book-2" style="color:var(--accent);"></i> <span class="gl-ed-name">Glossary</span>' + badgeTxt +
           '<span class="gl-ed-count">' + info + ' <i class="ti ti-chevron-down"></i></span></summary>' +
         '<div class="gl-ed-body">' +
+          '<div class="gl-ed-startline"><i class="ti ti-flag"></i> Glossary starts in ' + startSel + '</div>' +
           (prior ? '<div class="gl-ed-priors">' + prior + '</div>' : '') +
           '<div style="display:flex;gap:10px;align-items:flex-start;">' +
             '<div class="gl-ed-pic" title="Glossary picture">' + (picUrl ? '<img src="' + esc(picUrl) + '" alt=""/>' : '<i class="ti ti-user"></i>') + '</div>' +
@@ -4124,6 +4140,24 @@
         '</div></details>';
     });
   }
+  function glStartSelect(c) {
+    var max = Math.max(glChapterNumber(null), glChapterNumber(gl.chapterId));
+    var v = c.glossary_start_chapter || '';
+    var o = '<option value=""' + (v ? '' : ' selected') + '>first chapter with a line</option>';
+    for (var i = 1; i <= max; i++) o += '<option value="' + i + '"' + (v === i ? ' selected' : '') + '>Chapter ' + i + '</option>';
+    return '<select class="gl-ed-start" data-id="' + c.id + '">' + o + '</select>';
+  }
+  document.addEventListener('change', async function(e){
+    if (!e.target.classList || !e.target.classList.contains('gl-ed-start')) return;
+    var id = e.target.dataset.id, c = gl.chars.find(function(x){ return x.id === id; });
+    if (!c) return;
+    var val = e.target.value ? parseInt(e.target.value, 10) : null;
+    var r = await db.from('novel_characters').update({ glossary_start_chapter: val }).eq('id', id);
+    if (r.error) { showToast("Couldn't save that — please try again.", 'ti-alert-triangle'); glRender(); return; }
+    c.glossary_start_chapter = val;
+    glRender();
+    showToast(val ? c.name + '\u2019s glossary now starts in Chapter ' + val + '.' : c.name + '\u2019s glossary starts at their first line.', 'ti-flag');
+  });
   document.addEventListener('toggle', function(e){
     var d = e.target;
     if (d && d.classList && d.classList.contains('gl-ed-card')) gl.open[d.dataset.id] = d.open;
