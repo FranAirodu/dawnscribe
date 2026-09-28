@@ -675,7 +675,7 @@
       <div class="story-cover-wrap">
         <img loading="lazy" decoding="async" class="story-cover" id="story-cover" style="display:none;"/>
         <div class="story-cover-placeholder" id="story-cover-placeholder"><i class="ti ti-book"></i></div>
-        <a id="cover-credit" href="#" style="display:none;margin-top:8px;font-size:11px;color:var(--text3);text-decoration:none;max-width:180px;align-items:center;gap:5px;"><i class="ti ti-brush" style="color:var(--accent);"></i> <span>Cover art by <strong id="cover-credit-name" style="color:var(--text2);"></strong></span></a>
+        <div id="cover-credit" style="display:none;margin-top:8px;font-size:11px;color:var(--text3);max-width:180px;line-height:1.5;"><i class="ti ti-brush" style="color:var(--accent);"></i> Cover art by <a id="cover-credit-name" href="#" style="color:var(--text2);font-weight:700;text-decoration:none;"></a><a id="cover-credit-port" href="#" target="_blank" rel="noopener noreferrer nofollow" style="display:none;margin-left:6px;color:var(--accent);text-decoration:none;font-weight:700;">Portfolio <i class="ti ti-external-link"></i></a></div>
       </div>
       <div class="story-meta">
         <div id="story-type-badge"></div>
@@ -1400,12 +1400,15 @@
       // Cover artist credit — only set by a confirmed DawnScribe cover
       // commission (credit_cover_artist), and cleared if the cover changes.
       if (work.cover_url && work.cover_artist_id) {
-        db.from('profiles').select('username,display_name').eq('id', work.cover_artist_id).maybeSingle().then(function(r){
-          var p = r && r.data; if (!p) return;
-          var a = document.getElementById('cover-credit');
-          document.getElementById('cover-credit-name').textContent = p.display_name || p.username;
-          a.href = p.username ? 'profile.html?user=' + encodeURIComponent(p.username) : 'profile.html?id=' + encodeURIComponent(work.cover_artist_id);
-          a.style.display = 'flex';
+        Promise.resolve(db.rpc('get_cover_credit', { p_work_id: work.id })).then(function(r){
+          var c = r && r.data; if (!c) return;
+          var n = document.getElementById('cover-credit-name');
+          n.textContent = c.display_name || c.username || 'an artist';
+          n.href = c.username ? 'profile.html?user=' + encodeURIComponent(c.username) : '#';
+          var pl = document.getElementById('cover-credit-port');
+          var pu = safeUrl(c.portfolio_url || '');
+          if (pu && /^https:\/\//i.test(pu)) { pl.href = pu; pl.style.display = 'inline'; }
+          document.getElementById('cover-credit').style.display = 'block';
         }).catch(function(){});
       }
 
