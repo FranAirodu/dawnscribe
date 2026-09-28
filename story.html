@@ -127,11 +127,23 @@
     .ctx-btn:hover{border-color:var(--accent);color:var(--accent);}
     .ctx-btn[disabled]{opacity:0.35;cursor:default;}
     .ctx-btn.ctx-main{background:var(--accent);color:#0a0a0f;border-color:var(--accent);}
-    .ctx-chev{position:absolute;top:8px;right:8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text3);cursor:pointer;padding:2px 5px;font-size:13px;}
-    .ctx-chev:hover{color:var(--accent);}
-    .ct-story-char-card.ctx-collapsed > *:not(.ct-story-char-top){display:none !important;}
-    .ct-story-char-card.ctx-collapsed .ct-story-char-top > *:not(.ct-story-portrait):not(.ct-story-portrait-placeholder):not(.ct-story-char-name):not(.ctx-chev){display:none !important;}
-    .ct-story-char-card.ctx-collapsed .ctx-chev i{transform:rotate(180deg);display:inline-block;}
+    /* Compact tiles by default; a clicked character opens to the full card. */
+    #character-cards-container .ct-story-grid{grid-template-columns:repeat(auto-fill,minmax(112px,1fr)) !important;gap:10px !important;align-items:start;}
+    .ct-story-char-card.ctx-compact{cursor:pointer;height:auto !important;min-height:0 !important;}
+    .ct-story-char-card.ctx-compact .ct-flip-inner{height:auto !important;min-height:0 !important;transform:none !important;}
+    .ct-story-char-card.ctx-compact .ct-flip-back,
+    .ct-story-char-card.ctx-compact .ct-beloved-ribbon,
+    .ct-story-char-card.ctx-compact .ct-flip-front > *:not(.ct-story-char-top){display:none !important;}
+    .ct-story-char-card.ctx-compact .ct-flip-front{position:static !important;height:auto !important;}
+    .ct-story-char-card.ctx-compact .ct-story-char-top{padding:12px 8px 10px !important;gap:6px !important;}
+    .ct-story-char-card.ctx-compact .ct-story-char-top > *:not(.ct-story-portrait):not(.ct-story-portrait-placeholder):not(.ct-story-char-name){display:none !important;}
+    .ct-story-char-card.ctx-compact .ct-story-portrait,.ct-story-char-card.ctx-compact .ct-story-portrait-placeholder{width:56px !important;height:56px !important;}
+    .ct-story-char-card.ctx-compact .ct-story-char-name{font-size:11.5px !important;text-align:center;line-height:1.3;}
+    .ct-story-char-card.ctx-compact .ct-book-badge{display:none !important;}
+    .ct-story-char-card.ctx-compact:hover{border-color:var(--accent);}
+    .ct-story-char-card.ctx-open{grid-column:1/-1;justify-self:center;width:100%;max-width:380px;position:relative;}
+    .ctx-close{position:absolute;top:8px;right:8px;z-index:5;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;padding:3px 7px;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;}
+    .ctx-close:hover{color:var(--accent);border-color:var(--accent);}
     .ctx-modal{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:700;display:none;align-items:center;justify-content:center;padding:20px;}
     .ctx-modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:440px;width:100%;max-height:85vh;overflow-y:auto;}
     .ctx-modal-t{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;gap:8px;align-items:center;}
@@ -797,7 +809,8 @@
         <div id="ct-main-note" style="display:none;font-size:12px;color:var(--text3);margin:-4px 0 10px;"><i class="ti ti-info-circle"></i> These go to your story's main page. For quick-reference cards readers see while reading, use Glossary Cards in the chapter editor.</div>
         <div class="ctx-bar" id="ctx-bar" style="display:none;">
           <div class="ctx-search"><i class="ti ti-search"></i><input id="ctx-search" type="search" placeholder="Find a character…" oninput="ctxApply()"/></div>
-          <button class="ctx-btn" id="ctx-collapse-btn" onclick="ctxToggleAll()"><i class="ti ti-arrows-minimize"></i> Collapse all</button>
+          <span style="font-size:11px;color:var(--text3);">Tap a character to see more</span>
+          <button class="ctx-btn" id="ctx-collapse-btn" onclick="ctxToggleAll()" style="display:none;"><i class="ti ti-arrows-minimize"></i> Close all</button>
           <button class="ctx-btn" id="ctx-arrange-btn" onclick="ctxOpenArrange()" style="display:none;"><i class="ti ti-arrows-sort"></i> Arrange cards</button>
         </div>
         <div id="ctx-empty" style="display:none;font-size:13px;color:var(--text3);padding:10px 2px;">No character by that name.</div>
@@ -3399,16 +3412,28 @@
     // ── CHARACTER CARD TOOLS: search, collapse, arrange ────────────
     // characterTitles.js re-renders the cards often (after every vote), so
     // these re-apply themselves through a MutationObserver.
-    var _ctx = { workId: null, isAuthor: false, collapsed: {}, allCollapsed: false, obs: null, busy: false };
-    function ctxStoreKey() { return 'ds_ct_collapsed_' + _ctx.workId; }
+    var _ctx = { workId: null, isAuthor: false, open: {}, obs: null, busy: false };
     function ctxInit(workId, isAuthor) {
       _ctx.workId = workId; _ctx.isAuthor = isAuthor;
-      try { var saved = JSON.parse(localStorage.getItem(ctxStoreKey()) || 'null'); if (saved) { _ctx.collapsed = saved.c || {}; _ctx.allCollapsed = !!saved.all; } } catch (e) {}
       var box = document.getElementById('character-cards-container');
       document.getElementById('ctx-arrange-btn').style.display = isAuthor ? '' : 'none';
       if (!_ctx.obs && window.MutationObserver) {
         _ctx.obs = new MutationObserver(function(){ if (!_ctx.busy) ctxApply(); });
         _ctx.obs.observe(box, { childList: true, subtree: true });
+        // Clicking a compact tile opens that character.
+        box.addEventListener('click', function(ev){
+          var card = ev.target.closest('.ct-story-char-card');
+          if (!card) return;
+          if (ev.target.closest('.ctx-close')) {
+            ev.preventDefault(); ev.stopPropagation();
+            delete _ctx.open[ctxCardId(card)]; ctxApply(); return;
+          }
+          if (card.classList.contains('ctx-compact')) {
+            ev.preventDefault(); ev.stopPropagation();
+            _ctx.open[ctxCardId(card)] = true; ctxApply();
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }, true);
       }
       ctxApply();
     }
@@ -3416,7 +3441,6 @@
       var el = card.querySelector('[data-char]');
       return el ? el.getAttribute('data-char') : null;
     }
-    function ctxSave() { try { localStorage.setItem(ctxStoreKey(), JSON.stringify({ c: _ctx.collapsed, all: _ctx.allCollapsed })); } catch (e) {} }
     function ctxApply() {
       _ctx.busy = true;
       try {
@@ -3424,43 +3448,32 @@
         var cards = box.querySelectorAll('.ct-story-char-card');
         document.getElementById('ctx-bar').style.display = cards.length ? 'flex' : 'none';
         var q = (document.getElementById('ctx-search').value || '').trim().toLowerCase();
-        var shown = 0;
+        var shown = 0, anyOpen = false;
         cards.forEach(function(card) {
           var id = ctxCardId(card);
           var nameEl = card.querySelector('.ct-story-char-name');
-          var name = (nameEl ? nameEl.textContent : card.textContent).toLowerCase();
+          var name = (nameEl ? nameEl.textContent : '').toLowerCase();
           var match = !q || name.indexOf(q) !== -1;
           card.style.display = match ? '' : 'none';
           if (match) shown++;
-          var col = id && (id in _ctx.collapsed) ? _ctx.collapsed[id] : _ctx.allCollapsed;
-          card.classList.toggle('ctx-collapsed', !!col);
-          var top = card.querySelector('.ct-story-char-top');
-          if (top && !top.querySelector('.ctx-chev')) {
-            var b = document.createElement('button');
-            b.type = 'button'; b.className = 'ctx-chev'; b.title = 'Collapse / expand';
-            b.innerHTML = '<i class="ti ti-chevron-up"></i>';
-            b.addEventListener('click', function(ev){
-              ev.stopPropagation();
-              var cid = ctxCardId(card); if (!cid) return;
-              _ctx.collapsed[cid] = !card.classList.contains('ctx-collapsed');
-              ctxSave(); ctxApply();
-            });
-            top.style.position = 'relative';
-            top.appendChild(b);
-          }
+          var open = !!(id && _ctx.open[id]);
+          if (open) anyOpen = true;
+          card.classList.toggle('ctx-compact', !open);
+          card.classList.toggle('ctx-open', open);
+          var btn = card.querySelector(':scope > .ctx-close');
+          if (open && !btn) {
+            btn = document.createElement('button');
+            btn.type = 'button'; btn.className = 'ctx-close'; btn.innerHTML = '<i class="ti ti-chevron-up"></i> Close';
+            card.appendChild(btn);
+          } else if (!open && btn) btn.remove();
         });
         document.getElementById('ctx-empty').style.display = (q && !shown) ? '' : 'none';
-        var anyOpen = Array.prototype.some.call(cards, function(c){ return !c.classList.contains('ctx-collapsed'); });
-        document.getElementById('ctx-collapse-btn').innerHTML = anyOpen
-          ? '<i class="ti ti-arrows-minimize"></i> Collapse all' : '<i class="ti ti-arrows-maximize"></i> Expand all';
+        var cb = document.getElementById('ctx-collapse-btn');
+        cb.style.display = anyOpen ? '' : 'none';
+        cb.innerHTML = '<i class="ti ti-arrows-minimize"></i> Close all';
       } finally { setTimeout(function(){ _ctx.busy = false; }, 0); }
     }
-    function ctxToggleAll() {
-      var cards = document.querySelectorAll('#character-cards-container .ct-story-char-card');
-      var anyOpen = Array.prototype.some.call(cards, function(c){ return !c.classList.contains('ctx-collapsed'); });
-      _ctx.allCollapsed = anyOpen; _ctx.collapsed = {};
-      ctxSave(); ctxApply();
-    }
+    function ctxToggleAll() { _ctx.open = {}; ctxApply(); }
     async function ctxOpenArrange() {
       var r = await db.from('novel_characters').select('id,name,portrait_url,is_book_card').eq('work_id', _ctx.workId).order('sort_order', { ascending: true });
       var list = (r.data || []).filter(function(c){ return !c.is_book_card; });
