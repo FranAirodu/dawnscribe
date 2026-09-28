@@ -1371,10 +1371,25 @@
         document.getElementById('toggle-erotica').classList.remove('on');
         document.getElementById('filter-erotica').classList.remove('active');
       }
+      if (key === 'safe' && settings.filter_safe) {
+        // Safe is what's left when Gore and Erotica are off; switch one of those on instead.
+        showToast('Turn on Gore or Erotica to see mature stories.', 'ti-info-circle');
+        return;
+      }
       settings['filter_' + key] = !settings['filter_' + key];
-      document.getElementById('toggle-' + key).classList.toggle('on', settings['filter_' + key]);
-      document.getElementById('filter-' + key).classList.toggle('active', settings['filter_' + key]);
+      normalizeFilters();
       markChanged();
+    }
+
+    // Safe and Gore/Erotica are never on together (the database enforces the
+    // same rule in enforce_age_gate): Safe = neither Gore nor Erotica.
+    function normalizeFilters() {
+      settings.filter_safe = !(settings.filter_gore || settings.filter_erotica);
+      ['safe','gore','erotica'].forEach(function(k){
+        var t = document.getElementById('toggle-' + k), f = document.getElementById('filter-' + k);
+        if (t) t.classList.toggle('on', !!settings['filter_' + k]);
+        if (f) f.classList.toggle('active', !!settings['filter_' + k]);
+      });
     }
 
     // ── CONTENT WARNINGS ────────────────────────────────────────────
@@ -2473,6 +2488,7 @@
       applyTheme(settings.theme);
       renderQuietHours();
       renderVisibilityToggles();
+      settings.filter_safe = !(settings.filter_gore || settings.filter_erotica);
       document.getElementById('toggle-safe').classList.toggle('on', settings.filter_safe);
       document.getElementById('filter-safe').classList.toggle('active', settings.filter_safe);
       document.getElementById('toggle-gore').classList.toggle('on', settings.filter_gore);
