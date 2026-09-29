@@ -2274,7 +2274,7 @@
       card.innerHTML =
         '<div class="para-cmt-header">' +
           '<div class="comment-avatar" style="width:26px;height:26px;font-size:12px;">' + avatarHtml + '</div>' +
-          '<div class="para-cmt-name"><a href="profile.html?user=' + escHtml(p.username||'') + '">' + name + '</a></div>' +
+          '<div class="para-cmt-name" data-ds-uid="'+escHtml(c.user_id||'')+'"><a href="profile.html?user=' + escHtml(p.username||'') + '">' + name + '</a></div>' +
           '<div class="para-cmt-time">' + timeAgo(c.created_at) + editedMarker(c) + '</div>' +
         '</div>' +
         '<div class="para-cmt-body">' + dsSpoiler.render(escHtml(c.content)) + '</div>' +
@@ -2344,7 +2344,7 @@
       card.innerHTML =
         '<div class="para-cmt-header">' +
           '<div class="comment-avatar" style="width:22px;height:22px;font-size:10px;">' + avatarHtml + '</div>' +
-          '<div class="para-cmt-name"><a href="profile.html?user='+escHtml(p.username||'')+'">' + name + '</a></div>' +
+          '<div class="para-cmt-name" data-ds-uid="'+escHtml(r.user_id||'')+'"><a href="profile.html?user='+escHtml(p.username||'')+'">' + name + '</a></div>' +
           '<div class="para-cmt-time">' + timeAgo(r.created_at) + editedMarker(r) + '</div>' +
         '</div>' +
         '<div class="para-cmt-body">' + dsSpoiler.render(escHtml(r.content)) + '</div>' +
@@ -2747,7 +2747,7 @@
       card.innerHTML =
         '<div class="comment-header">'
           + '<div class="comment-avatar" style="'+(isReply?'width:24px;height:24px;font-size:11px;':'')+'">' + avatarHtml + '</div>'
-          + '<div class="comment-name">' + name + '</div>'
+          + '<div class="comment-name" data-ds-uid="'+escHtml(c.user_id||'')+'">' + name + '</div>'
           + '<div class="comment-time">' + timeAgo(c.created_at) + editedMarker(c) + '</div>'
         + '</div>'
         + '<div class="comment-body">' + dsSpoiler.render(escHtml(c.content)) + '</div>'
@@ -3411,7 +3411,7 @@
           : '';
         return '<div id="sp-comment-'+escHtml(c.id)+'" style="padding:10px 16px;border-bottom:1px solid var(--border);" data-sp-id="'+escHtml(c.id)+'">' +
           paraLabel +
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' + av + '<span style="font-size:12px;font-weight:700;color:var(--text);">'+name+'</span><span style="font-size:11px;color:var(--text2);margin-left:auto;">'+timeAgo(c.created_at)+(c.edited_at?'<span class="cmt-edited">\u00b7 edited</span>':'')+'</span></div>' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' + av + '<span data-ds-uid="'+escHtml(c.user_id||prof.id||'')+'" style="font-size:12px;font-weight:700;color:var(--text);">'+name+'</span><span style="font-size:11px;color:var(--text2);margin-left:auto;">'+timeAgo(c.created_at)+(c.edited_at?'<span class="cmt-edited">\u00b7 edited</span>':'')+'</span></div>' +
           '<div style="font-size:13px;color:var(--text2);line-height:1.5;">'+dsSpoiler.render(escHtml(c.content||''))+'</div>' +
           (c.gif_url ? '<img loading="lazy" decoding="async" src="'+escHtml(c.gif_url)+'" style="max-width:100%;border-radius:7px;margin-top:6px;display:block;" alt="gif"/>' : '') +
           (c.image_url ? '<img loading="lazy" decoding="async" src="'+escHtml(c.image_url)+'" style="max-width:100%;border-radius:7px;margin-top:6px;display:block;" alt="image"/>' : '') +
@@ -5637,5 +5637,39 @@
       </div>
     </div>
 
+<style>.ds-cmt-title{display:block;font-size:10.5px;font-weight:600;letter-spacing:.02em;color:var(--accent,#c9a45c);opacity:.9;margin-top:1px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}span[data-ds-uid]{display:inline-flex;flex-direction:column}</style>
+<script>
+/* Titles under commenter names: batches all visible authors into one get_display_titles call. */
+(function(){
+  var cache={}, pending={}, timer=null;
+  function esc(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+  function paint(){
+    document.querySelectorAll('[data-ds-uid]').forEach(function(el){
+      var id=el.getAttribute('data-ds-uid'); if(!id) return;
+      var t=cache[id]; if(t===undefined){ pending[id]=1; return; }
+      var ex=el.querySelector(':scope > .ds-cmt-title');
+      if(!t){ if(ex) ex.remove(); return; }
+      if(ex){ if(ex.textContent!==t) ex.textContent=t; return; }
+      el.insertAdjacentHTML('beforeend','<span class="ds-cmt-title">'+esc(t)+'</span>');
+    });
+  }
+  async function flush(){
+    timer=null; paint();
+    var ids=Object.keys(pending); pending={};
+    if(!ids.length||typeof db==='undefined'||!db) return;
+    ids.forEach(function(i){cache[i]=null;});
+    try{
+      var r=await db.rpc('get_display_titles',{p_user_ids:ids});
+      (r.data||[]).forEach(function(row){ cache[row.user_id]=row.title||null; });
+    }catch(e){}
+    paint();
+  }
+  function schedule(){ if(!timer) timer=setTimeout(flush,250); }
+  new MutationObserver(function(m){
+    for(var i=0;i<m.length;i++){ if(m[i].addedNodes.length){ schedule(); return; } }
+  }).observe(document.documentElement,{childList:true,subtree:true});
+  schedule();
+})();
+</script>
 </body>
 </html>
