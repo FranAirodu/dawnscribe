@@ -570,6 +570,13 @@
     .ap-tile img{width:100%;height:100%;object-fit:cover;}
     .ap-tile.on{border-color:var(--accent);}
     .ap-num{position:absolute;top:5px;left:5px;background:var(--accent);color:#0a0a0f;font-size:11px;font-weight:700;border-radius:20px;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;}
+    .ap-shop{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+    .ap-shop-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px;}
+    .ap-shop-img{display:flex;align-items:center;justify-content:center;aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg3);color:var(--text2);font-size:28px;}
+    .ap-shop-img img{width:100%;height:100%;object-fit:cover;}
+    .ap-shop-t{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .ap-shop-p{font-size:13px;font-weight:700;color:var(--accent);}
+    .ap-shop-item .ap-btn{justify-content:center;}
     .ap-offers{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
     .ap-offer{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
     .ap-offer-k{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;}
@@ -3297,6 +3304,7 @@ async function handleFriendBtn() {
           return;
         }
         _ap.data = r.data;
+        try { var sh = await db.rpc('get_artist_shop', { p_user_id: profileId }); _ap.shop = sh.data || []; } catch (_) { _ap.shop = []; }
         tab.style.display = '';
         renderArtistPage();
       } catch (e) { console.error('[artist page]', e); }
@@ -3324,6 +3332,26 @@ async function handleFriendBtn() {
         '<div class="ap-stat"><b>' + (st.on_time_pct == null ? '—' : st.on_time_pct + '%') + '</b><span>on time</span></div>' +
         '<div class="ap-stat"><b>' + (st.reply_hours == null ? '—' : (st.reply_hours < 24 ? 'Under a day' : Math.round(st.reply_hours / 24) + ' day' + (Math.round(st.reply_hours / 24) === 1 ? '' : 's'))) + '</b><span>usually replies</span></div>' +
       '</div>';
+
+      // For sale — full-size downloads
+      var shop = _ap.shop || [];
+      if (shop.length || _ap.isOwner) {
+        html += '<div class="ap-sec"><div class="ap-sec-t"><i class="ti ti-download"></i> For sale' +
+          (_ap.isOwner ? ' <button class="ap-btn" style="margin-left:auto;padding:4px 10px;font-size:12px;" onclick="shopOpenSell()"><i class="ti ti-plus"></i> Sell an artwork</button>' : '') + '</div>' +
+          '<div class="ap-muted" style="font-size:12px;margin-bottom:8px;">Buy once, keep the full-size file.</div>' +
+          (shop.length ? '<div class="ap-shop">' + shop.map(function(w){
+            var img = safeUrl(w.cover_url), btn;
+            if (_ap.isOwner) btn = '<button class="ap-btn" onclick="shopOpenSell(\'' + w.work_id + '\')"><i class="ti ti-pencil"></i> Edit</button>';
+            else if (w.owned) btn = '<button class="ap-btn" onclick="shopDownload(\'' + w.work_id + '\')"><i class="ti ti-download"></i> Download</button>';
+            else btn = '<button class="ap-btn" onclick="shopBuy(\'' + w.work_id + '\')"><i class="ti ti-feather"></i> Buy</button>';
+            return '<div class="ap-shop-item">' +
+              '<a href="artwork.html?id=' + encodeURIComponent(w.work_id) + '" class="ap-shop-img">' + (img ? '<img src="' + img + '" alt="" loading="lazy"/>' : '<i class="ti ti-photo"></i>') + '</a>' +
+              '<div class="ap-shop-t">' + e(w.title) + '</div>' +
+              '<div class="ap-shop-p"><i class="ti ti-feather"></i> ' + Number(w.price).toLocaleString() +
+                (_ap.isOwner ? ' <span class="ap-muted" style="font-size:11px;">· ' + (w.active ? (w.sales || 0) + ' sold' : 'hidden') + '</span>' : '') + '</div>' + btn + '</div>';
+          }).join('') + '</div>'
+          : '<div class="ap-muted">Nothing for sale yet. Pick one of your published artworks, upload the full-size file, and set a price.</div>') + '</div>';
+      }
 
       // Portfolio
       var pins = d.pins || [];
@@ -3369,6 +3397,83 @@ async function handleFriendBtn() {
         '</div>';
       }
       box.innerHTML = html;
+    }
+    // ── Artist shop: sell full-size downloads of published artwork ──
+    function shopFind(id){ return (_ap.shop || []).find(function(w){ return w.work_id === id; }); }
+    async function shopReload(){ try { var sh = await db.rpc('get_artist_shop', { p_user_id: _ap.profileId }); _ap.shop = sh.data || []; } catch (_) {} renderArtistPage(); }
+    async function shopBuy(id){
+      var w = shopFind(id); if (!w) return;
+      var s = (await db.auth.getSession()).data.session;
+      if (!s) { location.href = 'login.html?next=' + encodeURIComponent(location.pathname + location.search); return; }
+      shopModal('<div class="ap-h"><i class="ti ti-feather"></i> Buy “' + escHtml(w.title) + '”</div>' +
+        '<div class="ap-muted" style="margin:8px 0 14px;">You get the full-size file to keep and download any time from this page. Price: <strong>' + Number(w.price).toLocaleString() + ' Quills</strong>. Personal use only; the artist keeps the copyright.</div>' +
+        '<div id="shop-msg" class="ap-muted" style="color:var(--red);min-height:1em;"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="ap-btn" onclick="shopClose()">Cancel</button><button class="ap-btn" id="shop-go" style="background:var(--accent);color:#fff;border-color:var(--accent);">Buy for ' + Number(w.price).toLocaleString() + '</button></div>');
+      document.getElementById('shop-go').onclick = async function(){
+        this.disabled = true;
+        var r = await db.rpc('buy_artwork_download', { p_work_id: id });
+        var d = r.data || {};
+        if (r.error || d.error) { document.getElementById('shop-msg').textContent = (d.error || r.error.message) + (d.cost ? ' (' + d.cost + ' needed)' : ''); this.disabled = false; if (d.owned) { shopClose(); shopReload(); } return; }
+        shopClose(); await shopReload(); shopDownload(id);
+      };
+    }
+    async function shopDownload(id){
+      var w = shopFind(id); if (!w || !w.original_path) return;
+      var r = await db.storage.from('art-originals').createSignedUrl(w.original_path, 300, { download: (w.title || 'artwork').replace(/[^\w\- ]+/g, '').trim() || 'artwork' });
+      if (r.error) { alert('Download failed: ' + r.error.message); return; }
+      location.href = r.data.signedUrl;
+    }
+    function shopModal(inner){
+      shopClose();
+      var m = document.createElement('div'); m.id = 'shop-modal';
+      m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      m.innerHTML = '<div class="ap-card" style="max-width:440px;width:100%;max-height:90vh;overflow:auto;">' + inner + '</div>';
+      m.addEventListener('click', function(ev){ if (ev.target === m) shopClose(); });
+      document.body.appendChild(m);
+    }
+    function shopClose(){ var m = document.getElementById('shop-modal'); if (m) m.remove(); }
+    async function shopOpenSell(editId){
+      var existing = editId ? shopFind(editId) : null;
+      var opts = '';
+      if (!existing) {
+        var q = await db.from('works').select('id,title').eq('author_id', _ap.profileId).eq('type', 'artwork').eq('is_published', true).order('created_at', { ascending: false }).limit(200);
+        var selling = (_ap.shop || []).map(function(w){ return w.work_id; });
+        var list = (q.data || []).filter(function(w){ return selling.indexOf(w.id) < 0; });
+        if (!list.length) { shopModal('<div class="ap-h">Nothing to sell yet</div><div class="ap-muted" style="margin:8px 0 14px;">Publish an artwork first; then it can be sold here.</div><div style="text-align:right;"><button class="ap-btn" onclick="shopClose()">OK</button></div>'); return; }
+        opts = '<label class="ap-muted" style="font-size:12px;">Artwork</label><select id="shop-work" class="ap-in" style="width:100%;margin-bottom:10px;">' + list.map(function(w){ return '<option value="' + w.id + '">' + escHtml(w.title || 'Untitled') + '</option>'; }).join('') + '</select>';
+      }
+      shopModal('<div class="ap-h"><i class="ti ti-download"></i> ' + (existing ? 'Edit “' + escHtml(existing.title) + '”' : 'Sell an artwork') + '</div>' +
+        '<div class="ap-muted" style="font-size:12px;margin:6px 0 12px;">Buyers get the full-size file. Your post stays as the public preview. You keep 75% of each sale.</div>' + opts +
+        '<label class="ap-muted" style="font-size:12px;">Full-size file' + (existing ? ' (leave empty to keep the current one)' : '') + '</label>' +
+        '<input type="file" id="shop-file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,application/zip,image/vnd.adobe.photoshop" style="width:100%;margin-bottom:10px;"/>' +
+        '<label class="ap-muted" style="font-size:12px;">Price in Quills (50–20,000)</label>' +
+        '<input type="number" id="shop-price" min="50" max="20000" value="' + (existing ? existing.price : 300) + '" class="ap-in" style="width:100%;margin-bottom:10px;"/>' +
+        (existing ? '<label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-bottom:10px;"><input type="checkbox" id="shop-active"' + (existing.active ? ' checked' : '') + '/> Show in my shop</label>' : '') +
+        '<div id="shop-msg" class="ap-muted" style="color:var(--red);min-height:1em;"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="ap-btn" onclick="shopClose()">Cancel</button><button class="ap-btn" id="shop-save" style="background:var(--accent);color:#fff;border-color:var(--accent);">Save</button></div>');
+      document.getElementById('shop-save').onclick = async function(){
+        var btn = this, msg = document.getElementById('shop-msg');
+        var workId = existing ? existing.work_id : document.getElementById('shop-work').value;
+        var price = parseInt(document.getElementById('shop-price').value, 10);
+        var f = document.getElementById('shop-file').files[0];
+        if (!(price >= 50 && price <= 20000)) { msg.textContent = 'Price must be 50–20,000 Quills.'; return; }
+        if (!f && !existing) { msg.textContent = 'Choose the full-size file.'; return; }
+        if (f && f.size > 50 * 1024 * 1024) { msg.textContent = 'File is over 50 MB.'; return; }
+        btn.disabled = true; msg.style.color = 'var(--text2)'; msg.textContent = f ? 'Uploading…' : 'Saving…';
+        var path = null;
+        if (f) {
+          var ext = (f.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
+          path = _ap.profileId + '/' + workId + '-' + Date.now() + '.' + ext;
+          var up = await db.storage.from('art-originals').upload(path, f, { upsert: false, contentType: f.type || undefined });
+          if (up.error) { msg.style.color = 'var(--red)'; msg.textContent = 'Upload failed: ' + up.error.message; btn.disabled = false; return; }
+        }
+        var act = document.getElementById('shop-active');
+        var r = await db.rpc('set_artwork_for_sale', { p_work_id: workId, p_price: price, p_original_path: path, p_active: act ? act.checked : true });
+        var d = r.data || {};
+        if (r.error || d.error) { msg.style.color = 'var(--red)'; msg.textContent = d.error || r.error.message; btn.disabled = false; return; }
+        if (f && existing && existing.original_path && existing.original_path !== path) { db.storage.from('art-originals').remove([existing.original_path]); }
+        shopClose(); shopReload();
+      };
     }
     async function apEdit() {
       var d = _ap.data || {};
