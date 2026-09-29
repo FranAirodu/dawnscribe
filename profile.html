@@ -543,6 +543,10 @@
     @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
     @keyframes skeleton-pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
     /* ── SHOWCASE TAB ─────────────────────────────────────────── */
+    .pt-title{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:700;color:var(--accent);letter-spacing:0.3px;}
+    .pt-btn{align-items:center;gap:4px;background:none;border:1px dashed var(--border);border-radius:6px;padding:3px 9px;color:var(--text3);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;}
+    .pt-btn:hover{color:var(--accent);border-color:var(--accent);}
+    .pt-select{background:var(--bg3);border:1px solid var(--accent);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;font-family:'Lato',sans-serif;}
     .ap-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;}
     .ap-h{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;margin-bottom:8px;}
     .ap-muted{font-size:13px;color:var(--text3);line-height:1.6;}
@@ -687,6 +691,11 @@
           <span id="profile-completion-pct" style="font-size:11px;color:var(--text3);font-weight:700;white-space:nowrap;"></span>
           <div id="profile-completion-tip" style="display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--text2);white-space:nowrap;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.4);pointer-events:none;"></div>
         </div>
+      </div>
+      <div id="profile-title-row" style="display:none;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap;">
+        <span id="profile-title" class="pt-title"></span>
+        <button type="button" id="profile-title-btn" class="pt-btn" onclick="ptOpenPicker()" style="display:none;"><i class="ti ti-pencil"></i> Change title</button>
+        <select id="profile-title-select" class="pt-select" style="display:none;"></select>
       </div>
       <div id="display-handle" style="font-size:14px;color:var(--text3);margin-bottom:8px;">@moonscribe · Writer &amp; Artist</div>
       <div class="bio-display" id="bio-display">
@@ -1242,6 +1251,7 @@
             loadActivity(profileData.id);
             loadShowcase(profileData.id, true);
             loadArtistPage(profileData.id, true);
+            loadProfileTitle(profileData.id, true);
             renderProfileTipUI(profileData.id, session);
             loadCurrencyWallet(session.user.id);
           }
@@ -1259,6 +1269,7 @@
             loadReadingList(profileData.id);
             loadShowcase(profileData.id, false);
             loadArtistPage(profileData.id, false);
+            loadProfileTitle(profileData.id, false);
             renderProfileTipUI(profileData.id, session);
           }
           if (!session) {
@@ -3226,6 +3237,48 @@ async function handleFriendBtn() {
        by the database from real commissions and can't be edited. */
     var _ap = { data: null, profileId: null, isOwner: false };
     var AP_KIND = { cover: ['Book cover', 'ti-book', 'var(--accent)'], character: ['Character', 'ti-user-heart', 'var(--violet,#a78bfa)'], banner: ['Banner', 'ti-photo', 'var(--gold)'] };
+    /* ── TITLES ─────────────────────────────────────────────────
+       Earned by reading a tag (see ds_grant_tag_titles). One is shown
+       under the name; the owner picks which from the ones they've earned. */
+    var _pt = { mine: null };
+    async function loadProfileTitle(profileId, isOwner) {
+      var row = document.getElementById('profile-title-row');
+      var el = document.getElementById('profile-title');
+      if (!row || !el) return;
+      try {
+        var r = await db.rpc('get_display_titles', { p_user_ids: [profileId] });
+        var t = r.data && r.data[0] ? r.data[0].title : '';
+        el.innerHTML = t ? '<i class="ti ti-feather"></i> ' + escHtml(t) : '';
+        el.style.display = t ? '' : 'none';
+        if (isOwner) {
+          var m = await db.rpc('get_my_titles');
+          _pt.mine = m.data || { titles: [] };
+          var btn = document.getElementById('profile-title-btn');
+          if ((_pt.mine.titles || []).length) {
+            btn.style.display = 'inline-flex';
+            btn.innerHTML = t ? '<i class="ti ti-pencil"></i> Change title' : '<i class="ti ti-feather"></i> Show a title (' + _pt.mine.titles.length + ' earned)';
+          }
+        }
+        row.style.display = (t || (isOwner && _pt.mine && (_pt.mine.titles || []).length)) ? 'flex' : 'none';
+      } catch (e) { console.warn('[titles]', e); }
+    }
+    function ptOpenPicker() {
+      var sel = document.getElementById('profile-title-select');
+      var list = (_pt.mine && _pt.mine.titles) || [];
+      sel.innerHTML = '<option value="">No title</option>' + list.map(function(t){
+        return '<option value="' + t.id + '"' + (_pt.mine.active === t.id ? ' selected' : '') + '>' + escHtml(t.title) + '</option>';
+      }).join('');
+      sel.style.display = '';
+      sel.focus();
+      sel.onchange = async function(){
+        var r = await db.rpc('set_my_title', { p_title_id: sel.value || null });
+        if (r.error || !r.data || !r.data.ok) { showToast((r.data && r.data.error) || 'Could not change title', 'ti-alert-triangle'); return; }
+        sel.style.display = 'none';
+        showToast(sel.value ? 'Title updated' : 'Title hidden', 'ti-check');
+        loadProfileTitle(currentProfileId, true);
+      };
+    }
+
     async function loadArtistPage(profileId, isOwner) {
       _ap.profileId = profileId; _ap.isOwner = isOwner;
       var box = document.getElementById('artistpage-container');
