@@ -577,6 +577,16 @@
     .ap-shop-t{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .ap-shop-p{font-size:13px;font-weight:700;color:var(--accent);}
     .ap-shop-item .ap-btn{justify-content:center;}
+    .ap-buyer{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);}
+    .ap-buyer:first-child{border-top:none;}
+    .ap-buyer img,.ap-buyer .ap-bav{width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--text2);font-size:13px;}
+    .ap-buyer-i{flex:1;min-width:0;font-size:13px;}
+    .ap-buyer-i b{color:var(--text);}
+    .ap-buyer-i .ap-muted{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .ap-thanked{font-size:11.5px;color:var(--green);display:flex;align-items:center;gap:4px;flex-shrink:0;cursor:help;}
+    .ap-seg{display:flex;gap:6px;margin:8px 0;}
+    .ap-seg label{flex:1;display:flex;gap:6px;align-items:flex-start;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12.5px;cursor:pointer;}
+    .ap-seg label:has(input:checked){border-color:var(--accent);}
     .ap-offers{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
     .ap-offer{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
     .ap-offer-k{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;}
@@ -3305,6 +3315,8 @@ async function handleFriendBtn() {
         }
         _ap.data = r.data;
         try { var sh = await db.rpc('get_artist_shop', { p_user_id: profileId }); _ap.shop = sh.data || []; } catch (_) { _ap.shop = []; }
+        _ap.buyers = null;
+        if (isOwner) { try { var by = await db.rpc('get_my_buyers'); _ap.buyers = by.data || null; } catch (_) {} }
         tab.style.display = '';
         renderArtistPage();
       } catch (e) { console.error('[artist page]', e); }
@@ -3352,6 +3364,8 @@ async function handleFriendBtn() {
           }).join('') + '</div>'
           : '<div class="ap-muted">Nothing for sale yet. Pick one of your published artworks, upload the full-size file, and set a price.</div>') + '</div>';
       }
+
+      if (_ap.isOwner && _ap.buyers) html += buyersHTML();
 
       // Portfolio
       var pins = d.pins || [];
@@ -3473,6 +3487,64 @@ async function handleFriendBtn() {
         if (r.error || d.error) { msg.style.color = 'var(--red)'; msg.textContent = d.error || r.error.message; btn.disabled = false; return; }
         if (f && existing && existing.original_path && existing.original_path !== path) { db.storage.from('art-originals').remove([existing.original_path]); }
         shopClose(); shopReload();
+      };
+    }
+    // ── Buyers + thank-you notes (owner only) ──
+    var BUY_KIND = { download: ['Download', 'ti-download'], banner: ['Banner', 'ti-photo'], character: ['Character', 'ti-user-heart'], commission: ['Commission', 'ti-brush'] };
+    function buyersHTML(){
+      var b = _ap.buyers, list = b.buyers || [], e = function(v){ return escHtml(v == null ? '' : v); };
+      var auto = b.mode === 'auto';
+      var h = '<div class="ap-sec"><div class="ap-sec-t"><i class="ti ti-heart-handshake"></i> Your buyers <span class="ap-muted" style="font-size:11px;font-weight:400;margin-left:6px;">only you see this</span>' +
+        '<button class="ap-btn" style="margin-left:auto;padding:4px 10px;font-size:12px;" onclick="thanksSettings()"><i class="ti ti-settings"></i> Thank-you notes: ' + (auto ? 'Automatic' : 'Write my own') + '</button></div>';
+      if (!list.length) return h + '<div class="ap-muted">When someone buys from you, they’ll show up here so you can thank them.</div></div>';
+      h += '<div>' + list.map(function(x, i){
+        var k = BUY_KIND[x.kind] || BUY_KIND.download, av = safeUrl(x.avatar_url);
+        return '<div class="ap-buyer">' + (av ? '<img src="' + av + '" alt="" loading="lazy"/>' : '<div class="ap-bav">' + e((x.name || '?').charAt(0)) + '</div>') +
+          '<div class="ap-buyer-i"><a href="profile.html?user=' + encodeURIComponent(x.username || '') + '"><b>' + e(x.name) + '</b></a>' +
+          '<div class="ap-muted"><i class="ti ' + k[1] + '"></i> ' + k[0] + ' · ' + e(x.item) + ' · ' + new Date(x.at).toLocaleDateString() + '</div></div>' +
+          (x.thanked_at ? '<span class="ap-thanked" title="' + e(x.thanks) + '"><i class="ti ti-check"></i> Thanked' + (x.auto ? ' (auto)' : '') + '</span>'
+                        : '<button class="ap-btn" style="padding:4px 10px;font-size:12px;" onclick="thanksWrite(' + i + ')"><i class="ti ti-send"></i> Say thanks</button>') + '</div>';
+      }).join('') + '</div></div>';
+      return h;
+    }
+    function thanksWrite(i){
+      var x = (_ap.buyers.buyers || [])[i]; if (!x) return;
+      var pre = _ap.buyers.template ? _ap.buyers.template.replace(/\{buyer\}/g, x.name || '').replace(/\{item\}/g, x.item || '') : '';
+      shopModal('<div class="ap-h"><i class="ti ti-heart-handshake"></i> Thank ' + escHtml(x.name) + '</div>' +
+        '<div class="ap-muted" style="font-size:12px;margin:6px 0 10px;">For “' + escHtml(x.item) + '”. They’ll get it as a DawnScribe notification from you. You can only thank someone once per purchase.</div>' +
+        '<textarea id="ty-msg" class="ap-in" rows="4" maxlength="400" placeholder="Thank you so much for the support!">' + escHtml(pre) + '</textarea>' +
+        '<div id="shop-msg" class="ap-muted" style="color:var(--red);min-height:1em;margin-top:6px;"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="ap-btn" onclick="shopClose()">Cancel</button><button class="ap-btn" id="ty-go" style="background:var(--accent);color:#fff;border-color:var(--accent);">Send</button></div>');
+      document.getElementById('ty-go').onclick = async function(){
+        var m = document.getElementById('ty-msg').value.trim();
+        if (!m) { document.getElementById('shop-msg').textContent = 'Write a short note first.'; return; }
+        this.disabled = true;
+        var r = await db.rpc('send_purchase_thanks', { p_kind: x.kind, p_ref_id: x.ref_id, p_buyer_id: x.buyer_id, p_message: m });
+        var d = r.data || {};
+        if (r.error || d.error) { document.getElementById('shop-msg').textContent = d.error || r.error.message; this.disabled = false; return; }
+        x.thanked_at = new Date().toISOString(); x.thanks = m; x.auto = false;
+        shopClose(); renderArtistPage();
+      };
+    }
+    function thanksSettings(){
+      var b = _ap.buyers, auto = b.mode === 'auto';
+      shopModal('<div class="ap-h"><i class="ti ti-heart-handshake"></i> Thank-you notes</div>' +
+        '<div class="ap-seg">' +
+          '<label><input type="radio" name="ty-mode" value="manual"' + (auto ? '' : ' checked') + '/><span><b>Write my own</b><br><span class="ap-muted" style="font-size:11.5px;">Press “Say thanks” on each buyer and write something new.</span></span></label>' +
+          '<label><input type="radio" name="ty-mode" value="auto"' + (auto ? ' checked' : '') + '/><span><b>Automatic</b><br><span class="ap-muted" style="font-size:11.5px;">The note below goes out the moment someone buys.</span></span></label>' +
+        '</div>' +
+        '<label class="ap-muted" style="font-size:12px;">Your note (also pre-fills “Say thanks”)</label>' +
+        '<textarea id="ty-tpl" class="ap-in" rows="4" maxlength="400" placeholder="Thank you {buyer} for picking up {item}! It means a lot.">' + escHtml(b.template || '') + '</textarea>' +
+        '<div class="ap-muted" style="font-size:11.5px;margin-top:4px;"><b>{buyer}</b> becomes their name, <b>{item}</b> what they bought.</div>' +
+        '<div id="shop-msg" class="ap-muted" style="color:var(--red);min-height:1em;margin-top:6px;"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="ap-btn" onclick="shopClose()">Cancel</button><button class="ap-btn" id="ty-save" style="background:var(--accent);color:#fff;border-color:var(--accent);">Save</button></div>');
+      document.getElementById('ty-save').onclick = async function(){
+        var mode = document.querySelector('input[name="ty-mode"]:checked').value, t = document.getElementById('ty-tpl').value.trim();
+        this.disabled = true;
+        var r = await db.rpc('save_thanks_settings', { p_mode: mode, p_template: t });
+        var d = r.data || {};
+        if (r.error || d.error) { document.getElementById('shop-msg').textContent = d.error || r.error.message; this.disabled = false; return; }
+        b.mode = mode; b.template = t || null; shopClose(); renderArtistPage();
       };
     }
     async function apEdit() {
