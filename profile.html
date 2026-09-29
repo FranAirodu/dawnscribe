@@ -559,6 +559,11 @@
     .ap-btn{display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--text2);font-size:12.5px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;text-decoration:none;}
     .ap-btn:hover{border-color:var(--accent);color:var(--accent);}
     .ap-btn.ap-main{background:var(--accent);color:#0a0a0f;border-color:var(--accent);}
+    .ap-report-link{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:6px;background:none;border:none;color:var(--text3);font-size:11.5px;font-family:'Lato',sans-serif;cursor:pointer;padding:2px 0;width:100%;}
+    .ap-report-link:hover{color:var(--accent);text-decoration:underline;}
+    .ap-rep-opt{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:13px;color:var(--text2);}
+    .ap-rep-opt:hover{border-color:var(--accent);}
+    .ap-rep-opt input{margin-top:3px;accent-color:var(--accent);}
     .ap-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
     .ap-stat{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center;}
     .ap-stat b{display:block;font-size:18px;color:var(--text);}
@@ -3354,7 +3359,8 @@ async function handleFriendBtn() {
           (shop.length ? '<div class="ap-shop">' + shop.map(function(w){
             var img = safeUrl(w.cover_url), btn;
             if (_ap.isOwner) btn = '<button class="ap-btn" onclick="shopOpenSell(\'' + w.work_id + '\')"><i class="ti ti-pencil"></i> Edit</button>';
-            else if (w.owned) btn = '<button class="ap-btn" onclick="shopDownload(\'' + w.work_id + '\')"><i class="ti ti-download"></i> Download</button>';
+            else if (w.owned) btn = '<button class="ap-btn" onclick="shopDownload(\'' + w.work_id + '\')"><i class="ti ti-download"></i> Download</button>' +
+              '<button class="ap-report-link" onclick="shopReport(\'' + w.work_id + '\')"><i class="ti ti-flag"></i> Report a problem</button>';
             else btn = '<button class="ap-btn" onclick="shopBuy(\'' + w.work_id + '\')"><i class="ti ti-feather"></i> Buy</button>';
             return '<div class="ap-shop-item">' +
               '<a href="artwork.html?id=' + encodeURIComponent(w.work_id) + '" class="ap-shop-img">' + (img ? '<img src="' + img + '" alt="" loading="lazy"/>' : '<i class="ti ti-photo"></i>') + '</a>' +
@@ -3436,6 +3442,28 @@ async function handleFriendBtn() {
       var r = await db.storage.from('art-originals').createSignedUrl(w.original_path, 300, { download: (w.title || 'artwork').replace(/[^\w\- ]+/g, '').trim() || 'artwork' });
       if (r.error) { alert('Download failed: ' + r.error.message); return; }
       location.href = r.data.signedUrl;
+    }
+    // ── Report a problem with a bought download → lands in admin-download-reports.html ──
+    function shopReport(id){
+      var w = shopFind(id); if (!w) return;
+      var opts = [['wrong_file','It is the wrong file'],['wont_open','The file will not open'],['poor_quality','The quality is much worse than shown'],['other','Something else']];
+      shopModal('<div class="ap-h"><i class="ti ti-flag"></i> Report a problem</div>' +
+        '<div class="ap-muted" style="margin:8px 0 12px;">What is wrong with <strong>“' + escHtml(w.title) + '”</strong>? We look at every report, and if the file is really broken you can get your Quills back.</div>' +
+        opts.map(function(o, i){ return '<label class="ap-rep-opt"><input type="radio" name="rep-reason" value="' + o[0] + '"' + (i === 0 ? ' checked' : '') + '/><span>' + o[1] + '</span></label>'; }).join('') +
+        '<textarea id="rep-note" maxlength="500" rows="3" placeholder="Anything else we should know? (optional)" style="width:100%;margin:6px 0 4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:Lato,sans-serif;font-size:13px;resize:vertical;"></textarea>' +
+        '<div id="rep-msg" class="ap-muted" style="color:var(--red);min-height:1em;"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;"><button class="ap-btn" onclick="shopClose()">Cancel</button><button class="ap-btn ap-main" id="rep-go">Send report</button></div>');
+      document.getElementById('rep-go').onclick = async function(){
+        var btn = this, msg = document.getElementById('rep-msg');
+        var picked = document.querySelector('input[name="rep-reason"]:checked');
+        btn.disabled = true; msg.textContent = '';
+        var r = await db.rpc('report_download_problem', { p_work_id: id, p_reason: picked ? picked.value : null, p_note: document.getElementById('rep-note').value });
+        var d = r.data || {};
+        if (r.error || d.error) { msg.textContent = d.error || r.error.message; btn.disabled = false; return; }
+        shopModal('<div class="ap-h"><i class="ti ti-check" style="color:var(--green);"></i> Report sent</div>' +
+          '<div class="ap-muted" style="margin:8px 0 14px;">Thank you. We will look at it and send you a notification with the result.</div>' +
+          '<div style="display:flex;justify-content:flex-end;"><button class="ap-btn ap-main" onclick="shopClose()">Close</button></div>');
+      };
     }
     function shopModal(inner){
       shopClose();

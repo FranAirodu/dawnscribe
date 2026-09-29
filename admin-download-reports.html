@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Download Reports</title>
+  <script src="accessibilityPrefs.js"></script>
+  <script src="accent.js"></script>
+  <meta name="robots" content="noindex,nofollow" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // Block all rendering until the admin check completes.
+    document.documentElement.style.visibility = 'hidden';
+    (async function() {
+      window.db = window.supabase.createClient(
+        'https://cajjyyskpmjnpcxcfeuk.supabase.co',
+        'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx'
+      );
+      var session = null;
+      for (var i = 0; i < 5; i++) {
+        var r = await window.db.auth.getSession();
+        session = r.data.session;
+        if (session) break;
+        await new Promise(function(res) { setTimeout(res, 350); });
+      }
+      var adminRes = session ? await window.db.from('admins').select('id').eq('id', session.user.id).maybeSingle() : null;
+      if (!session || !adminRes || !adminRes.data) {
+        document.documentElement.style.visibility = '';
+        document.body.innerHTML = '<div style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0f;color:#f87171;font-family:Lato,sans-serif;font-size:18px;">Access denied.</div>';
+        return;
+      }
+      document.documentElement.style.visibility = '';
+    })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
+  <style>
+    :root {
+      --bg:#0a0a0f; --bg2:#12121a; --bg3:#1a1a26; --bg4:#22223a;
+      --accent:#2dd4bf; --accent2:#0d9488;
+      --text:#f1f0ff; --text2:#9b9bc0; --text3:#8a8aa8;
+      --border:rgba(255,255,255,0.07); --red:#f87171; --green:#34d399; --gold:#f59e0b;
+    }
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--border:rgba(0,0,0,0.10);--text:#0a0a0f;--text2:#3a3a5c;--text3:#5a5a76;--accent:#0a6b63;--accent2:#075e56;--red:#b01818;--green:#036b4e;--gold:#7d5205;--pink:#a3216b;--shadow:rgba(0,0,0,0.12);}
+    html[data-theme="dim"]{--bg:#1c1c21;--bg2:#24242c;--bg3:#2c2c38;--bg4:#34344c;--border:rgba(255,255,255,0.12);--text2:#9b9bc0;--text3:#9e9eb4;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
+    .logo{font-family:'Cinzel',serif;font-size:20px;font-weight:700;color:var(--text);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:var(--accent);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;font-family:'Lato',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;text-decoration:none;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .page{max-width:1000px;margin:0 auto;padding:32px 24px 80px;}
+    .page-title{font-family:'Cinzel',serif;font-size:30px;font-weight:700;margin-bottom:4px;}
+    .page-title span{color:var(--accent);}
+    .page-sub{color:var(--text2);font-size:14px;margin-bottom:26px;}
+    .section{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:24px;}
+    .section-title{font-family:'Cinzel',serif;font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+    .section-title i{color:var(--accent);}
+    .section-sub{color:var(--text3);font-size:12.5px;margin-bottom:16px;}
+
+    .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;}
+    .filter-btn{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:5px 15px;font-size:11.5px;font-weight:700;color:var(--text3);cursor:pointer;font-family:'Lato',sans-serif;transition:all 0.15s;}
+    .filter-btn:hover{color:var(--text2);}
+    .filter-btn.active{background:rgba(var(--aura-rgb,45,212,191),0.12);border-color:var(--accent);color:var(--accent);}
+    .filter-btn .cnt{opacity:0.7;font-weight:400;}
+
+    .msg{background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--text3);border-radius:10px;padding:14px 16px;margin-bottom:12px;transition:all 0.15s;}
+    .msg.urgent{border-left-color:var(--red);}
+    .msg.handled{opacity:0.55;border-left-color:var(--green);}
+    .msg-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+    .msg-subj{font-weight:700;font-size:14.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:2px 8px;border-radius:20px;}
+    .tag.urgent{background:rgba(248,113,113,0.15);color:var(--red);}
+    .tag.open{background:rgba(245,158,11,0.15);color:var(--gold);}
+    .tag.handled{background:rgba(52,211,153,0.15);color:var(--green);}
+    .msg-meta{color:var(--text3);font-size:12px;margin-top:3px;}
+    .msg-meta a{color:var(--text2);}
+    .msg-body{white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:12px;font-size:13.5px;color:var(--text2);line-height:1.65;}
+    .msg-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;}
+    .act{background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:6px 13px;font-size:12px;font-weight:700;color:var(--text2);cursor:pointer;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:5px;transition:all 0.15s;text-decoration:none;}
+    .act:hover{border-color:var(--accent);color:var(--accent);}
+    .act.green:hover{border-color:var(--green);color:var(--green);}
+    .note{flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:12.5px;font-family:'Lato',sans-serif;}
+    .note:focus{outline:none;border-color:var(--accent);}
+    .handled-note{margin-top:8px;font-size:12px;color:var(--green);display:flex;align-items:center;gap:6px;}
+    .empty{text-align:center;color:var(--text3);padding:34px 0;font-size:13.5px;}
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg2);border:1px solid rgba(var(--aura-rgb,45,212,191),0.3);border-radius:10px;padding:10px 20px;color:var(--text);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.3s;z-index:500;pointer-events:none;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast i{color:var(--accent);}
+    footer{text-align:center;color:var(--text3);font-size:12px;padding:24px;border-top:1px solid var(--border);}
+      .thumb{width:54px;height:54px;border-radius:8px;object-fit:cover;background:var(--bg4);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text3);overflow:hidden;}
+    .thumb img{width:100%;height:100%;object-fit:cover;}
+    .row-top{display:flex;gap:14px;align-items:flex-start;}
+    .row-main{flex:1;min-width:0;}
+    .tag.refunded{background:rgba(52,211,153,0.15);color:var(--green);}
+    .tag.fixed{background:rgba(96,165,250,0.15);color:#60a5fa;}
+    .tag.dismissed{background:rgba(155,155,192,0.15);color:var(--text2);}
+    .tag.warn{background:rgba(248,113,113,0.15);color:var(--red);}
+    .facts{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12.5px;color:var(--text2);}
+    .facts b{color:var(--text);}
+    .act.red:hover{border-color:var(--red);color:var(--red);}
+  </style>
+
+</head>
+<body>
+
+  <div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg">Saved!</span></div>
+
+  <nav>
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <a class="back-btn" href="WhiteRoomUnbreakable.html"><i class="ti ti-arrow-left"></i> Site Admin</a>
+    </div>
+  </nav>
+
+  <div class="page">
+    <h1 class="page-title">Download <span>Reports</span></h1>
+    <p class="page-sub">Buyers flag a bought artwork download that arrived broken or wrong. Refunding gives the buyer their Quills back, removes the download, and takes the artist's share back as far as it has not already been paid out.</p>
+
+    <div class="section">
+      <div class="section-title"><i class="ti ti-download"></i> Reports</div>
+      <div class="section-sub">Look at the file yourself first (open the artwork page). If the file is really broken, refund or mark it fixed. The buyer gets a notification either way.</div>
+
+      <div class="filters" id="filters">
+        <button class="filter-btn active" onclick="setFilter(this,'open')">Open <span class="cnt" id="c-open"></span></button>
+        <button class="filter-btn" onclick="setFilter(this,'refunded')">Refunded <span class="cnt" id="c-refunded"></span></button>
+        <button class="filter-btn" onclick="setFilter(this,'fixed')">Fixed <span class="cnt" id="c-fixed"></span></button>
+        <button class="filter-btn" onclick="setFilter(this,'dismissed')">Dismissed <span class="cnt" id="c-dismissed"></span></button>
+        <button class="filter-btn" onclick="setFilter(this,'all')">All <span class="cnt" id="c-all"></span></button>
+      </div>
+
+      <div id="list"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <footer>&copy; 2026 DawnScribe. Admin panel.</footer>
+
+  <script>
+    var REASON = { wrong_file:'Wrong file', wont_open:'Will not open', poor_quality:'Poor quality', other:'Something else' };
+    var STATUS = { open:'Open', refunded:'Refunded', fixed:'Fixed', dismissed:'Dismissed' };
+    var _all = [], _filter = 'open';
+
+    function escHtml(s) {
+      return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function safeUrl(u) { u = String(u == null ? '' : u).trim(); return /^(https?:\/\/|\/)/i.test(u) ? u : ''; }
+    function showToast(msg, icon) {
+      var t = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg;
+      t.querySelector('i').className = 'ti ' + (icon || 'ti-check');
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 2600);
+    }
+    function fmtDate(iso) {
+      try { var d = new Date(iso); return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) + ' ' + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
+      catch(e){ return iso; }
+    }
+
+    async function loadReports() {
+      var res = await window.db.rpc('admin_list_download_reports', { p_status: 'all' });
+      if (res.error) {
+        document.getElementById('list').innerHTML = '<div class="empty">Could not load reports: ' + escHtml(res.error.message) + '</div>';
+        return;
+      }
+      _all = Array.isArray(res.data) ? res.data : [];
+      ['open','refunded','fixed','dismissed'].forEach(function(k){
+        document.getElementById('c-' + k).textContent = '(' + _all.filter(function(r){ return r.status === k; }).length + ')';
+      });
+      document.getElementById('c-all').textContent = '(' + _all.length + ')';
+      render();
+    }
+
+    function setFilter(btn, f) {
+      _filter = f;
+      Array.prototype.forEach.call(document.querySelectorAll('#filters .filter-btn'), function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      render();
+    }
+
+    function render() {
+      var rows = _all.filter(function(r){ return _filter === 'all' || r.status === _filter; });
+      var list = document.getElementById('list');
+      if (!rows.length) {
+        list.innerHTML = '<div class="empty">' + (_filter === 'open' ? 'No open reports. Nothing to do here.' : 'Nothing in this list.') + '</div>';
+        return;
+      }
+      list.innerHTML = rows.map(function(r){
+        var img = safeUrl(r.cover_url);
+        var isOpen = r.status === 'open';
+        var repeat = Number(r.artist_report_count) >= 3;
+        var h = '<div class="msg' + (isOpen ? '' : ' handled') + '" id="rep-' + escHtml(r.id) + '">' +
+          '<div class="row-top"><div class="thumb">' + (img ? '<img src="' + escHtml(img) + '" alt=""/>' : '<i class="ti ti-photo"></i>') + '</div>' +
+          '<div class="row-main"><div class="msg-head"><div class="msg-subj">' +
+            '<a href="artwork.html?id=' + encodeURIComponent(r.work_id) + '" target="_blank" rel="noopener" style="color:var(--text);">' + escHtml(r.work_title || 'Untitled artwork') + '</a>' +
+            '<span class="tag ' + escHtml(r.status) + '">' + escHtml(STATUS[r.status] || r.status) + '</span>' +
+            '<span class="tag open" style="background:rgba(155,155,192,0.15);color:var(--text2);">' + escHtml(REASON[r.reason] || r.reason) + '</span>' +
+            (repeat ? '<span class="tag warn">Artist has ' + Number(r.artist_report_count) + ' reports</span>' : '') +
+          '</div></div>' +
+          '<div class="msg-meta">Reported by <a href="profile.html?user=' + encodeURIComponent(r.reporter_name || '') + '" target="_blank" rel="noopener">' + escHtml(r.reporter_name || 'unknown') + '</a> &middot; artist <a href="profile.html?user=' + encodeURIComponent(r.artist_name || '') + '" target="_blank" rel="noopener">' + escHtml(r.artist_name || 'unknown') + '</a> &middot; ' + escHtml(fmtDate(r.created_at)) + '</div>' +
+          '<div class="facts"><span>Buyer paid <b>' + Number(r.quills_paid || 0).toLocaleString() + '</b> Quills</span><span>Artist earned <b>' + Number(r.artist_earned || 0).toLocaleString() + '</b></span>' +
+            (isOpen ? '<span>' + (r.still_owned ? 'Buyer still owns it' : '<b style="color:var(--red);">Buyer no longer owns it (cannot refund)</b>') + '</span>' : '') + '</div></div></div>';
+        if (r.note) h += '<div class="msg-body">' + escHtml(r.note) + '</div>';
+        if (isOpen) {
+          h += '<div class="msg-actions"><input class="note" id="note-' + escHtml(r.id) + '" maxlength="300" placeholder="Note to the buyer (optional, they will see it)"/>' +
+            '<button class="act green" onclick="resolve(\'' + escHtml(r.id) + '\',\'refund\')"><i class="ti ti-arrow-back-up"></i> Refund</button>' +
+            '<button class="act" onclick="resolve(\'' + escHtml(r.id) + '\',\'fixed\')"><i class="ti ti-tool"></i> Mark fixed</button>' +
+            '<button class="act red" onclick="resolve(\'' + escHtml(r.id) + '\',\'dismiss\')"><i class="ti ti-x"></i> Dismiss</button></div>';
+        } else {
+          h += '<div class="handled-note"><i class="ti ti-check"></i> ' + escHtml(STATUS[r.status] || r.status) + (r.resolved_at ? ' on ' + escHtml(fmtDate(r.resolved_at)) : '') + (r.admin_note ? ' &mdash; ' + escHtml(r.admin_note) : '') + '</div>';
+        }
+        return h + '</div>';
+      }).join('');
+    }
+
+    async function resolve(id, action) {
+      var r = _all.filter(function(x){ return x.id === id; })[0];
+      if (!r) return;
+      if (action === 'refund' && !confirm('Refund ' + Number(r.quills_paid || 0).toLocaleString() + ' Quills to the buyer and remove their download? The artist\'s share is taken back as far as it is still unpaid.')) return;
+      var noteEl = document.getElementById('note-' + id);
+      var res = await window.db.rpc('admin_resolve_download_report', { p_id: id, p_action: action, p_note: noteEl ? noteEl.value : null });
+      var d = res.data || {};
+      if (res.error || d.ok === false) { showToast((d.error || (res.error && res.error.message) || 'Could not save'), 'ti-x'); loadReports(); return; }
+      showToast(action === 'refund' ? 'Refunded' : action === 'fixed' ? 'Marked fixed' : 'Dismissed');
+      loadReports();
+    }
+
+    (function wait(){ if (window.db) loadReports(); else setTimeout(wait, 100); })();
+  </script>
+</body>
+</html>

@@ -543,6 +543,13 @@
           </div>
           <div class="toggle-switch" id="ts-notif_announce"></div>
         </div>
+        <div class="toggle-row active" id="tr-notif_thanks" onclick="toggleThanksPref()">
+          <div class="toggle-row-left">
+            <div class="toggle-icon teal"><i class="ti ti-heart"></i></div>
+            <div><div class="toggle-label">Thank-you Notes from Artists</div><div class="toggle-sub">Artists can send a short thank-you after you buy something from them. Turn this off and those notes never reach you. This one saves the moment you flip it.</div></div>
+          </div>
+          <div class="toggle-switch on" id="ts-notif_thanks"></div>
+        </div>
         <div class="section-divider"></div>
         <div class="section-desc" style="margin-top:4px;">Email notifications — sent to your login email address.</div>
         <div class="toggle-row active" id="tr-email_enabled" onclick="toggleSetting('email_enabled')">
@@ -2703,6 +2710,42 @@
 <script src="spoilerUtils.js"></script>
 <script src="badgeCelebrate.js"></script>
 <script src="muteFilter.js"></script>
-<script src="nav.js"></script>
+<script src="nav.js">
+    // ── Thank-you notes from artists (saved instantly, not part of the Save button) ──
+    var _thanksOn = true, _thanksBusy = false;
+    function paintThanks() {
+      var ts = document.getElementById('ts-notif_thanks'), tr = document.getElementById('tr-notif_thanks');
+      if (ts) ts.classList.toggle('on', _thanksOn);
+      if (tr) tr.classList.toggle('active', _thanksOn);
+    }
+    async function toggleThanksPref() {
+      if (_thanksBusy) return;
+      _thanksBusy = true;
+      var want = !_thanksOn;
+      _thanksOn = want; paintThanks();
+      try {
+        var r = await db.rpc('set_my_thanks_pref', { p_on: want });
+        if (r.error || r.data === null || r.data === undefined) throw (r.error || new Error('not saved'));
+        _thanksOn = !!r.data; paintThanks();
+        showToast(_thanksOn ? 'Artists can thank you again' : 'Thank-you notes are off', 'ti-check');
+      } catch (err) {
+        _thanksOn = !want; paintThanks();
+        showToast('Could not save that. Please try again.', 'ti-x');
+      }
+      _thanksBusy = false;
+    }
+    (async function loadThanksPref() {
+      try {
+        var sess = null;
+        for (var i = 0; i < 6 && !sess; i++) {
+          var g = await db.auth.getSession(); sess = g && g.data ? g.data.session : null;
+          if (!sess) await new Promise(function(r){ setTimeout(r, 350); });
+        }
+        if (!sess) return;
+        var r = await db.rpc('get_my_thanks_pref');
+        if (!r.error && typeof r.data === 'boolean') { _thanksOn = r.data; paintThanks(); }
+      } catch (e) {}
+    })();
+  </script>
 </body>
 </html>
