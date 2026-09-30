@@ -340,6 +340,10 @@
     .arc-m-btn:hover{border-color:var(--accent);color:var(--accent);}
     .arc-m-btn.main{background:var(--accent);border-color:var(--accent);color:#0a0a0f;}
     .arc-m-btn.del:hover{border-color:var(--red);color:var(--red);}
+    .arc-show-opt{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:14px;cursor:pointer;font-size:12.5px;color:var(--text2);line-height:1.5;}
+    .arc-show-opt:hover{border-color:var(--accent);}
+    .arc-show-opt input{margin-top:3px;accent-color:var(--accent);width:15px;height:15px;flex-shrink:0;}
+    .arc-show-opt b{color:var(--text);}
     .arc-m-err{color:var(--red);font-size:12px;min-height:1em;margin:4px 0;}
     @media (max-width:520px){ .arc-m-row,.arc-m-hdr{grid-template-columns:1fr 52px 52px auto;} }
     .bulk-bar{display:flex;align-items:center;gap:8px;background:rgba(var(--accent-rgb),0.06);border:1px solid rgba(var(--accent-rgb),0.2);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;}
@@ -1984,7 +1988,9 @@
     if (!workId) { showToast('Save the story once first.', 'ti-info-circle'); return; }
     var last = ARCS.length ? ARCS[ARCS.length - 1].end_ch : 0, max = arcMaxCh();
     arcModal('<h3 id="arc-m-title">Arcs</h3>'
-      + '<div class="arc-m-sub">Group chapters into named arcs so a long story stays tidy. Arcs only change this list — readers don’t see them, and nothing about your chapters changes. New chapters join an arc automatically when their number falls inside it.</div>'
+      + '<div class="arc-m-sub">Group chapters into named arcs so a long story stays tidy. Nothing about your chapters changes. New chapters join an arc automatically when their number falls inside it.</div>'
+      + '<label class="arc-show-opt"><input type="checkbox" id="arc-show-cb"' + (workData && workData.show_arcs ? ' checked' : '') + ' onchange="arcSetShow(this)"/>'
+      +   '<span><b>Show these arcs to readers on the story page</b><br>Off: only you see them. On: readers see your chapter list grouped under these arc names.</span></label>'
       + '<div class="arc-m-hdr"><span>Name</span><span>From</span><span>To</span><span></span></div>'
       + ARCS.map(arcRowHtml).join('')
       + arcRowHtml(null)
@@ -1996,6 +2002,15 @@
     var nr = document.querySelector('.arc-m-row[data-id="new"]');
     if (nr && max > last) { nr.querySelector('.arc-in-a').value = last + 1; nr.querySelector('.arc-in-b').value = max; }
     if (nr) nr.querySelector('.arc-in-name').focus();
+  };
+  window.arcSetShow = async function(cb) {
+    var want = !!cb.checked;
+    cb.disabled = true;
+    var r = await db.from('works').update({ show_arcs: want }).eq('id', workId);
+    cb.disabled = false;
+    if (r.error) { cb.checked = !want; showToast('Couldn’t change that — please try again.', 'ti-alert-triangle'); return; }
+    if (workData) workData.show_arcs = want;
+    showToast(want ? 'Readers now see your arcs.' : 'Arcs are hidden from readers.', want ? 'ti-eye' : 'ti-eye-off');
   };
   window.arcSaveRow = async function(id) {
     var row = document.querySelector('.arc-m-row[data-id="' + id + '"]');

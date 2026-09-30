@@ -344,6 +344,11 @@
     .chapter-meta{font-size:11px;color:var(--text3);margin-top:1px;}
     .chapter-new{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(var(--aura-rgb,45,212,191),0.12);color:var(--accent);margin-left:6px;}
     .chapter-read-check{font-size:14px;color:var(--green);flex-shrink:0;}
+    .story-arc-head{display:flex;align-items:baseline;gap:10px;padding:10px 14px 6px;margin-top:8px;border-top:1px solid var(--border);}
+    .story-arc-head:first-child{margin-top:0;border-top:none;}
+    .story-arc-name{font-family:'Cinzel',serif;font-size:13.5px;font-weight:700;color:var(--accent);}
+    .story-arc-range{font-size:11px;color:var(--text3);font-weight:700;white-space:nowrap;}
+    .story-arc-body{border-left:2px solid rgba(var(--aura-rgb,45,212,191),0.25);margin-left:14px;padding-left:4px;}
     .chapters-load-more{background:none;border:1px dashed var(--border);border-radius:8px;padding:9px;color:var(--text3);font-size:13px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;width:100%;margin-top:8px;transition:all 0.2s;}
     .chapters-load-more:hover{border-color:var(--accent);color:var(--accent);}
 
@@ -1680,6 +1685,23 @@
       return isChapterRead(workData.id, prev.id);
     }
 
+    // Arcs are shown only when the author switched them on (works.show_arcs).
+    // The database enforces the same rule, so this can never leak hidden arcs.
+    var storyArcs = [];
+    async function loadStoryArcs() {
+      storyArcs = [];
+      if (!workData || !workData.show_arcs) return;
+      try {
+        var r = await db.from('chapter_arcs').select('id,name,start_ch,end_ch')
+          .eq('work_id', workData.id).order('start_ch', { ascending: true });
+        storyArcs = r.error ? [] : (r.data || []);
+      } catch (e) { storyArcs = []; }
+    }
+    function storyArcFor(n) {
+      for (var i = 0; i < storyArcs.length; i++) if (n >= storyArcs[i].start_ch && n <= storyArcs[i].end_ch) return storyArcs[i];
+      return null;
+    }
+
     function renderChapters() {
       var list = document.getElementById('chapter-list');
       list.innerHTML = '';
@@ -1689,7 +1711,27 @@
         return;
       }
       var weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      var arcTarget = list, lastArcId = null;
       shown.forEach(function(ch, idx) {
+        if (storyArcs.length) {
+          var arc = storyArcFor(ch.chapter_number);
+          var aid = arc ? arc.id : null;
+          if (aid !== lastArcId) {
+            if (arc) {
+              var head = document.createElement('div');
+              head.className = 'story-arc-head';
+              head.innerHTML = '<span class="story-arc-name">' + escHtml(arc.name) + '</span>' +
+                '<span class="story-arc-range">Ch. ' + arc.start_ch + (arc.end_ch !== arc.start_ch ? '\u2013' + arc.end_ch : '') + '</span>';
+              list.appendChild(head);
+              arcTarget = document.createElement('div');
+              arcTarget.className = 'story-arc-body';
+              list.appendChild(arcTarget);
+            } else {
+              arcTarget = list;
+            }
+            lastArcId = aid;
+          }
+        }
         var isRead = isChapterRead(workData.id, ch.id);
         var unlocked = isChapterUnlocked(ch, idx);
         var isNew = new Date(ch.created_at).getTime() > weekAgo;
@@ -1706,7 +1748,7 @@
           (isRead ? '<i class="ti ti-circle-check chapter-read-check"></i>' :
            !unlocked ? '<i class="ti ti-lock chapter-lock-icon"></i>' :
            '<i class="ti ti-chevron-right" style="color:var(--text3);font-size:13px;"></i>');
-        list.appendChild(item);
+        arcTarget.appendChild(item);
       });
       document.getElementById('chapter-count').textContent = '(' + allChapters.length + ')';
       // Show read progress count if any chapters are read
@@ -3779,6 +3821,7 @@
       } catch(e) {}
 
       renderWork(workData, authors);
+      await loadStoryArcs();
       renderChapters();
       // Populate total word count in sidebar
       (function() {
