@@ -466,6 +466,15 @@
   .gl-ed-lbl{display:block;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;}
   .gl-ed-text{resize:vertical;}
   .gl-ed-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;}
+  .lbc-back{position:fixed;inset:0;background:rgba(4,4,8,0.78);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;}
+  .lbc{width:100%;max-width:520px;max-height:88vh;overflow:auto;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;}
+  .lbc h3{font-family:'Cinzel',serif;font-size:18px;margin:0 0 4px;}
+  .lbc .lbc-sub{font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px;}
+  .lbc label.lbc-opt{display:flex;gap:9px;align-items:flex-start;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:13px;color:var(--text2);}
+  .lbc label.lbc-opt:hover{border-color:var(--accent);}
+  .lbc label.lbc-opt input{margin-top:3px;accent-color:var(--accent);}
+  .lbc label.lbc-opt b{color:var(--text);font-weight:700;}
+  .lbc-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap;}
   .gl-ed-status{background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12px;padding:5px 8px;font-family:'Lato',sans-serif;}
 </style>
 </head>
@@ -3919,6 +3928,7 @@
         '<div class="ct-mgr-actions">' +
           '<button class="ct-mgr-btn ct-mv" title="Move up" aria-label="Move ' + esc(char.name) + ' up" onclick="ctMove(\''+char.id+'\',-1)"' + (idx === 0 ? ' disabled' : '') + '><i class="ti ti-arrow-up"></i></button>' +
           '<button class="ct-mgr-btn ct-mv" title="Move down" aria-label="Move ' + esc(char.name) + ' down" onclick="ctMove(\''+char.id+'\',1)"' + (idx === ctCharacters.length - 1 ? ' disabled' : '') + '><i class="ti ti-arrow-down"></i></button>' +
+          '<button class="ct-mgr-btn ct-lore" onclick="ctLoreUpdate(\''+char.id+'\')"><i class="ti ti-book-2"></i> Lorebook<span class="ct-tooltip">Open this character\'s Lorebook card to add to it \u2014 or make one</span></button>' +
           (char.chapter_status !== 'skipped' && char.status !== 'ended'
             ? '<button class="ct-mgr-btn" onclick="ctSkipChar(\''+char.id+'\')">Skip<span class="ct-tooltip">Character isn\'t present in this chapter</span></button>'
             : (char.chapter_status === 'skipped' ? '<button class="ct-mgr-btn" onclick="ctActivateChar(\''+char.id+'\')">Include<span class="ct-tooltip">Mark character as present in this chapter</span></button>' : '')) +
@@ -4126,6 +4136,7 @@
           '</div>' +
           '<div class="gl-ed-row">' +
             '<button type="button" class="ct-mgr-add-btn gl-ed-save"' + (gl.dirty[c.id] ? '' : ' disabled') + '><i class="ti ti-' + (saved ? 'check' : 'plus') + '"></i> ' + (saved && !gl.dirty[c.id] ? 'Added' : (m.exists ? 'Update glossary' : 'Add to glossary')) + '</button>' +
+            '<button type="button" class="ct-mgr-btn gl-ed-lore" title="Pick what to copy from this character\'s Lorebook card"><i class="ti ti-book-2"></i> Copy from Lorebook</button>' +
             '<button type="button" class="ct-mgr-btn gl-ed-pic-btn"><i class="ti ti-photo"></i> ' + (m.image_path ? 'Change picture' : (b.image_path ? 'New picture from this chapter' : 'Add picture')) + '</button>' +
             ((c.portrait_url && m.image_path !== 'card' && !(!m.image_path && b.image_path === 'card')) ? '<button type="button" class="ct-mgr-btn gl-ed-pic-card"><i class="ti ti-copy"></i> Use same picture</button>' : '') +
             (m.image_path ? '<button type="button" class="ct-mgr-btn gl-ed-pic-undo">Undo picture</button>' : '') +
@@ -4247,6 +4258,129 @@
       showToast('Upload failed — please try again.', 'ti-x');
     }
   });
+
+  /* ── LOREBOOK LINKS ─────────────────────────────────────────────
+     "Lorebook" on a character row opens (or makes) their Lorebook card in a
+     new tab, so an unsaved chapter is never lost.
+     "Copy from Lorebook" in the glossary copies ONLY what the author ticks.
+     Nothing starts ticked: Lorebook cards hold spoilers and secrets, and the
+     glossary is public. */
+  window.ctLoreUpdate = function(id) {
+    var c = (ctCharacters || []).find(function(x){ return x.id === id; });
+    if (!c) return;
+    if (!workId) { showToast('Save the story once first, then open its Lorebook.', 'ti-info-circle'); return; }
+    window.open('lorebook.html?work=' + encodeURIComponent(workId) + '&card_name=' + encodeURIComponent(c.name) + '&kind=character', '_blank', 'noopener');
+  };
+
+  var lbc = { cards: null, fields: null };
+  async function lbcLoad() {
+    if (lbc.cards && lbc.fields) return true;
+    var r = await Promise.all([
+      db.from('lore_cards').select('id,name,kind,data,image_path').eq('work_id', workId).eq('kind', 'character'),
+      db.from('lore_fields').select('field_key,label,group_order,sort_order,input_type').eq('kind', 'character').eq('is_active', true).order('group_order').order('sort_order')
+    ]);
+    if (r[0].error || r[1].error) return false;
+    lbc.cards = r[0].data || []; lbc.fields = r[1].data || [];
+    return true;
+  }
+  // Same rule as the Lorebook's own link: exact name, else a unique first-name match.
+  function lbcFind(name) {
+    var n = String(name || '').trim().toLowerCase();
+    var exact = lbc.cards.filter(function(c){ return String(c.name || '').trim().toLowerCase() === n; });
+    if (exact.length) return exact[0];
+    var fits = lbc.cards.filter(function(c){
+      var cn = String(c.name || '').trim().toLowerCase();
+      return cn.split(/\s+/)[0] === n || n.split(/\s+/)[0] === cn;
+    });
+    return fits.length === 1 ? fits[0] : null;
+  }
+  function lbcVal(card, key) {
+    var d = (card.data || {})[key];
+    if (!d || d.skipped || d.v == null) return '';
+    if (Array.isArray(d.v)) return d.v.map(function(x){ return Array.isArray(x) ? x.filter(Boolean).join(': ') : x; }).filter(Boolean).join(', ');
+    return String(d.v).trim();
+  }
+  function lbcClose() { var m = document.getElementById('lbc-back'); if (m) m.remove(); }
+
+  document.addEventListener('click', async function(e){
+    var btn = e.target.closest && e.target.closest('.gl-ed-lore');
+    if (!btn) return;
+    e.preventDefault();
+    var id = btn.closest('.gl-ed-card').dataset.id;
+    var ch = gl.chars.find(function(x){ return x.id === id; });
+    if (!ch || !workId) return;
+    btn.disabled = true;
+    var ok = await lbcLoad();
+    btn.disabled = false;
+    if (!ok) { showToast("Couldn't open your Lorebook — please try again.", 'ti-alert-triangle'); return; }
+    var card = lbcFind(ch.name);
+    if (!card) {
+      lbcShow('<h3>No Lorebook card yet</h3>' +
+        '<div class="lbc-sub">' + esc(ch.name) + ' has no character card in this story’s Lorebook.</div>' +
+        '<div class="lbc-acts"><button type="button" class="ct-mgr-btn" onclick="lbcClose()">Close</button>' +
+        '<button type="button" class="ct-mgr-add-btn" onclick="lbcClose();ctLoreUpdate(\'' + id + '\')"><i class="ti ti-plus"></i> Make one</button></div>');
+      return;
+    }
+    var rows = lbc.fields.map(function(f){ return { f: f, v: lbcVal(card, f.field_key) }; }).filter(function(x){ return x.v; });
+    var opts = rows.map(function(x, i){
+      return '<label class="lbc-opt"><input type="checkbox" data-i="' + i + '"/><span><b>' + esc(x.f.label) + '</b><br>' + esc(x.v.length > 160 ? x.v.slice(0, 160) + '…' : x.v) + '</span></label>';
+    }).join('');
+    var picOpt = card.image_path
+      ? '<label class="lbc-opt"><input type="checkbox" id="lbc-pic"/><span><b>Lorebook picture</b><br>Copies it so readers can see it. Your Lorebook copy stays private.</span></label>'
+      : '';
+    if (!rows.length && !picOpt) {
+      lbcShow('<h3>Nothing to copy yet</h3><div class="lbc-sub">' + esc(card.name) + '’s Lorebook card has no answers filled in.</div>' +
+        '<div class="lbc-acts"><button type="button" class="ct-mgr-btn" onclick="lbcClose()">Close</button></div>');
+      return;
+    }
+    lbcShow('<h3>Copy from ' + esc(card.name) + '’s Lorebook card</h3>' +
+      '<div class="lbc-sub"><i class="ti ti-alert-triangle" style="color:var(--gold);"></i> The glossary is public and your Lorebook is private. Tick only what readers of Chapter ' + glChapterNumber(gl.chapterId) + ' should know — nothing is ticked for you. You can edit the text after.</div>' +
+      picOpt + opts +
+      '<div class="lbc-acts"><button type="button" class="ct-mgr-btn" onclick="lbcClose()">Cancel</button>' +
+      '<button type="button" class="ct-mgr-add-btn" id="lbc-go"><i class="ti ti-copy"></i> Copy ticked</button></div>');
+    document.getElementById('lbc-go').onclick = async function(){
+      var picked = Array.prototype.map.call(document.querySelectorAll('#lbc-back input[data-i]:checked'), function(el){ return rows[+el.dataset.i]; });
+      var wantPic = !!(document.getElementById('lbc-pic') || {}).checked;
+      if (!picked.length && !wantPic) { showToast('Tick at least one thing to copy.', 'ti-info-circle'); return; }
+      this.disabled = true;
+      glMark(id);
+      if (picked.length) {
+        var add = picked.map(function(x){ return x.f.label.replace(/[?:]+$/, '') + ': ' + x.v; }).join('. ');
+        var cur = (gl.mine[id].summary || '').trim();
+        gl.mine[id].summary = (cur ? cur + (/[.!?]$/.test(cur) ? ' ' : '. ') : '') + add;
+        if (gl.mine[id].summary.length > 600) gl.mine[id].summary = gl.mine[id].summary.slice(0, 600);
+      }
+      if (wantPic && currentSession) {
+        try {
+          var sig = await db.storage.from('lore-images').createSignedUrl(card.image_path, 120);
+          if (sig.error) throw sig.error;
+          var blob = await fetch(sig.data.signedUrl).then(function(r){ if (!r.ok) throw new Error('download ' + r.status); return r.blob(); });
+          var type = /^image\/(png|jpeg|webp)$/.test(blob.type) ? blob.type : 'image/webp';
+          var ext = type === 'image/png' ? 'png' : (type === 'image/jpeg' ? 'jpg' : 'webp');
+          var file = new File([blob], 'glossary.' + ext, { type: type });
+          var path = currentSession.user.id + '/glossary-' + Date.now() + '.' + ext;
+          var up = await DSStorage.upload(db, DSStorage.BUCKETS.COVERS, path, file, { noResize: true, noConvert: true });
+          if (up.error) throw up.error;
+          gl.mine[id].image_path = up.path || path;
+        } catch (err) {
+          console.error('[lorebook copy picture]', err);
+          showToast("The text was copied, but the picture couldn't be.", 'ti-alert-triangle');
+        }
+      }
+      gl.open[id] = true;
+      lbcClose();
+      glRender();
+      showToast('Copied — check the wording, then press ' + (gl.mine[id].exists ? 'Update glossary' : 'Add to glossary') + '.', 'ti-copy');
+    };
+  });
+  function lbcShow(inner) {
+    lbcClose();
+    var m = document.createElement('div'); m.id = 'lbc-back'; m.className = 'lbc-back';
+    m.innerHTML = '<div class="lbc" role="dialog" aria-modal="true">' + inner + '</div>';
+    m.addEventListener('click', function(ev){ if (ev.target === m) lbcClose(); });
+    document.body.appendChild(m);
+  }
+  window.lbcClose = lbcClose;
 
   async function glSave(chapterId, wId, silent, onlyId) {
     var ids = onlyId ? (gl.dirty[onlyId] ? [onlyId] : []) : Object.keys(gl.dirty);
