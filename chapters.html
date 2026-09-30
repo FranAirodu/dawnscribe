@@ -1685,6 +1685,9 @@
       row.draggable = true;
       row.dataset.id = ch.id;
       row.dataset.status = ch.status;
+      // Rebuilding the list (after saving an arc, a reorder, a bulk action)
+      // used to drop the highlight on the chapter being edited.
+      if (editingChapterId && ch.id === editingChapterId) row.classList.add('active');
       var btn = document.createElement('button');
       btn.className = 'chapter-edit-btn';
       btn.innerHTML = '<i class="ti ti-pencil"></i> Editing';
@@ -1819,6 +1822,14 @@
     return bodies;
   }
   function arcSyncGroups() {
+    var list = document.getElementById('chapter-list');
+    var none = document.getElementById('ch-filter-none');
+    var anyShown = Array.prototype.some.call(list.querySelectorAll('.chapter-row'), function(r){ return r.style.display !== 'none'; });
+    if (!anyShown && list.querySelector('.chapter-row')) {
+      if (!none) { none = document.createElement('div'); none.id = 'ch-filter-none'; none.className = 'empty-state'; list.appendChild(none); }
+      var word = { published: 'published chapters', draft: 'drafts', scheduled: 'scheduled chapters' }[chapterFilter] || 'chapters';
+      none.innerHTML = '<i class="ti ti-filter-off"></i>No ' + word + ' yet.';
+    } else if (none) { none.remove(); }
     document.querySelectorAll('#chapter-list .arc-group').forEach(function(g) {
       var rows = g.querySelectorAll('.chapter-row');
       var shown = Array.prototype.filter.call(rows, function(r){ return r.style.display !== 'none'; }).length;
@@ -4467,7 +4478,9 @@
   window.jumpToCharacters = function() {
     var el = document.getElementById('ct-section');
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Instant on purpose: a smooth scroll across a long chapter kept being
+    // cancelled part-way, leaving the author where they started.
+    el.scrollIntoView({ block: 'start' });
   };
 
   window.ctLoreUpdate = function(id) {
