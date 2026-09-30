@@ -304,6 +304,34 @@
     .schedule-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;}
 
     /* BULK ACTIONS */
+    .arc-bar{display:none;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+    .arc-bar button{background:none;border:1px solid var(--border);border-radius:8px;padding:4px 10px;color:var(--text2);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+    .arc-bar button:hover{border-color:var(--accent);color:var(--accent);}
+    .arc-group{margin-bottom:8px;}
+    .arc-head{display:flex;align-items:center;gap:8px;width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:7px;cursor:pointer;color:var(--text);font-family:'Lato',sans-serif;text-align:left;}
+    .arc-head:hover{border-color:var(--accent);}
+    .arc-head .arc-chev{color:var(--text3);transition:transform 0.15s;}
+    .arc-group.collapsed .arc-chev{transform:rotate(-90deg);}
+    .arc-head .arc-name{font-weight:700;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .arc-head .arc-name.plain{color:var(--text3);font-weight:400;font-style:italic;}
+    .arc-head .arc-range{font-size:11px;color:var(--text3);white-space:nowrap;}
+    .arc-head .arc-here{font-size:10px;font-weight:700;color:var(--accent);border:1px solid var(--accent);border-radius:10px;padding:1px 7px;}
+    .arc-body{padding-left:10px;border-left:2px solid rgba(var(--accent-rgb),0.25);margin-left:6px;}
+    .arc-group.collapsed .arc-body{display:none;}
+    .arc-m-back{position:fixed;inset:0;background:rgba(4,4,8,0.78);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;}
+    .arc-m{width:100%;max-width:560px;max-height:88vh;overflow:auto;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;}
+    .arc-m h3{font-family:'Cinzel',serif;font-size:18px;margin:0 0 4px;}
+    .arc-m .arc-m-sub{font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:14px;}
+    .arc-m-row{display:grid;grid-template-columns:1fr 64px 64px auto;gap:6px;align-items:center;margin-bottom:6px;}
+    .arc-m-row input{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:7px 9px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;min-width:0;}
+    .arc-m-row input:focus{outline:none;border-color:var(--accent);}
+    .arc-m-hdr{display:grid;grid-template-columns:1fr 64px 64px auto;gap:6px;font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+    .arc-m-btn{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text2);font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}
+    .arc-m-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .arc-m-btn.main{background:var(--accent);border-color:var(--accent);color:#0a0a0f;}
+    .arc-m-btn.del:hover{border-color:var(--red);color:var(--red);}
+    .arc-m-err{color:var(--red);font-size:12px;min-height:1em;margin:4px 0;}
+    @media (max-width:520px){ .arc-m-row,.arc-m-hdr{grid-template-columns:1fr 52px 52px auto;} }
     .bulk-bar{display:flex;align-items:center;gap:8px;background:rgba(var(--accent-rgb),0.06);border:1px solid rgba(var(--accent-rgb),0.2);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;}
     .bulk-bar button{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--text2);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;}
     .bulk-bar button:hover{border-color:var(--accent);color:var(--accent);}
@@ -575,6 +603,11 @@
         <button class="ch-filter-tab" data-filter="published" onclick="setChapterFilter('published')">Published</button>
         <button class="ch-filter-tab" data-filter="draft" onclick="setChapterFilter('draft')">Drafts</button>
         <button class="ch-filter-tab" data-filter="scheduled" onclick="setChapterFilter('scheduled')">Scheduled</button>
+      </div>
+      <div class="arc-bar" id="arc-bar">
+        <button type="button" onclick="arcOpenManager()" title="Group chapters into named arcs"><i class="ti ti-folders"></i> Arcs</button>
+        <button type="button" onclick="arcSetAll(true)" title="Collapse every group"><i class="ti ti-fold"></i> Collapse all</button>
+        <button type="button" onclick="arcSetAll(false)" title="Expand every group"><i class="ti ti-fold-down"></i> Expand all</button>
       </div>
       <div class="bulk-bar" id="bulk-bar" style="display:none;">
         <span id="bulk-count">0 selected</span>
@@ -1618,6 +1651,7 @@
 
   async function loadChapters() {
     var res = await db.from('chapters').select('id,chapter_number,title,status,word_count,created_at,updated_at,scheduled_for,free_at,ea_quill_price').eq('work_id', workId).order('chapter_number', { ascending: true });
+    await arcLoad();
     var list = document.getElementById('chapter-list');
     var chapters = res.data || [];
     chapterCount = chapters.length;
@@ -1637,12 +1671,14 @@
     }
 
     document.getElementById('chapter-filter-tabs').style.display = chapters.length ? 'flex' : 'none';
+    document.getElementById('arc-bar').style.display = chapters.length ? 'flex' : 'none';
     if (!chapters.length) {
       list.innerHTML = '<div class="empty-state"><i class="ti ti-books"></i>No chapters yet.<br>Add your first one!</div>';
       return;
     }
 
     list.innerHTML = '';
+    var arcBodies = arcBuildGroups(list, chapters);
     chapters.forEach(function(ch) {
       var row = document.createElement('div');
       row.className = 'chapter-row';
@@ -1702,7 +1738,7 @@
           '<span class="chapter-status ' + statusClass + '">' + statusLabel + '</span>' +
         '</div>';
       row.querySelector('.chapter-row-bottom').appendChild(btn);
-      list.appendChild(row);
+      (arcBodies[ch.id] || list).appendChild(row);
 
       // Checkbox listener
       row.querySelector('.chapter-checkbox').addEventListener('change', updateBulkBar);
@@ -1730,6 +1766,166 @@
     });
     applyChapterFilter();
   }
+
+  // ── ARCS: collapsible, author-named groups of chapters ─────────
+  // Stored in chapter_arcs by chapter-number range (private to the author).
+  // Chapters in no arc form plain groups between the arcs, so "Collapse all"
+  // works even for an author who never names an arc. Which groups are folded
+  // is remembered per story in this browser only.
+  var ARCS = [];
+  var _arcFoldKey = 'ds_arc_fold_' + (getWorkId() || 'x');
+  var arcFold = (function(){ try { return JSON.parse(localStorage.getItem(_arcFoldKey) || '{}') || {}; } catch (e) { return {}; } })();
+  function arcSaveFold() { try { localStorage.setItem(_arcFoldKey, JSON.stringify(arcFold)); } catch (e) {} }
+
+  async function arcLoad() {
+    if (!workId) { ARCS = []; return; }
+    try {
+      var r = await db.from('chapter_arcs').select('id,name,start_ch,end_ch').eq('work_id', workId).order('start_ch', { ascending: true });
+      ARCS = r.error ? [] : (r.data || []);
+    } catch (e) { ARCS = []; }
+  }
+  function arcFor(n) {
+    for (var i = 0; i < ARCS.length; i++) if (n >= ARCS[i].start_ch && n <= ARCS[i].end_ch) return ARCS[i];
+    return null;
+  }
+  // Builds the group shells in chapter order and returns chapterId -> body element.
+  function arcBuildGroups(list, chapters) {
+    var bodies = {}, cur = null, curKey = null;
+    chapters.forEach(function(ch) {
+      var arc = arcFor(ch.chapter_number);
+      var key = arc ? 'arc:' + arc.id : 'none';
+      if (!cur || key !== curKey || (key === 'none' && cur.dataset.kind !== 'none')) {
+        cur = document.createElement('div');
+        cur.className = 'arc-group';
+        cur.dataset.kind = arc ? 'arc' : 'none';
+        // Plain groups are keyed by where they start, so folding one survives new chapters.
+        cur.dataset.key = arc ? 'arc:' + arc.id : 'none:' + ch.chapter_number;
+        cur.dataset.name = arc ? arc.name : (ARCS.length ? 'Not in an arc' : 'All chapters');
+        cur.dataset.first = ch.chapter_number;
+        var head = document.createElement('button');
+        head.type = 'button'; head.className = 'arc-head';
+        head.setAttribute('aria-expanded', 'true');
+        var body = document.createElement('div'); body.className = 'arc-body';
+        cur.appendChild(head); cur.appendChild(body);
+        head.addEventListener('click', (function(g){ return function(){ arcToggle(g); }; })(cur));
+        list.appendChild(cur);
+        curKey = key;
+      }
+      cur.dataset.last = ch.chapter_number;
+      bodies[ch.id] = cur.querySelector('.arc-body');
+    });
+    list.querySelectorAll('.arc-group').forEach(function(g){ if (arcFold[g.dataset.key]) g.classList.add('collapsed'); });
+    arcSyncGroups();
+    return bodies;
+  }
+  function arcSyncGroups() {
+    document.querySelectorAll('#chapter-list .arc-group').forEach(function(g) {
+      var rows = g.querySelectorAll('.chapter-row');
+      var shown = Array.prototype.filter.call(rows, function(r){ return r.style.display !== 'none'; }).length;
+      var hasActive = !!g.querySelector('.chapter-row.active');
+      g.style.display = shown ? '' : 'none';
+      var a = +g.dataset.first, b = +g.dataset.last;
+      var head = g.querySelector('.arc-head');
+      head.setAttribute('aria-expanded', String(!g.classList.contains('collapsed')));
+      head.innerHTML = '<i class="ti ti-chevron-down arc-chev"></i>'
+        + '<span class="arc-name' + (g.dataset.kind === 'none' ? ' plain' : '') + '">' + esc(g.dataset.name) + '</span>'
+        + (hasActive && g.classList.contains('collapsed') ? '<span class="arc-here">Editing</span>' : '')
+        + '<span class="arc-range">Ch. ' + a + (b !== a ? '–' + b : '') + ' · ' + (shown === rows.length ? rows.length : shown + ' of ' + rows.length) + '</span>';
+    });
+  }
+  function arcToggle(g, force) {
+    var fold = typeof force === 'boolean' ? force : !g.classList.contains('collapsed');
+    g.classList.toggle('collapsed', fold);
+    if (fold) arcFold[g.dataset.key] = true; else delete arcFold[g.dataset.key];
+    arcSaveFold(); arcSyncGroups();
+  }
+  window.arcSetAll = function(fold) {
+    document.querySelectorAll('#chapter-list .arc-group').forEach(function(g){ arcToggle(g, fold); });
+  };
+  // Opening a chapter (row click, Prev/Next) unfolds its group so it is never hidden.
+  function arcReveal(chapterId) {
+    var row = document.querySelector('#chapter-list .chapter-row[data-id="' + chapterId + '"]');
+    var g = row && row.closest('.arc-group');
+    if (g && g.classList.contains('collapsed')) arcToggle(g, false);
+  }
+  var _arcSetModeEdit = setModeEdit;
+  setModeEdit = function(chapterId) {
+    arcReveal(chapterId);
+    var out = _arcSetModeEdit.apply(this, arguments);
+    Promise.resolve(out).then(arcSyncGroups, arcSyncGroups);
+    return out;
+  };
+
+  // ── Arc manager ──
+  function arcModal(inner) {
+    arcClose();
+    var m = document.createElement('div'); m.id = 'arc-m-back'; m.className = 'arc-m-back';
+    m.innerHTML = '<div class="arc-m" role="dialog" aria-modal="true" aria-labelledby="arc-m-title">' + inner + '</div>';
+    m.addEventListener('click', function(ev){ if (ev.target === m) arcClose(); });
+    document.body.appendChild(m);
+  }
+  function arcClose() { var m = document.getElementById('arc-m-back'); if (m) m.remove(); }
+  window.arcClose = arcClose;
+  function arcMaxCh() { return (allChapters || []).reduce(function(m, c){ return Math.max(m, c.chapter_number || 0); }, 0); }
+  function arcRowHtml(a) {
+    var id = a ? a.id : 'new';
+    return '<div class="arc-m-row" data-id="' + id + '">'
+      + '<input class="arc-in-name" maxlength="80" placeholder="' + (a ? '' : 'Arc name, e.g. Arc 2: The Floating City') + '" value="' + (a ? esc(a.name) : '') + '"/>'
+      + '<input class="arc-in-a" type="number" min="1" inputmode="numeric" aria-label="From chapter" value="' + (a ? a.start_ch : '') + '"/>'
+      + '<input class="arc-in-b" type="number" min="1" inputmode="numeric" aria-label="To chapter" value="' + (a ? a.end_ch : '') + '"/>'
+      + (a ? '<span style="display:flex;gap:4px;"><button type="button" class="arc-m-btn" onclick="arcSaveRow(\'' + id + '\')" title="Save changes"><i class="ti ti-check"></i></button>'
+           + '<button type="button" class="arc-m-btn del" onclick="arcDeleteRow(\'' + id + '\')" title="Remove this arc (the chapters stay)"><i class="ti ti-trash"></i></button></span>'
+         : '<button type="button" class="arc-m-btn main" onclick="arcSaveRow(\'new\')"><i class="ti ti-plus"></i> Add</button>')
+      + '</div>';
+  }
+  window.arcOpenManager = function() {
+    if (!workId) { showToast('Save the story once first.', 'ti-info-circle'); return; }
+    var last = ARCS.length ? ARCS[ARCS.length - 1].end_ch : 0, max = arcMaxCh();
+    arcModal('<h3 id="arc-m-title">Arcs</h3>'
+      + '<div class="arc-m-sub">Group chapters into named arcs so a long story stays tidy. Arcs only change this list — readers don’t see them, and nothing about your chapters changes. New chapters join an arc automatically when their number falls inside it.</div>'
+      + '<div class="arc-m-hdr"><span>Name</span><span>From</span><span>To</span><span></span></div>'
+      + ARCS.map(arcRowHtml).join('')
+      + arcRowHtml(null)
+      + '<div class="arc-m-err" id="arc-m-err"></div>'
+      + '<div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;margin-top:6px;">'
+      +   '<button type="button" class="arc-m-btn" onclick="arcSetAll(true);arcClose();"><i class="ti ti-fold"></i> Just collapse everything</button>'
+      +   '<button type="button" class="arc-m-btn" onclick="arcClose()">Done</button>'
+      + '</div>');
+    var nr = document.querySelector('.arc-m-row[data-id="new"]');
+    if (nr && max > last) { nr.querySelector('.arc-in-a').value = last + 1; nr.querySelector('.arc-in-b').value = max; }
+    if (nr) nr.querySelector('.arc-in-name').focus();
+  };
+  window.arcSaveRow = async function(id) {
+    var row = document.querySelector('.arc-m-row[data-id="' + id + '"]');
+    var err = document.getElementById('arc-m-err');
+    if (!row) return;
+    var name = row.querySelector('.arc-in-name').value.trim();
+    var a = parseInt(row.querySelector('.arc-in-a').value, 10), b = parseInt(row.querySelector('.arc-in-b').value, 10);
+    err.textContent = '';
+    if (!name) { err.textContent = 'Give the arc a name.'; return; }
+    if (!(a >= 1) || !(b >= 1)) { err.textContent = 'Enter the first and last chapter numbers.'; return; }
+    if (b < a) { err.textContent = 'The last chapter can’t come before the first.'; return; }
+    var clash = ARCS.find(function(x){ return x.id !== id && x.start_ch <= b && a <= x.end_ch; });
+    if (clash) { err.textContent = 'Chapters ' + Math.max(a, clash.start_ch) + '–' + Math.min(b, clash.end_ch) + ' are already in “' + clash.name + '”.'; return; }
+    var btns = row.querySelectorAll('button'); btns.forEach(function(x){ x.disabled = true; });
+    var r = id === 'new'
+      ? await db.from('chapter_arcs').insert({ work_id: workId, name: name, start_ch: a, end_ch: b })
+      : await db.from('chapter_arcs').update({ name: name, start_ch: a, end_ch: b }).eq('id', id);
+    btns.forEach(function(x){ x.disabled = false; });
+    if (r.error) { err.textContent = /another arc/i.test(r.error.message || '') ? 'Those chapters are already in another arc.' : 'Couldn’t save that — please try again.'; return; }
+    await loadChapters();
+    arcOpenManager();
+    showToast(id === 'new' ? 'Arc added.' : 'Arc saved.', 'ti-folders');
+  };
+  window.arcDeleteRow = async function(id) {
+    var arc = ARCS.find(function(x){ return x.id === id; });
+    var r = await db.from('chapter_arcs').delete().eq('id', id);
+    if (r.error) { document.getElementById('arc-m-err').textContent = 'Couldn’t remove that — please try again.'; return; }
+    delete arcFold['arc:' + id]; arcSaveFold();
+    await loadChapters();
+    arcOpenManager();
+    showToast((arc ? '“' + arc.name + '”' : 'Arc') + ' removed — its chapters are untouched.', 'ti-check');
+  };
 
   // ── CHAPTER STATUS FILTER ─────────────────────────────────────
   var _ssFilterKey = 'ds_ch_filter_' + (getWorkId() || 'x');
@@ -1760,6 +1956,7 @@
       var handle = row.querySelector('.drag-handle');
       if (handle) handle.style.opacity = filtered ? '0.2' : '';
     });
+    arcSyncGroups();
   }
 
   // ── RELATIVE TIME ─────────────────────────────────────────────
