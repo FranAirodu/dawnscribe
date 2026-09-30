@@ -304,6 +304,16 @@
     .schedule-input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;font-family:'Lato',sans-serif;outline:none;}
 
     /* BULK ACTIONS */
+    .goto-wrap{display:none;position:relative;margin-bottom:8px;}
+    .goto-wrap i.ti-search{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:13px;}
+    .goto-wrap input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px 7px 30px;color:var(--text);font-size:12.5px;font-family:'Lato',sans-serif;}
+    .goto-wrap input:focus{outline:none;border-color:var(--accent);}
+    .goto-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.4);overflow:hidden;}
+    .goto-item{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);padding:7px 10px;color:var(--text2);font-size:12.5px;font-family:'Lato',sans-serif;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .goto-item:last-child{border-bottom:none;}
+    .goto-item:hover,.goto-item.sel{background:rgba(var(--accent-rgb),0.1);color:var(--accent);}
+    .goto-none{padding:8px 10px;font-size:12px;color:var(--text3);}
+    .chapter-row.goto-flash{box-shadow:0 0 0 2px var(--accent);transition:box-shadow 0.3s;}
     .arc-bar{display:none;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
     .arc-bar button{background:none;border:1px solid var(--border);border-radius:8px;padding:4px 10px;color:var(--text2);font-size:11px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
     .arc-bar button:hover{border-color:var(--accent);color:var(--accent);}
@@ -603,6 +613,11 @@
         <button class="ch-filter-tab" data-filter="published" onclick="setChapterFilter('published')">Published</button>
         <button class="ch-filter-tab" data-filter="draft" onclick="setChapterFilter('draft')">Drafts</button>
         <button class="ch-filter-tab" data-filter="scheduled" onclick="setChapterFilter('scheduled')">Scheduled</button>
+      </div>
+      <div class="goto-wrap" id="goto-wrap">
+        <i class="ti ti-search"></i>
+        <input id="goto-input" type="search" autocomplete="off" maxlength="80" placeholder="Go to chapter — a number or part of a title" aria-label="Go to chapter"/>
+        <div class="goto-list" id="goto-list" style="display:none;"></div>
       </div>
       <div class="arc-bar" id="arc-bar">
         <button type="button" onclick="arcOpenManager()" title="Group chapters into named arcs"><i class="ti ti-folders"></i> Arcs</button>
@@ -1672,6 +1687,7 @@
 
     document.getElementById('chapter-filter-tabs').style.display = chapters.length ? 'flex' : 'none';
     document.getElementById('arc-bar').style.display = chapters.length ? 'flex' : 'none';
+    document.getElementById('goto-wrap').style.display = chapters.length > 1 ? 'block' : 'none';
     if (!chapters.length) {
       list.innerHTML = '<div class="empty-state"><i class="ti ti-books"></i>No chapters yet.<br>Add your first one!</div>';
       return;
@@ -1866,6 +1882,81 @@
     Promise.resolve(out).then(arcSyncGroups, arcSyncGroups);
     return out;
   };
+
+  // ── Go to chapter ──
+  // A number jumps to that chapter; words match titles. Enter opens the top
+  // match, unfolding its arc and clearing a status filter that would hide it.
+  var gotoSel = 0, gotoHits = [];
+  function gotoFind(q) {
+    q = String(q || '').trim().toLowerCase().replace(/^(ch(apter)?\.?\s*)/, '');
+    if (!q) return [];
+    var n = /^\d+$/.test(q) ? parseInt(q, 10) : null;
+    var out = [];
+    (allChapters || []).forEach(function(c) {
+      var t = String(c.title || '').toLowerCase(), rank = 9;
+      if (n !== null) {
+        if (c.chapter_number === n) rank = 0;
+        else if (String(c.chapter_number).indexOf(q) === 0) rank = 1;
+      }
+      if (rank === 9 && t.indexOf(q) >= 0) rank = t.indexOf(q) === 0 ? 2 : 3;
+      if (rank < 9) out.push({ c: c, rank: rank });
+    });
+    out.sort(function(a, b){ return a.rank - b.rank || a.c.chapter_number - b.c.chapter_number; });
+    return out.slice(0, 8).map(function(x){ return x.c; });
+  }
+  function gotoRender() {
+    var list = document.getElementById('goto-list');
+    var q = document.getElementById('goto-input').value.trim();
+    if (!q) { list.style.display = 'none'; list.innerHTML = ''; return; }
+    gotoHits = gotoFind(q);
+    if (gotoSel >= gotoHits.length) gotoSel = 0;
+    list.innerHTML = gotoHits.length
+      ? gotoHits.map(function(c, i){
+          return '<button type="button" class="goto-item' + (i === gotoSel ? ' sel' : '') + '" data-id="' + esc(c.id) + '">Ch.' + c.chapter_number + ' — ' + esc(c.title || 'Untitled Chapter') + '</button>';
+        }).join('')
+      : '<div class="goto-none">No chapter matches “' + esc(q) + '”.</div>';
+    list.style.display = 'block';
+  }
+  function gotoClose() { var l = document.getElementById('goto-list'); l.style.display = 'none'; }
+  function gotoOpen(id) {
+    var inp = document.getElementById('goto-input');
+    inp.value = ''; gotoClose(); inp.blur();
+    var row = document.querySelector('#chapter-list .chapter-row[data-id="' + id + '"]');
+    if (!row) return;
+    if (row.style.display === 'none') setChapterFilter('all');   // a filter was hiding it
+    arcReveal(id);
+    row.scrollIntoView({ block: 'center' });
+    row.classList.add('goto-flash');
+    setTimeout(function(){ row.classList.remove('goto-flash'); }, 1200);
+    if (!row.classList.contains('active')) row.click();
+  }
+  (function gotoWire() {
+    var inp = document.getElementById('goto-input'), list = document.getElementById('goto-list');
+    if (!inp) return;
+    inp.addEventListener('input', function(){ gotoSel = 0; gotoRender(); });
+    inp.addEventListener('keydown', function(e){
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!gotoHits.length) return;
+        e.preventDefault();
+        gotoSel = (gotoSel + (e.key === 'ArrowDown' ? 1 : -1) + gotoHits.length) % gotoHits.length;
+        gotoRender();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (gotoHits[gotoSel]) gotoOpen(gotoHits[gotoSel].id);
+      } else if (e.key === 'Escape') {
+        inp.value = ''; gotoClose();
+      }
+    });
+    // mousedown so the choice lands before the input's blur closes the list
+    list.addEventListener('mousedown', function(e){
+      var b = e.target.closest('.goto-item');
+      if (!b) return;
+      e.preventDefault();
+      gotoOpen(b.dataset.id);
+    });
+    inp.addEventListener('blur', function(){ setTimeout(gotoClose, 150); });
+    inp.addEventListener('focus', function(){ if (inp.value.trim()) gotoRender(); });
+  })();
 
   // ── Arc manager ──
   function arcModal(inner) {
