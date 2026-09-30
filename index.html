@@ -437,6 +437,26 @@
 
     /* LAYOUT CUSTOMIZATION */
     .layout-customize-row { display: flex; justify-content: flex-end; padding: 0 48px 8px; }
+    /* START HERE — first steps for new writers */
+    .start-here { margin: 6px 48px 22px; background: var(--bg2); border: 1px solid rgba(var(--aura-rgb,45,212,191),0.28); border-radius: 14px; padding: 18px 20px 16px; position: relative; }
+    .start-here-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; padding-right: 30px; }
+    .start-here-title { font-family: 'Cinzel', serif; font-size: 17px; font-weight: 700; color: var(--text); }
+    .start-here-title i { color: var(--accent); margin-right: 4px; }
+    .start-here-count { font-size: 12px; font-weight: 700; color: var(--accent); }
+    .start-here-sub { font-size: 13px; color: var(--text2); margin-bottom: 12px; }
+    .start-here-close { position: absolute; top: 12px; right: 12px; background: none; border: none; color: var(--text3); font-size: 17px; cursor: pointer; padding: 4px; line-height: 1; }
+    .start-here-close:hover { color: var(--text); }
+    .start-here-steps { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+    .sh-step { display: flex; gap: 11px; align-items: flex-start; padding: 12px 13px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; text-decoration: none; color: inherit; transition: border-color 0.15s; }
+    a.sh-step:hover { border-color: var(--accent); }
+    .sh-num { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; border: 1.5px solid rgba(var(--aura-rgb,45,212,191),0.5); color: var(--accent); }
+    .sh-step.done .sh-num { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+    .sh-step.done { opacity: 0.6; }
+    .sh-name { font-weight: 700; font-size: 13.5px; color: var(--text); }
+    .sh-step.done .sh-name { text-decoration: line-through; text-decoration-color: rgba(var(--aura-rgb,45,212,191),0.6); }
+    .sh-desc { font-size: 12px; color: var(--text3); line-height: 1.45; margin-top: 2px; }
+    .sh-free { display: inline-block; margin-top: 5px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #f59e0b; background: rgba(245,158,11,0.12); border-radius: 20px; padding: 2px 8px; }
+    @media (max-width: 760px) { .start-here { margin: 6px 16px 18px; } .start-here-steps { grid-template-columns: 1fr; } }
     .kindling-pick-banner{display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,rgba(240,192,64,0.14),rgba(249,115,22,0.08));border:1px solid rgba(240,192,64,0.4);border-radius:16px;padding:16px 22px;margin:0 48px 20px;text-decoration:none;color:inherit;transition:border-color 0.2s;}
     .kindling-pick-banner:hover{border-color:#f0c040;}
     .kindling-pick-cover{width:54px;height:74px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-weight:700;color:white;overflow:hidden;}
@@ -995,6 +1015,8 @@
     <div class="kindling-pick-sub">Voted in by readers — <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="event.stopPropagation();window.location.href='rising.html';">see this month's Kindling vote</span></div>
   </div>
 </a>
+
+<div class="start-here" id="start-here" style="display:none;" aria-label="Start here"></div>
 
 <div class="layout-customize-row" id="layout-customize-row" style="display:none;">
           <button class="layout-customize-btn" onclick="openLayoutModal()"><i class="ti ti-layout-grid"></i> Customize Layout</button>
@@ -3337,6 +3359,7 @@
       if(session){ await dsBlock.load(uid); }
       if(session){ loadAvatarWidget(uid); }
       if(uid){ welcomeCheckNew(uid); }
+      if(uid){ dsRedeemPendingInvite(); dsStartHere(uid); }
       dsInitLayoutCustomization(uid);
       if (uid) { loadReadingHistory(uid); }
       if (uid) { loadContinueReading(uid); }
@@ -5895,6 +5918,94 @@ function dsLoadLayoutFromCache() {
         }
         localStorage.setItem('ds_welcome_done_' + uid, '1');
         document.getElementById('welcome-overlay').classList.remove('open');
+      });
+    }
+
+    // ── FOUNDING WRITER INVITE ────────────────────────────────────
+    // auth.html keeps ?invite= in localStorage. Email signups were already
+    // redeemed by the database as the account was made; this catches Google
+    // and Discord signups, which never pass through the signup form.
+    function dsRedeemPendingInvite() {
+      var code = null;
+      try { code = localStorage.getItem('ds_invite_code'); } catch (e) {}
+      if (!code) return;
+      Promise.resolve(db.rpc('redeem_founding_invite', { p_code: code })).then(function(r) {
+        var d = r && r.data;
+        if (!d) return; // network trouble: keep the code and try on the next visit
+        try { localStorage.removeItem('ds_invite_code'); } catch (e) {}
+        if (d.ok && !d.already) showToast('Welcome, Founding Writer! 100 Embers are in your pouch.', 'ti-feather');
+      }).catch(function() {});
+    }
+
+    // ── START HERE ────────────────────────────────────────────────
+    // Three first steps for writers. Each ticks itself off from what they
+    // have actually done, and the whole card disappears once all three are.
+    async function dsStartHere(uid) {
+      var box = document.getElementById('start-here');
+      if (!box) return;
+      try { if (localStorage.getItem('ds_starthere_hide_' + uid)) return; } catch (e) {}
+      try {
+        var res = await Promise.all([
+          db.from('profiles').select('role').eq('id', uid).maybeSingle(),
+          db.from('works').select('id,cover_url,type,updated_at').eq('author_id', uid).order('updated_at', { ascending: false }).limit(50),
+          db.from('lore_reads').select('id', { count: 'exact', head: true }).eq('user_id', uid),
+          db.rpc('my_lorekeeper_balance')
+        ]);
+        var role = (res[0].data && res[0].data.role) || '';
+        var works = (res[1].data || []).filter(function(w) { return w.type !== 'artwork'; });
+        if (!/Writer/.test(role) && !works.length) return;
+
+        var workIds = works.map(function(w) { return w.id; });
+        var published = 0;
+        if (workIds.length) {
+          var chRes = await db.from('chapters').select('id', { count: 'exact', head: true })
+            .in('work_id', workIds).eq('status', 'published');
+          published = chRes.count || 0;
+        }
+        var hasCover = works.some(function(w) { return !!w.cover_url; });
+        var triedLore = (res[2].count || 0) > 0;
+        var bal = res[3].data || {};
+        var freeLeft = (bal.chapters_remaining || 0) > 0;
+
+        var done = [published > 0, hasCover, triedLore];
+        var nDone = done.filter(Boolean).length;
+        if (nDone === 3) return;
+
+        var first = works[0];
+        var steps = [
+          { done: done[0], name: 'Post your first chapter',
+            desc: first ? 'Your story is set up. Publish a chapter so readers can find it.' : 'Start a story and publish chapter one.',
+            href: first ? 'chapters.html?edit=' + encodeURIComponent(first.id) : 'publish.html' },
+          { done: done[1], name: 'Give it a cover',
+            desc: 'Stories with a cover get opened far more often on the homepage.',
+            href: first ? 'publish.html?edit=' + encodeURIComponent(first.id) : 'publish.html' },
+          { done: done[2], name: 'Try Lorekeeper',
+            desc: 'An AI beta reader reads a chapter and tells you what it noticed.',
+            href: 'lorebook.html?view=reader' + (first ? '&work=' + encodeURIComponent(first.id) : ''),
+            free: freeLeft && !done[2] }
+        ];
+        box.innerHTML =
+          '<button class="start-here-close" onclick="dsHideStartHere()" title="Hide this" aria-label="Hide Start here"><i class="ti ti-x"></i></button>' +
+          '<div class="start-here-head"><div class="start-here-title"><i class="ti ti-flag"></i> Start here</div>' +
+          '<div class="start-here-count">' + nDone + ' of 3 done</div></div>' +
+          '<div class="start-here-sub">Three quick steps to get your story in front of readers.</div>' +
+          '<div class="start-here-steps">' + steps.map(function(st, i) {
+            var inner = '<div class="sh-num">' + (st.done ? '<i class="ti ti-check"></i>' : (i + 1)) + '</div>' +
+              '<div><div class="sh-name">' + st.name + '</div><div class="sh-desc">' + st.desc + '</div>' +
+              (st.free ? '<span class="sh-free"><i class="ti ti-gift"></i> 1 free read waiting</span>' : '') + '</div>';
+            return st.done ? '<div class="sh-step done">' + inner + '</div>'
+                           : '<a class="sh-step" href="' + st.href + '">' + inner + '</a>';
+          }).join('') + '</div>';
+        box.style.display = 'block';
+      } catch (e) {
+        console.warn('Start here failed:', e);
+      }
+    }
+    function dsHideStartHere() {
+      db.auth.getSession().then(function(sr) {
+        var uid = sr && sr.data && sr.data.session ? sr.data.session.user.id : null;
+        if (uid) { try { localStorage.setItem('ds_starthere_hide_' + uid, '1'); } catch (e) {} }
+        document.getElementById('start-here').style.display = 'none';
       });
     }
 

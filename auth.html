@@ -74,6 +74,8 @@
     .resend-wrap { text-align: center; margin-top: -8px; font-size: 12px; }
     .auth-reason-banner { display: none; margin-bottom: 18px; padding: 12px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: #f87171; }
     .auth-reason-banner a { color: var(--accent); font-weight: 700; text-decoration: none; }
+    .auth-invite-banner { display: none; margin-bottom: 18px; padding: 13px 15px; border-radius: 10px; font-size: 13px; line-height: 1.55; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.35); color: var(--text2); }
+    .auth-invite-banner b { color: #f59e0b; font-family: 'Cinzel', serif; font-size: 14px; display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
     .auth-reason-banner i { margin-right: 4px; }
     .form-hint { font-size: 12px; color: var(--text2); margin-top: 2px; }
     .form-hint.error { color: var(--red); }
@@ -152,6 +154,7 @@
       <p class="auth-tagline">Where creative minds unite</p>
 
       <div class="auth-reason-banner" id="auth-reason-banner" role="alert" aria-live="assertive"></div>
+      <div class="auth-invite-banner" id="auth-invite-banner" aria-live="polite"></div>
 
       <div class="auth-tabs">
         <button id="tab-signup-btn" class="auth-tab">Create Account</button>
@@ -597,6 +600,40 @@
       if (r) dsShowReasonBanner(r);
     })();
 
+    // ── FOUNDING WRITER INVITE (?invite=FW-XXXXXXXX) ─────────────
+    // Kept in localStorage so it survives the email-confirm round trip and
+    // Google sign-in. Email signups pass it in their metadata (the database
+    // redeems it as the account is made); index.html redeems it for everyone
+    // else once they are signed in. The code itself is the only secret.
+    function dsInviteCode() {
+      try { return localStorage.getItem('ds_invite_code') || null; } catch (e) { return null; }
+    }
+    (function(){
+      var c = new URLSearchParams(window.location.search).get('invite');
+      if (c && /^[A-Za-z0-9-]{4,20}$/.test(c)) {
+        c = c.toUpperCase();
+        try { localStorage.setItem('ds_invite_code', c); } catch (e) {}
+      } else {
+        c = dsInviteCode();
+      }
+      if (!c) return;
+      Promise.resolve(db.rpc('check_founding_invite', { p_code: c })).then(function(r) {
+        var el = document.getElementById('auth-invite-banner');
+        if (r && r.data && r.data.valid) {
+          el.innerHTML = '<b><i aria-hidden="true" class="ti ti-feather"></i> You\u2019re invited as a Founding Writer</b>'
+            + 'Create your account and you\u2019ll get the <b style="display:inline;font-family:inherit;font-size:inherit;">Founding Writer</b> badge, which is never given out again once the doors open, plus 100 Embers to start.';
+          el.style.display = 'block';
+          if (!document.getElementById('auth-reason-banner').innerHTML) showTab('signup');
+        } else {
+          try { localStorage.removeItem('ds_invite_code'); } catch (e) {}
+          if (new URLSearchParams(window.location.search).get('invite')) {
+            el.innerHTML = '<i aria-hidden="true" class="ti ti-info-circle"></i> That invite link has already been used or has expired. You can still create an account normally.';
+            el.style.display = 'block';
+          }
+        }
+      }).catch(function() {});
+    })();
+
     // ── ACCOUNT TYPE BUTTONS ──────────────────────────────────────
     document.getElementById('account-type-group').addEventListener('click', function(e) {
       var btn = e.target.closest('.type-btn');
@@ -912,6 +949,7 @@
         options: {
           data: {
             username: username, role: role, date_of_birth: dob,
+            invite_code: dsInviteCode(),
             // Only ever sent for adults; the database re-checks the date of
             // birth before honouring these, so the form cannot grant itself
             // access by posting them alongside a minor's birthday.
