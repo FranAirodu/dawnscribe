@@ -801,7 +801,7 @@ async function loadWork(){
   LORESCOUT = sum.data.lorescout === true;
 
   var out = await Promise.all([
-    Promise.resolve(db.from('works').select('id,title').eq('id', workId).maybeSingle()).catch(function(){ return {}; }),
+    Promise.resolve(db.from('works').select('id,title,lore_reader_on').eq('id', workId).maybeSingle()).catch(function(){ return {}; }),
     Promise.resolve(db.from('lore_fields').select('*').eq('is_active', true)
       .order('group_order').order('sort_order')).catch(function(){ return {}; }),
     Promise.resolve(db.from('lore_cards').select('*').eq('work_id', workId)
@@ -1156,7 +1156,9 @@ function render(){
   var html =
     '<div class="page-header"><i class="ti ti-book-2"></i>'
     + '<div class="page-title">' + esc(work.title) + '</div></div>'
-    + '<div class="page-subtitle">Your Lorebook. Private to you \u2014 readers never see any of it.</div>'
+    + '<div class="page-subtitle">' + (work.lore_reader_on
+        ? 'Your Lorebook. Readers see a spoiler-safe guide of the plain facts \u2014 never your notes or secrets.'
+        : 'Your Lorebook. Private to you \u2014 readers never see any of it.') + '</div>'
     + '<div class="view-tabs">'
       + tab('decks', 'ti-cards', 'Decks')
       + tab('board', 'ti-arrows-shuffle', 'Relationships')
@@ -1165,6 +1167,7 @@ function render(){
       + tab('reader', 'ti-eye', 'Beta reader')
       + tab('export', 'ti-download', 'Export')
       + tab('download', 'ti-file-download', 'Download')
+      + tab('readers', 'ti-shield-check', 'Readers')
     + '</div>'
     + '<div id="view-body"></div>';
   document.getElementById('page').innerHTML = html;
@@ -1185,6 +1188,7 @@ function renderView(){
   if(view === 'reader') return renderReader();
   if(view === 'export') return renderExport();
   if(view === 'download') return renderDownload();
+  if(view === 'readers') return renderReaders();
 }
 
 /* ── DECKS ─────────────────────────────────────────────────────────── */
@@ -4577,6 +4581,54 @@ function noteUndo(){
   if(!NOTE_JUST_DONE) return;
   var j = NOTE_JUST_DONE; NOTE_JUST_DONE = null;
   noteSet(j.id, j.prev || 'open');
+}
+
+/* ── READERS: the spoiler-safe story guide (guide.html) ──────────────
+   Only questions marked reader_safe in lore_fields, only facts that have a
+   chapter, and only up to the furthest chapter each reader has opened.
+   The filtering happens in the database (lore_reader_guide), never here. */
+function renderReaders(){
+  var on = !!work.lore_reader_on;
+  var safe = {};
+  Object.keys(FIELDS).forEach(function(k){
+    (FIELDS[k] || []).forEach(function(f){ if(f.reader_safe) (safe[k] = safe[k] || []).push(f.label); });
+  });
+  var guideUrl = 'guide.html?work=' + encodeURIComponent(workId);
+  document.getElementById('view-body').innerHTML =
+    '<div class="finding"><div class="finding-msg"><i class="ti ti-shield-check"></i> Story guide for readers</div>'
+    + '<div style="font-size:13px;color:var(--text2);margin:6px 0 12px;line-height:1.6;">'
+    + 'Readers get a <b>Story guide</b> button on your story page. It shows the plain facts from your cards '
+    + '— names, looks, jobs, places — but only what is true up to the furthest chapter <i>they</i> have read. '
+    + 'A character who has not appeared yet is not shown at all.</div>'
+    + '<div style="font-size:12.5px;color:var(--text3);margin-bottom:12px;line-height:1.6;">'
+    + '<i class="ti ti-lock"></i> Never shown: secrets, fears, the lie they believe, voice notes, endings, and anything without a chapter. '
+    + 'To show an undated fact, give it the chapter it is revealed in.</div>'
+    + '<div class="finding-acts">'
+    + '<button class="btn ' + (on ? '' : 'primary') + '" onclick="toggleReaderGuide(this)"><i class="ti ti-' + (on ? 'eye-off' : 'eye') + '"></i> '
+    + (on ? 'Turn the guide off' : 'Turn the guide on') + '</button>'
+    + '<a class="btn ghost" href="' + guideUrl + '" target="_blank" rel="noopener"><i class="ti ti-external-link"></i> Preview as a reader</a>'
+    + '</div>'
+    + '<div style="margin-top:10px;font-size:12px;color:' + (on ? 'var(--green)' : 'var(--text3)') + ';">'
+    + (on ? '<i class="ti ti-circle-check"></i> On — readers can see it.' : '<i class="ti ti-circle-dashed"></i> Off — only you can preview it.') + '</div></div>'
+    + '<details class="finding" style="cursor:pointer;"><summary style="font-size:13px;color:var(--text2);">Which questions readers can see</summary>'
+    + '<div style="font-size:12.5px;color:var(--text3);margin-top:8px;line-height:1.7;">'
+    + DECKS.filter(function(d){ return safe[d.kind]; }).map(function(d){
+        return '<b style="color:var(--text2);">' + esc(d.title) + ':</b> ' + safe[d.kind].map(esc).join(', ');
+      }).join('<br>')
+    + '</div></details>';
+}
+async function toggleReaderGuide(btn){
+  var next = !work.lore_reader_on;
+  if(btn) btn.disabled = true;
+  var res = await db.from('works').update({ lore_reader_on: next }).eq('id', workId).select('lore_reader_on').maybeSingle();
+  if(res.error || !res.data){
+    if(btn) btn.disabled = false;
+    toast(res.error ? res.error.message : 'Could not change that', 'ti-x', true);
+    return;
+  }
+  work.lore_reader_on = res.data.lore_reader_on;
+  toast(work.lore_reader_on ? 'Readers can now see the story guide' : 'Story guide is off');
+  render();
 }
 
 /* ── DOWNLOAD: the whole Lorebook as a file the author keeps ───────── */

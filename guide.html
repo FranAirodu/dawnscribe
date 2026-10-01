@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  (function() {
+    var t = localStorage.getItem('ds_theme');
+    if (t) { document.documentElement.setAttribute('data-theme', t); }
+  })();
+</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DawnScribe — Story guide</title>
+  <meta name="robots" content="noindex" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
+  <style>
+    :root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a26;--bg4:#22223a;--accent:#2dd4bf;--accent2:#0d9488;--text:#f1f0ff;--text2:#9b9bc0;--text3:#8a8aa8;--border:rgba(255,255,255,0.07);--red:#f87171;--green:#34d399;--gold:#f59e0b;}
+    html[data-theme="light"]{--bg:#f4f4f8;--bg2:#ffffff;--bg3:#ebebf2;--bg4:#d8d8e8;--border:rgba(0,0,0,0.10);--text:#0a0a0f;--text2:#3a3a5c;--text3:#5a5a76;--accent:#0a6b63;--accent2:#075e56;--red:#b01818;--green:#036b4e;--gold:#7d5205;}
+    html[data-theme="dim"]{--bg:#1c1c21;--bg2:#24242c;--bg3:#2c2c38;--bg4:#34344c;--border:rgba(255,255,255,0.12);--text2:#9b9bc0;--text3:#9e9eb4;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Lato',sans-serif;font-size:15px;line-height:1.6;min-height:100vh;}
+    nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+    .nav-left{display:flex;align-items:center;gap:16px;}
+    .logo{font-family:'Cinzel',serif;font-size:22px;color:var(--accent);text-decoration:none;letter-spacing:1px;}
+    .logo span{color:var(--text);}
+    .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 16px;color:var(--text2);font-size:13px;text-decoration:none;display:flex;align-items:center;gap:6px;}
+    .back-btn:hover{border-color:var(--accent);color:var(--accent);}
+    @media (max-width:600px){ nav{padding:0 16px;} .back-btn span{display:none;} }
+
+    .page{max-width:1080px;margin:0 auto;padding:36px 16px 80px;}
+    .page-title{font-family:'Cinzel',serif;font-size:28px;font-weight:700;margin-bottom:4px;}
+    .page-title span{color:var(--accent);}
+    .safe{display:inline-flex;align-items:center;gap:8px;background:rgba(var(--aura-rgb,45,212,191),0.10);border:1px solid rgba(var(--aura-rgb,45,212,191),0.35);
+      border-radius:20px;padding:6px 14px;font-size:13px;color:var(--text2);margin:6px 0 22px;}
+    .safe b{color:var(--accent);}
+    .preview{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg2);border:1px dashed var(--border);border-radius:12px;padding:10px 14px;margin-bottom:20px;font-size:13px;color:var(--text2);}
+    .preview input{width:80px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:14px;}
+
+    .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+    .search{flex:1;min-width:200px;position:relative;}
+    .search i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text3);}
+    .search input{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 12px 10px 36px;color:var(--text);font-size:14px;font-family:'Lato',sans-serif;}
+    .search input:focus{outline:none;border-color:var(--accent);}
+    .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;}
+    .chip{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:6px 15px;font-size:12px;font-weight:700;color:var(--text3);cursor:pointer;font-family:'Lato',sans-serif;}
+    .chip.active{background:rgba(var(--aura-rgb,45,212,191),0.12);border-color:var(--accent);color:var(--accent);}
+
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;}
+    .card-top{display:flex;gap:14px;align-items:center;margin-bottom:10px;}
+    .av{width:58px;height:58px;border-radius:12px;flex-shrink:0;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text3);font-family:'Cinzel',serif;font-size:22px;overflow:hidden;}
+    .av img{width:100%;height:100%;object-fit:cover;}
+    .nm{font-family:'Cinzel',serif;font-size:17px;font-weight:700;line-height:1.25;}
+    .kd{font-size:11.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;}
+    .grp{font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 3px;font-weight:700;}
+    dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13.5px;}
+    dt{color:var(--text3);white-space:nowrap;}
+    dd{color:var(--text);overflow-wrap:anywhere;}
+    dd div + div{margin-top:2px;}
+    @media (max-width:420px){ dl{grid-template-columns:1fr;} dt{margin-top:4px;} }
+    .state{text-align:center;padding:60px 20px;color:var(--text2);}
+    .state i{font-size:40px;color:var(--text3);display:block;margin-bottom:10px;}
+    .state a{color:var(--accent);}
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-left">
+    <a class="logo" href="index.html">Dawn<span>Scribe</span></a>
+    <a class="back-btn" id="back" href="index.html"><i class="ti ti-arrow-left"></i> <span>Back to the story</span></a>
+  </div>
+  <!-- nav.js injects right side -->
+</nav>
+<script>
+  var SUPABASE_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx';
+  var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  window.db = db;
+</script>
+
+<div class="page" id="page"><div class="state"><i class="ti ti-loader"></i>Opening the guide…</div></div>
+
+<script>
+/* Story guide: the author's Lorebook as readers may see it.
+   Everything here comes from lore_reader_guide(), which only returns
+   reader-safe questions with a chapter at or before the furthest chapter
+   this reader has opened. Undated facts and private notes never leave the
+   database, so nothing on this page can be peeked at with dev tools. */
+(function(){
+  var workId = new URLSearchParams(location.search).get('work') || '';
+  var KIND = { character:'Characters', society:'Societies', organisation:'Organisations', artifact:'Artifacts', location:'Locations', event:'Events' };
+  var ORDER = ['character','location','society','organisation','artifact','event'];
+  var DATA = null, Q = '', K = '';
+  var page = document.getElementById('page');
+  document.getElementById('back').href = 'story.html?id=' + encodeURIComponent(workId);
+
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function safeUrl(u){ return /^https:\/\//i.test(String(u || '')) ? u : ''; }
+  function state(icon, html){ page.innerHTML = '<div class="state"><i class="ti ' + icon + '"></i>' + html + '</div>'; }
+
+  async function load(previewCh){
+    if(!/^[0-9a-f-]{36}$/i.test(workId)) return state('ti-alert-triangle', 'This link is missing its story.');
+    var r = await db.rpc('lore_reader_guide', { p_work_id: workId, p_chapter: previewCh == null ? null : previewCh });
+    var d = r.data;
+    if(r.error || !d) return state('ti-alert-triangle', 'The guide could not be opened. Please try again.');
+    if(!d.ok){
+      if(d.reason === 'sign_in') return state('ti-lock', 'Sign in to see the guide. It only shows what you have already read, so it needs to know where you are.<br><br><a href="auth.html">Sign in</a>');
+      if(d.reason === 'off') return state('ti-eye-off', 'The author has not opened a guide for this story.');
+      return state('ti-alert-triangle', 'This story could not be found.');
+    }
+    DATA = d;
+    draw();
+  }
+
+  function draw(){
+    var d = DATA, ch = d.chapter || 0;
+    var html = '<h1 class="page-title">' + esc(d.title) + ' <span>Guide</span></h1>'
+      + '<div class="safe"><i class="ti ti-shield-check"></i> Spoiler-safe: showing what is true up to <b>chapter ' + ch + '</b>'
+      + (d.is_author ? '' : ', the furthest you have read') + '.</div>';
+    if(d.is_author){
+      html += '<div class="preview"><i class="ti ti-eye"></i> Author preview: see it as a reader on chapter '
+        + '<input type="number" min="1" id="pv" value="' + ch + '"/> '
+        + '<button class="chip active" id="pv-go">Show</button>'
+        + (d.on ? '' : '<span style="color:var(--gold);"><i class="ti ti-eye-off"></i> Readers cannot see this yet — switch it on in your Lorebook.</span>')
+        + '</div>';
+    }
+    if(!d.cards.length){
+      page.innerHTML = html + '<div class="state"><i class="ti ti-book"></i>'
+        + (ch ? 'Nothing in the guide yet for chapter ' + ch + '.' : 'Start reading and the guide fills in as you go.') + '</div>';
+      wirePreview();
+      return;
+    }
+    var kinds = ORDER.filter(function(k){ return d.cards.some(function(c){ return c.kind === k; }); });
+    html += '<div class="bar"><div class="search"><i class="ti ti-search"></i><input id="q" type="search" placeholder="Search names and facts" value="' + esc(Q) + '"/></div></div>'
+      + '<div class="chips"><button class="chip' + (K ? '' : ' active') + '" data-k="">All</button>'
+      + kinds.map(function(k){ return '<button class="chip' + (K === k ? ' active' : '') + '" data-k="' + k + '">' + KIND[k] + '</button>'; }).join('')
+      + '</div><div class="grid" id="grid"></div>';
+    page.innerHTML = html;
+    document.getElementById('q').addEventListener('input', function(){ Q = this.value.trim().toLowerCase(); grid(); });
+    Array.prototype.forEach.call(document.querySelectorAll('.chip[data-k]'), function(b){
+      b.onclick = function(){ K = b.getAttribute('data-k'); draw(); };
+    });
+    wirePreview();
+    grid();
+  }
+
+  function grid(){
+    var cards = DATA.cards.filter(function(c){
+      if(K && c.kind !== K) return false;
+      if(!Q) return true;
+      return JSON.stringify([c.name, c.facts]).toLowerCase().indexOf(Q) >= 0;
+    }).sort(function(a, b){ return ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || a.name.localeCompare(b.name); });
+    var g = document.getElementById('grid');
+    if(!cards.length){ g.innerHTML = '<div class="state" style="grid-column:1/-1;">Nothing matches that.</div>'; return; }
+    g.innerHTML = cards.map(function(c){
+      var pic = safeUrl(c.picture);
+      var lastGroup = null, body = '';
+      c.facts.forEach(function(f){
+        if(f.group !== lastGroup){
+          if(lastGroup !== null) body += '</dl>';
+          body += '<div class="grp">' + esc(f.group) + '</div><dl>';
+          lastGroup = f.group;
+        }
+        body += '<dt>' + esc(f.label) + '</dt><dd>' + f.values.map(function(v){ return '<div>' + esc(v) + '</div>'; }).join('') + '</dd>';
+      });
+      if(lastGroup !== null) body += '</dl>';
+      return '<div class="card"><div class="card-top"><div class="av">'
+        + (pic ? '<img src="' + esc(pic) + '" alt="" loading="lazy"/>' : esc(String(c.name).charAt(0).toUpperCase()))
+        + '</div><div><div class="nm">' + esc(c.name) + '</div><div class="kd">' + esc((KIND[c.kind] || '').replace(/s$/, '')) + '</div></div></div>'
+        + body + '</div>';
+    }).join('');
+  }
+
+  function wirePreview(){
+    var b = document.getElementById('pv-go');
+    if(b) b.onclick = function(){ var n = parseInt(document.getElementById('pv').value, 10); if(n > 0) load(n); };
+  }
+
+  load(null);
+})();
+</script>
+<script src="footer.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>
