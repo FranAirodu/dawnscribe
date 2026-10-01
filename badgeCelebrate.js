@@ -1,246 +1,293 @@
-/* ══════════════════════════════════════════════════════════════
-   DawnScribe — Badge unlock celebration
+/* ??????????????????????????????????????????????????????????????
+   DawnScribe - Achievement cards (Steam-style)
 
-   Badge unlocks used to arrive as an ordinary toast, visually identical
-   to "Settings saved". Earning a Celestite tier after months of effort
-   deserves to look different from a form confirmation, and a toast in the
-   corner is genuinely easy to miss.
+   Every badge unlock appears as a card in the bottom-right corner and
+   STAYS there - on this page, the next page, another tab, another device -
+   until the user presses its x. A reward nobody saw is a reward that
+   didn't happen, so nothing here closes itself.
 
-   This is the single implementation for the whole site: nav.js injects it
-   on every page that loads nav.js, and index.html (which keeps its own nav
-   copy and does NOT load nav.js) includes it directly. One file so the two
-   can't drift apart.
+   Where the cards come from:
+   * Server: badge_unlock_queue. drain_badge_unlocks() returns every unlock
+     the user hasn't closed; dismiss_badge_unlock(id) closes one. This file
+     asks for them itself on every page load, so it works on any page that
+     loads it (nav.js injects it everywhere; index.html includes it).
+   * Callers: nav.js / index.html still pass unlocks to DSBadgeCelebrate().
+     Those that match a server card are merged into it; anything the server
+     doesn't know about is kept in localStorage until closed.
 
-   Accessibility: honours both the OS "reduce motion" setting and the
-   site's own pref (html.ds-reduced-motion, set by accessibilityPrefs.js).
-   When either is on, the card still appears — only the confetti and the
-   motion are dropped. A celebration nobody can sit through comfortably
-   isn't a celebration.
-   ══════════════════════════════════════════════════════════════ */
+   Accessibility: no motion when the OS or the site's reduce-motion pref is
+   on; cards are a labelled region, x is a real button, Esc is NOT bound
+   (closing must be a deliberate choice).
+   ?????????????????????????????????????????????????????????????? */
 (function () {
   'use strict';
+  if (window.DSBadgeCelebrate) return;
 
-  if (window.DSBadgeCelebrate) return;   // already loaded
+  var SB_URL = 'https://cajjyyskpmjnpcxcfeuk.supabase.co';
+  var SB_KEY = 'sb_publishable_ZZjE1u_pQn5YkrMKH4P3KQ_HSGqTjzx';
+  var LOCAL_KEY = 'ds_unclosed_unlocks';      // unlocks the server doesn't track
+  var BUS_KEY = 'ds_unlock_closed';           // tells other tabs a card was closed
+  var MAX_VISIBLE = 3;
 
-  var GOLD = '#f0c674';
-  var queue = [];
-  var showing = false;
+  var cards = [];          // [{ key, id, name, icon, gem_name, gem_color, xp_reward, desc }]
+  var serverLoaded = false;
+  var held = [];           // caller items waiting for the server list (to de-duplicate)
+  var root = null, ownDb = null;
 
+  /* \u2500\u2500 helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
   function reducedMotion() {
     try {
       if (document.documentElement.classList.contains('ds-reduced-motion')) return true;
       return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     } catch (e) { return false; }
   }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function iconClass(s) { s = String(s || '').replace(/[^a-z0-9-]/gi, ''); return /^ti-/.test(s) ? s : 'ti-award'; }
+  function color(c, fallback) { return /^#[0-9a-f]{3,8}$/i.test(String(c || '')) ? c : fallback; }
+  function norm(s) { return String(s || '').toLowerCase().replace(/[_\s]+/g, ' ').trim(); }
+  function looseKey(it) { return 'l:' + norm(it.name) + '|' + norm(it.gem_name); }
 
-  function injectStyles() {
-    if (document.getElementById('ds-badge-celebrate-css')) return;
-    var css = document.createElement('style');
-    css.id = 'ds-badge-celebrate-css';
-    css.textContent = [
-      '.ds-bc-scrim{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;',
-      'justify-content:center;background:rgba(6,6,12,0.72);opacity:0;transition:opacity .28s ease;}',
-      '.ds-bc-scrim.ds-bc-in{opacity:1;}',
-      '.ds-bc-canvas{position:fixed;inset:0;pointer-events:none;z-index:100000;}',
-      '.ds-bc-card{position:relative;z-index:100001;max-width:340px;width:calc(100% - 48px);',
-      'padding:28px 26px 24px;border-radius:18px;text-align:center;',
-      'background:linear-gradient(180deg,#171722 0%,#101018 100%);',
-      'border:1px solid rgba(255,255,255,0.10);',
-      'box-shadow:0 24px 70px rgba(0,0,0,0.6);',
-      'transform:scale(.82);opacity:0;transition:transform .34s cubic-bezier(.2,1.5,.4,1),opacity .24s ease;}',
-      '.ds-bc-card.ds-bc-in{transform:scale(1);opacity:1;}',
-      '.ds-bc-nomotion .ds-bc-card{transition:none;transform:none;opacity:1;}',
-      '.ds-bc-nomotion .ds-bc-scrim{transition:none;opacity:1;}',
-      '.ds-bc-gem{width:76px;height:76px;margin:0 auto 14px;border-radius:50%;',
-      'display:flex;align-items:center;justify-content:center;font-size:38px;',
-      'border:2px solid rgba(255,255,255,0.16);}',
-      '.ds-bc-kicker{font-size:11px;letter-spacing:2.4px;text-transform:uppercase;',
-      'color:' + GOLD + ';margin-bottom:6px;font-weight:700;}',
-      '.ds-bc-name{font-family:Cinzel,Georgia,serif;font-size:21px;font-weight:700;',
-      'color:#fff;line-height:1.25;margin-bottom:6px;}',
-      '.ds-bc-sub{font-size:13px;color:#a8a8ba;margin-bottom:2px;}',
-      '.ds-bc-xp{font-size:13px;font-weight:700;color:' + GOLD + ';margin-top:8px;}',
-      '.ds-bc-dismiss{margin-top:18px;font-size:12px;color:#7d7d90;}',
-      '@media (max-width:420px){.ds-bc-card{padding:22px 18px 20px;}.ds-bc-name{font-size:19px;}}'
-    ].join('');
-    document.head.appendChild(css);
+  function client() {
+    try { if (window.db && typeof window.db.rpc === 'function') return window.db; } catch (e) {}
+    try { if (typeof db !== 'undefined' && db && typeof db.rpc === 'function') return db; } catch (e) {}
+    if (!ownDb && window.supabase && typeof window.supabase.createClient === 'function') {
+      try { ownDb = window.supabase.createClient(SB_URL, SB_KEY); } catch (e) {}
+    }
+    return ownDb;
   }
 
-  /* Confetti: a few dozen paper rectangles under gravity. Deliberately
-     dependency-free — a celebration is not worth a CDN request that might
-     fail or be blocked. Stops itself once every piece is off-screen, so
-     there is no animation loop left running behind the page. */
-  function confetti(canvas, colors) {
-    var ctx = canvas.getContext('2d');
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var W, H;
-    function size() {
-      W = canvas.width = Math.floor(window.innerWidth * dpr);
-      H = canvas.height = Math.floor(window.innerHeight * dpr);
-      canvas.style.width = window.innerWidth + 'px';
-      canvas.style.height = window.innerHeight + 'px';
-    }
-    size();
-    window.addEventListener('resize', size);
+  function readLocal() { try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]') || []; } catch (e) { return []; } }
+  function writeLocal(list) { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(list.slice(-20))); } catch (e) {} }
 
-    var pieces = [];
-    var count = window.innerWidth < 500 ? 60 : 90;
-    for (var i = 0; i < count; i++) {
-      pieces.push({
-        x: (0.5 + (Math.random() - 0.5) * 0.5) * W,
-        y: H * 0.42 + (Math.random() - 0.5) * 40 * dpr,
-        vx: (Math.random() - 0.5) * 13 * dpr,
-        vy: (Math.random() * -13 - 4) * dpr,
-        w: (5 + Math.random() * 6) * dpr,
-        h: (8 + Math.random() * 8) * dpr,
-        rot: Math.random() * Math.PI,
-        vr: (Math.random() - 0.5) * 0.32,
-        color: colors[(Math.random() * colors.length) | 0],
-        life: 0
+  /* \u2500\u2500 styles \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+  function injectStyles() {
+    if (document.getElementById('ds-ach-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ds-ach-css';
+    st.textContent = [
+      '.ds-ach{position:fixed;right:20px;bottom:20px;z-index:99990;display:flex;flex-direction:column-reverse;gap:10px;',
+      'width:340px;max-width:calc(100vw - 32px);pointer-events:none;font-family:Lato,system-ui,sans-serif;}',
+      '.ds-ach-card{pointer-events:auto;position:relative;display:flex;gap:14px;align-items:center;padding:14px 40px 14px 14px;',
+      'border-radius:10px;background:linear-gradient(135deg,#1d1f2b 0%,#14151e 100%);color:#e8e8f2;',
+      'border:1px solid rgba(255,255,255,.08);box-shadow:0 14px 36px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.4);',
+      'overflow:hidden;transform:translateY(24px);opacity:0;transition:transform .38s cubic-bezier(.2,1.2,.4,1),opacity .3s ease;}',
+      '.ds-ach-card.in{transform:none;opacity:1;}',
+      '.ds-ach-card.out{transform:translateX(110%);opacity:0;transition:transform .28s ease-in,opacity .28s ease-in;}',
+      '.ds-ach-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gem);}',
+      '.ds-ach-card::after{content:"";position:absolute;inset:0;pointer-events:none;',
+      'background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.07) 45%,transparent 60%);transform:translateX(-100%);}',
+      '.ds-ach-card.in::after{animation:ds-ach-shine 1.6s .3s ease-out 1;}',
+      '@keyframes ds-ach-shine{to{transform:translateX(100%);}}',
+      '.ds-ach-gem{width:56px;height:56px;flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center;',
+      'font-size:30px;color:#fff;background:radial-gradient(circle at 35% 30%,var(--gem-soft),rgba(0,0,0,.35));',
+      'border:2px solid var(--gem);box-shadow:0 0 16px var(--gem-glow),inset 0 0 10px rgba(0,0,0,.4);}',
+      '.ds-ach-body{min-width:0;flex:1;}',
+      '.ds-ach-kick{font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:#f0c674;font-weight:700;margin-bottom:2px;}',
+      '.ds-ach-name{font-family:Cinzel,Georgia,serif;font-size:16px;font-weight:700;color:#fff;line-height:1.25;',
+      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+      '.ds-ach-meta{font-size:12.5px;color:#a9a9c2;margin-top:2px;}',
+      '.ds-ach-meta b{color:var(--gem-text);font-weight:700;}',
+      '.ds-ach-desc{font-size:12px;color:#8e8ea8;margin-top:4px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}',
+      '.ds-ach-x{position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:6px;border:0;cursor:pointer;',
+      'background:rgba(255,255,255,.06);color:#c9c9dc;font-size:15px;line-height:26px;text-align:center;padding:0;}',
+      '.ds-ach-x:hover,.ds-ach-x:focus-visible{background:rgba(255,255,255,.16);color:#fff;outline:none;}',
+      '.ds-ach-more{pointer-events:auto;align-self:flex-end;display:flex;gap:8px;align-items:center;font-size:12px;color:#c9c9dc;',
+      'background:#1a1b25;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:5px 6px 5px 12px;box-shadow:0 6px 18px rgba(0,0,0,.45);}',
+      '.ds-ach-more button{border:0;cursor:pointer;border-radius:12px;padding:3px 10px;font-size:11.5px;background:rgba(255,255,255,.08);color:#e8e8f2;}',
+      '.ds-ach-more button:hover{background:rgba(255,255,255,.16);}',
+      '.ds-ach.calm .ds-ach-card,.ds-ach.calm .ds-ach-card.out{transition:none;transform:none;}',
+      '.ds-ach.calm .ds-ach-card.in::after{animation:none;}',
+      '@media (max-width:600px){.ds-ach{right:16px;left:16px;bottom:16px;width:auto;max-width:none;}',
+      '.ds-ach-gem{width:46px;height:46px;font-size:24px;}}'
+    ].join('');
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function ensureRoot() {
+    if (root && document.body.contains(root)) return root;
+    injectStyles();
+    root = document.createElement('div');
+    root.className = 'ds-ach' + (reducedMotion() ? ' calm' : '');
+    root.setAttribute('role', 'region');
+    root.setAttribute('aria-label', 'Achievements');
+    root.setAttribute('aria-live', 'polite');
+    document.body.appendChild(root);
+    return root;
+  }
+
+  function rgba(hex, a) {
+    var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex) ||
+            /^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(hex);
+    if (!m) return 'rgba(240,198,116,' + a + ')';
+    var p = function (x) { return parseInt(x.length === 1 ? x + x : x, 16); };
+    return 'rgba(' + p(m[1]) + ',' + p(m[2]) + ',' + p(m[3]) + ',' + a + ')';
+  }
+
+  /* \u2500\u2500 rendering \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+  function cardEl(c) {
+    var gem = color(c.gem_color, '#f0c674');
+    var el = document.createElement('div');
+    el.className = 'ds-ach-card';
+    el.setAttribute('data-key', c.key);
+    el.style.setProperty('--gem', gem);
+    el.style.setProperty('--gem-soft', rgba(gem, .55));
+    el.style.setProperty('--gem-glow', rgba(gem, .35));
+    el.style.setProperty('--gem-text', /^#[0-4]/.test(gem) ? '#d6d6e6' : gem);
+    var xp = Number(c.xp_reward) > 0 ? ' \u00b7 +' + Number(c.xp_reward).toLocaleString() + ' XP' : '';
+    el.innerHTML =
+      '<div class="ds-ach-gem" aria-hidden="true"><i class="ti ' + iconClass(c.icon) + '"></i></div>' +
+      '<div class="ds-ach-body">' +
+        '<div class="ds-ach-kick">Achievement unlocked</div>' +
+        '<div class="ds-ach-name" title="' + esc(c.name) + '">' + esc(c.name) + '</div>' +
+        '<div class="ds-ach-meta">' + (c.gem_name ? '<b>' + esc(c.gem_name) + '</b> tier' : 'Badge earned') + esc(xp) + '</div>' +
+        (c.desc ? '<div class="ds-ach-desc">' + esc(c.desc) + '</div>' : '') +
+      '</div>' +
+      '<button type="button" class="ds-ach-x" aria-label="Close: ' + esc(c.name) + '">\u2715</button>';
+    el.querySelector('.ds-ach-x').addEventListener('click', function () { close(c.key, true); });
+    return el;
+  }
+
+  function render() {
+    if (!document.body) return;
+    var r = ensureRoot();
+    var visible = cards.slice(0, MAX_VISIBLE);
+    // Remove cards that are no longer visible.
+    Array.prototype.forEach.call(r.querySelectorAll('.ds-ach-card'), function (el) {
+      if (!visible.some(function (c) { return c.key === el.getAttribute('data-key'); }) && !el.classList.contains('out')) el.remove();
+    });
+    // Add new ones (column-reverse: first in DOM sits at the bottom).
+    visible.forEach(function (c, i) {
+      if (r.querySelector('.ds-ach-card[data-key="' + CSS.escape(c.key) + '"]')) return;
+      var el = cardEl(c);
+      var before = r.querySelectorAll('.ds-ach-card')[i] || r.querySelector('.ds-ach-more');
+      r.insertBefore(el, before || null);
+      requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('in'); }); });
+    });
+    var more = r.querySelector('.ds-ach-more');
+    var extra = cards.length - visible.length;
+    if (cards.length > 1) {
+      if (!more) { more = document.createElement('div'); more.className = 'ds-ach-more'; r.appendChild(more); }
+      more.innerHTML = '<span>' + (extra > 0 ? '+' + extra + ' more' : cards.length + ' achievements') + '</span>' +
+        '<button type="button">Close all</button>';
+      more.querySelector('button').onclick = closeAll;
+    } else if (more) more.remove();
+    if (!cards.length && r) r.remove(), root = null;
+  }
+
+  /* \u2500\u2500 state \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+  function has(key) { return cards.some(function (c) { return c.key === key; }); }
+
+  function add(c) {
+    if (!c || !c.name || has(c.key)) return;
+    // A caller item that matches a server card is the same unlock.
+    if (!c.id && cards.some(function (x) { return x.id && looseKey(x) === c.key; })) return;
+    if (c.id) cards = cards.filter(function (x) { return !(!x.id && x.key === looseKey(c)); });
+    cards.push(c);
+  }
+
+  function close(key, broadcast) {
+    var c = cards.filter(function (x) { return x.key === key; })[0];
+    cards = cards.filter(function (x) { return x.key !== key; });
+    if (c && c.id) {
+      var d = client();
+      if (d) d.rpc('dismiss_badge_unlock', { p_id: c.id }).then(function () {}, function () {});
+    }
+    writeLocal(readLocal().filter(function (x) { return x.key !== key; }));
+    if (broadcast) { try { localStorage.setItem(BUS_KEY, key + '|' + Date.now()); } catch (e) {} }
+    var el = root && root.querySelector('.ds-ach-card[data-key="' + CSS.escape(key) + '"]');
+    if (el && !reducedMotion()) {
+      el.classList.add('out');
+      setTimeout(function () { el.remove(); render(); }, 280);
+    } else { if (el) el.remove(); render(); }
+  }
+
+  function closeAll() {
+    var ids = cards.filter(function (c) { return c.id; }).length;
+    cards.slice().forEach(function (c) { if (!c.id) close(c.key, true); });
+    if (ids) {
+      var d = client();
+      if (d) d.rpc('dismiss_badge_unlock', { p_id: null }).then(function () {}, function () {});
+      cards.filter(function (c) { return c.id; }).forEach(function (c) {
+        try { localStorage.setItem(BUS_KEY, c.key + '|' + Date.now()); } catch (e) {}
       });
+      cards = cards.filter(function (c) { return !c.id; });
     }
+    render();
+  }
 
-    var gravity = 0.42 * dpr;
-    var raf = null;
-    function frame() {
-      ctx.clearRect(0, 0, W, H);
-      var alive = 0;
-      for (var i = 0; i < pieces.length; i++) {
-        var p = pieces[i];
-        p.vy += gravity;
-        p.vx *= 0.995;
-        p.x += p.vx;
-        p.y += p.vy;
-        p.rot += p.vr;
-        p.life++;
-        if (p.y < H + 40 * dpr) alive++;
-        var fade = p.life > 90 ? Math.max(0, 1 - (p.life - 90) / 45) : 1;
-        ctx.save();
-        ctx.globalAlpha = fade;
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rot);
-        ctx.fillStyle = p.color;
-        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-        ctx.restore();
-      }
-      if (alive > 0) { raf = requestAnimationFrame(frame); }
-      else { ctx.clearRect(0, 0, W, H); window.removeEventListener('resize', size); }
-    }
-    raf = requestAnimationFrame(frame);
-
-    return function stop() {
-      if (raf) cancelAnimationFrame(raf);
-      window.removeEventListener('resize', size);
+  function fromServer(u) {
+    return {
+      key: 's:' + u.id, id: u.id,
+      name: u.badge_name || String(u.badge_slug || 'Badge').replace(/_/g, ' '),
+      icon: u.badge_icon, gem_name: u.gem_name, gem_color: u.gem_color || u.badge_color,
+      xp_reward: u.xp_reward, desc: u.badge_description || ''
     };
   }
 
-  function showOne(item, done) {
-    injectStyles();
-    var calm = reducedMotion();
+  function loadServer() {
+    var d = client();
+    if (!d || !d.auth) { serverLoaded = true; flushHeld(); return; }
+    d.auth.getSession().then(function (s) {
+      if (!s || !s.data || !s.data.session) { serverLoaded = true; flushHeld(); return; }
+      return d.rpc('drain_badge_unlocks').then(function (res) {
+        var list = (res && res.data && res.data.unlocks) || [];
+        list.forEach(function (u) { add(fromServer(u)); });
+      });
+    }).then(function () {}, function () {}).then(function () {
+      serverLoaded = true; flushHeld(); render();
+    });
+  }
 
-    var gemColor = item.gem_color || GOLD;
-    var iconCls = item.icon || 'ti-award';
-
-    var scrim = document.createElement('div');
-    scrim.className = 'ds-bc-scrim';
-    if (calm) scrim.classList.add('ds-bc-nomotion');
-    scrim.setAttribute('role', 'alertdialog');
-    scrim.setAttribute('aria-live', 'assertive');
-    scrim.setAttribute('aria-label', 'Badge unlocked: ' + (item.name || 'badge'));
-
-    var canvas = null, stopConfetti = null;
-    if (!calm) {
-      canvas = document.createElement('canvas');
-      canvas.className = 'ds-bc-canvas';
-      scrim.appendChild(canvas);
-    }
-
-    var card = document.createElement('div');
-    card.className = 'ds-bc-card';
-    if (calm) card.classList.add('ds-bc-in');
-
-    var gemLine = item.gem_name
-      ? '<div class="ds-bc-sub">' + escapeHtml(item.gem_name) + ' tier</div>' : '';
-    var xpLine = (item.xp_reward > 0)
-      ? '<div class="ds-bc-xp">+' + Number(item.xp_reward).toLocaleString() + ' XP</div>' : '';
-
-    card.innerHTML =
-      '<div class="ds-bc-gem" style="background:radial-gradient(circle at 35% 30%,' +
-        hexA(gemColor, 0.45) + ',' + hexA(gemColor, 0.12) + ');color:' + gemColor + ';">' +
-        '<i class="ti ' + escapeAttr(iconCls) + '"></i></div>' +
-      '<div class="ds-bc-kicker">Badge Unlocked</div>' +
-      '<div class="ds-bc-name">' + escapeHtml(item.name || 'New badge') + '</div>' +
-      gemLine + xpLine +
-      '<div class="ds-bc-dismiss">Tap anywhere to continue</div>';
-
-    scrim.appendChild(card);
-    document.body.appendChild(scrim);
-
-    requestAnimationFrame(function () {
-      scrim.classList.add('ds-bc-in');
-      card.classList.add('ds-bc-in');
-      if (!calm && canvas) {
-        stopConfetti = confetti(canvas, [gemColor, GOLD, '#ffffff', '#7dd3fc', '#f9a8d4']);
+  function flushHeld() {
+    held.forEach(function (c) {
+      add(c);
+      if (!c.id && has(c.key)) {
+        var loc = readLocal();
+        if (!loc.some(function (x) { return x.key === c.key; })) { loc.push(c); writeLocal(loc); }
       }
     });
-
-    var closed = false;
-    function close() {
-      if (closed) return;
-      closed = true;
-      clearTimeout(timer);
-      if (stopConfetti) stopConfetti();
-      scrim.classList.remove('ds-bc-in');
-      card.classList.remove('ds-bc-in');
-      setTimeout(function () {
-        if (scrim.parentNode) scrim.parentNode.removeChild(scrim);
-        done();
-      }, calm ? 0 : 260);
-    }
-
-    scrim.addEventListener('click', close);
-    document.addEventListener('keydown', function onKey(ev) {
-      if (ev.key === 'Escape') { document.removeEventListener('keydown', onKey); close(); }
-    });
-
-    // Long enough to read and enjoy, short enough not to trap anyone.
-    var timer = setTimeout(close, calm ? 3200 : 5200);
+    held = [];
+    render();
   }
 
-  function pump() {
-    if (showing) return;
-    var next = queue.shift();
-    if (!next) return;
-    showing = true;
-    showOne(next, function () {
-      showing = false;
-      // Small gap so two unlocks in a row read as two events, not a flicker.
-      setTimeout(pump, 260);
-    });
-  }
-
-  function hexA(hex, alpha) {
-    var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(hex).trim());
-    if (!m) return 'rgba(240,198,116,' + alpha + ')';
-    return 'rgba(' + parseInt(m[1], 16) + ',' + parseInt(m[2], 16) + ',' +
-           parseInt(m[3], 16) + ',' + alpha + ')';
-  }
-
-  function escapeHtml(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-  function escapeAttr(s) {
-    return String(s == null ? '' : s).replace(/[^a-zA-Z0-9_-]/g, '');
-  }
-
-  /* items: [{ name, icon, gem_name, gem_color, xp_reward }] */
+  /* items: [{ id?, name, icon, gem_name, gem_color, xp_reward, description? }] */
   window.DSBadgeCelebrate = function (items) {
     if (!items) return;
     if (!Array.isArray(items)) items = [items];
-    items.forEach(function (it) { if (it) queue.push(it); });
-    if (document.body) pump();
-    else document.addEventListener('DOMContentLoaded', pump);
+    items.forEach(function (it) {
+      if (!it || !it.name) return;
+      var c = it.id ? fromServer({ id: it.id, badge_name: it.name, badge_icon: it.icon, gem_name: it.gem_name,
+                                   gem_color: it.gem_color, xp_reward: it.xp_reward, badge_description: it.description })
+                    : { key: '', name: it.name, icon: it.icon, gem_name: it.gem_name, gem_color: it.gem_color,
+                        xp_reward: it.xp_reward, desc: it.description || '' };
+      if (!c.id) c.key = looseKey(c);
+      held.push(c);
+    });
+    // Wait for the server list so the same unlock never shows twice; the
+    // server answer usually lands well inside this window.
+    if (serverLoaded) start(flushHeld); else setTimeout(function () { if (held.length && !serverLoaded) start(flushHeld); }, 4000);
   };
+  window.DSAchievements = { closeAll: closeAll, refresh: loadServer };
+
+  // Another tab closed a card: close it here too.
+  window.addEventListener('storage', function (e) {
+    if (e.key !== BUS_KEY || !e.newValue) return;
+    var key = e.newValue.split('|')[0];
+    if (has(key)) close(key, false);
+  });
+
+  function start(fn) {
+    if (document.body) fn(); else document.addEventListener('DOMContentLoaded', fn);
+  }
+  start(function () {
+    readLocal().forEach(add);
+    render();
+    // Page scripts create their Supabase client during load; ask once it exists.
+    if (document.readyState === 'complete') loadServer();
+    else window.addEventListener('load', function () { setTimeout(loadServer, 50); });
+  });
 })();
