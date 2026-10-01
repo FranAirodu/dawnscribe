@@ -1,6 +1,7 @@
 /* ── DAWNSCRIBE MONTHLY BACKGROUND ─────────────────────────────────
-   The drifting particle background that changes theme every two months
-   (Frost, Ember Dawn, Verdant, Solstice, Crimson Dusk, Celestial).
+   The drifting particle background that changes theme every month:
+   Jan Frost, Feb Thaw, Mar Blossom, Apr Ember Dawn, May Verdant, Jun Tidewater,
+   Jul Solstice, Aug Harvest, Sep Crimson Dusk, Oct Twilight Rose, Nov Celestial, Dec Aurora.
 
    ONE copy lives here, and it runs on EVERY page. nav.js and accent.js both
    load this file (whichever runs first wins; the guard stops a double run).
@@ -23,7 +24,13 @@
   var SOLSTICE  = { dark:'255,210,60',  count:80, spd:[0.12,0.25], sz:[0.4,2.2], drift:0.08, glows:[{x:0.5,y:0.15,r:520,c:'255,200,50'},{x:0.85,y:0.6,r:440,c:'45,212,191'},{x:0.15,y:0.7,r:360,c:'255,180,40'}] };
   var CRIMSON   = { dark:'255,90,100',  count:62, spd:[0.05,0.13], sz:[0.6,3.0], drift:0.07, glows:[{x:0.2,y:0.6,r:480,c:'200,40,60'},{x:0.75,y:0.2,r:400,c:'255,80,80'},{x:0.5,y:0.9,r:340,c:'220,60,80'}] };
   var CELESTIAL = { dark:'190,130,255', count:90, spd:[0.04,0.11], sz:[0.3,2.0], drift:0.04, glows:[{x:0.35,y:0.4,r:500,c:'150,80,255'},{x:0.8,y:0.8,r:420,c:'100,40,200'},{x:0.1,y:0.7,r:360,c:'200,120,255'}] };
-  var THEMES = [FROST, FROST, EMBER, EMBER, VERDANT, VERDANT, SOLSTICE, SOLSTICE, CRIMSON, CRIMSON, CELESTIAL, CELESTIAL];
+  var THAW      = { dark:'170,240,225', count:66, spd:[0.07,0.16], sz:[0.5,2.6], drift:0.08, glows:[{x:0.2,y:0.3,r:480,c:'110,210,200'},{x:0.8,y:0.7,r:400,c:'150,225,240'},{x:0.5,y:0.55,r:320,c:'90,190,170'}] };
+  var BLOSSOM   = { dark:'255,185,215', count:72, spd:[0.06,0.15], sz:[0.6,2.8], drift:0.16, glows:[{x:0.75,y:0.25,r:470,c:'255,140,190'},{x:0.2,y:0.75,r:400,c:'240,120,170'},{x:0.5,y:0.5,r:320,c:'255,190,220'}] };
+  var TIDEWATER = { dark:'110,200,255', count:74, spd:[0.08,0.17], sz:[0.5,2.4], drift:0.12, glows:[{x:0.5,y:0.85,r:520,c:'30,120,220'},{x:0.15,y:0.35,r:400,c:'20,160,200'},{x:0.85,y:0.25,r:330,c:'80,190,255'}] };
+  var HARVEST   = { dark:'255,190,110', count:70, spd:[0.07,0.16], sz:[0.5,2.7], drift:0.12, glows:[{x:0.25,y:0.7,r:480,c:'200,120,40'},{x:0.8,y:0.35,r:400,c:'170,90,30'},{x:0.5,y:0.2,r:320,c:'230,160,70'}] };
+  var TWILIGHT  = { dark:'240,150,210', count:76, spd:[0.05,0.13], sz:[0.4,2.4], drift:0.07, glows:[{x:0.3,y:0.25,r:480,c:'190,70,150'},{x:0.75,y:0.75,r:420,c:'130,60,170'},{x:0.5,y:0.5,r:330,c:'230,110,170'}] };
+  var AURORA    = { dark:'150,255,200', count:84, spd:[0.04,0.12], sz:[0.3,2.2], drift:0.05, glows:[{x:0.2,y:0.25,r:500,c:'40,220,150'},{x:0.75,y:0.35,r:440,c:'140,80,255'},{x:0.5,y:0.8,r:360,c:'60,200,220'}] };
+  var THEMES = [FROST, THAW, BLOSSOM, EMBER, VERDANT, TIDEWATER, SOLSTICE, HARVEST, CRIMSON, TWILIGHT, CELESTIAL, AURORA];
 
   function start() {
     if (!document.body) return;
