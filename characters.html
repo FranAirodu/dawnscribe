@@ -290,6 +290,15 @@
     .aura-pick{font-size:13px;color:var(--text2,#9b9bc0);margin:10px 0 2px;min-height:18px;}
     .aura-pick b{color:var(--text,#f1f0ff);}
     .aura-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .spend-intro{font-size:14px;color:var(--text2,#9b9bc0);margin:4px 0 6px;line-height:1.6;}
+    .spend-intro i{color:var(--accent);}
+    .spend-intro a{color:var(--accent);font-weight:700;text-decoration:none;}
+    .spend-link{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 18px;padding:11px 14px;border-radius:12px;text-decoration:none;
+      font-size:13.5px;font-weight:700;color:var(--text,#f1f0ff);background:rgba(var(--aura-rgb,45,212,191),.08);
+      border:1px solid rgba(var(--aura-rgb,45,212,191),.3);}
+    .spend-link i{color:var(--accent);}
+    .spend-link span{color:var(--accent);font-weight:700;margin-left:auto;}
+    .spend-link:hover{background:rgba(var(--aura-rgb,45,212,191),.14);}
     .flame.is-default::before{content:'';position:absolute;top:-3px;right:-3px;width:14px;height:14px;border-radius:50%;
       background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.12));
       -webkit-mask:none;box-shadow:inset 0 0 0 3px #2dd4bf;}
@@ -377,9 +386,11 @@
   var TEASERS = [];        // characters not open yet: only "after whom" is known
   var OPEN = null;         // the character being looked at
   // Tabs by WHAT you collect. Remembered, and reachable as characters.html#banners.
-  var TAB = 'characters';
-  try { var _h = (location.hash || '').replace('#', ''); if (['characters','banners','aura'].indexOf(_h) >= 0) TAB = _h;
-        else if (localStorage.getItem('ds_collection_tab')) TAB = localStorage.getItem('ds_collection_tab'); } catch(e) {}
+  // Spend Embers is the front door: every way to use Embers in one place.
+  // A #hash link still opens a specific tab.
+  var TABS = ['spend','characters','banners','aura'];
+  var TAB = 'spend';
+  try { var _h = (location.hash || '').replace('#', ''); if (TABS.indexOf(_h) >= 0) TAB = _h; } catch(e) {}
   // Keep the top bar's Ember count honest after any roll or pledge. The aura
   // roll does not return a balance, so ask for it when none is given.
   async function refreshEmbers(bal){
@@ -394,7 +405,7 @@
   // A link to characters.html#banners from this same page switches tab too.
   window.addEventListener('hashchange', function(){
     var h = (location.hash || '').replace('#', '');
-    if (['characters','banners','aura'].indexOf(h) >= 0 && h !== TAB) setTab(h);
+    if (TABS.indexOf(h) >= 0 && h !== TAB) setTab(h);
   });
   window.setTab = function(t){ if (t !== 'aura' && AURA_PICK) { AURA_PICK = null; auraPreviewRevert(); } TAB = t; OPEN = null; try { localStorage.setItem('ds_collection_tab', t); history.replaceState(null, '', '#' + t); } catch(e) {} render(); };
   // Banners
@@ -584,20 +595,16 @@
 
     var html = '';
 
-    // 1. Opening now: the thing everyone can do together, first.
-    if (opening.length) {
-      html += sectionHead('ti-flame', 'Opening now',
-        'The whole community fills the bar together. Everyone who gave Embers gets the character.')
-        + opening.map(openingCard).join('');
-    }
+    // Opening now and the character roll live on the Spend Embers tab.
+    if (opening.length) html += spendLink('Help open ' + (opening.length === 1 ? esc(opening[0].name) : opening.length + ' characters') + ' or win one');
 
     // 2. Your crew.
     html += sectionHead('ti-users', 'Your crew' + (mine.length ? ' <span class="cnt">' + mine.length + '</span>' : ''),
       mine.length ? 'Tap one to talk, see their poses, and make them your character.' : '');
     html += mine.length
       ? '<div class="roster">' + mine.map(cardHtml).join('') + '</div>'
-      : '<div class="empty-crew"><i class="ti ti-user-heart"></i><div>Nobody yet. Help open a character above, '
-        + 'or try the randomizer below.</div></div>';
+      : '<div class="empty-crew"><i class="ti ti-user-heart"></i><div>Nobody yet. Help open a character or win one on the '
+        + '<a href="#spend" onclick="setTab(\'spend\');return false;" style="color:var(--accent);">Spend Embers</a> tab.</div></div>';
 
     // 3. Still to come: silhouettes only. Names and art stay on the server
     //    until each one steps forward.
@@ -613,11 +620,41 @@
         + '</div>';
     }
 
-    html += '<div class="aura-card">'
-      + '<div class="aura-head"><i class="ti ti-dice-5"></i> Win a character</div>'
-      + '<div class="aura-sub">DawnScribe\u2019s own characters, never sold, only won with Embers.</div>'
-      + randRow('character', 'Characters', 'ti-user-heart', 'Winners join your crew.')
-      + '<div class="aura-note" id="rand-note"></div></div>';
+    return html;
+  }
+
+  // ── SPEND EMBERS TAB ──────────────────────────────────────────
+  /* Every way to spend Embers, in one place: open a character with the
+     community, then roll for a character, a banner or an aura. Owning and
+     arranging what you won stays on the other tabs. */
+  function spendLink(label){
+    return '<a class="spend-link" href="#spend" onclick="setTab(\'spend\');return false;">'
+      + '<i class="ti ti-flame"></i> ' + label + ' <span>on Spend Embers \u2192</span></a>';
+  }
+  function spendHtml(){
+    var opening = CHARS.filter(isOpening);
+    var auraDone = allAurasOwned();
+    var html = '<div class="spend-intro"><i class="ti ti-flame"></i> Everything you can do with your Embers. '
+      + 'What you win lands in <a href="#characters" onclick="setTab(\'characters\');return false;">Characters</a>, '
+      + '<a href="#banners" onclick="setTab(\'banners\');return false;">Banners</a> or '
+      + '<a href="#aura" onclick="setTab(\'aura\');return false;">Aura</a>.</div>';
+    if (opening.length) {
+      html += sectionHead('ti-users-group', 'Open a character together',
+        'The whole community fills the bar together. Everyone who gave Embers gets the character.')
+        + opening.map(openingCard).join('');
+    }
+    html += sectionHead('ti-dice-5', 'Win something', 'DawnScribe\u2019s own collectibles, never sold, only won with Embers. Every roll is something you don\u2019t have yet.')
+      + '<div class="aura-card">'
+      + randRow('character', 'A character', 'ti-user-heart', 'Winners join your crew.')
+      + randRow('banner', 'A profile banner', 'ti-photo', 'Wear it on your profile.')
+      + '<div class="rand-row">'
+      +   '<div class="rand-info"><div class="rand-name"><i class="ti ti-color-swatch"></i> An aura colour</div>'
+      +   '<div class="aura-sub" style="margin:2px 0 0;">' + (auraDone ? 'You have them all, for now. New ones will wake this button up.'
+             : 'A new colour for the whole site, just for you.') + '</div></div>'
+      +   '<button class="aura-roll" id="aura-roll" onclick="rollAura()"' + (auraDone ? ' disabled' : '') + '>'
+      +   '<i class="ti ti-dice-5"></i> Roll &middot; ' + AURA_COST + ' Embers</button>'
+      + '</div>'
+      + '<div class="aura-note" id="rand-note"></div><div class="aura-note" id="aura-note"></div></div>';
     return html;
   }
 
@@ -626,8 +663,8 @@
       return '<button class="ctab' + (TAB === key ? ' on' : '') + '" onclick="setTab(\'' + key + '\')"'
         + ' role="tab" aria-selected="' + (TAB === key) + '"><i class="ti ' + icon + '"></i> ' + label + '</button>';
     };
-    return '<div class="ctabs" role="tablist">' + t('characters', 'ti-users', 'Characters')
-      + t('banners', 'ti-photo', 'Banners') + t('aura', 'ti-flame', 'Aura') + '</div>';
+    return '<div class="ctabs" role="tablist">' + t('spend', 'ti-flame', 'Spend Embers') + t('characters', 'ti-users', 'Characters')
+      + t('banners', 'ti-photo', 'Banners') + t('aura', 'ti-color-swatch', 'Aura') + '</div>';
   }
 
   function render(){
@@ -635,7 +672,8 @@
     var html = tabsHtml();
     if (TAB === 'banners') html += bannersHtml();
     else if (TAB === 'aura') html += auraHtml();
-    else html += charactersHtml();
+    else if (TAB === 'characters') html += charactersHtml();
+    else html += spendHtml();
     document.getElementById('view').innerHTML = html;
   }
 
@@ -705,11 +743,7 @@
   function bannersHtml(){
     var list = bannerList();
     var shown = list.slice(0, BSHOWN);
-    return '<div class="aura-card">'
-      + '<div class="aura-head"><i class="ti ti-dice-5"></i> Win a banner</div>'
-      + '<div class="aura-sub">DawnScribe\u2019s own banners, never sold, only won with Embers.</div>'
-      + randRow('banner', 'Profile banners', 'ti-photo', 'New ones appear below.')
-      + '<div class="aura-note" id="rand-note"></div></div>'
+    return spendLink('Win a new banner')
       + (BANNERS.length ? rotationHtml() : '')
       + sectionHead('ti-photo', 'Your banners', BANNERS.length ? 'Tap a banner to put it on your profile. Tap the heart to keep it in Favourites.' : '')
       + (BANNERS.length
@@ -730,7 +764,8 @@
             + '<div class="bn-grid" id="bn-grid">' + (shown.length ? shown.map(bannerCard).join('') : emptyBannersMsg()) + '</div>'
             + (list.length > shown.length
                 ? '<div style="text-align:center;margin-top:14px;"><button class="aura-reset" onclick="BSHOWN+=24;render()">Show more</button></div>' : '')
-          : '<div class="empty-crew"><i class="ti ti-photo"></i><div>No banners yet. Try the roll above.</div></div>');
+          : '<div class="empty-crew"><i class="ti ti-photo"></i><div>No banners yet. Win one on the '
+            + '<a href="#spend" onclick="setTab(\'spend\');return false;" style="color:var(--accent);">Spend Embers</a> tab.</div></div>');
   }
   // Searching redraws only the grid, so the search box keeps its cursor.
   window.renderBannersOnly = function(){
@@ -854,10 +889,7 @@
       + '<div class="aura-actions">'
       +   '<button class="aura-roll" onclick="acceptAura()"' + (canAccept ? '' : ' disabled') + '>'
       +     '<i class="ti ti-check"></i> Accept aura colour</button>'
-      +   (allAurasOwned()
-            ? '<button class="aura-reset" id="aura-roll" disabled title="You have every aura for now. This wakes up when new ones arrive.">'
-              + '<i class="ti ti-check"></i> You have them all, for now</button>'
-            : '<button class="aura-reset" id="aura-roll" onclick="rollAura()"><i class="ti ti-wand"></i> Roll a new aura &middot; ' + AURA_COST + ' Embers</button>')
+      +   (allAurasOwned() ? '' : '<button class="aura-reset" onclick="setTab(\'spend\')"><i class="ti ti-dice-5"></i> Win a new aura</button>')
       +   (canAccept ? '<button class="aura-reset" onclick="cancelAuraPreview()"><i class="ti ti-x"></i> Cancel preview</button>' : '')
       +   (cur !== '#2dd4bf' && pick !== '#2dd4bf' ? '<button class="aura-reset" onclick="pickAura(\'#2dd4bf\')">Back to default teal</button>' : '')
       + '</div>'
@@ -1004,7 +1036,8 @@
     refreshEmbers(d.balance);
     var note = document.getElementById('rand-note');
     if (note) note.innerHTML = 'You won <b>' + esc(d.name || '') + '</b>. '
-      + (kind === 'banner' ? '<a href="profile.html" style="color:var(--accent);">Set it on your profile</a>.' : 'It is in your collection above.');
+      + (kind === 'banner' ? '<a href="#banners" onclick="setTab(\'banners\');return false;" style="color:var(--accent);">See it in Banners</a> to put it on your profile.'
+                          : '<a href="#characters" onclick="setTab(\'characters\');return false;" style="color:var(--accent);">Meet them in Characters</a>.');
   };
 
   window.setAura = async function(hex){
@@ -1120,11 +1153,14 @@
     await dsRollReveal({
       hex: d.hex, label: d.label || info.name || 'A new aura', rare: !!info.rare,
       kicker: 'Aura unlocked',
-      sub: 'It\u2019s selected below. Press <b>Accept aura colour</b> to wear it.'
+      sub: 'It\u2019s previewing now on the Aura tab. Press <b>Accept aura colour</b> to wear it.'
     });
     // The new flame is picked (and dancing) but not applied: the same
     // tap-then-Accept rule as every other aura change.
     AURA_PICK = d.hex || null;
+    TAB = 'aura';
+    try { history.replaceState(null, '', '#aura'); } catch(e) {}
+    if (AURA_PICK) auraPreviewApply(AURA_PICK);
     await load();
     refreshEmbers();
     var bt = document.querySelector('.flame.picked');
