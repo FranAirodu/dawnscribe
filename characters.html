@@ -331,6 +331,17 @@
     .np-accept span{flex:1;min-width:160px;font-size:13.5px;color:var(--text2,#9b9bc0);}
     .np-accept b{color:var(--text,#f1f0ff);}
     .np-accept i{color:var(--accent);}
+    .np-blocks{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px;}
+    @media (max-width:900px){.np-blocks{grid-template-columns:1fr;}}
+    .np-block{background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.08));border-radius:14px;padding:16px;min-width:0;}
+    .np-block-head{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;color:var(--text,#eee);margin-bottom:6px;}
+    .np-block-head i{color:var(--accent);}
+    .np-block-head span{margin-left:auto;font-weight:400;font-size:12px;color:var(--text3,#8a8aa8);max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .np-sub-h{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;color:var(--text2,#b5b5d0);margin:14px 0 8px;}
+    .np-sub-h .cnt{font-size:11px;padding:1px 7px;border-radius:8px;background:rgba(255,255,255,.07);}
+    .np-sub-note{font-size:12px;color:var(--text3,#8a8aa8);margin:-4px 0 8px;}
+    .np-block .np-fonts{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));}
+    @media (min-width:901px){.np-sticky-prev{position:sticky;top:70px;z-index:6;}}
     .np-target{display:inline-flex;margin-top:14px;border:1px solid var(--border,rgba(255,255,255,.1));border-radius:10px;overflow:hidden;}
     .np-target button{background:none;border:none;color:var(--text2,#9b9bc0);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;display:flex;gap:6px;align-items:center;}
     .np-target button.on{background:rgba(var(--aura-rgb,45,212,191),.14);color:var(--accent);}
@@ -786,9 +797,8 @@
     fonts.forEach(function(f){ DSNameplate.ensureFont(f.family); });
     var rollable = NP.fonts.filter(function(f){ return f.source === 'roll'; }).length;
     var rolledHere = fonts.filter(function(f){ return f.source === 'roll'; }).length;
-    var owned = npOwnedColors(t, npTgtColorFont());
-    var isName = NP_TGT === 'name';
     var paidTotal = NP.colors.filter(function(c){ return !c.free; }).length;
+    var free = NP.colors.filter(function(c){ return c.free; });
 
     var titleChips = NP.titles.map(function(x){
       var st = x.style || {}, f = npFont(st.font) || {};
@@ -797,52 +807,62 @@
         + (x.id === NP.active ? '<span class="np-wear">Wearing</span>' : '') + '</button>';
     }).join('');
 
-    var fontTile = function(f){
-      var on = f.key === npTgtFont();
-      var how = f.source === 'starter' ? 'Starter' : f.source === 'tag' ? 'From ' + esc(f.tag) : 'Rolled';
-      var cols = npOwnedColors(t, f.key).length;
-      return '<button class="np-font' + (on ? ' on' : '') + '" onclick="npPickFont(\'' + esc(f.key) + '\')" title="' + esc(f.label) + '">' + npStar('font', f.key)
-        + '<span class="np-font-name" style="font-family:\'' + esc(f.family) + '\',serif;font-size:' + Math.round(22 * (f.size || 1)) + 'px;">' + esc(isName ? name : t.title) + '</span>'
-        + '<span class="np-font-label">' + esc(f.label) + ' <em>' + how + (cols ? ' · ' + cols + ' colour' + (cols === 1 ? '' : 's') : '') + '</em></span></button>';
-    };
-    var swatch = function(hex, label){
-      var on = (npTgtColor() || null) === (hex || null);
-      return '<button class="np-sw' + (on ? ' on' : '') + '" onclick="npPickColor(' + (hex ? '\'' + esc(hex) + '\'' : 'null') + ')" aria-label="' + esc(label) + '">'
-        + '<span style="background:' + esc(hex || (isName ? AURA.hex : '#e6e6ee')) + ';"></span><em>' + esc(label) + '</em>' + (hex ? npStar('color', hex) : '') + '</button>';
-    };
-    var free = NP.colors.filter(function(c){ return c.free; });
-    var curFont = npFont(npTgtColorFont()) || {};
-    var plainTile = '<button class="np-font' + (NP_PICK.tfont ? '' : ' on') + '" onclick="npPickFont(null)">'
-      + '<span class="np-font-name" style="font-family:Lato,sans-serif;font-size:15px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;">' + esc(t.title) + '</span>'
-      + '<span class="np-font-label">Plain <em>Default</em></span></button>';
+    /* One block per line of the nameplate: 'name' or 'title'. Each has its
+       own fonts and colours, both on screen at once. */
+    function styleBlock(tgt){
+      var prev = NP_TGT; NP_TGT = tgt;
+      var isName = tgt === 'name';
+      var owned = npOwnedColors(t, npTgtColorFont());
+      var curFont = npFont(npTgtColorFont()) || {};
+      var fontTile = function(f){
+        var on = f.key === npTgtFont();
+        var how = f.source === 'starter' ? 'Starter' : f.source === 'tag' ? 'From ' + esc(f.tag) : 'Rolled';
+        var cols = npOwnedColors(t, f.key).length;
+        return '<button class="np-font' + (on ? ' on' : '') + '" onclick="npPickFont(\'' + esc(f.key) + '\',\'' + tgt + '\')" title="' + esc(f.label) + '">' + npStar('font', f.key)
+          + '<span class="np-font-name" style="font-family:\'' + esc(f.family) + '\',serif;font-size:' + Math.round(22 * (f.size || 1)) + 'px;">' + esc(isName ? name : t.title) + '</span>'
+          + '<span class="np-font-label">' + esc(f.label) + ' <em>' + how + (cols ? ' · ' + cols + ' colour' + (cols === 1 ? '' : 's') : '') + '</em></span></button>';
+      };
+      var swatch = function(hex, label){
+        var on = (npTgtColor() || null) === (hex || null);
+        return '<button class="np-sw' + (on ? ' on' : '') + '" onclick="npPickColor(' + (hex ? '\'' + esc(hex) + '\'' : 'null') + ',\'' + tgt + '\')" aria-label="' + esc(label) + '">'
+          + '<span style="background:' + esc(hex || (isName ? AURA.hex : '#e6e6ee')) + ';"></span><em>' + esc(label) + '</em>' + (hex ? npStar('color', hex) : '') + '</button>';
+      };
+      var plainTile = '<button class="np-font' + (NP_PICK.tfont ? '' : ' on') + '" onclick="npPickFont(null,\'title\')">'
+        + '<span class="np-font-name" style="font-family:Lato,sans-serif;font-size:15px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;">' + esc(t.title) + '</span>'
+        + '<span class="np-font-label">Plain <em>Default</em></span></button>';
+      var colourNote = !isName && !NP_PICK.tfont ? ' Plain titles use the colours of your name font.' : '';
+      var h = '<div class="np-block" id="np-block-' + tgt + '">'
+        + '<div class="np-block-head"><i class="ti ' + (isName ? 'ti-user' : 'ti-feather') + '"></i> ' + (isName ? 'Your name' : 'Your title')
+        +   '<span>' + esc(isName ? name : t.title) + '</span></div>'
+        + '<div class="np-sub-h"><i class="ti ti-typography"></i> Font <span class="cnt">' + fonts.length + '</span></div>'
+        + '<div class="np-fonts">' + (isName ? '' : plainTile) + npFavFirst(fonts, 'font', function(f){ return f.key; }).map(fontTile).join('') + '</div>'
+        + '<div class="np-sub-h"><i class="ti ti-palette"></i> Colour for ' + esc(curFont.label || 'this font') + ' <span class="cnt">' + (owned.length + free.length + 1) + '</span></div>'
+        + '<div class="np-sub-note">Colours belong to this font on this title. White and your aura are always free. ' + owned.length + ' of ' + paidTotal + ' rolled.' + colourNote + '</div>'
+        + '<div class="np-roll-row"><button class="aura-roll" id="np-roll-color-' + tgt + '" onclick="npRollColor(\'' + tgt + '\')"' + (owned.length < paidTotal ? '' : ' disabled') + '>'
+        +   '<i class="ti ti-dice-5"></i> Roll a colour for ' + esc(curFont.label || 'this font') + ' &middot; ' + NP.color_cost + ' Embers</button></div>'
+        + '<div class="np-swatches">' + swatch(null, isName ? 'My aura' : 'Default') + free.map(function(c){ return swatch(c.hex, c.label); }).join('')
+        +   npFavFirst(owned, 'color', function(h){ return h; }).map(function(h){ var c = npColor(h); return c ? swatch(c.hex, c.label) : ''; }).join('') + '</div>'
+        + '</div>';
+      NP_TGT = prev;
+      return h;
+    }
 
     return sectionHead('ti-feather', 'Pick a title', 'Each title has its own fonts and colours. Your nameplate shows the title you’re wearing.')
       + '<div class="np-titles">' + titleChips + '</div>'
-      + '<div class="aura-card">'
+      + '<div class="aura-card np-sticky-prev">'
       + '<div class="aura-head"><i class="ti ti-typography"></i> ' + esc(t.title) + (wearing ? ' <span class="np-wear">Wearing</span>' : '') + '</div>'
       + '<div class="np-preview" id="np-preview">' + DSNameplate.html(npPreviewPlate(), { size: 'lg' }) + '</div>'
       + '<div class="np-actions">'
       +   '<button class="aura-roll" onclick="npSave()"' + (npDirty() ? '' : ' disabled') + '><i class="ti ti-check"></i> Accept</button>'
       +   (npDirty() ? '<button class="aura-reset" onclick="npUndo()">Undo</button>' : '')
       +   (!wearing ? '<button class="aura-reset" onclick="npWear()"><i class="ti ti-feather"></i> Wear this title</button>' : '')
-      + '</div>'
-      + '<div class="np-target" role="tablist" aria-label="What to style">'
-      +   '<button class="' + (isName ? 'on' : '') + '" onclick="npSetTarget(\'name\')"><i class="ti ti-user"></i> Style my name</button>'
-      +   '<button class="' + (isName ? '' : 'on') + '" onclick="npSetTarget(\'title\')"><i class="ti ti-feather"></i> Style my title</button>'
       + '</div></div>'
 
-      + sectionHead('ti-typography', (isName ? 'Name fonts on ' : 'Title fonts on ') + esc(t.title) + ' <span class="cnt">' + fonts.length + '</span>',
-          'Rolled fonts only work on this title. ' + rolledHere + ' of ' + rollable + ' rolled here.')
+      + sectionHead('ti-typography', 'Fonts on ' + esc(t.title) + ' <span class="cnt">' + fonts.length + '</span>',
+          'Every font you own on this title works for your name and your title. Rolled fonts only work on this title. ' + rolledHere + ' of ' + rollable + ' rolled here.')
       + '<div class="np-roll-row"><button class="aura-roll" id="np-roll-font" onclick="npRollFont()"' + (rolledHere < rollable ? '' : ' disabled') + '>'
       +   '<i class="ti ti-dice-5"></i> Roll a font for ' + esc(t.title) + ' &middot; ' + NP.font_cost + ' Embers</button></div>'
-      + '<div class="np-fonts">' + (isName ? '' : plainTile) + npFavFirst(fonts, 'font', function(f){ return f.key; }).map(fontTile).join('') + '</div>'
-
-      + sectionHead('ti-palette', 'Colours for ' + esc(curFont.label || 'this font') + ' <span class="cnt">' + (owned.length + free.length + 1) + '</span>',
-          'Colours belong to this font on this title. White and your aura are always free. ' + owned.length + ' of ' + paidTotal + ' rolled.')
-      + '<div class="np-roll-row"><button class="aura-roll" id="np-roll-color" onclick="npRollColor()"' + (owned.length < paidTotal ? '' : ' disabled') + '>'
-      +   '<i class="ti ti-dice-5"></i> Roll a colour for ' + esc(curFont.label || 'this font') + ' &middot; ' + NP.color_cost + ' Embers</button></div>'
-      + '<div class="np-swatches">' + swatch(null, isName ? 'My aura' : 'Default') + free.map(function(c){ return swatch(c.hex, c.label); }).join('')
-      +   npFavFirst(owned, 'color', function(h){ return h; }).map(function(h){ var c = npColor(h); return c ? swatch(c.hex, c.label) : ''; }).join('') + '</div>'
+      + '<div class="np-blocks">' + styleBlock('name') + styleBlock('title') + '</div>'
       + npRotationHtml()
       + (npDirty() ? '<div class="np-accept"><span><i class="ti ti-pencil"></i> Unsaved changes to <b>' + esc(t.title) + '</b></span>'
           + '<button class="aura-reset" onclick="npUndo()">Undo</button>'
@@ -905,7 +925,8 @@
     render();
   };
   window.npPickTitle = function(id){ NP_T = id; npResetPick(); render(); };
-  window.npPickFont = function(key){
+  window.npPickFont = function(key, tgt){
+    if (tgt) NP_TGT = tgt;
     var t = npTitle(NP_T);
     var keep = function(c, fontKey){ return c && ((npColor(c) || {}).free || npOwnedColors(t, fontKey).indexOf(c) >= 0) ? c : null; };
     if (NP_TGT === 'name') {
@@ -918,7 +939,7 @@
     }
     render();
   };
-  window.npPickColor = function(hex){ if (NP_TGT === 'name') NP_PICK.color = hex; else NP_PICK.tcolor = hex; render(); };
+  window.npPickColor = function(hex, tgt){ if (tgt) NP_TGT = tgt; if (NP_TGT === 'name') NP_PICK.color = hex; else NP_PICK.tcolor = hex; render(); };
   window.npUndo = function(){ npResetPick(); render(); };
   async function npReload(){
     var r = await db.rpc('my_title_styles');
@@ -953,19 +974,19 @@
     if (window.DSNameplate) DSNameplate.ensureFont(d.family);
     refreshEmbers(d.balance);
     var keep = NP_T, pick = Object.assign({}, NP_PICK); await npReload(); NP_T = keep; NP_PICK = pick;
-    if (NP_TGT === 'name') { NP_PICK.font = d.key; NP_PICK.color = null; } else { NP_PICK.tfont = d.key; NP_PICK.tcolor = null; }
-    toast('New font for ' + (npTitle(NP_T) || {}).title + ': ' + d.label + '. Press Save to wear it.', 'ti-typography');
+    toast('New font for ' + (npTitle(NP_T) || {}).title + ': ' + d.label + '. Pick it for your name or your title, then press Accept.', 'ti-typography');
     render();
   };
-  window.npRollColor = async function(){
-    var b = document.getElementById('np-roll-color'); if (b) { b.disabled = true; b.innerHTML = '<i class="ti ti-loader"></i> Rolling…'; }
+  window.npRollColor = async function(tgt){
+    if (tgt) NP_TGT = tgt;
+    var b = document.getElementById('np-roll-color-' + NP_TGT); if (b) { b.disabled = true; b.innerHTML = '<i class="ti ti-loader"></i> Rolling…'; }
     var font = npTgtColorFont(), pick = Object.assign({}, NP_PICK);
     var r = await db.rpc('roll_title_font_color', { p_title: NP_T, p_font: font }); var d = (r && r.data) || {};
     if (npRollFail(d, r)) { render(); return; }
     refreshEmbers(d.balance);
     var keep = NP_T; await npReload(); NP_T = keep; NP_PICK = pick;   // keep unsaved picks
     if (NP_TGT === 'name') NP_PICK.color = d.hex; else NP_PICK.tcolor = d.hex;
-    toast(d.label + ' for ' + ((npFont(font) || {}).label || 'this font') + '. Press Save to wear it.', 'ti-palette');
+    toast(d.label + ' for ' + ((npFont(font) || {}).label || 'this font') + '. Press Accept to wear it.', 'ti-palette');
     render();
   };
   window.npLazyFonts = function(){};
