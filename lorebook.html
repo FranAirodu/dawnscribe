@@ -558,14 +558,76 @@ function toast(msg, icon, bad, undoFn, actionLabel){
   }, undoFn ? 60000 : 3400);
 }
 
-/* Put a card's answers back exactly as they were, and the finding with them. */
-async function undoCardWrite(cardId, prevData, findingId, prevStatus){
-  var res = await db.from('lore_cards').update({ data: prevData }).eq('id', cardId).select().maybeSingle();
-  if(res.error || !res.data){ toast('Could not undo that', 'ti-x', true); return; }
-  for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === cardId) CARDS[i] = res.data;
+/* Card-entry history: every write made from the findings queue is kept
+   (last 10, per story, survives a reload) so "Undo last card entry" works
+   long after the toast is gone. */
+var UNDO_MAX = 10;
+function undoKey(){ return 'ds_lore_undo_' + workId; }
+function undoStack(){
+  try { var v = JSON.parse(localStorage.getItem(undoKey()) || '[]'); return Array.isArray(v) ? v : []; }
+  catch(e){ return []; }
+}
+function saveUndoStack(st){
+  try { localStorage.setItem(undoKey(), JSON.stringify(st.slice(-UNDO_MAX))); } catch(e) {}
+}
+function rememberCardWrite(card, prevData, newData, findingId, prevStatus, madeCard, label){
+  var st = undoStack();
+  st.push({ cardId: card.id, cardName: card.name, prevData: prevData, newData: newData,
+            findingId: findingId || null, prevStatus: prevStatus || null,
+            madeCard: !!madeCard, label: label || '', at: Date.now() });
+  saveUndoStack(st);
+}
+function sameJson(a, b){ try { return JSON.stringify(a || {}) === JSON.stringify(b || {}); } catch(e){ return false; } }
+
+/* Put a card's answers back exactly as they were, and the finding with them.
+   If the entry made the card in the first place, the empty card goes too. */
+async function undoCardWrite(cardId, prevData, findingId, prevStatus, madeCard){
+  var st = undoStack();
+  for(var k = st.length - 1; k >= 0; k--){
+    if(st[k].cardId === cardId && sameJson(st[k].prevData, prevData)){ st.splice(k, 1); break; }
+  }
+  saveUndoStack(st);
+  var gone = false;
+  if(madeCard && !Object.keys(prevData || {}).length){
+    var del = await db.from('lore_cards').delete().eq('id', cardId);
+    if(del.error){ toast('Could not undo that', 'ti-x', true); return; }
+    CARDS = CARDS.filter(function(c){ return c.id !== cardId; });
+    gone = true;
+  } else {
+    var res = await db.from('lore_cards').update({ data: prevData }).eq('id', cardId).select().maybeSingle();
+    if(res.error || !res.data){ toast('Could not undo that — the card may have been deleted', 'ti-x', true); return; }
+    for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === cardId) CARDS[i] = res.data;
+  }
   if(findingId && prevStatus === 'open'){ try { await respond(findingId, 'reopen', true); } catch(e) {} }
-  toast('Put back the way it was');
+  toast(gone ? 'Card removed — the finding is back in the queue' : 'Put back the way it was');
   render();
+}
+
+/* The button above the findings: undoes the newest entry still on record. */
+async function undoLastCardEntry(btn){
+  var st = undoStack();
+  if(!st.length){ toast('Nothing to undo'); render(); return; }
+  var e = st[st.length - 1];
+  var card = CARDS.filter(function(c){ return c.id === e.cardId; })[0];
+  if(!card){
+    st.pop(); saveUndoStack(st);
+    toast('That card no longer exists — nothing to undo', 'ti-alert-triangle', true);
+    render(); return;
+  }
+  if(!sameJson(card.data, e.newData)
+     && !confirm(card.name + '\u2019s card has been changed since that entry.\n\n'
+       + 'Undoing puts the whole card back to how it was before the entry, '
+       + 'so those later changes would be lost too. Undo anyway?')) return;
+  if(btn) btn.disabled = true;
+  await undoCardWrite(e.cardId, e.prevData, e.findingId, e.prevStatus, e.madeCard);
+}
+function undoLastButtonHtml(){
+  var st = undoStack();
+  if(!st.length) return '';
+  var e = st[st.length - 1];
+  return '<button class="btn" id="undo-last" onclick="undoLastCardEntry(this)" title="'
+    + esc('Last entry: ' + e.cardName + (e.label ? ' — ' + e.label : '')) + '">'
+    + '<i class="ti ti-arrow-back-up"></i> Undo last card entry</button>';
 }
 function showState(icon, title, body){
   document.getElementById('page').innerHTML =
@@ -2929,6 +2991,7 @@ function renderChecks(){
     '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">'
     + '<button class="btn" id="run-checks" onclick="runChecks(this)">'
     + '<i class="ti ti-refresh"></i> Run the checks now</button>'
+    + undoLastButtonHtml()
     + '<span style="font-size:12px;color:var(--text3);">They also run overnight on anything you have edited.</span>'
     + '</div>'
     + '<div class="board-help">'
@@ -3191,6 +3254,7 @@ async function takeChapterValue(findingId){
   if(res.error || !res.data){ toast(res.error ? res.error.message : 'Could not save that', 'ti-x', true); return; }
   for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === card.id) CARDS[i] = res.data;
   try { await respond(findingId, 'resolve', true); } catch(e) {}
+  rememberCardWrite(card, prevData, res.data.data, findingId, prevStatus, false, ci.label);
   toast(card.name + ' \u2014 ' + ci.label + ' is now ' + ci.chapVal, 'ti-check', false,
     function(){ return undoCardWrite(card.id, prevData, findingId, prevStatus); });
   render();
@@ -3528,10 +3592,11 @@ async function quickAddSuggestion(findingId){
   }
   for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === card.id) CARDS[i] = res.data;
   try { await respond(findingId, 'resolve', true); } catch(e) {}
+  rememberCardWrite(card, prevData, res.data.data, findingId, prevStatus, madeNow, added.join(', '));
   toast('Added to ' + card.name + ': ' + added.join(', ')
     + (skipped ? ' (' + skipped + ' already answered)' : ''),
     'ti-check', false,
-    function(){ return undoCardWrite(card.id, prevData, findingId, prevStatus); });
+    function(){ return undoCardWrite(card.id, prevData, findingId, prevStatus, madeNow); });
   render();
 }
 
@@ -3939,6 +4004,7 @@ async function acceptChapterValue(findingId){
   try { await respond(findingId, 'resolve', true); } catch(e) {}
 
   var label = (FIELDS_BY_KEY[key] && FIELDS_BY_KEY[key].label) || key;
+  rememberCardWrite(card, prevData, res.data.data, findingId, prevStatus, false, label);
   toast(card.name + ' \u2014 ' + label + ' is now ' + val, 'ti-check', false,
     function(){ return undoCardWrite(card.id, prevData, findingId, prevStatus); });
   render();
