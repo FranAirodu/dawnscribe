@@ -433,6 +433,17 @@
     .spend-all-done{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:12px 16px;border-radius:12px;font-weight:700;color:var(--text,#f1f0ff);
       background:rgba(var(--aura-rgb,45,212,191),.12);border:1px solid rgba(var(--aura-rgb,45,212,191),.4);}
     .spend-all-done i{color:var(--accent);font-size:20px;}
+    /* Starfall: background unlocked */
+    .sf-ov{position:fixed;inset:0;z-index:9999;background:rgba(4,4,10,.72);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .3s,background 1.2s;cursor:pointer;}
+    .sf-ov.in{opacity:1;}
+    .sf-ov.swap{background:rgba(4,4,10,.28);}
+    .sf-ov canvas{position:absolute;inset:0;width:100%;height:100%;}
+    .sf-txt{position:relative;text-align:center;padding:16px;opacity:0;transform:translateY(8px);transition:opacity .5s,transform .5s;}
+    .sf-ov.done .sf-txt{opacity:1;transform:none;}
+    .sf-kick{font:800 12px Lato,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--sf);text-shadow:0 0 12px var(--sf);}
+    .sf-name{font:400 34px Cinzel,Georgia,serif;color:#fff;margin:6px 0 8px;text-shadow:0 0 24px var(--sf),0 2px 6px rgba(0,0,0,.8);}
+    .sf-sub{font-size:14px;color:#e6e6ee;max-width:420px;margin:8px auto 0;text-shadow:0 1px 4px rgba(0,0,0,.9);}
+    .sf-hint{margin-top:12px;font-size:12px;color:#9a9ab8;}
     /* Background tab */
     .bg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px;}
     .bg-tile{display:flex;flex-direction:column;gap:6px;background:none;border:0;padding:0;cursor:pointer;text-align:left;color:var(--text,#eee);}
@@ -1347,19 +1358,81 @@
     if (window.dsSetBackground) dsSetBackground(c);
     toast(bgName(c) + ' is your background now', 'ti-sparkles'); render();
   };
+  /* Starfall: when a background is won, hundreds of particles in its colour
+     pour down the screen like a meteor shower, slow, turn round and start
+     drifting upwards: the new background coming alive. */
+  function bgStarfall(hex, label, rare){
+    return new Promise(function(resolve){
+      var ov = document.createElement('div');
+      ov.className = 'sf-ov';
+      ov.style.setProperty('--sf', hex);
+      ov.innerHTML = '<canvas></canvas><div class="sf-txt"><div class="sf-kick">Background unlocked</div>'
+        + '<div class="sf-name">' + esc(label || 'A new background') + '</div>'
+        + (rare ? '<div class="roll-rare">✦ Rare</div>' : '')
+        + '<div class="sf-sub">It’s previewing behind the page now. Press <b>Use this background</b> to keep it.</div>'
+        + '<div class="sf-hint">Tap anywhere to continue</div></div>';
+      document.body.appendChild(ov);
+      var cv = ov.querySelector('canvas'), cx = cv.getContext('2d');
+      var W = cv.width = window.innerWidth, H = cv.height = window.innerHeight;
+      var n = parseInt(hex.slice(1), 16), rgb = [n >> 16 & 255, n >> 8 & 255, n & 255];
+      var lite = rgb.map(function(c){ return Math.round(c + (255 - c) * 0.45); }).join(',');
+      var P = [];
+      for (var i = 0; i < Math.min(360, Math.round(W * H / 4500)); i++) {
+        P.push({ x: Math.random() * W, y: -Math.random() * H * 1.1, vy: 9 + Math.random() * 9, vx: (Math.random() - .5) * .8,
+                 r: .6 + Math.random() * 2.2, a: .5 + Math.random() * .5, tail: 6 + Math.random() * 16 });
+      }
+      var t0 = performance.now(), closed = false, swapped = false, ready = false;
+      requestAnimationFrame(function(){ ov.classList.add('in'); });
+      var reduce = reducedMotion();
+      if (reduce) { swapped = true; if (window.dsSetBackground) dsSetBackground(hex); ov.classList.add('swap', 'done'); ready = true; }
+      function frame(now){
+        if (closed || reduce) return;
+        var t = now - t0;
+        cx.clearRect(0, 0, W, H);
+        // 0-1.3s pour down, 1.3-2.2s slow and turn round, then drift up and fade out
+        var turn = Math.min(1, Math.max(0, (t - 1300) / 900));
+        var fade = Math.max(0, 1 - Math.max(0, t - 2400) / 1200);
+        if (!swapped && t > 1300) { swapped = true; if (window.dsSetBackground) dsSetBackground(hex); ov.classList.add('swap'); }
+        if (t > 1900 && !ready) { ready = true; ov.classList.add('done'); }
+        P.forEach(function(p){
+          var vy = p.vy * (1 - turn) + (-0.35 - p.r * 0.08) * turn;
+          if (t < 1300) p.vy *= 0.993;
+          p.y += vy; p.x += p.vx * (1 - turn);
+          var tail = vy > 0 ? p.tail * (1 - turn) : 0;
+          cx.globalAlpha = p.a * fade;
+          if (tail > 1) {
+            var g = cx.createLinearGradient(p.x, p.y - tail, p.x, p.y);
+            g.addColorStop(0, 'rgba(' + lite + ',0)'); g.addColorStop(1, 'rgba(' + lite + ',1)');
+            cx.strokeStyle = g; cx.lineWidth = p.r; cx.beginPath(); cx.moveTo(p.x, p.y - tail); cx.lineTo(p.x, p.y); cx.stroke();
+          }
+          cx.fillStyle = 'rgb(' + lite + ')'; cx.shadowColor = hex; cx.shadowBlur = 8;
+          cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, Math.PI * 2); cx.fill(); cx.shadowBlur = 0;
+        });
+        cx.globalAlpha = 1;
+        if (fade > 0) requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+      var close = function(){
+        if (closed) return; closed = true;
+        if (!swapped && window.dsSetBackground) dsSetBackground(hex);
+        ov.classList.remove('in'); setTimeout(function(){ ov.remove(); }, 300);
+        document.removeEventListener('keydown', onKey); resolve();
+      };
+      var onKey = function(e){ if ((e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && ready) close(); };
+      document.addEventListener('keydown', onKey);
+      ov.addEventListener('click', function(){ if (ready) close(); });
+    });
+  }
   window.bgRoll = async function(){
     var b = document.getElementById('bg-roll'); if (b) { b.disabled = true; b.innerHTML = '<i class="ti ti-loader"></i> Rolling…'; }
-    dsRollOpen();
     var r = await db.rpc('roll_background'); var d = (r && r.data) || {};
-    if (d.status === 'insufficient_embers') { dsRollClose(); toast('You need ' + (d.cost || BG.cost) + ' Embers for that.', 'ti-flame', true); render(); return; }
-    if (d.status === 'all_unlocked') { dsRollClose(); toast('You have every background, for now.', 'ti-check'); render(); return; }
-    if (r.error || d.status !== 'success') { dsRollClose(); toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); render(); return; }
+    if (d.status === 'insufficient_embers') { toast('You need ' + (d.cost || BG.cost) + ' Embers for that.', 'ti-flame', true); render(); return; }
+    if (d.status === 'all_unlocked') { toast('You have every background, for now.', 'ti-check'); render(); return; }
+    if (r.error || d.status !== 'success') { toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); render(); return; }
     refreshEmbers(d.balance);
     BG.unlocked = (BG.unlocked || []).concat([d.hex]);
-    if (window.dsSetBackground) dsSetBackground(d.hex);
     BG_PICK = d.hex;
-    await dsRollReveal({ hex: d.hex, label: d.label || 'A new background', rare: !!d.rare, kicker: 'Background unlocked',
-      sub: 'It’s previewing behind this page now. Press <b>Use this background</b> to keep it.' });
+    await bgStarfall(d.hex, d.label, !!d.rare);
     TAB = 'background';
     try { history.replaceState(null, '', '#background'); } catch(e) {}
     render();
