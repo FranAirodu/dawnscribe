@@ -63,9 +63,11 @@
       '.ds-np-title{font-family:Lato,system-ui,sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.14em;',
       'color:rgba(255,255,255,.82);text-shadow:0 1px 2px rgba(0,0,0,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
       '.ds-np-title i{opacity:.8;margin-right:4px;}',
-      '.ds-np.lg{min-height:96px;padding:14px 20px;}.ds-np.lg .ds-np-name{font-size:40px;}.ds-np.lg .ds-np-title{font-size:12px;margin-top:6px;}',
-      '.ds-np.md{min-height:78px;padding:12px 16px;}.ds-np.md .ds-np-name{font-size:28px;}.ds-np.md .ds-np-title{font-size:10.5px;margin-top:4px;}',
-      '.ds-np.sm{min-height:52px;padding:8px 12px;border-radius:9px;}.ds-np.sm .ds-np-name{font-size:19px;}.ds-np.sm .ds-np-title{font-size:9.5px;margin-top:2px;}',
+      '.ds-np.lg{min-height:110px;padding:14px 20px;}.ds-np.lg .ds-np-name{font-size:40px;}.ds-np.lg .ds-np-title{font-size:17px;margin-top:6px;}',
+      '.ds-np.md{min-height:84px;padding:12px 16px;}.ds-np.md .ds-np-name{font-size:28px;}.ds-np.md .ds-np-title{font-size:14px;margin-top:4px;}',
+      '.ds-np.sm{min-height:58px;padding:8px 12px;border-radius:9px;}.ds-np.sm .ds-np-name{font-size:19px;}.ds-np.sm .ds-np-title{font-size:12px;margin-top:2px;}',
+      /* A title with its own font drops the small-caps look and uses the font as-is. */
+      '.ds-np-title.styled{text-transform:none;letter-spacing:.02em;font-weight:400;}',
       '.ds-np.bare{background:none;border-radius:0;padding:0;min-height:0;}.ds-np.bare::after{display:none;}',
       '@media (max-width:600px){.ds-np.lg .ds-np-name{font-size:30px;}}',
       /* hover card */
@@ -103,8 +105,19 @@
       + (art ? '<img class="ds-np-art" src="' + esc(art) + '" alt="" loading="lazy" onerror="this.remove()"/>' : '')
       + '<div class="ds-np-name" style="' + nameStyle(p) + 'font-size:' + Math.round(base * scale) + 'px;">'
       + esc(p.display_name || p.username || 'Reader') + '</div>'
-      + (!opts.noTitle && p.title ? '<div class="ds-np-title"><i class="ti ti-feather"></i>' + esc(p.title) + '</div>' : '')
+      + (!opts.noTitle && p.title ? titleHtml(p, size) : '')
       + '</div>';
+  }
+
+  function titleHtml(p, size) {
+    var fam = p.title_font_family, col = hexOk(p.title_color_hex);
+    if (!fam) {
+      return '<div class="ds-np-title"' + (col ? ' style="color:' + col + ';"' : '') + '><i class="ti ti-feather"></i>' + esc(p.title) + '</div>';
+    }
+    ensureFont(fam);
+    var base = { lg: 22, md: 17, sm: 14 }[size] || 17;
+    return '<div class="ds-np-title styled" style="font-family:\'' + fam.replace(/'/g, '') + '\',Georgia,serif;font-size:'
+      + Math.round(base * (Number(p.title_font_size) || 1)) + 'px;color:' + (col || 'rgba(255,255,255,.88)') + ';">' + esc(p.title) + '</div>';
   }
 
   // Batches every load() made in the same tick into one database call.
@@ -119,7 +132,7 @@
           var batch = Object.keys(pendingIds); pendingIds = {}; pending = null;
           var d = client();
           if (!d) return resolve();
-          d.rpc('get_nameplates', { p_user_ids: batch }).then(function (r) {
+          d.rpc('get_nameplate_cards', { p_user_ids: batch }).then(function (r) {
             (r && r.data || []).forEach(function (p) { CACHE[p.user_id] = p; });
             resolve();
           }, function () { resolve(); });
