@@ -82,12 +82,60 @@
     (document.head || document.documentElement).appendChild(st);
   }
 
+
+  /* Colour fonts (Nabla, Honk, Bungee Spice) have their colours built into
+     the letters, so CSS "color" does nothing. To recolour them we build a
+     font palette from the picked colour: every shade in the font's own
+     palette is moved to the picked hue, keeping its light/dark so the 3D
+     and outline effects survive. No colour picked = the font's original look. */
+  var COLOR_FONTS = {
+    'Nabla': ['#ffd214','#ff552d','#ff9b00','#ff9123','#ffd214','#ffeb6e','#ffd214','#ffeb6e','#fffabe','#ffffff'],
+    'Honk': ['#000000','#000000','#ffffb2','#ffff78','#ffc753','#ff755f','#ff3caf','#ff46af'],
+    'Bungee Spice': ['#c90900','#ffd700']
+  };
+  function isColorFont(fam) { return !!COLOR_FONTS[String(fam || '').trim()]; }
+  function hexToHsl(h) {
+    var r = parseInt(h.substr(1, 2), 16) / 255, g = parseInt(h.substr(3, 2), 16) / 255, b = parseInt(h.substr(5, 2), 16) / 255;
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, s = 0, hu = 0, d = mx - mn;
+    if (d) {
+      s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+      hu = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      hu *= 60;
+    }
+    return [hu, s, l];
+  }
+  function hsl(h, s, l) { return 'hsl(' + Math.round(h) + ' ' + Math.round(s * 100) + '% ' + Math.round(Math.min(.97, Math.max(.04, l)) * 100) + '%)'; }
+  var palDone = {};
+  function paletteStyle(fam, hex) {
+    fam = String(fam || '').trim();
+    var base = COLOR_FONTS[fam];
+    hex = hexOk(hex);
+    if (!base || !hex) return '';
+    var id = '--ds-' + fam.replace(/[^A-Za-z]/g, '').toLowerCase() + '-' + hex.slice(1).toLowerCase();
+    if (!palDone[id]) {
+      palDone[id] = 1;
+      var pick = hexToHsl(hex);
+      var mids = base.map(hexToHsl).filter(function (x) { return x[2] > .08 && x[2] < .97; });
+      var avg = mids.reduce(function (a, x) { return a + x[2]; }, 0) / (mids.length || 1);
+      var over = base.map(function (b, i) {
+        var e = hexToHsl(b);
+        if (e[2] <= .08 || e[2] >= .97) return i + ' ' + b;   // keep outlines and white shine
+        return i + ' ' + hsl(pick[0], pick[1], pick[2] + (e[2] - avg));
+      }).join(', ');
+      var st = document.getElementById('ds-np-pal');
+      if (!st) { st = document.createElement('style'); st.id = 'ds-np-pal'; (document.head || document.documentElement).appendChild(st); }
+      st.textContent += '@font-palette-values ' + id + '{font-family:"' + fam + '";base-palette:0;override-colors:' + over + ';}';
+    }
+    return 'font-palette:' + id + ';';
+  }
+
   function color(p) {
     return hexOk(p && p.color_hex) || hexOk(p && p.aura_hex) || '#2dd4bf';
   }
   function nameStyle(p) {
     var fam = (p && p.font_family) || 'Cinzel';
     ensureFont(fam);
+    if (isColorFont(fam)) return "font-family:'" + fam.replace(/'/g, '') + "',Georgia,serif;" + paletteStyle(fam, p && p.color_hex);
     return "font-family:'" + fam.replace(/'/g, '') + "',Georgia,serif;color:" + color(p) + ';';
   }
 
@@ -117,7 +165,7 @@
     ensureFont(fam);
     var base = { lg: 22, md: 17, sm: 14 }[size] || 17;
     return '<div class="ds-np-title styled" style="font-family:\'' + fam.replace(/'/g, '') + '\',Georgia,serif;font-size:'
-      + Math.round(base * (Number(p.title_font_size) || 1)) + 'px;color:' + (col || 'rgba(255,255,255,.88)') + ';">' + esc(p.title) + '</div>';
+      + Math.round(base * (Number(p.title_font_size) || 1)) + 'px;' + (isColorFont(fam) ? paletteStyle(fam, col) : 'color:' + (col || 'rgba(255,255,255,.88)') + ';') + '">' + esc(p.title) + '</div>';
   }
 
   // Batches every load() made in the same tick into one database call.
@@ -213,6 +261,7 @@
 
   window.DSNameplate = {
     load: load, html: html, mount: mount, nameStyle: nameStyle, ensureFont: ensureFont, hover: hover,
+    isColorFont: isColorFont, paletteStyle: paletteStyle,
     forget: function (uid) { delete CACHE[uid]; }
   };
 })();
