@@ -430,6 +430,9 @@
     @keyframes npInkRing{0%{opacity:.9;transform:scale(.3)}100%{opacity:0;transform:scale(9)}}
     @keyframes npInkUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
     @media (prefers-reduced-motion:reduce){.np-ink-b{animation:none;clip-path:none}.np-ink-drop,.np-ink-ring{display:none}.np-ink-txt,.np-ink-hint{animation:none;opacity:1}}
+    .spend-all-done{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:12px 16px;border-radius:12px;font-weight:700;color:var(--text,#f1f0ff);
+      background:rgba(var(--aura-rgb,45,212,191),.12);border:1px solid rgba(var(--aura-rgb,45,212,191),.4);}
+    .spend-all-done i{color:var(--accent);font-size:20px;}
     .np-swatches{display:flex;flex-wrap:wrap;gap:14px 8px;margin-bottom:22px;padding-top:6px;}
     .np-sw{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:6px 0 0;width:68px;}
     .np-well{display:block;line-height:0;color:transparent;transition:transform .15s;}
@@ -1221,10 +1224,14 @@
     var fontEx = '<div class="spend-ex spend-ex-font" title="Example: Playfair Display"><b style="font-family:\'Playfair Display\',serif;">'
       + esc((NP_ME && (NP_ME.display_name || NP_ME.username)) || 'Name').slice(0, 10) + '</b><span>Playfair</span></div>';
     if (window.DSNameplate) DSNameplate.ensureFont('Playfair Display');
+    var wornT = NP && NP.titles ? (NP.titles.filter(function(x){ return x.id === NP.active; })[0] || NP.titles[0]) : null;
+    var rollTotal = NP && NP.fonts ? NP.fonts.filter(function(f){ return f.source === 'roll'; }).length : 0;
+    var fontDone = !!wornT && rollTotal > 0 && npSlotFonts(wornT, 'name').filter(function(f){ return f.source === 'roll'; }).length >= rollTotal;
     var fontRow = '<div class="rand-row">' + fontEx
       +   '<div class="rand-info"><div class="rand-name"><i class="ti ti-typography"></i> A nameplate font</div>'
-      +   '<div class="aura-sub" style="margin:2px 0 0;">A random font for your name on the title you\u2019re wearing. Fonts for your title and colours are on the Nameplate tab.</div></div>'
-      +   '<button class="aura-roll" onclick="npSpendRollFont()">'
+      +   '<div class="aura-sub" style="margin:2px 0 0;">' + (fontDone ? 'You have every font for your name on this title, for now. ' : 'A random font for your name on the title you\u2019re wearing. ')
+      +   'Fonts for your title and colours are on the Nameplate tab.</div></div>'
+      +   '<button class="aura-roll" onclick="npSpendRollFont()"' + (fontDone ? ' disabled' : '') + '>'
       +   '<i class="ti ti-dice-5"></i> Roll &middot; ' + ((NP && NP.font_cost) || 20) + ' Embers</button>'
       + '</div>';
     var rows = [
@@ -1233,7 +1240,10 @@
       { cost: RAND.banner.cost, html: randRow('banner', 'A profile banner', 'ti-photo', 'Wear it on your profile.', bannerEx) },
       { cost: RAND.character.cost, html: randRow('character', 'A character', 'ti-user-heart', 'Winners join your crew.') }
     ].sort(function(a, b){ return (Number(a.cost) || 0) - (Number(b.cost) || 0); });
+    var randLeft = function(k){ var r = RAND[k] || {}; return Math.max(0, (r.pool || 0) - (r.owned || 0)); };
+    var allDone = auraDone && fontDone && !randLeft('banner') && !randLeft('character');
     html += sectionHead('ti-dice-5', 'Win something', 'DawnScribe\u2019s own collectibles, never sold, only won with Embers. Every roll is something you don\u2019t have yet.')
+      + (allDone ? '<div class="spend-all-done"><i class="ti ti-trophy"></i> You\u2019ve unlocked everything so far. That\u2019s impressive.</div>' : '')
       + '<div class="aura-card">'
       + rows.map(function(r){ return r.html; }).join('')
       + '<div class="aura-note" id="rand-note"></div><div class="aura-note" id="aura-note"></div></div>';
