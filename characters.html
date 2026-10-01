@@ -433,6 +433,23 @@
     .spend-all-done{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:12px 16px;border-radius:12px;font-weight:700;color:var(--text,#f1f0ff);
       background:rgba(var(--aura-rgb,45,212,191),.12);border:1px solid rgba(var(--aura-rgb,45,212,191),.4);}
     .spend-all-done i{color:var(--accent);font-size:20px;}
+    /* Background tab */
+    .bg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px;}
+    .bg-tile{display:flex;flex-direction:column;gap:6px;background:none;border:0;padding:0;cursor:pointer;text-align:left;color:var(--text,#eee);}
+    .bg-art{position:relative;display:block;height:84px;border-radius:12px;overflow:hidden;border:2px solid rgba(255,255,255,.08);transition:border-color .15s,transform .15s;}
+    .bg-tile:hover .bg-art{transform:translateY(-2px);}
+    .bg-tile.on .bg-art{border-color:var(--accent);box-shadow:0 0 0 2px rgba(var(--aura-rgb,45,212,191),.35);}
+    .bg-dim{position:absolute;inset:0;background:rgba(8,8,16,.55);}
+    .bg-art i{position:absolute;width:4px;height:4px;border-radius:50%;opacity:.85;box-shadow:0 0 6px currentColor;animation:bgRise 5s linear infinite;}
+    .bg-tile.calm .bg-art i{animation:none;}
+    @keyframes bgRise{0%{transform:translateY(14px);opacity:0}20%{opacity:.9}100%{transform:translateY(-40px);opacity:0}}
+    .bg-lab{font-weight:700;font-size:13px;}
+    .bg-lab em{font-style:normal;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:0 5px;margin-left:4px;}
+    .bg-sub{font-size:11.5px;color:var(--text3,#8a8aa8);margin-top:-4px;}
+    .bg-mini{position:relative;display:block;width:96px;height:44px;border-radius:9px;overflow:hidden;background:radial-gradient(circle at 25% 30%,#2dd4bfcc 0,transparent 60%),radial-gradient(circle at 80% 80%,#2dd4bf88 0,transparent 55%),#0b0b12;}
+    .bg-mini i{position:absolute;width:3px;height:3px;border-radius:50%;background:#7ff0dd;animation:bgRise 4s linear infinite;}
+    .bg-mini i:nth-child(1){left:20%;top:70%}.bg-mini i:nth-child(2){left:55%;top:60%;animation-delay:-1.3s}.bg-mini i:nth-child(3){left:80%;top:75%;animation-delay:-2.6s}
+    @media (prefers-reduced-motion:reduce){.bg-art i,.bg-mini i{animation:none}}
     .np-swatches{display:flex;flex-wrap:wrap;gap:14px 8px;margin-bottom:22px;padding-top:6px;}
     .np-sw{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:6px 0 0;width:68px;}
     .np-well{display:block;line-height:0;color:transparent;transition:transform .15s;}
@@ -560,7 +577,7 @@
   // Tabs by WHAT you collect. Remembered, and reachable as characters.html#banners.
   // Spend Embers is the front door: every way to use Embers in one place.
   // A #hash link still opens a specific tab.
-  var TABS = ['spend','characters','banners','nameplate','aura'];
+  var TABS = ['spend','characters','banners','nameplate','aura','background'];
   var TAB = 'spend';
   try { var _h = (location.hash || '').replace('#', ''); if (TABS.indexOf(_h) >= 0) TAB = _h; } catch(e) {}
   // Keep the top bar's Ember count honest after any roll or pledge. The aura
@@ -669,6 +686,7 @@
       db.rpc('get_nameplates', { p_user_ids: [ME.id] })
     ]);
     npApply(res[11] && res[11].data);
+    try { var bgr = await db.rpc('my_backgrounds'); BG = (bgr && bgr.data && bgr.data.ok) ? bgr.data : BG; } catch(e) {}
     NP_ME = (res[13] && res[13].data && res[13].data[0]) || null;
     CHARS = res[0].data || [];
     MINE = {};
@@ -1199,8 +1217,9 @@
     var html = '<div class="spend-intro"><i class="ti ti-flame"></i> Everything you can do with your Embers. '
       + 'What you win lands in <a href="#characters" onclick="setTab(\'characters\');return false;">Characters</a>, '
       + '<a href="#banners" onclick="setTab(\'banners\');return false;">Banners</a>, '
-      + '<a href="#nameplate" onclick="setTab(\'nameplate\');return false;">Nameplate</a> or '
-      + '<a href="#aura" onclick="setTab(\'aura\');return false;">Aura</a>.</div>';
+      + '<a href="#nameplate" onclick="setTab(\'nameplate\');return false;">Nameplate</a>, '
+      + '<a href="#aura" onclick="setTab(\'aura\');return false;">Aura</a> or '
+      + '<a href="#background" onclick="setTab(\'background\');return false;">Background</a>.</div>';
     if (opening.length) {
       html += sectionHead('ti-users-group', 'Open a character together',
         'The whole community fills the bar together. Everyone who gave Embers gets the character.')
@@ -1237,11 +1256,12 @@
     var rows = [
       { cost: (NP && NP.font_cost) || 20, html: fontRow },
       { cost: AURA_COST, html: auraRow },
+      { cost: (BG && BG.cost) || 15, html: bgSpendRow() },
       { cost: RAND.banner.cost, html: randRow('banner', 'A profile banner', 'ti-photo', 'Wear it on your profile.', bannerEx) },
       { cost: RAND.character.cost, html: randRow('character', 'A character', 'ti-user-heart', 'Winners join your crew.') }
     ].sort(function(a, b){ return (Number(a.cost) || 0) - (Number(b.cost) || 0); });
     var randLeft = function(k){ var r = RAND[k] || {}; return Math.max(0, (r.pool || 0) - (r.owned || 0)); };
-    var allDone = auraDone && fontDone && !randLeft('banner') && !randLeft('character');
+    var allDone = auraDone && fontDone && bgAllOwned() && !randLeft('banner') && !randLeft('character');
     html += sectionHead('ti-dice-5', 'Win something', 'DawnScribe\u2019s own collectibles, never sold, only won with Embers. Every roll is something you don\u2019t have yet.')
       + (allDone ? '<div class="spend-all-done"><i class="ti ti-trophy"></i> You\u2019ve unlocked everything so far. That\u2019s impressive.</div>' : '')
       + '<div class="aura-card">'
@@ -1250,13 +1270,110 @@
     return html;
   }
 
+  /* ── BACKGROUND ──────────────────────────────────────────────
+     The drifting site background, in any colour the member has unlocked.
+     Teal and "Follow the month" are free. The choice is kept on the account
+     and in a small browser note so every page shows it instantly
+     (monthlyBg.js reads it). */
+  var BG = { cost: 15, choice: 'month', unlocked: [], palette: [] };
+  var BG_PICK = null;
+  var BG_MONTHS = ['Frost','Thaw','Blossom','Ember Dawn','Verdant','Tidewater','Solstice','Harvest','Crimson Dusk','Twilight Rose','Celestial','Aurora'];
+  function bgName(c){
+    if (c === 'month') return 'Follow the month';
+    if (c === 'teal') return 'DawnScribe teal';
+    if (c === 'calm') return 'Calm';
+    var p = (BG.palette || []).filter(function(x){ return x.hex === c; })[0];
+    return p ? p.label : c;
+  }
+  function bgAllOwned(){ return (BG.palette || []).length > 0 && (BG.unlocked || []).length >= BG.palette.length; }
+  function bgTile(c, sub, hex){
+    var on = (BG_PICK || BG.choice) === c, cur = BG.choice === c;
+    var col = hex || '#2dd4bf';
+    var art = c === 'month' || c === 'calm'
+      ? 'conic-gradient(from 200deg,#78b4ff,#6ed2c8,#ff8cbe,#ff8c28,#3cc864,#1e78dc,#ffc832,#c87828,#c8283c,#be4696,#9650ff,#28dc96,#78b4ff)'
+      : 'radial-gradient(circle at 25% 30%,' + col + 'cc 0,transparent 55%),radial-gradient(circle at 80% 78%,' + col + '88 0,transparent 50%),#0b0b12';
+    var dots = '';
+    for (var i = 0; i < 7; i++) dots += '<i style="left:' + ((i * 37 + (col.charCodeAt(2) || 3)) % 92 + 4) + '%;top:' + ((i * 53 + (col.charCodeAt(4) || 7)) % 80 + 8) + '%;animation-delay:' + (-i * 0.7) + 's;background:' + (c === 'month' || c === 'calm' ? '#fff' : col) + ';"></i>';
+    return '<button class="bg-tile' + (on ? ' on' : '') + (c === 'calm' ? ' calm' : '') + '" onclick="bgPick(\'' + esc(c) + '\')" title="' + esc(bgName(c)) + '">'
+      + '<span class="bg-art" style="background:' + art + ';">' + (c === 'month' || c === 'calm' ? '<span class="bg-dim"></span>' : '') + dots + '</span>'
+      + '<span class="bg-lab">' + esc(bgName(c)) + (cur ? ' <em>Using</em>' : '') + '</span>'
+      + (sub ? '<span class="bg-sub">' + sub + '</span>' : '') + '</button>';
+  }
+  function bgHtml(){
+    var owned = (BG.palette || []).filter(function(p){ return (BG.unlocked || []).indexOf(p.hex) >= 0; })
+      .map(function(p){ return { hex: p.hex, hsl: hexHsl(p.hex), rare: p.rare }; })
+      .sort(function(a, b){
+        var ga = a.hsl.s < 0.12, gb = b.hsl.s < 0.12;
+        if (ga !== gb) return ga ? 1 : -1;
+        var ha = Math.round(a.hsl.h / 12), hb = Math.round(b.hsl.h / 12);
+        return ha !== hb ? ha - hb : b.hsl.l - a.hsl.l;
+      });
+    var left = (BG.palette || []).length - owned.length;
+    var pick = BG_PICK && BG_PICK !== BG.choice;
+    return '<div class="aura-card">'
+      + '<div class="aura-head"><i class="ti ti-sparkles"></i> Your background</div>'
+      + '<div class="aura-sub">The drifting light behind every page. Tap one to preview it, then press <b>Use this background</b>.</div>'
+      + '<div class="bg-grid">'
+      +   bgTile('month', 'This month: ' + BG_MONTHS[new Date().getMonth()])
+      +   bgTile('teal', 'Free', '#2dd4bf')
+      +   bgTile('calm', 'This month, standing still')
+      +   owned.map(function(o){ return bgTile(o.hex, o.rare ? '✦ Rare' : '', o.hex); }).join('')
+      + '</div>'
+      + '<div class="np-actions" style="margin-top:14px;">'
+      +   '<button class="aura-roll" onclick="bgSave()"' + (pick ? '' : ' disabled') + '><i class="ti ti-check"></i> Use this background</button>'
+      +   (pick ? '<button class="aura-reset" onclick="bgUndo()">Undo</button>' : '')
+      + '</div>'
+      + (pick ? '<div class="aura-pick">Previewing <b>' + esc(bgName(BG_PICK)) + '</b>. Nothing is saved until you press Use this background.</div>' : '')
+      + '</div>'
+      + sectionHead('ti-dice-5', 'Unlock more <span class="cnt">' + owned.length + ' of ' + (BG.palette || []).length + '</span>',
+          'Every colour from the aura collection, as a background. Every roll is one you don’t have yet.')
+      + '<div class="np-roll-row"><button class="aura-roll" id="bg-roll" onclick="bgRoll()"' + (left > 0 ? '' : ' disabled') + '>'
+      +   '<i class="ti ti-dice-5"></i> ' + (left > 0 ? 'Roll a background · ' + (BG.cost || 15) + ' Embers' : 'You have them all, for now') + '</button></div>';
+  }
+  function bgSpendRow(){
+    var done = bgAllOwned();
+    return '<div class="rand-row"><div class="spend-ex"><span class="bg-mini"><i></i><i></i><i></i></span><span>Teal</span></div>'
+      + '<div class="rand-info"><div class="rand-name"><i class="ti ti-sparkles"></i> A background</div>'
+      + '<div class="aura-sub" style="margin:2px 0 0;">' + (done ? 'You have them all, for now. New ones will wake this button up.' : 'A new colour for the drifting light behind every page.') + '</div></div>'
+      + '<button class="aura-roll" onclick="setTab(\'background\');bgRoll();"' + (done ? ' disabled' : '') + '><i class="ti ti-dice-5"></i> Roll &middot; ' + ((BG && BG.cost) || 15) + ' Embers</button></div>';
+  }
+  window.bgPick = function(c){ BG_PICK = c; if (window.dsSetBackground) dsSetBackground(c); render(); };
+  window.bgUndo = function(){ BG_PICK = null; if (window.dsSetBackground) dsSetBackground(BG.choice); render(); };
+  window.bgSave = async function(){
+    var c = BG_PICK; if (!c) return;
+    var r = await db.rpc('set_background', { p_choice: c });
+    if (r.error || !r.data || !r.data.ok) { toast((r.data && r.data.error) || 'Could not save that.', 'ti-alert-triangle', true); return; }
+    BG.choice = c; BG_PICK = null;
+    if (window.dsSetBackground) dsSetBackground(c);
+    toast(bgName(c) + ' is your background now', 'ti-sparkles'); render();
+  };
+  window.bgRoll = async function(){
+    var b = document.getElementById('bg-roll'); if (b) { b.disabled = true; b.innerHTML = '<i class="ti ti-loader"></i> Rolling…'; }
+    dsRollOpen();
+    var r = await db.rpc('roll_background'); var d = (r && r.data) || {};
+    if (d.status === 'insufficient_embers') { dsRollClose(); toast('You need ' + (d.cost || BG.cost) + ' Embers for that.', 'ti-flame', true); render(); return; }
+    if (d.status === 'all_unlocked') { dsRollClose(); toast('You have every background, for now.', 'ti-check'); render(); return; }
+    if (r.error || d.status !== 'success') { dsRollClose(); toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); render(); return; }
+    refreshEmbers(d.balance);
+    BG.unlocked = (BG.unlocked || []).concat([d.hex]);
+    if (window.dsSetBackground) dsSetBackground(d.hex);
+    BG_PICK = d.hex;
+    await dsRollReveal({ hex: d.hex, label: d.label || 'A new background', rare: !!d.rare, kicker: 'Background unlocked',
+      sub: 'It’s previewing behind this page now. Press <b>Use this background</b> to keep it.' });
+    TAB = 'background';
+    try { history.replaceState(null, '', '#background'); } catch(e) {}
+    render();
+  };
+  // Leaving the tab without saving puts the saved background back.
+  var _bgSetTab = window.setTab;
+  window.setTab = function(t){ if (t !== 'background' && BG_PICK) { BG_PICK = null; if (window.dsSetBackground) dsSetBackground(BG.choice); } _bgSetTab(t); };
   function tabsHtml(){
     var t = function(key, icon, label){
       return '<button class="ctab' + (TAB === key ? ' on' : '') + '" onclick="setTab(\'' + key + '\')"'
         + ' role="tab" aria-selected="' + (TAB === key) + '"><i class="ti ' + icon + '"></i> ' + label + '</button>';
     };
     return '<div class="ctabs" role="tablist">' + t('spend', 'ti-flame', 'Spend Embers') + t('characters', 'ti-users', 'Characters')
-      + t('banners', 'ti-photo', 'Banners') + t('nameplate', 'ti-typography', 'Nameplate') + t('aura', 'ti-color-swatch', 'Aura') + '</div>';
+      + t('banners', 'ti-photo', 'Banners') + t('nameplate', 'ti-typography', 'Nameplate') + t('aura', 'ti-color-swatch', 'Aura') + t('background', 'ti-sparkles', 'Background') + '</div>';
   }
 
   function render(){
@@ -1264,6 +1381,7 @@
     var html = tabsHtml();
     if (TAB === 'banners') html += bannersHtml();
     else if (TAB === 'aura') html += auraHtml();
+    else if (TAB === 'background') html += bgHtml();
     else if (TAB === 'characters') html += charactersHtml();
     else if (TAB === 'nameplate') { html += nameplateHtml(); setTimeout(function(){ if (window.npLazyFonts) npLazyFonts(); }, 0); }
     else html += spendHtml();
