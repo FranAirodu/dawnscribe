@@ -565,7 +565,22 @@
         scroll-behavior:auto !important;
       }
     }
-  </style>
+  
+    /* "Previously on…" — built from the author's Lorebook, no AI. */
+    .lore-recap{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;padding:12px 16px;margin:0 0 22px;font-family:'Lato',sans-serif;}
+    .lore-recap summary{cursor:pointer;font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--text);list-style:none;display:flex;align-items:center;gap:8px;}
+    .lore-recap summary::-webkit-details-marker{display:none;}
+    .lore-recap summary i{color:var(--accent);}
+    .lore-recap summary .lr-hint{margin-left:auto;font-family:'Lato',sans-serif;font-size:11.5px;font-weight:400;color:var(--text3);}
+    .lore-recap .lr-row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border);}
+    .lore-recap .lr-row:first-of-type{margin-top:10px;}
+    .lore-recap .lr-av{width:34px;height:34px;border-radius:8px;flex-shrink:0;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;color:var(--text3);overflow:hidden;}
+    .lore-recap .lr-av img{width:100%;height:100%;object-fit:cover;}
+    .lore-recap .lr-nm{font-weight:700;font-size:13.5px;color:var(--text);}
+    .lore-recap .lr-new{font-size:10px;font-weight:700;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:0 6px;margin-left:6px;}
+    .lore-recap .lr-f{font-size:13px;color:var(--text2);line-height:1.5;}
+    .lore-recap .lr-f b{color:var(--text3);font-weight:400;}
+</style>
   <script src="accessibilityPrefs.js"></script>
   <script src="contentWarnings.js"></script>
 <style>
@@ -715,6 +730,7 @@
     </div>
 
     <!-- AUTHOR'S NOTE (TOP) -->
+    <details class="lore-recap" id="lore-recap" style="display:none;"></details>
     <div class="author-note" id="author-note-top" style="display:none;"></div>
 
     <!-- POLL (TOP) -->
@@ -4104,6 +4120,7 @@
         if (workData && _cwMount && !isAuthor) DSWarn.banner(workData, _cwMount);
       } catch(e) {}
 
+      if (workData && workData.lore_recaps_on) loadLoreRecap(chapterId);
       applyDocumentLang(workData && workData.language);
       if (workData) dsTranslateHint.show(document.querySelector('.reader-wrap'), workData.language);
 
@@ -5611,6 +5628,32 @@
 
 <script src="commentToolbar.js"></script>
 <script src="characterTitles.js"></script>
+<script>
+    // "Previously on…": what became true in the chapter before this one,
+    // taken from the author's Lorebook. Only reader-safe questions, filtered
+    // server-side by lore_chapter_recap().
+    async function loadLoreRecap(chId) {
+      try {
+        var box = document.getElementById('lore-recap');
+        if (!box) return;
+        var r = await db.rpc('lore_chapter_recap', { p_chapter_id: chId });
+        var d = r && r.data;
+        if (!d || !d.ok || !d.cards || !d.cards.length) return;
+        var esc = function(x){ var t=document.createElement('div'); t.textContent = x == null ? '' : String(x); return t.innerHTML; };
+        var html = '<summary><i class="ti ti-history"></i> Previously on…<span class="lr-hint">Chapter ' + esc(d.chapter) + ' · tap to open</span></summary>';
+        d.cards.forEach(function(c){
+          var pic = /^https:\/\//i.test(c.picture || '') ? c.picture : '';
+          html += '<div class="lr-row"><div class="lr-av">' + (pic ? '<img src="' + esc(pic) + '" alt="" loading="lazy"/>' : esc(String(c.name || '?').charAt(0).toUpperCase())) + '</div><div>'
+            + '<div class="lr-nm">' + esc(c.name) + (c.is_new ? '<span class="lr-new">NEW</span>' : '') + '</div>'
+            + c.facts.map(function(f){ return '<div class="lr-f"><b>' + esc(f.label) + ':</b> ' + f.values.map(esc).join('; ') + '</div>'; }).join('')
+            + '</div></div>';
+        });
+        box.innerHTML = html;
+        box.style.display = '';
+      } catch (e) {}
+    }
+</script>
+
 <script src="footer.js"></script>
 <script src="badgeCelebrate.js"></script>
 <script src="muteFilter.js"></script>

@@ -573,12 +573,6 @@
     .sim-card-body{padding:8px;}
     .sim-card-title{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .sim-card-meta{font-size:10px;color:var(--text3);margin-top:2px;}
-    .sim-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:all 0.18s;text-decoration:none;display:flex;flex-direction:column;}
-    .sim-card:hover{border-color:var(--accent);transform:translateY(-2px);}
-    .sim-card-cover{width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:var(--text3);}
-    .sim-card-body{padding:8px;}
-    .sim-card-title{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .sim-card-meta{font-size:10px;color:var(--text3);margin-top:2px;}
     .sidebar-title i{color:var(--accent);font-size:14px;}
     .info-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;}
     .info-row:last-child{border-bottom:none;}
@@ -848,12 +842,6 @@
         <div id="similar-stories-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;"></div>
       </div>
 
-      <!-- SIMILAR STORIES -->
-      <div class="section" id="similar-stories-section" style="display:none;">
-        <div class="section-title"><i class="ti ti-sparkles"></i> Similar Stories</div>
-        <div id="similar-stories-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;"></div>
-      </div>
-
       <!-- SUPPORT THE AUTHOR -->
       <div class="section" id="tip-section" style="display:none;">
         <div class="section-title"><i class="ti ti-coin"></i> Support the author</div>
@@ -906,18 +894,6 @@
         <div class="sidebar-title"><i class="ti ti-books"></i> Recommendations</div>
         <div class="rec-list" id="rec-list"><div style="font-size:12px;color:var(--text3);text-align:center;padding:8px 0;"><i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i></div></div>
         <button class="rec-add-btn" id="rec-add-btn" style="display:none;" onclick="openRecModal()"><i class="ti ti-plus"></i> Add recommendation</button>
-      </div>
-
-    <!-- POLLS TOGGLE (owner only) -->
-      <div class="sidebar-section" id="polls-toggle-section" style="display:none;">
-        <div class="sidebar-title"><i class="ti ti-chart-bar"></i> Polls</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <div>
-            <div style="font-size:13px;font-weight:600;color:var(--text);">Allow reader polls</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px;">Readers can vote in polls you embed in chapters</div>
-          </div>
-          <button id="polls-toggle-btn" onclick="toggleAllowPolls()" style="border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;font-family:'Lato',sans-serif;cursor:pointer;transition:all 0.2s;border:1px solid var(--border);background:var(--bg3);color:var(--text3);">Off</button>
-        </div>
       </div>
 
     <!-- POLLS TOGGLE (owner only) -->
@@ -3847,7 +3823,7 @@
       await Promise.all([
         loadFollowState(), loadOfferingState(), loadEngagementState(),
         loadGoalState(), loadKindlingState(), loadGlossary(),
-        loadReviews(), loadRecommendations(), loadCollabs(), loadNovelCollabs(), loadSimilarStories(), loadSimilarStories()
+        loadReviews(), loadRecommendations(), loadCollabs(), loadNovelCollabs(), loadSimilarStories()
       ].map(function(p){ return Promise.resolve(p).catch(function(e){ console.error('story section load failed:', e); }); }));
 
       renderActions();
@@ -3924,59 +3900,6 @@
 
     // ── RECOMMENDATIONS ──────────────────────────────────────────
     var recData = []; var recVotedIds = new Set(); var recSearchTimer = null;
-
-    async function loadSimilarStories() {
-      if (!workData) return;
-      try {
-        var { data } = await Promise.resolve(db.rpc('get_similar_works', { p_work_id: workData.id, p_limit: 6 }));
-        var section = document.getElementById('similar-stories-section');
-        var list = document.getElementById('similar-stories-list');
-        if (!data || !data.length) return;
-        section.style.display = '';
-        var authorIds = [...new Set(data.map(function(w){ return w.author_id; }).filter(Boolean))];
-        var authorMap = {};
-        if (authorIds.length) {
-          var { data: aProfiles } = await db.from('profiles').select('id,username').in('id', authorIds);
-          (aProfiles||[]).forEach(function(p){ authorMap[p.id] = p; });
-        }
-        list.innerHTML = '';
-        data.forEach(function(w) {
-          var author = authorMap[w.author_id];
-          var card = document.createElement('a');
-          card.className = 'sim-card';
-          card.href = 'story.html?id=' + w.id;
-          var coverHtml = w.cover_url
-            ? '<img class="sim-card-cover" src="' + escHtml(w.cover_url) + '" alt="" loading="lazy" style="width:100%;aspect-ratio:2/3;object-fit:cover;"/>'
-            : '<div class="sim-card-cover">' + escHtml((w.title||'?').charAt(0).toUpperCase()) + '</div>';
-          card.innerHTML = coverHtml +
-            '<div class="sim-card-body">' +
-              '<div class="sim-card-title">' + escHtml(w.title||'Untitled') + '</div>' +
-              '<div class="sim-card-meta">' + (author ? escHtml(author.username) : '') + '</div>' +
-            '</div>';
-          list.appendChild(card);
-        });
-      } catch(e) {}
-    }
-
-    async function toggleAllowPolls() {
-      if (!workData || !currentSession || currentSession.user.id !== workData.author_id) return;
-      var newVal = !workData.allow_polls;
-      var { error } = await db.from('works').update({ allow_polls: newVal }).eq('id', workData.id);
-      if (error) { showToast('Could not update poll setting.', 'ti-x'); return; }
-      workData.allow_polls = newVal;
-      renderPollsToggle();
-      showToast(newVal ? 'Polls enabled for this story.' : 'Polls disabled for this story.', newVal ? 'ti-check' : 'ti-chart-bar');
-    }
-
-    function renderPollsToggle() {
-      var btn = document.getElementById('polls-toggle-btn');
-      if (!btn) return;
-      var on = workData && workData.allow_polls !== false;
-      btn.textContent = on ? 'On' : 'Off';
-      btn.style.background = on ? 'rgba(var(--aura-rgb,45,212,191),0.12)' : 'var(--bg3)';
-      btn.style.borderColor = on ? 'var(--accent)' : 'var(--border)';
-      btn.style.color = on ? 'var(--accent)' : 'var(--text3)';
-    }
 
     async function loadSimilarStories() {
       if (!workData) return;

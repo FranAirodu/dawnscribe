@@ -801,7 +801,7 @@ async function loadWork(){
   LORESCOUT = sum.data.lorescout === true;
 
   var out = await Promise.all([
-    Promise.resolve(db.from('works').select('id,title,lore_reader_on').eq('id', workId).maybeSingle()).catch(function(){ return {}; }),
+    Promise.resolve(db.from('works').select('id,title,lore_reader_on,lore_recaps_on').eq('id', workId).maybeSingle()).catch(function(){ return {}; }),
     Promise.resolve(db.from('lore_fields').select('*').eq('is_active', true)
       .order('group_order').order('sort_order')).catch(function(){ return {}; }),
     Promise.resolve(db.from('lore_cards').select('*').eq('work_id', workId)
@@ -4637,12 +4637,34 @@ function renderReaders(){
     + '</div>'
     + '<div style="margin-top:10px;font-size:12px;color:' + (on ? 'var(--green)' : 'var(--text3)') + ';">'
     + (on ? '<i class="ti ti-circle-check"></i> On — readers can see it.' : '<i class="ti ti-circle-dashed"></i> Off — only you can preview it.') + '</div></div>'
+    + '<div class="finding"><div class="finding-msg"><i class="ti ti-history"></i> \u201cPreviously on\u2026\u201d recaps</div>'
+    + '<div style="font-size:13px;color:var(--text2);margin:6px 0 12px;line-height:1.6;">'
+    + 'At the top of each chapter, readers can open a short reminder of what became true in the chapter before \u2014 '
+    + 'new characters, new looks, who holds what. It is built from your cards, using the same safe questions as the guide. '
+    + 'Only facts with a chapter number show up.</div>'
+    + '<div class="finding-acts"><button class="btn ' + (work.lore_recaps_on ? '' : 'primary') + '" onclick="toggleRecaps(this)"><i class="ti ti-' + (work.lore_recaps_on ? 'eye-off' : 'eye') + '"></i> '
+    + (work.lore_recaps_on ? 'Turn recaps off' : 'Turn recaps on') + '</button></div>'
+    + '<div style="margin-top:10px;font-size:12px;color:' + (work.lore_recaps_on ? 'var(--green)' : 'var(--text3)') + ';">'
+    + (work.lore_recaps_on ? '<i class="ti ti-circle-check"></i> On \u2014 readers see a recap at the top of each chapter.' : '<i class="ti ti-circle-dashed"></i> Off') + '</div></div>'
     + '<details class="finding" style="cursor:pointer;"><summary style="font-size:13px;color:var(--text2);">Which questions readers can see</summary>'
     + '<div style="font-size:12.5px;color:var(--text3);margin-top:8px;line-height:1.7;">'
     + DECKS.filter(function(d){ return safe[d.kind]; }).map(function(d){
         return '<b style="color:var(--text2);">' + esc(d.title) + ':</b> ' + safe[d.kind].map(esc).join(', ');
       }).join('<br>')
     + '</div></details>';
+}
+async function toggleRecaps(btn){
+  var next = !work.lore_recaps_on;
+  if(btn) btn.disabled = true;
+  var res = await db.from('works').update({ lore_recaps_on: next }).eq('id', workId).select('lore_recaps_on').maybeSingle();
+  if(res.error || !res.data){
+    if(btn) btn.disabled = false;
+    toast(res.error ? res.error.message : 'Could not change that', 'ti-x', true);
+    return;
+  }
+  work.lore_recaps_on = res.data.lore_recaps_on;
+  toast(work.lore_recaps_on ? 'Readers now get a recap at the top of each chapter' : 'Recaps are off');
+  render();
 }
 async function toggleReaderGuide(btn){
   var next = !work.lore_reader_on;
