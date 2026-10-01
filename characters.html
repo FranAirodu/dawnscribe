@@ -290,6 +290,16 @@
     .aura-pick{font-size:13px;color:var(--text2,#9b9bc0);margin:10px 0 2px;min-height:18px;}
     .aura-pick b{color:var(--text,#f1f0ff);}
     .aura-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .spend-ex{flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:3px;}
+    .spend-ex span{font-size:10.5px;color:var(--text3,#8a8aa8);letter-spacing:.02em;white-space:nowrap;}
+    .spend-ex-flame{width:120px;}
+    .spend-ex-flame svg{width:40px;height:50px;filter:drop-shadow(0 0 8px rgba(132,204,22,.45));}
+    .spend-ex-flame svg .f-body{transform-origin:20px 45px;animation:flicker 1.6s ease-in-out infinite;}
+    .spend-ex-banner{width:120px;}
+    .spend-ex-banner img{width:120px;height:46px;object-fit:cover;border-radius:8px;border:1px solid var(--border,rgba(255,255,255,.08));
+      box-shadow:0 4px 14px rgba(0,0,0,.35);}
+    @media (max-width:600px){.spend-ex-flame,.spend-ex-banner{width:84px;}.spend-ex-banner img{width:84px;height:34px;}}
+    @media (prefers-reduced-motion:reduce){.spend-ex-flame svg .f-body{animation:none;}}
     .spend-intro{font-size:14px;color:var(--text2,#9b9bc0);margin:4px 0 6px;line-height:1.6;}
     .spend-intro i{color:var(--accent);}
     .spend-intro a{color:var(--accent);font-weight:700;text-decoration:none;}
@@ -631,6 +641,8 @@
     return '<a class="spend-link" href="#spend" onclick="setTab(\'spend\');return false;">'
       + '<i class="ti ti-flame"></i> ' + label + ' <span>on Spend Embers \u2192</span></a>';
   }
+  var SPEND_EX_AURA = '#84cc16';   // Lime
+  var SPEND_EX_BANNER = 'https://cajjyyskpmjnpcxcfeuk.supabase.co/storage/v1/object/public/cosmetic-assets/landscapes/writers-desk-bastartu.webp';
   function spendHtml(){
     var opening = CHARS.filter(isOpening);
     var auraDone = allAurasOwned();
@@ -643,17 +655,28 @@
         'The whole community fills the bar together. Everyone who gave Embers gets the character.')
         + opening.map(openingCard).join('');
     }
-    html += sectionHead('ti-dice-5', 'Win something', 'DawnScribe\u2019s own collectibles, never sold, only won with Embers. Every roll is something you don\u2019t have yet.')
-      + '<div class="aura-card">'
-      + randRow('character', 'A character', 'ti-user-heart', 'Winners join your crew.')
-      + randRow('banner', 'A profile banner', 'ti-photo', 'Wear it on your profile.')
-      + '<div class="rand-row">'
+    // A taste of each prize: an example the roll could give (never one
+    // the roll promises). Cheapest first, so the list climbs in price.
+    var auraRow = '<div class="rand-row">'
+      +   '<div class="spend-ex spend-ex-flame" title="Example: Lime">' + flameSvg(SPEND_EX_AURA, 900, false)
+      +   '<span>Lime</span></div>'
       +   '<div class="rand-info"><div class="rand-name"><i class="ti ti-color-swatch"></i> An aura colour</div>'
       +   '<div class="aura-sub" style="margin:2px 0 0;">' + (auraDone ? 'You have them all, for now. New ones will wake this button up.'
              : 'A new colour for the whole site, just for you.') + '</div></div>'
       +   '<button class="aura-roll" id="aura-roll" onclick="rollAura()"' + (auraDone ? ' disabled' : '') + '>'
       +   '<i class="ti ti-dice-5"></i> Roll &middot; ' + AURA_COST + ' Embers</button>'
-      + '</div>'
+      + '</div>';
+    var bannerEx = '<div class="spend-ex spend-ex-banner" title="Example: Writer\u2019s Desk">'
+      + '<img src="' + SPEND_EX_BANNER + '" alt="" loading="lazy" onerror="this.parentNode.style.display=\'none\'"/>'
+      + '<span>Writer\u2019s Desk</span></div>';
+    var rows = [
+      { cost: AURA_COST, html: auraRow },
+      { cost: RAND.banner.cost, html: randRow('banner', 'A profile banner', 'ti-photo', 'Wear it on your profile.', bannerEx) },
+      { cost: RAND.character.cost, html: randRow('character', 'A character', 'ti-user-heart', 'Winners join your crew.') }
+    ].sort(function(a, b){ return (Number(a.cost) || 0) - (Number(b.cost) || 0); });
+    html += sectionHead('ti-dice-5', 'Win something', 'DawnScribe\u2019s own collectibles, never sold, only won with Embers. Every roll is something you don\u2019t have yet.')
+      + '<div class="aura-card">'
+      + rows.map(function(r){ return r.html; }).join('')
       + '<div class="aura-note" id="rand-note"></div><div class="aura-note" id="aura-note"></div></div>';
     return html;
   }
@@ -1003,7 +1026,7 @@
   // ── RANDOMIZER ────────────────────────────────────────────────
   // Free to enter with Embers. You never get a duplicate: each roll picks
   // something you do not have yet, and says so when you have them all.
-  function randRow(kind, label, icon, where){
+  function randRow(kind, label, icon, where, example){
     var r = RAND[kind];
     var left = Math.max(0, r.pool - r.owned);
     // Totals are deliberately never shown. The button sleeps when you own
@@ -1012,6 +1035,7 @@
       : !left ? 'You have them all, for now. New ones will wake this button up.'
       : 'Every roll is something you don\u2019t have yet.';
     return '<div class="rand-row">'
+      + (example || '')
       + '<div class="rand-info"><div class="rand-name"><i class="ti ' + icon + '"></i> ' + label + '</div>'
       + '<div class="aura-sub" style="margin:2px 0 0;">' + status + ' ' + where + '</div></div>'
       + '<button class="aura-roll" id="roll-' + kind + '" onclick="rollRandom(\'' + kind + '\')"'
