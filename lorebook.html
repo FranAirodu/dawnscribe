@@ -432,6 +432,7 @@ var CARDS = [];         // every card in this work
 var RELATIONS = [];
 var FINDINGS = [];
 var NOTES = [];
+var CHAR_PORTRAITS = {};   // novel_characters.id -> { name, url } for this author's character cards
 var IMG_URLS = {};   // image_path -> short-lived signed URL (private bucket)
 var NOTES_SHOW_DONE = false;
 var LOREKEEPER = false;   // full-tier membership (also gates manuscript export)
@@ -818,6 +819,7 @@ async function loadWork(){
     FIELDS_BY_KEY[f.field_key] = f;
   });
   CARDS     = out[2].data || [];
+  await loadCharacterPortraits();
   await loadCardImages();
   RELATIONS = out[3].data || [];
   FINDINGS  = out[4].data || [];
@@ -905,8 +907,28 @@ async function loadCardImages(paths){
     (r.data || []).forEach(function(x){ if(x && x.signedUrl && x.path) IMG_URLS[x.path] = x.signedUrl; });
   } catch(e) { console.warn('card pictures:', e); }
 }
+/* Character cards (novel_characters) of this story can lend their picture to
+   a Lorebook card. The link is live: change the character's picture and the
+   Lorebook card follows. Their pictures are already public, so no copy. */
+async function loadCharacterPortraits(){
+  CHAR_PORTRAITS = {};
+  try {
+    var r = await db.from('novel_characters').select('id,name,portrait_url,is_book_card,status')
+      .eq('work_id', workId).order('sort_order');
+    (r.data || []).forEach(function(x){
+      if(x.is_book_card || !x.portrait_url) return;
+      if(!/^https:\/\//i.test(x.portrait_url) || /\/$/.test(x.portrait_url)) return;   // no real picture
+      CHAR_PORTRAITS[x.id] = { name: x.name, url: x.portrait_url };
+    });
+  } catch(e) { console.warn('character pictures:', e); }
+}
+function cardPicUrl(c){
+  if(c.portrait_character_id && CHAR_PORTRAITS[c.portrait_character_id]) return CHAR_PORTRAITS[c.portrait_character_id].url;
+  return c.image_path && IMG_URLS[c.image_path];
+}
+function cardHasPic(c){ return !!cardPicUrl(c); }
 function cardGlyph(c){
-  var url = c.image_path && IMG_URLS[c.image_path];
+  var url = cardPicUrl(c);
   return url ? '<img src="' + esc(url) + '" alt="" loading="lazy" decoding="async"/>'
              : esc(String(c.name || '').trim().charAt(0).toUpperCase() || '?');
 }
@@ -945,13 +967,14 @@ async function pickCardPicture(input){
     var path = uid + '/' + c.id + '-' + Date.now() + '.' + ext;
     var up = await db.storage.from(LORE_BUCKET).upload(path, blob, { contentType: blob.type, upsert: false });
     if(up.error) throw up.error;
-    var res = await db.from('lore_cards').update({ image_path: path }).eq('id', c.id).select().maybeSingle();
+    var res = await db.from('lore_cards').update({ image_path: path, portrait_character_id: null }).eq('id', c.id).select().maybeSingle();
     if(res.error || !res.data){
       await db.storage.from(LORE_BUCKET).remove([path]);
       throw res.error || new Error('Could not save the picture');
     }
     var old = c.image_path;
     c.image_path = path;
+    c.portrait_character_id = null;
     if(old) { try { await db.storage.from(LORE_BUCKET).remove([old]); } catch(e){} delete IMG_URLS[old]; }
     await loadCardImages([path]);
     refreshPicUI(c);
@@ -963,13 +986,13 @@ async function pickCardPicture(input){
 }
 async function removeCardPicture(){
   var c = cardById(EDIT_ID);
-  if(!c || !c.image_path) return;
+  if(!c || (!c.image_path && !c.portrait_character_id)) return;
   var old = c.image_path;
-  var res = await db.from('lore_cards').update({ image_path: null }).eq('id', c.id);
+  var res = await db.from('lore_cards').update({ image_path: null, portrait_character_id: null }).eq('id', c.id);
   if(res.error){ toast(res.error.message, 'ti-x', true); return; }
   c.image_path = null;
-  try { await db.storage.from(LORE_BUCKET).remove([old]); } catch(e){}
-  delete IMG_URLS[old];
+  c.portrait_character_id = null;
+  if(old){ try { await db.storage.from(LORE_BUCKET).remove([old]); } catch(e){} delete IMG_URLS[old]; }
   refreshPicUI(c);
   toast('Picture removed');
 }
@@ -977,18 +1000,72 @@ function picFieldHtml(c){
   return '<div class="f wide"><label class="q">Picture</label>'
     + '<div class="ans"><div class="pic-row"><div class="pic-prev" id="pic-prev">' + cardGlyph(c) + '</div>'
     + '<div class="pic-btns">'
-    +   '<label class="btn ghost" style="cursor:pointer;"><i class="ti ti-photo-up"></i> <span id="pic-up-label">' + (c.image_path ? 'Change picture' : 'Add a picture') + '</span>'
+    +   '<label class="btn ghost" style="cursor:pointer;"><i class="ti ti-photo-up"></i> <span id="pic-up-label">' + (cardHasPic(c) ? 'Upload a different picture' : 'Add a picture') + '</span>'
     +     '<input type="file" accept="image/*" style="display:none;" onchange="pickCardPicture(this)"/></label>'
-    +   '<button type="button" class="btn ghost" id="pic-remove" onclick="removeCardPicture()"' + (c.image_path ? '' : ' style="display:none;"') + '>Remove</button>'
-    + '</div></div></div>'
-    + '<div class="help">A face, a sketch, a map \u2014 anything that helps you remember. Only you can see it. Saves straight away.</div>'
+    +   (Object.keys(CHAR_PORTRAITS).length
+          ? '<button type="button" class="btn ghost" onclick="openPortraitPicker()"><i class="ti ti-users"></i> Use a character card\u2019s picture</button>' : '')
+    +   '<button type="button" class="btn ghost" id="pic-remove" onclick="removeCardPicture()"' + (cardHasPic(c) ? '' : ' style="display:none;"') + '>Remove</button>'
+    + '</div></div><div id="pic-share-note" class="help" style="margin-top:6px;">' + picShareNote(c) + '</div></div>'
+    + '<div class="help">A face, a sketch, a map \u2014 anything that helps you remember. Your own uploads are private to you. Saves straight away.</div>'
     + '<div class="f-foot"></div>'
     + '</div>';
 }
+function picShareNote(c){
+  var p = c.portrait_character_id && CHAR_PORTRAITS[c.portrait_character_id];
+  return p ? '<i class="ti ti-link"></i> Using <b>' + esc(p.name) + '</b>\u2019s character card picture \u2014 change it there and it changes here too.' : '';
+}
+function openPortraitPicker(){
+  var c = cardById(EDIT_ID);
+  if(!c) return;
+  var ids = Object.keys(CHAR_PORTRAITS);
+  var nm = String(c.name || '').trim().toLowerCase();
+  // Same name first, so Naomie's card offers Naomie's picture at the top.
+  ids.sort(function(a, b){
+    var ma = CHAR_PORTRAITS[a].name.trim().toLowerCase() === nm ? 0 : 1;
+    var mb = CHAR_PORTRAITS[b].name.trim().toLowerCase() === nm ? 0 : 1;
+    return ma - mb || CHAR_PORTRAITS[a].name.localeCompare(CHAR_PORTRAITS[b].name);
+  });
+  var old = document.getElementById('portrait-pick'); if(old) old.remove();
+  var wrap = document.createElement('div');
+  wrap.id = 'portrait-pick';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;';
+  wrap.onclick = function(e){ if(e.target === wrap) wrap.remove(); };
+  wrap.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;max-width:520px;width:100%;max-height:80vh;overflow:auto;padding:18px;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
+    + '<b style="font-size:15px;">Use a character card\u2019s picture</b>'
+    + '<button class="btn ghost" style="padding:4px 10px;" onclick="document.getElementById(\'portrait-pick\').remove()"><i class="ti ti-x"></i></button></div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;">These are your story\u2019s character cards. The picture stays linked, so it updates when you change it there.</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;">'
+    + ids.map(function(id){
+        var p = CHAR_PORTRAITS[id], on = c.portrait_character_id === id;
+        return '<button type="button" onclick="usePortrait(\'' + id + '\')" style="background:var(--bg3);border:2px solid '
+          + (on ? 'var(--accent)' : 'var(--border)') + ';border-radius:10px;padding:8px;cursor:pointer;color:var(--text);text-align:center;">'
+          + '<img src="' + esc(p.url) + '" alt="" loading="lazy" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:7px;display:block;margin-bottom:6px;"/>'
+          + '<span style="font-size:12.5px;">' + esc(p.name) + '</span></button>';
+      }).join('')
+    + '</div></div>';
+  document.body.appendChild(wrap);
+}
+async function usePortrait(charId){
+  var c = cardById(EDIT_ID);
+  var p = CHAR_PORTRAITS[charId];
+  if(!c || !p) return;
+  var res = await db.from('lore_cards').update({ portrait_character_id: charId, image_path: null }).eq('id', c.id).select().maybeSingle();
+  if(res.error || !res.data){ toast(res.error ? res.error.message : 'Could not use that picture', 'ti-x', true); return; }
+  var old = c.image_path;
+  c.portrait_character_id = charId;
+  c.image_path = null;
+  // An upload the card no longer uses would only take up space.
+  if(old){ try { await db.storage.from(LORE_BUCKET).remove([old]); } catch(e){} delete IMG_URLS[old]; }
+  var w = document.getElementById('portrait-pick'); if(w) w.remove();
+  refreshPicUI(c);
+  toast('Now using ' + p.name + '\u2019s picture');
+}
 function refreshPicUI(c){
   var prev = document.getElementById('pic-prev'); if(prev) prev.innerHTML = cardGlyph(c);
-  var lab = document.getElementById('pic-up-label'); if(lab) lab.textContent = c.image_path ? 'Change picture' : 'Add a picture';
-  var rm = document.getElementById('pic-remove'); if(rm) rm.style.display = c.image_path ? '' : 'none';
+  var lab = document.getElementById('pic-up-label'); if(lab) lab.textContent = cardHasPic(c) ? 'Upload a different picture' : 'Add a picture';
+  var rm = document.getElementById('pic-remove'); if(rm) rm.style.display = cardHasPic(c) ? '' : 'none';
+  var nt = document.getElementById('pic-share-note'); if(nt) nt.innerHTML = picShareNote(c);
 }
 
 function render(){
@@ -1261,7 +1338,7 @@ function buildCardEl(c, deck, i){
     + '</div>'
     + '<div class="card-name">' + esc(c.name) + '</div>'
     + '<div class="card-role">' + esc(c.subtitle || '') + '</div>'
-    + '<div class="card-glyph' + (c.image_path && IMG_URLS[c.image_path] ? ' has-pic' : '') + '">' + cardGlyph(c) + '</div>'
+    + '<div class="card-glyph' + (cardHasPic(c) ? ' has-pic' : '') + '">' + cardGlyph(c) + '</div>'
     + (flags.length
         ? '<div class="card-flag"><i class="ti ti-alert-triangle"></i> '
           + flags.length + ' to look at</div>'
