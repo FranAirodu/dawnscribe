@@ -356,10 +356,10 @@
     /* Font shuffle: shown when a font is rolled */
     .np-fs-stage{position:relative;border-radius:14px;overflow:hidden;transition:box-shadow .5s;}
     .np-fs-stage .ds-np{text-align:left;}
-    .np-fs-stage .ds-np-name{transition:transform .12s;}
-    .np-fs-stage.tick .ds-np-name{transform:translateY(-2px);}
+    .np-fs-stage .ds-np-name,.np-fs-stage .ds-np-title{transition:transform .12s;}
+    .np-fs-stage.tick .ds-np-name,.np-fs-stage.tick .ds-np-title{transform:translateY(-2px);}
     .np-fs-stage.land{box-shadow:0 0 0 2px var(--accent,#2dd4bf),0 0 40px -4px var(--accent,#2dd4bf);}
-    .np-fs-stage.land .ds-np-name{animation:npFsLand .5s cubic-bezier(.2,1.6,.4,1);}
+    .np-fs-stage.land .ds-np-name,.np-fs-stage.land .ds-np-title{transform-origin:left center;animation:npFsLand .5s cubic-bezier(.2,1.6,.4,1);}
     .np-fs-flash{position:absolute;inset:0;background:radial-gradient(circle at 25% 50%,rgba(255,255,255,.55),transparent 60%);opacity:0;pointer-events:none;}
     .np-fs-stage.land .np-fs-flash{animation:npFsFlash .6s ease-out;}
     .np-fs-ov .np-ink-txt,.np-fs-ov .np-ink-hint{animation:none;opacity:0;transition:opacity .4s;}
@@ -867,6 +867,8 @@
         + '<div class="np-block-head"><i class="ti ' + (isName ? 'ti-user' : 'ti-feather') + '"></i> ' + (isName ? 'Your name' : 'Your title')
         +   '<span>' + esc(isName ? name : t.title) + '</span></div>'
         + '<div class="np-sub-h"><i class="ti ti-typography"></i> Font <span class="cnt">' + fonts.length + '</span></div>'
+        + '<div class="np-roll-row"><button class="aura-roll" id="np-roll-font-' + tgt + '" onclick="npRollFont(\'' + tgt + '\')"' + (rolledHere < rollable ? '' : ' disabled') + '>'
+        +   '<i class="ti ti-dice-5"></i> Roll a font for your ' + (isName ? 'name' : 'title') + ' &middot; ' + NP.font_cost + ' Embers</button></div>'
         + '<div class="np-fonts">' + (isName ? '' : plainTile) + npFavFirst(fonts, 'font', function(f){ return f.key; }).map(fontTile).join('') + '</div>'
         + '<div class="np-sub-h"><i class="ti ti-palette"></i> Colour for ' + esc(curFont.label || 'this font') + ' <span class="cnt">' + (owned.length + free.length + 1) + '</span></div>'
         + '<div class="np-sub-note">Colours belong to this font on this title. White and your aura are always free. ' + owned.length + ' of ' + paidTotal + ' rolled.' + colourNote + '</div>'
@@ -891,9 +893,7 @@
       + '</div></div>'
 
       + sectionHead('ti-typography', 'Fonts on ' + esc(t.title) + ' <span class="cnt">' + fonts.length + '</span>',
-          'Every font you own on this title works for your name and your title. Rolled fonts only work on this title. ' + rolledHere + ' of ' + rollable + ' rolled here.')
-      + '<div class="np-roll-row"><button class="aura-roll" id="np-roll-font" onclick="npRollFont()"' + (rolledHere < rollable ? '' : ' disabled') + '>'
-      +   '<i class="ti ti-dice-5"></i> Roll a font for ' + esc(t.title) + ' &middot; ' + NP.font_cost + ' Embers</button></div>'
+          'Every font you roll works for both your name and your title, on this title only. ' + rolledHere + ' of ' + rollable + ' rolled here.')
       + '<div class="np-target" role="tablist" aria-label="What to style">'
       +   '<button class="' + (NP_TGT === 'name' ? 'on' : '') + '" onclick="npSetTarget(\'name\')"><i class="ti ti-user"></i> Style my name</button>'
       +   '<button class="' + (NP_TGT === 'name' ? '' : 'on') + '" onclick="npSetTarget(\'title\')"><i class="ti ti-feather"></i> Style my title</button>'
@@ -1005,7 +1005,7 @@
   }
   /* Font shuffle: the name flickers through fonts like a slot machine,
      slows down and lands on the new one. Tap anywhere to close. */
-  function npFontShuffle(plate, newFamily, label, titleName){
+  function npFontShuffle(plate, newFamily, label, titleName, isTitle){
     if (!window.DSNameplate) return;
     var pool = NP.fonts.map(function(f){ return f.family; }).filter(function(f){ return f && f !== newFamily; });
     for (var i = pool.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
@@ -1019,7 +1019,7 @@
       + '<div class="np-ink-hint">Tap anywhere to continue</div></div>';
     document.body.appendChild(ov);
     requestAnimationFrame(function(){ ov.classList.add('in'); });
-    var stage = ov.querySelector('.np-fs-stage'), nameEl = ov.querySelector('.ds-np-name');
+    var stage = ov.querySelector('.np-fs-stage'), nameEl = ov.querySelector(isTitle ? '.ds-np-title' : '.ds-np-name');
     var setFam = function(f){ if (nameEl) nameEl.style.fontFamily = "'" + f.replace(/'/g, '') + "',Georgia,serif"; };
     var closed = false;
     var land = function(){
@@ -1044,17 +1044,23 @@
     ov.addEventListener('click', close);
     document.addEventListener('keydown', onKey);
   }
-  window.npRollFont = async function(){
-    var b = document.getElementById('np-roll-font'); if (b) { b.disabled = true; b.innerHTML = '<i class="ti ti-loader"></i> Rolling…'; }
+  window.npRollFont = async function(tgt){
+    if (tgt) NP_TGT = tgt;
+    var b = document.getElementById('np-roll-font-' + NP_TGT); if (b) { b.disabled = true; b.innerHTML = '<i class="ti ti-loader"></i> Rolling…'; }
     var r = await db.rpc('roll_title_font', { p_title: NP_T }); var d = (r && r.data) || {};
     if (npRollFail(d, r)) { render(); return; }
     if (window.DSNameplate) DSNameplate.ensureFont(d.family);
     refreshEmbers(d.balance);
     var keep = NP_T, pick = Object.assign({}, NP_PICK); await npReload(); NP_T = keep; NP_PICK = pick;
+    var isTitle = NP_TGT !== 'name';
+    var before = npPreviewPlate();
+    if (isTitle) { NP_PICK.tfont = d.key; NP_PICK.tcolor = null; } else { NP_PICK.font = d.key; NP_PICK.color = null; }
     render();
     var tName = (npTitle(NP_T) || {}).title || 'this title';
-    npFontShuffle(Object.assign(npPreviewPlate(), { font_family: d.family, font_size: d.size || 1 }), d.family, d.label, tName);
-    toast('New font for ' + tName + ': ' + d.label + '. Pick it for your name or your title, then press Accept.', 'ti-typography');
+    var shown = isTitle ? Object.assign(before, { title_font_family: before.title_font_family || d.family, title_font_size: d.size || 1 })
+                        : Object.assign(before, { font_family: d.family, font_size: d.size || 1 });
+    npFontShuffle(shown, d.family, d.label, isTitle ? 'your title' : 'your name', isTitle);
+    toast(d.label + ' is on your ' + (isTitle ? 'title' : 'name') + '. Press Accept to keep it. It also works for your ' + (isTitle ? 'name' : 'title') + '.', 'ti-typography');
   };
   /* Ink drop: a drop of the new colour falls on the nameplate and spreads
      over the old look. Tap anywhere to close. */
