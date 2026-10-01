@@ -1020,10 +1020,26 @@ function picShareNote(c){
   var p = c.portrait_character_id && CHAR_PORTRAITS[c.portrait_character_id];
   return p ? '<i class="ti ti-link"></i> Using <b>' + esc(p.name) + '</b>\u2019s character card picture \u2014 change it there and it changes here too.' : '';
 }
-function openPortraitPicker(){
+/* Character cards whose name matches this Lorebook card: exact, or the same
+   first name ("Melissa" vs "Melissa Raven"). */
+function sameNameIds(c, ids, nameOf){
+  var nm = String(c.name || '').trim().toLowerCase();
+  var first = nm.split(/\s+/)[0];
+  var exact = ids.filter(function(id){ return nameOf(id).trim().toLowerCase() === nm; });
+  if(exact.length) return exact;
+  return ids.filter(function(id){
+    var n = nameOf(id).trim().toLowerCase();
+    return first && (n.split(/\s+/)[0] === first);
+  });
+}
+var PICK_ALL = false;
+function openPortraitPicker(showAll){
   var c = cardById(EDIT_ID);
   if(!c) return;
-  var ids = Object.keys(CHAR_PORTRAITS);
+  var allIds = Object.keys(CHAR_PORTRAITS);
+  var match = sameNameIds(c, allIds, function(id){ return CHAR_PORTRAITS[id].name; });
+  var ids = (showAll || !match.length) ? allIds : match;
+  PICK_ALL = ids.length !== match.length || !match.length;
   var nm = String(c.name || '').trim().toLowerCase();
   // Same name first, so Naomie's card offers Naomie's picture at the top.
   ids.sort(function(a, b){
@@ -1040,7 +1056,13 @@ function openPortraitPicker(){
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
     + '<b style="font-size:15px;">Use a character card\u2019s picture</b>'
     + '<button class="btn ghost" style="padding:4px 10px;" onclick="document.getElementById(\'portrait-pick\').remove()"><i class="ti ti-x"></i></button></div>'
-    + '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;">These are your story\u2019s character cards. The picture stays linked, so it updates when you change it there.</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;">'
+    + (!match.length ? 'No character card is called <b>' + esc(c.name) + '</b>, so here are all of them. '
+       : (ids === match ? 'The character card with this name. ' : 'All your character cards. '))
+    + 'The picture stays linked, so it updates when you change it there.'
+    + (match.length && ids === match && allIds.length > match.length
+        ? ' <a href="#" onclick="openPortraitPicker(true);return false;" style="color:var(--accent);">Show all characters</a>' : '')
+    + '</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;">'
     + ids.map(function(id){
         var p = CHAR_PORTRAITS[id], on = c.portrait_character_id === id;
@@ -1076,7 +1098,10 @@ function openSendToCharacter(){
   var c = cardById(EDIT_ID);
   if(!c || !c.image_path) return;
   var nm = String(c.name || '').trim().toLowerCase();
-  var list = CHAR_LIST.slice().sort(function(a, b){
+  var byId = {}; CHAR_LIST.forEach(function(x){ byId[x.id] = x; });
+  var m = sameNameIds(c, Object.keys(byId), function(id){ return byId[id].name; });
+  var showAllSend = arguments[0] === true || !m.length;
+  var list = (showAllSend ? CHAR_LIST : m.map(function(id){ return byId[id]; })).slice().sort(function(a, b){
     var ma = a.name.trim().toLowerCase() === nm ? 0 : 1, mb = b.name.trim().toLowerCase() === nm ? 0 : 1;
     return ma - mb || a.name.localeCompare(b.name);
   });
@@ -1091,7 +1116,9 @@ function openSendToCharacter(){
     + '<button class="btn ghost" style="padding:4px 10px;" onclick="document.getElementById(\'portrait-pick\').remove()"><i class="ti ti-x"></i></button></div>'
     + '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5;">'
     + '<i class="ti ti-eye" style="color:var(--gold,#fbbf24);"></i> <b>Readers will see it.</b> Character cards show on your story page, '
-    + 'so this picture stops being private. It replaces the character’s current picture.</div>'
+    + 'so this picture stops being private. It replaces the character’s current picture.'
+    + (!showAllSend && CHAR_LIST.length > list.length ? ' <a href="#" onclick="openSendToCharacter(true);return false;" style="color:var(--accent);">Show all characters</a>' : '')
+    + '</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;">'
     + list.map(function(ch){
         var p = CHAR_PORTRAITS[ch.id];
