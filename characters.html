@@ -290,6 +290,32 @@
     .aura-pick{font-size:13px;color:var(--text2,#9b9bc0);margin:10px 0 2px;min-height:18px;}
     .aura-pick b{color:var(--text,#f1f0ff);}
     .aura-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .flame.is-default::before{content:'';position:absolute;top:-3px;right:-3px;width:14px;height:14px;border-radius:50%;
+      background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.12));
+      -webkit-mask:none;box-shadow:inset 0 0 0 3px #2dd4bf;}
+    .aura-preview{margin:12px 0 4px;border:1px solid rgba(var(--aura-rgb,45,212,191),.35);border-radius:14px;overflow:hidden;
+      background:var(--bg,#0a0a0f);box-shadow:0 0 24px rgba(var(--aura-rgb,45,212,191),.12);max-width:560px;}
+    .ap-label{font-size:12px;color:var(--text2,#9b9bc0);padding:8px 12px;background:rgba(var(--aura-rgb,45,212,191),.08);}
+    .ap-label i{color:var(--accent);}
+    .ap-label b{color:var(--text,#f1f0ff);}
+    .ap-bar{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2,#12121a);border-bottom:1px solid var(--border);}
+    .ap-logo{color:var(--accent);font-size:20px;line-height:1;margin-right:auto;width:auto !important;justify-content:flex-start !important;--ds-logo-h:26px;}
+    .ap-pill{background:var(--accent);color:#0a0a0f;font-weight:700;font-size:12px;border-radius:8px;padding:5px 10px;display:inline-flex;gap:4px;align-items:center;}
+    .ap-av{width:28px;height:28px;border-radius:50%;background:var(--bg3,#1a1a26);display:flex;align-items:center;justify-content:center;color:var(--text2);
+      box-shadow:0 0 0 2px var(--accent),0 0 10px rgba(var(--aura-rgb,45,212,191),.6);}
+    .ap-body{padding:12px 14px 14px;}
+    .ap-tabs{display:flex;gap:16px;font-size:13px;color:var(--text3,#8a8aa8);border-bottom:1px solid var(--border);margin-bottom:10px;}
+    .ap-tabs span{padding-bottom:6px;}
+    .ap-tabs .on{color:var(--accent);border-bottom:2px solid var(--accent);font-weight:700;}
+    .ap-title{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--accent);margin-bottom:4px;}
+    .ap-title span{color:var(--text,#f1f0ff);}
+    .ap-text{font-size:13px;color:var(--text2,#9b9bc0);line-height:1.6;}
+    .ap-text a{color:var(--accent);text-decoration:underline;}
+    .ap-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .ap-chip{font-size:11.5px;font-weight:700;color:var(--accent);border:1px solid var(--accent);border-radius:20px;padding:3px 9px;
+      background:rgba(var(--aura-rgb,45,212,191),.1);display:inline-flex;gap:4px;align-items:center;}
+    .ap-prog{flex:1;min-width:120px;height:6px;border-radius:4px;background:var(--bg3,#1a1a26);overflow:hidden;}
+    .ap-prog span{display:block;height:100%;background:var(--accent);box-shadow:0 0 8px rgba(var(--aura-rgb,45,212,191),.7);}
     .aura-roll,.aura-reset{font-family:'Lato',sans-serif;font-size:13px;font-weight:700;border-radius:9px;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
     .aura-roll{background:var(--accent,#2dd4bf);color:#0a0a0f;border:none;}
     .aura-roll:disabled{opacity:.55;cursor:not-allowed;}
@@ -370,7 +396,7 @@
     var h = (location.hash || '').replace('#', '');
     if (['characters','banners','aura'].indexOf(h) >= 0 && h !== TAB) setTab(h);
   });
-  window.setTab = function(t){ TAB = t; OPEN = null; try { localStorage.setItem('ds_collection_tab', t); history.replaceState(null, '', '#' + t); } catch(e) {} render(); };
+  window.setTab = function(t){ if (t !== 'aura' && AURA_PICK) { AURA_PICK = null; auraPreviewRevert(); } TAB = t; OPEN = null; try { localStorage.setItem('ds_collection_tab', t); history.replaceState(null, '', '#' + t); } catch(e) {} render(); };
   // Banners
   var BANNERS = [];        // owned banners
   var BROT = { active: null, ids: [], mode: 'manual', index: 0, last: null };
@@ -788,10 +814,12 @@
         return b.hsl.l - a.hsl.l;
       })
       .map(function(x){ return x.hex; });
+    // The site's own colour always leads, so it is easy to go back to.
+    owned = ['#2dd4bf'].concat(owned.filter(function(h){ return String(h).toLowerCase() !== '#2dd4bf'; }));
     if (AURA_SORT === 'rare') {
       // Rare first, then common; each group keeps its colour-wheel order.
-      owned = owned.filter(function(h){ return (AURA_INFO[String(h).toLowerCase()] || {}).rare; })
-        .concat(owned.filter(function(h){ return !(AURA_INFO[String(h).toLowerCase()] || {}).rare; }));
+      owned = ['#2dd4bf'].concat(owned.filter(function(h){ return h !== '#2dd4bf' && (AURA_INFO[String(h).toLowerCase()] || {}).rare; }))
+        .concat(owned.filter(function(h){ return h !== '#2dd4bf' && !(AURA_INFO[String(h).toLowerCase()] || {}).rare; }));
     }
     var cur = String(AURA.hex).toLowerCase();
     var pick = AURA_PICK ? String(AURA_PICK).toLowerCase() : null;
@@ -799,13 +827,14 @@
       var h = String(hex).toLowerCase();
       var info = AURA_INFO[h] || {};
       var cls = 'flame' + (h === cur ? ' current' : '') + (h === pick ? ' picked' : '') + (info.rare ? ' rare' : '');
-      var nm = info.name || 'Aura';
+      var nm = h === '#2dd4bf' ? 'Default teal' : (info.name || 'Aura');
+      if (h === '#2dd4bf') cls += ' is-default';
       return '<button class="' + cls + '" style="--fc:' + esc(hex) + ';--fcore:' + esc(lighten(hex, 0.62)) + ';"'
         + ' onclick="pickAura(\'' + esc(hex) + '\', this)" title="' + esc(nm) + (info.rare ? ' \u00b7 Rare' : '') + (h === cur ? ' (your aura)' : '') + '"'
         + ' aria-label="' + esc(nm) + '"' + (h === pick ? ' aria-pressed="true"' : '') + '>'
         + flameSvg(hex, i, h === pick) + (info.rare ? '<span class="spark" aria-hidden="true"></span>' : '') + '</button>';
     }).join('');
-    var pickName = pick ? ((AURA_INFO[pick] || {}).name || 'this colour') : '';
+    var pickName = pick ? (pick === '#2dd4bf' ? 'Default teal' : ((AURA_INFO[pick] || {}).name || 'this colour')) : '';
     var canAccept = pick && pick !== cur;
     return '<div class="aura-card">'
       + '<div class="aura-head"><i class="ti ti-flame"></i> Your Aura</div>'
@@ -819,8 +848,9 @@
       + '<div class="aura-legend"><span class="lg-spark"></span> Flames with a spark are rare.</div>'
       + '<div class="aura-pick">'
       +   (pick ? (canAccept ? 'Selected: <b>' + esc(pickName) + '</b>' : '<b>' + esc(pickName) + '</b> is already your aura.')
-                : 'Your aura: <b>' + esc((AURA_INFO[cur] || {}).name || 'Default teal') + '</b>')
+                : 'Your aura: <b>' + esc(cur === '#2dd4bf' ? 'Default teal' : ((AURA_INFO[cur] || {}).name || 'Default teal')) + '</b>')
       + '</div>'
+      + (canAccept ? auraPreviewHtml(pickName) : '')
       + '<div class="aura-actions">'
       +   '<button class="aura-roll" onclick="acceptAura()"' + (canAccept ? '' : ' disabled') + '>'
       +     '<i class="ti ti-check"></i> Accept aura colour</button>'
@@ -828,7 +858,8 @@
             ? '<button class="aura-reset" id="aura-roll" disabled title="You have every aura for now. This wakes up when new ones arrive.">'
               + '<i class="ti ti-check"></i> You have them all, for now</button>'
             : '<button class="aura-reset" id="aura-roll" onclick="rollAura()"><i class="ti ti-wand"></i> Roll a new aura &middot; ' + AURA_COST + ' Embers</button>')
-      +   (cur !== '#2dd4bf' ? '<button class="aura-reset" onclick="pickAura(\'#2dd4bf\')">Back to default</button>' : '')
+      +   (canAccept ? '<button class="aura-reset" onclick="cancelAuraPreview()"><i class="ti ti-x"></i> Cancel preview</button>' : '')
+      +   (cur !== '#2dd4bf' && pick !== '#2dd4bf' ? '<button class="aura-reset" onclick="pickAura(\'#2dd4bf\')">Back to default teal</button>' : '')
       + '</div>'
       + '<div class="aura-note" id="aura-note"></div>'
       + '</div>';
@@ -885,9 +916,46 @@
     var r = parseInt(h.substr(0,2),16), g = parseInt(h.substr(2,2),16), b = parseInt(h.substr(4,2),16);
     return 'rgb(' + Math.round(r + (255-r)*a) + ',' + Math.round(g + (255-g)*a) + ',' + Math.round(b + (255-b)*a) + ')';
   }
+  /* Live preview. Tapping a flame repaints the whole site in that colour
+     (nav, logo, tabs, this panel) without saving anything. Accept keeps it;
+     Cancel, tapping your own aura, or leaving this tab puts yours back. The
+     saved colour in localStorage is never touched until Accept, so closing
+     the page mid-preview also leaves the real aura in place. */
+  function auraPreviewApply(hex){
+    var h = String(hex || '').toLowerCase();
+    if (window.dsApplyAccent) dsApplyAccent(!h || h === '#2dd4bf' ? null : hex);
+    if (window.dsRefreshLogo) try { dsRefreshLogo(); } catch(e) {}
+  }
+  function auraPreviewRevert(){
+    auraPreviewApply(AURA.hex);
+  }
+  window.cancelAuraPreview = function(){
+    AURA_PICK = null;
+    auraPreviewRevert();
+    render();
+  };
+  function auraPreviewHtml(name){
+    return '<div class="aura-preview" aria-label="Preview of ' + esc(name) + '">'
+      + '<div class="ap-label"><i class="ti ti-eye"></i> Previewing <b>' + esc(name) + '</b> across the site \u2014 nothing is saved until you accept.</div>'
+      + '<div class="ap-bar">'
+      +   '<div class="ap-logo" style="font-family:Cinzel,serif;">DawnScribe</div>'
+      +   '<span class="ap-pill"><i class="ti ti-pencil"></i> Publish</span>'
+      +   '<span class="ap-av"><i class="ti ti-user"></i></span>'
+      + '</div>'
+      + '<div class="ap-body">'
+      +   '<div class="ap-tabs"><span class="on">Chapters</span><span>Reviews</span><span>Characters</span></div>'
+      +   '<div class="ap-title">Chapter 7 <span>\u2014 The White Room</span></div>'
+      +   '<div class="ap-text">She pressed the golden key to the door. <a href="javascript:void 0">Read the next chapter</a> or check the '
+      +   '<a href="javascript:void 0">Story guide</a>.</div>'
+      +   '<div class="ap-row"><span class="ap-chip"><i class="ti ti-flame"></i> 31 day streak</span>'
+      +   '<span class="ap-chip"><i class="ti ti-bookmark"></i> Following</span>'
+      +   '<div class="ap-prog"><span style="width:68%"></span></div></div>'
+      + '</div></div>';
+  }
   // Tapping only picks. The flame dances, and nothing is saved until Accept.
   window.pickAura = function(hex, el){
-    AURA_PICK = hex;
+    AURA_PICK = String(hex).toLowerCase() === String(AURA.hex).toLowerCase() ? null : hex;
+    auraPreviewApply(AURA_PICK || AURA.hex);
     render();
     var btn = document.querySelector('.flame.picked');
     if (btn) { btn.classList.remove('dance'); void btn.offsetWidth; btn.classList.add('dance'); }
