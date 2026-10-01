@@ -30,7 +30,8 @@
     + '.ds-logo-art .ds-wordmark{display:block;height:var(--ds-logo-h,44px);width:auto;overflow:visible;'
     + 'filter:drop-shadow(0 0 6px rgba(var(--aura-rgb,45,212,191),.28));}'
     + '.ds-logo-art:hover .ds-wordmark{filter:drop-shadow(0 0 9px rgba(var(--aura-rgb,45,212,191),.5));}'
-    + '.footer-logo.ds-logo-art{--ds-logo-h:34px;}'
+    + '.footer-logo.ds-logo-art,.ds-footer-logo.ds-logo-art,.ds-logo-plain.ds-logo-art{--ds-logo-h:34px;}'
+    + '.ds-footer-logo.ds-logo-art,.ds-logo-plain.ds-logo-art{justify-content:center;width:100%;}'
     + '.welcome-logo.ds-logo-art,.auth-logo.ds-logo-art{--ds-logo-h:52px;justify-content:center;width:100%;}'
     + '@media (max-width:600px){.logo.ds-logo-art{--ds-logo-h:30px;}}';
 
@@ -41,7 +42,15 @@
       st.textContent = css;
       (document.head || document.documentElement).appendChild(st);
     }
-    var els = document.querySelectorAll('.logo, .footer-logo, .auth-logo, .welcome-logo');
+    // Named logo slots, plus any other spot that writes the brand name in
+    // the logo font by hand (shared footer, page footers, mobile menu).
+    var els = Array.prototype.slice.call(document.querySelectorAll('.logo, .footer-logo, .auth-logo, .welcome-logo, .ds-footer-logo'));
+    var loose = document.querySelectorAll('div[style*="Cinzel"], a[style*="Cinzel"]');
+    for (var k = 0; k < loose.length; k++){
+      if (loose[k].children.length > 1) continue;
+      loose[k].classList.add('ds-logo-plain');
+      els.push(loose[k]);
+    }
     for (var i = 0; i < els.length; i++){
       var el = els[i];
       if (el.classList.contains('ds-logo-art')) continue;
@@ -72,5 +81,12 @@
   else run();
   // Some pages write their nav after load; catch those, then stop watching.
   window.addEventListener('load', function(){ swapLogos(); setTimeout(run, 1500); });
+  // Footers and menus drawn later (footer.js, the mobile menu) are caught as
+  // they appear.
+  if (window.MutationObserver){
+    var t = null;
+    new MutationObserver(function(){ clearTimeout(t); t = setTimeout(swapLogos, 50); })
+      .observe(document.documentElement, { childList: true, subtree: true });
+  }
   window.dsRefreshLogo = run;   // call after an aura change to recolour the tab icon
 })();
