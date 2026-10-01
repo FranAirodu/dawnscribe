@@ -432,6 +432,7 @@ var CARDS = [];         // every card in this work
 var RELATIONS = [];
 var FINDINGS = [];
 var NOTES = [];
+var CHAR_LIST = [];        // every character card of this story (with or without a picture)
 var CHAR_PORTRAITS = {};   // novel_characters.id -> { name, url } for this author's character cards
 var IMG_URLS = {};   // image_path -> short-lived signed URL (private bucket)
 var NOTES_SHOW_DONE = false;
@@ -912,11 +913,14 @@ async function loadCardImages(paths){
    Lorebook card follows. Their pictures are already public, so no copy. */
 async function loadCharacterPortraits(){
   CHAR_PORTRAITS = {};
+  CHAR_LIST = [];
   try {
     var r = await db.from('novel_characters').select('id,name,portrait_url,is_book_card,status')
       .eq('work_id', workId).order('sort_order');
     (r.data || []).forEach(function(x){
-      if(x.is_book_card || !x.portrait_url) return;
+      if(x.is_book_card) return;
+      CHAR_LIST.push({ id: x.id, name: x.name });
+      if(!x.portrait_url) return;
       if(!/^https:\/\//i.test(x.portrait_url) || /\/$/.test(x.portrait_url)) return;   // no real picture
       CHAR_PORTRAITS[x.id] = { name: x.name, url: x.portrait_url };
     });
@@ -1004,6 +1008,8 @@ function picFieldHtml(c){
     +     '<input type="file" accept="image/*" style="display:none;" onchange="pickCardPicture(this)"/></label>'
     +   (Object.keys(CHAR_PORTRAITS).length
           ? '<button type="button" class="btn ghost" onclick="openPortraitPicker()"><i class="ti ti-users"></i> Use a character card\u2019s picture</button>' : '')
+    +   '<button type="button" class="btn ghost" id="pic-tochar" onclick="openSendToCharacter()"'
+    +     (c.image_path && CHAR_LIST.length ? '' : ' style="display:none;"') + '><i class="ti ti-id-badge"></i> Use on a character card</button>'
     +   '<button type="button" class="btn ghost" id="pic-remove" onclick="removeCardPicture()"' + (cardHasPic(c) ? '' : ' style="display:none;"') + '>Remove</button>'
     + '</div></div><div id="pic-share-note" class="help" style="margin-top:6px;">' + picShareNote(c) + '</div></div>'
     + '<div class="help">A face, a sketch, a map \u2014 anything that helps you remember. Your own uploads are private to you. Saves straight away.</div>'
@@ -1061,10 +1067,87 @@ async function usePortrait(charId){
   refreshPicUI(c);
   toast('Now using ' + p.name + '\u2019s picture');
 }
+/* The other way round: a picture uploaded to a Lorebook card goes onto one
+   of the story's character cards. Character card pictures are public, so
+   this copies it into the public covers bucket (same place the chapter
+   editor puts character pictures), then links the Lorebook card to that
+   character so the two stay as one picture from then on. */
+function openSendToCharacter(){
+  var c = cardById(EDIT_ID);
+  if(!c || !c.image_path) return;
+  var nm = String(c.name || '').trim().toLowerCase();
+  var list = CHAR_LIST.slice().sort(function(a, b){
+    var ma = a.name.trim().toLowerCase() === nm ? 0 : 1, mb = b.name.trim().toLowerCase() === nm ? 0 : 1;
+    return ma - mb || a.name.localeCompare(b.name);
+  });
+  var old = document.getElementById('portrait-pick'); if(old) old.remove();
+  var wrap = document.createElement('div');
+  wrap.id = 'portrait-pick';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;';
+  wrap.onclick = function(e){ if(e.target === wrap) wrap.remove(); };
+  wrap.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;max-width:520px;width:100%;max-height:80vh;overflow:auto;padding:18px;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
+    + '<b style="font-size:15px;">Use this picture on a character card</b>'
+    + '<button class="btn ghost" style="padding:4px 10px;" onclick="document.getElementById(\'portrait-pick\').remove()"><i class="ti ti-x"></i></button></div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5;">'
+    + '<i class="ti ti-eye" style="color:var(--gold,#fbbf24);"></i> <b>Readers will see it.</b> Character cards show on your story page, '
+    + 'so this picture stops being private. It replaces the character’s current picture.</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;">'
+    + list.map(function(ch){
+        var p = CHAR_PORTRAITS[ch.id];
+        return '<button type="button" onclick="sendPicToCharacter(\'' + ch.id + '\', this)" style="background:var(--bg3);border:2px solid var(--border);'
+          + 'border-radius:10px;padding:8px;cursor:pointer;color:var(--text);text-align:center;">'
+          + (p ? '<img src="' + esc(p.url) + '" alt="" loading="lazy" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:7px;display:block;margin-bottom:6px;opacity:.55;"/>'
+               : '<div style="width:100%;aspect-ratio:1;border-radius:7px;background:var(--bg2);display:flex;align-items:center;justify-content:center;margin-bottom:6px;"><i class="ti ti-user" style="font-size:26px;color:var(--text3);"></i></div>')
+          + '<span style="font-size:12.5px;">' + esc(ch.name) + '</span></button>';
+      }).join('')
+    + '</div></div>';
+  document.body.appendChild(wrap);
+}
+async function sendPicToCharacter(charId, btn){
+  var c = cardById(EDIT_ID);
+  var ch = CHAR_LIST.filter(function(x){ return x.id === charId; })[0];
+  if(!c || !c.image_path || !ch) return;
+  if(!confirm('Put this picture on ' + ch.name + '’s character card?\n\nReaders will be able to see it.')) return;
+  if(btn) btn.disabled = true;
+  try {
+    var dl = await db.storage.from(LORE_BUCKET).download(c.image_path);
+    if(dl.error || !dl.data) throw dl.error || new Error('Could not read the picture');
+    var blob = dl.data;
+    var type = blob.type || (/\.webp$/i.test(c.image_path) ? 'image/webp' : 'image/jpeg');
+    var ext = type === 'image/webp' ? 'webp' : (type === 'image/png' ? 'png' : 'jpg');
+    var path = uid + '/glossary-' + Date.now() + '.' + ext;
+    var up = await db.storage.from('covers').upload(path, blob, { contentType: type, upsert: false });
+    if(up.error) throw up.error;
+    var url = db.storage.from('covers').getPublicUrl(path).data.publicUrl;
+    var r = await db.from('novel_characters').update({ portrait_url: url }).eq('id', charId).select('id').maybeSingle();
+    if(r.error || !r.data){
+      try { await db.storage.from('covers').remove([path]); } catch(e){}
+      throw r.error || new Error('Could not update that character card');
+    }
+    CHAR_PORTRAITS[charId] = { name: ch.name, url: url };
+    // Now one picture: link this card to the character and drop the private copy.
+    var res = await db.from('lore_cards').update({ portrait_character_id: charId, image_path: null }).eq('id', c.id).select().maybeSingle();
+    if(!res.error && res.data){
+      var old = c.image_path;
+      c.portrait_character_id = charId;
+      c.image_path = null;
+      try { await db.storage.from(LORE_BUCKET).remove([old]); } catch(e){}
+      delete IMG_URLS[old];
+    }
+    var w = document.getElementById('portrait-pick'); if(w) w.remove();
+    refreshPicUI(c);
+    toast(ch.name + '’s character card now uses this picture');
+  } catch(e) {
+    if(btn) btn.disabled = false;
+    toast(e.message || 'Could not do that', 'ti-x', true);
+  }
+}
 function refreshPicUI(c){
   var prev = document.getElementById('pic-prev'); if(prev) prev.innerHTML = cardGlyph(c);
   var lab = document.getElementById('pic-up-label'); if(lab) lab.textContent = cardHasPic(c) ? 'Upload a different picture' : 'Add a picture';
   var rm = document.getElementById('pic-remove'); if(rm) rm.style.display = cardHasPic(c) ? '' : 'none';
+  var tc = document.getElementById('pic-tochar'); if(tc) tc.style.display = (c.image_path && CHAR_LIST.length) ? '' : 'none';
   var nt = document.getElementById('pic-share-note'); if(nt) nt.innerHTML = picShareNote(c);
 }
 
