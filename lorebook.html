@@ -1004,6 +1004,7 @@ function render(){
       + tab('checks', 'ti-shield-check', 'Checks', open)
       + tab('reader', 'ti-eye', 'Beta reader')
       + tab('export', 'ti-download', 'Export')
+      + tab('download', 'ti-file-download', 'Download')
     + '</div>'
     + '<div id="view-body"></div>';
   document.getElementById('page').innerHTML = html;
@@ -1023,6 +1024,7 @@ function renderView(){
   if(view === 'checks') return renderChecks();
   if(view === 'reader') return renderReader();
   if(view === 'export') return renderExport();
+  if(view === 'download') return renderDownload();
 }
 
 /* ── DECKS ─────────────────────────────────────────────────────────── */
@@ -4415,6 +4417,157 @@ function noteUndo(){
   if(!NOTE_JUST_DONE) return;
   var j = NOTE_JUST_DONE; NOTE_JUST_DONE = null;
   noteSet(j.id, j.prev || 'open');
+}
+
+/* ── DOWNLOAD: the whole Lorebook as a file the author keeps ───────── */
+function lbFieldsFor(kind){
+  return (FIELDS[kind] || []).slice().sort(function(a, b){
+    return ((a.group_order || 0) - (b.group_order || 0)) || ((a.sort_order || 0) - (b.sort_order || 0));
+  });
+}
+// One answer as plain lines: [{text, ch}] — ch is the chapter it starts in.
+function lbAnswerLines(fld){
+  if(!fld || fld.skipped) return [];
+  var v = fld.v, out = [];
+  if(Array.isArray(v)){
+    v.forEach(function(x, i){
+      if(Array.isArray(x)){
+        var t = [x[0], x[1]].filter(function(y){ return y != null && String(y).trim() !== ''; }).join(' — ');
+        if(t) out.push({ text: t, ch: fld.rows_when && fld.rows_when[i] && fld.rows_when[i].from });
+      } else if(x != null && String(x).trim() !== ''){
+        out.push({ text: String(x), ch: fld.items && fld.items[x] && fld.items[x].from });
+      }
+    });
+  } else if(v != null && String(v).trim() !== ''){
+    out.push({ text: String(v), ch: fld.since });
+  }
+  return out;
+}
+function lbChLabel(ch){
+  var n = ch == null ? '' : (String(ch).match(/\d+/) || [''])[0];
+  return n ? 'ch. ' + n : '';
+}
+// Everything in reading order: decks, cards, answered questions, ties.
+function lbCollect(){
+  return DECKS.map(function(d){
+    var cards = CARDS.filter(function(c){ return c.kind === d.kind; })
+      .sort(function(a, b){ return String(a.name).localeCompare(String(b.name)); })
+      .map(function(c){
+        var data = c.data || {}, groups = [], byG = {};
+        lbFieldsFor(c.kind).forEach(function(f){
+          var lines = lbAnswerLines(data[f.field_key]);
+          if(!lines.length) return;
+          var gk = f.group_key || '';
+          if(!byG[gk]){ byG[gk] = { label: f.group_label || '', rows: [] }; groups.push(byG[gk]); }
+          byG[gk].rows.push({ label: f.label, lines: lines });
+        });
+        var ties = RELATIONS.filter(function(r){ return r.from_card_id === c.id || r.to_card_id === c.id; })
+          .map(function(r){
+            var o = cardById(r.from_card_id === c.id ? r.to_card_id : r.from_card_id);
+            return { kind: relKindLabel(r.group_key, r), who: o ? o.name : '(deleted card)', what: r.what_now || '' };
+          });
+        return { name: c.name, subtitle: c.subtitle || '', groups: groups, ties: ties };
+      });
+    return { title: d.title, cards: cards };
+  }).filter(function(d){ return d.cards.length; });
+}
+function lbFileName(ext){
+  var t = String((work && work.title) || 'lorebook').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60);
+  return (t || 'lorebook') + '-lorebook.' + ext;
+}
+function downloadLorebookText(){
+  var decks = lbCollect(), md = [];
+  md.push('# ' + ((work && work.title) || 'Lorebook') + ' — Lorebook', '');
+  md.push('_Downloaded ' + new Date().toLocaleDateString() + '. Chapter numbers show where a fact starts._', '');
+  decks.forEach(function(d){
+    md.push('## ' + d.title, '');
+    d.cards.forEach(function(c){
+      md.push('### ' + c.name + (c.subtitle ? ' — ' + c.subtitle : ''), '');
+      if(!c.groups.length && !c.ties.length) md.push('_Nothing filled in yet._', '');
+      c.groups.forEach(function(g){
+        if(g.label) md.push('**' + g.label + '**', '');
+        g.rows.forEach(function(r){
+          if(r.lines.length === 1){
+            var l = r.lines[0];
+            md.push('- ' + r.label + ': ' + l.text.replace(/\n+/g, ' / ') + (lbChLabel(l.ch) ? ' (' + lbChLabel(l.ch) + ')' : ''));
+          } else {
+            md.push('- ' + r.label + ':');
+            r.lines.forEach(function(l){ md.push('  - ' + l.text.replace(/\n+/g, ' / ') + (lbChLabel(l.ch) ? ' (' + lbChLabel(l.ch) + ')' : '')); });
+          }
+        });
+        md.push('');
+      });
+      if(c.ties.length){
+        md.push('**Relationships**', '');
+        c.ties.forEach(function(t){ md.push('- ' + t.kind + ': ' + t.who + (t.what ? ' — ' + t.what : '')); });
+        md.push('');
+      }
+    });
+  });
+  var blob = new Blob([md.join('\n')], { type: 'text/markdown;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = lbFileName('md');
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000);
+  toast('Lorebook downloaded');
+}
+function downloadLorebookPdf(){
+  var decks = lbCollect();
+  var h = function(x){ return esc(x).replace(/\n/g, '<br>'); };
+  var body = '<h1>' + esc((work && work.title) || 'Lorebook') + '</h1>'
+    + '<p class="sub">Lorebook · downloaded ' + esc(new Date().toLocaleDateString())
+    + ' · chapter numbers show where a fact starts</p>';
+  decks.forEach(function(d){
+    body += '<h2>' + esc(d.title) + '</h2>';
+    d.cards.forEach(function(c){
+      body += '<section><h3>' + esc(c.name) + (c.subtitle ? ' <span>' + esc(c.subtitle) + '</span>' : '') + '</h3>';
+      if(!c.groups.length && !c.ties.length) body += '<p class="none">Nothing filled in yet.</p>';
+      c.groups.forEach(function(g){
+        if(g.label) body += '<h4>' + esc(g.label) + '</h4>';
+        body += '<dl>' + g.rows.map(function(r){
+          return '<dt>' + esc(r.label) + '</dt><dd>' + r.lines.map(function(l){
+            return '<div>' + h(l.text) + (lbChLabel(l.ch) ? ' <em>' + lbChLabel(l.ch) + '</em>' : '') + '</div>';
+          }).join('') + '</dd>';
+        }).join('') + '</dl>';
+      });
+      if(c.ties.length){
+        body += '<h4>Relationships</h4><dl>' + c.ties.map(function(t){
+          return '<dt>' + esc(t.kind) + '</dt><dd>' + esc(t.who) + (t.what ? ' — ' + h(t.what) : '') + '</dd>';
+        }).join('') + '</dl>';
+      }
+      body += '</section>';
+    });
+  });
+  var css = 'body{font-family:Georgia,serif;color:#111;max-width:760px;margin:30px auto;padding:0 20px;line-height:1.45;}'
+    + 'h1{margin:0 0 4px;font-size:26px;}.sub{color:#666;font-size:12px;margin:0 0 24px;}'
+    + 'h2{font-size:20px;border-bottom:2px solid #333;padding-bottom:4px;margin:32px 0 12px;page-break-after:avoid;}'
+    + 'section{margin:0 0 22px;page-break-inside:avoid;}h3{font-size:16px;margin:0 0 6px;}h3 span{font-weight:normal;color:#666;font-size:13px;}'
+    + 'h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#555;margin:10px 0 4px;}'
+    + 'dl{display:grid;grid-template-columns:170px 1fr;gap:3px 12px;margin:0;font-size:13px;}dt{color:#555;}dd{margin:0;}'
+    + 'em{color:#888;font-size:11px;font-style:normal;}.none{color:#888;font-size:12px;font-style:italic;}'
+    + '@media print{body{margin:0 auto;}}';
+  var w = window.open('', '_blank');
+  if(!w){ toast('Your browser blocked the window — allow pop-ups for DawnScribe', 'ti-alert-triangle', true); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(lbFileName('pdf').replace(/\.pdf$/, ''))
+    + '</title><style>' + css + '</style></head><body>' + body + '</body></html>');
+  w.document.close();
+  w.focus();
+  setTimeout(function(){ w.print(); }, 300);
+}
+function renderDownload(){
+  var n = CARDS.length;
+  document.getElementById('view-body').innerHTML =
+    '<div class="board-help">Take a copy of your whole Lorebook — every card, every answer, and the chapter each fact starts in. '
+    + 'Your notes and check results are not included.</div>'
+    + (n ? '' : '<div class="board-help">You have no cards yet, so the file would be empty.</div>')
+    + '<div class="finding"><div class="finding-msg"><i class="ti ti-file-type-pdf"></i> PDF — for reading or printing</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin:4px 0 10px;">Opens a print window. Choose <b>Save as PDF</b> as the printer.</div>'
+    + '<div class="finding-acts"><button class="btn primary" ' + (n ? '' : 'disabled ') + 'onclick="downloadLorebookPdf()">'
+    + '<i class="ti ti-download"></i> Download PDF</button></div></div>'
+    + '<div class="finding"><div class="finding-msg"><i class="ti ti-file-text"></i> Text (Markdown) — to paste into Word, Notion or Obsidian</div>'
+    + '<div class="finding-acts" style="margin-top:10px;"><button class="btn primary" ' + (n ? '' : 'disabled ') + 'onclick="downloadLorebookText()">'
+    + '<i class="ti ti-download"></i> Download text</button></div></div>';
 }
 
 function renderExport(){
