@@ -319,6 +319,14 @@
     .np-wear{font-family:Lato,sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);
       border:1px solid var(--accent);border-radius:8px;padding:0 6px;}
     .np-roll-row{margin:-4px 0 12px;}
+    .np-looks{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
+    .np-look{display:flex;align-items:center;gap:10px;background:var(--bg,#0a0a0f);border:1px solid var(--border,rgba(255,255,255,.08));border-radius:10px;padding:7px 10px;}
+    .np-look b{font-weight:400;font-size:19px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,.8);}
+    .np-look-n{font-size:11px;font-weight:700;color:var(--text3,#8a8aa8);width:16px;text-align:center;}
+    .np-look-m{font-size:11.5px;color:var(--text3,#8a8aa8);margin-left:auto;white-space:nowrap;}
+    .np-look button{background:none;border:1px solid var(--border,rgba(255,255,255,.08));border-radius:6px;color:var(--text2,#9b9bc0);width:26px;height:26px;cursor:pointer;}
+    .np-look button:disabled{opacity:.3;cursor:default;}
+    .np-shuffle{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text2,#9b9bc0);}
     .np-buy{background:var(--gold,#f59e0b);}
     .np-swatches{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px;}
     .np-sw{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:0;width:54px;}
@@ -544,7 +552,8 @@
       db.from('user_avatars').select('equipped, banner_rotation_ids, banner_rotation_mode, banner_rotation_index, banner_last_rotated_at')
         .eq('user_id', ME.id).maybeSingle(),
       db.from('user_banner_favorites').select('cosmetic_item_id').eq('user_id', ME.id),
-      db.rpc('ensure_starter_title').then(function(){ return db.rpc('my_title_styles'); }),
+      db.rpc('ensure_starter_title').then(function(){ return Promise.all([db.rpc('my_title_styles'), db.rpc('my_nameplate_rotation')]); })
+        .then(function(x){ NP_ROT = (x[1] && x[1].data) || { looks: [], mode: 'daily', shuffle: false }; NP_ROT_SAVED = JSON.stringify(NP_ROT); return x[0]; }),
       db.rpc('get_nameplates', { p_user_ids: [ME.id] })
     ]);
     npApply(res[11] && res[11].data);
@@ -779,8 +788,64 @@
       + '<div class="np-roll-row"><button class="aura-roll" id="np-roll-color" onclick="npRollColor()"' + (owned.length < paidTotal ? '' : ' disabled') + '>'
       +   '<i class="ti ti-dice-5"></i> Roll a colour for ' + esc(curFont.label || 'this font') + ' &middot; ' + NP.color_cost + ' Embers</button></div>'
       + '<div class="np-swatches">' + swatch(null, 'My aura') + free.map(function(c){ return swatch(c.hex, c.label); }).join('')
-      +   owned.map(function(h){ var c = npColor(h); return c ? swatch(c.hex, c.label) : ''; }).join('') + '</div>';
+      +   owned.map(function(h){ var c = npColor(h); return c ? swatch(c.hex, c.label) : ''; }).join('') + '</div>'
+      + npRotationHtml();
   }
+
+  /* ── ROTATION ──
+     A list of looks the member builds themselves: each is one title + one
+     font + one colour. The server picks which one shows from the clock, so
+     nothing runs in the background and nothing can get stuck. */
+  var NP_ROT = { looks: [], mode: 'daily', shuffle: false }, NP_ROT_SAVED = '';
+  var NP_ROT_MODES = [['15min','Every 15 minutes'],['hourly','Every hour'],['6h','Every 6 hours'],['12h','Every 12 hours'],['daily','Every day'],['weekly','Every week']];
+  function npSameLook(a, b){ return a.title === b.title && a.font === b.font && (a.color || null) === (b.color || null); }
+  function npLookChip(lk, i){
+    var t = npTitle(lk.title) || { title: '?' }, f = npFont(lk.font) || {}, c = npColor(lk.color);
+    if (f.family) DSNameplate.ensureFont(f.family);
+    return '<div class="np-look"><span class="np-look-n">' + (i + 1) + '</span>'
+      + '<b style="font-family:\'' + esc(f.family || 'Cinzel') + '\',serif;color:' + esc(lk.color || AURA.hex) + ';">' + esc(t.title) + '</b>'
+      + '<span class="np-look-m">' + esc(f.label || lk.font) + ' \u00b7 ' + esc(c ? c.label : 'My aura') + '</span>'
+      + '<button onclick="npRotMove(' + i + ',-1)" title="Earlier"' + (i ? '' : ' disabled') + '><i class="ti ti-chevron-up"></i></button>'
+      + '<button onclick="npRotMove(' + i + ',1)" title="Later"' + (i < NP_ROT.looks.length - 1 ? '' : ' disabled') + '><i class="ti ti-chevron-down"></i></button>'
+      + '<button onclick="npRotRemove(' + i + ')" title="Remove"><i class="ti ti-x"></i></button></div>';
+  }
+  function npRotationHtml(){
+    var here = { title: NP_T, font: NP_PICK.font, color: NP_PICK.color };
+    var has = NP_ROT.looks.some(function(x){ return npSameLook(x, here); });
+    var dirty = JSON.stringify(NP_ROT) !== NP_ROT_SAVED;
+    var running = JSON.parse(NP_ROT_SAVED || '{}').looks && JSON.parse(NP_ROT_SAVED).looks.length >= 2;
+    return sectionHead('ti-refresh', 'Rotation <span class="cnt">' + NP_ROT.looks.length + ' of 20</span>',
+        'Build a look above (title, font, colour), add it here, and your nameplate cycles through your looks.')
+      + '<div class="aura-card">'
+      + '<div class="np-actions" style="margin:0 0 12px;">'
+      +   '<button class="aura-roll" onclick="npRotAdd()"' + (has || NP_ROT.looks.length >= 20 ? ' disabled' : '') + '><i class="ti ti-plus"></i> '
+      +   (has ? 'This look is in your rotation' : 'Add this look to rotation') + '</button></div>'
+      + (NP_ROT.looks.length ? '<div class="np-looks">' + NP_ROT.looks.map(npLookChip).join('') + '</div>'
+          : '<div class="aura-sub">No looks yet. Pick a title, font and colour above, then add it.</div>')
+      + '<div class="rot-row">'
+      +   '<select onchange="NP_ROT.mode=this.value;render()">' + NP_ROT_MODES.map(function(m){ return '<option value="' + m[0] + '"' + (NP_ROT.mode === m[0] ? ' selected' : '') + '>' + m[1] + '</option>'; }).join('') + '</select>'
+      +   '<label class="np-shuffle"><input type="checkbox"' + (NP_ROT.shuffle ? ' checked' : '') + ' onchange="NP_ROT.shuffle=this.checked;render()"/> Shuffle</label>'
+      +   '<button class="aura-roll" onclick="npRotSave()"' + (dirty && (NP_ROT.looks.length >= 2 || NP_ROT.looks.length === 0) ? '' : ' disabled') + '><i class="ti ti-check"></i> '
+      +   (NP_ROT.looks.length ? 'Save rotation' : 'Stop rotating') + '</button>'
+      +   (dirty ? '<button class="aura-reset" onclick="NP_ROT=JSON.parse(NP_ROT_SAVED);render()">Undo</button>' : '')
+      + '</div>'
+      + (NP_ROT.looks.length === 1 ? '<div class="aura-pick">Add at least one more look to rotate.</div>' : '')
+      + (running && !dirty ? '<div class="rot-now"><i class="ti ti-player-play"></i> Rotating <b>' + JSON.parse(NP_ROT_SAVED).looks.length + '</b> looks, '
+          + esc(((NP_ROT_MODES.filter(function(m){ return m[0] === NP_ROT.mode; })[0]) || [0, ''])[1].toLowerCase()) + (NP_ROT.shuffle ? ', shuffled' : '') + '.</div>'
+          : '<div class="rot-now">While a rotation runs it takes over your nameplate. Stop it to go back to the title you\u2019re wearing.</div>')
+      + '</div>';
+  }
+  window.npRotAdd = function(){ NP_ROT.looks.push({ title: NP_T, font: NP_PICK.font, color: NP_PICK.color || null }); render(); };
+  window.npRotRemove = function(i){ NP_ROT.looks.splice(i, 1); render(); };
+  window.npRotMove = function(i, d){ var a = NP_ROT.looks, j = i + d; if (j < 0 || j >= a.length) return; var t = a[i]; a[i] = a[j]; a[j] = t; render(); };
+  window.npRotSave = async function(){
+    var r = await db.rpc('save_nameplate_rotation', { p_looks: NP_ROT.looks, p_mode: NP_ROT.mode, p_shuffle: !!NP_ROT.shuffle });
+    if (r.error || !r.data || !r.data.ok) { toast((r.data && r.data.error) || 'Could not save that.', 'ti-alert-triangle', true); return; }
+    NP_ROT_SAVED = JSON.stringify(NP_ROT);
+    if (window.DSNameplate) DSNameplate.forget(ME.id);
+    toast(NP_ROT.looks.length ? 'Rotation saved. It starts with look 1 now.' : 'Rotation stopped', 'ti-refresh');
+    render();
+  };
   window.npPickTitle = function(id){ NP_T = id; npResetPick(); render(); };
   window.npPickFont = function(key){
     var t = npTitle(NP_T);
