@@ -3190,8 +3190,8 @@ function disagreeHtml(f, ci){
     +   (ci.list ? ' (opens the card so you can check the list)' : '') + '</span></button>'
     + '<button class="clash-btn" onclick="keepBothValues(\'' + esc(f.id) + '\')">'
     +   '<span class="clash-t"><i class="ti ti-arrows-join"></i> Both are right</span>'
-    +   '<span class="clash-s">They can both be true. Opens ' + esc(ci.card.name)
-    +   '\u2019s card with the new fact added next to the old one, for you to word and save.</span></button>'
+    +   '<span class="clash-s">They can both be true. Adds the new fact to ' + esc(ci.card.name)
+    +   '\u2019s card next to the old one. Nothing is replaced.</span></button>'
     + '</div></div>';
 }
 /* Old facts right: the chapter has the mistake. The finding waits under "To
@@ -3225,18 +3225,46 @@ async function keepOldFacts(findingId){
   render();
 }
 
-// Both true: nothing is overwritten. The card opens with the chapter's fact
-// added beside the old one (prose answers get a new line, lists a new item)
-// and the author words it and saves.
-function keepBothValues(findingId){
+// Both true: nothing is overwritten. The chapter's fact is written straight
+// onto the card beside the old one (prose gets a new line, lists a new item),
+// with Undo on the toast and in "Undo last card entry".
+async function keepBothValues(findingId){
   var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
   var ci = contradictionInfo(f);
   if(!ci) return;
+  var card = ci.card;
   var n = chapterNumOf(f);
-  PENDING_FILL = { fields: [{ key: ci.key, value: ci.chapVal, chapter: n }], finding_id: findingId };
-  FILL_FINDING = findingId;
-  PENDING_FINDING = findingId;
-  openCard(ci.card.id);
+  var def = (FIELDS[card.kind] || []).filter(function(x){ return x.field_key === ci.key; })[0] || {};
+  var prevData = JSON.parse(JSON.stringify(card.data || {}));
+  var prevStatus = f.status;
+  var data = JSON.parse(JSON.stringify(card.data || {}));
+  var cur = data[ci.key] || {};
+  var val = String(ci.chapVal);
+  if(def.input_type === 'list'){
+    var items = Array.isArray(cur.v) ? cur.v.slice() : (cur.v ? [cur.v] : []);
+    if(!items.some(function(x){ return String(x).toLowerCase() === val.toLowerCase(); })) items.push(val);
+    data[ci.key] = Object.assign({}, cur, { v: items });
+    if(n){
+      var when = cur.items && typeof cur.items === 'object' ? Object.assign({}, cur.items) : {};
+      when[val] = { from: String(n) };
+      data[ci.key].items = when;
+    }
+  } else if(def.input_type === 'pairs'){
+    var rows = Array.isArray(cur.v) ? cur.v.slice() : [];
+    rows.push([val, '']);
+    data[ci.key] = Object.assign({}, cur, { v: rows });
+  } else {
+    var old = cur.v == null ? '' : String(cur.v).trim();
+    data[ci.key] = Object.assign({}, cur, { v: old ? old + '\n' + val : val });
+  }
+  var res = await db.from('lore_cards').update({ data: data }).eq('id', card.id).select().maybeSingle();
+  if(res.error || !res.data){ toast(res.error ? res.error.message : 'Could not save that', 'ti-x', true); return; }
+  for(var i = 0; i < CARDS.length; i++) if(CARDS[i].id === card.id) CARDS[i] = res.data;
+  try { await respond(findingId, 'resolve', true); } catch(e) {}
+  rememberCardWrite(card, prevData, res.data.data, findingId, prevStatus, false, ci.label);
+  toast('Added to ' + card.name + ' \u2014 ' + ci.label + ' (kept the old fact too)', 'ti-check', false,
+    function(){ return undoCardWrite(card.id, prevData, findingId, prevStatus); });
+  render();
 }
 async function takeChapterValue(findingId){
   var f = FINDINGS.filter(function(x){ return x.id === findingId; })[0];
