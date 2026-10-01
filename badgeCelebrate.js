@@ -141,9 +141,9 @@
     el.innerHTML =
       '<div class="ds-ach-gem" aria-hidden="true"><i class="ti ' + iconClass(c.icon) + '"></i></div>' +
       '<div class="ds-ach-body">' +
-        '<div class="ds-ach-kick">Achievement unlocked</div>' +
+        '<div class="ds-ach-kick">' + (c.kind === 'reward' ? 'Reward earned' : 'Achievement unlocked') + '</div>' +
         '<div class="ds-ach-name" title="' + esc(c.name) + '">' + esc(c.name) + '</div>' +
-        '<div class="ds-ach-meta">' + (c.gem_name ? '<b>' + esc(c.gem_name) + '</b> tier' : 'Badge earned') + esc(xp) + '</div>' +
+        (c.kind === 'reward' ? '' : '<div class="ds-ach-meta">' + (c.gem_name ? '<b>' + esc(c.gem_name) + '</b> tier' : 'Badge earned') + esc(xp) + '</div>') +
         (c.desc ? '<div class="ds-ach-desc">' + esc(c.desc) + '</div>' : '') +
       '</div>' +
       '<button type="button" class="ds-ach-x" aria-label="Close: ' + esc(c.name) + '">\u2715</button>';
@@ -221,7 +221,7 @@
 
   function fromServer(u) {
     return {
-      key: 's:' + u.id, id: u.id,
+      key: 's:' + u.id, id: u.id, kind: u.kind || 'badge',
       name: u.badge_name || String(u.badge_slug || 'Badge').replace(/_/g, ' '),
       icon: u.badge_icon, gem_name: u.gem_name, gem_color: u.gem_color || u.badge_color,
       xp_reward: u.xp_reward, desc: u.badge_description || ''
@@ -272,6 +272,10 @@
     if (serverLoaded) start(flushHeld); else setTimeout(function () { if (held.length && !serverLoaded) start(flushHeld); }, 4000);
   };
   window.DSAchievements = { closeAll: closeAll, refresh: loadServer };
+
+  // A check-in can bring reward cards (Sparks, Scribe's Flame, Infernal Dawn,
+  // the 7-day bonus); the server files them, so just ask again after a claim.
+  window.addEventListener('ds-checkin-complete', function () { setTimeout(loadServer, 400); });
 
   // Another tab closed a card: close it here too.
   window.addEventListener('storage', function (e) {

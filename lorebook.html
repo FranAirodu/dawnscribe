@@ -386,7 +386,27 @@
       .decks{justify-content:center;}
     }
     @media (prefers-reduced-motion:reduce){ .pile,.card,#lb-toast{transition:none;} }
-  </style>
+  
+    /* View-only (shared Lorebook) */
+    .lb-viewbar{display:flex;gap:10px;align-items:flex-start;background:rgba(var(--aura-rgb,45,212,191),.08);border:1px solid rgba(var(--aura-rgb,45,212,191),.35);
+      border-radius:12px;padding:10px 14px;margin:4px 0 16px;font-size:13px;color:var(--text2);line-height:1.5;}
+    .lb-viewbar i{color:var(--accent);font-size:17px;margin-top:1px;}
+    .lb-viewbar b{color:var(--text);}
+    body.lb-viewer .pile-add,
+    body.lb-viewer .tl-btn,
+    body.lb-viewer .btn.primary,
+    body.lb-viewer .btn.danger,
+    body.lb-viewer .ch-opt-clear,
+    body.lb-viewer [onclick^="save"], body.lb-viewer [onclick^="delete"], body.lb-viewer [onclick^="add"],
+    body.lb-viewer [onclick^="openPortraitPicker"], body.lb-viewer [onclick^="openSendToCharacter"],
+    body.lb-viewer [onclick^="removeCardPicture"], body.lb-viewer [onclick^="undoLastCardEntry"],
+    body.lb-viewer [onclick^="quickAddSuggestion"], body.lb-viewer [onclick^="applySuggestion"],
+    body.lb-viewer [onclick^="takeChapterValue"], body.lb-viewer [onclick^="acceptChapterValue"],
+    body.lb-viewer [onclick^="keep"], body.lb-viewer [onclick^="setLog"], body.lb-viewer [onclick^="chOpenMenu"],
+    body.lb-viewer [onclick^="openRelationFor"], body.lb-viewer [onclick^="addPair"], body.lb-viewer [onclick^="confirmCardName"],
+    body.lb-viewer [onclick^="pickSameCard"], body.lb-viewer [onclick^="sendPicToCharacter"], body.lb-viewer [onclick^="usePortrait"],
+    body.lb-viewer label[for*="pic"], body.lb-viewer input[type="file"]{display:none !important;}
+</style>
 </head>
 <body>
 
@@ -443,6 +463,8 @@ var CREDIT = null;      // { chapters_remaining, words_remaining, ... }
 var QUOTES = {};        // chapter_id -> what a read would cost
 var FIELDS_BY_KEY = {}; // field_key -> definition, for the editor controls
 var view = 'decks';
+var VIEWER = false;        // a friend reading a shared Lorebook: view only
+var OWNER_NAME = '';
 
 /* Deck order is deliberate: characters first because that is what an author
    opens the Lorebook to do, events last because most stories never need one. */
@@ -750,6 +772,14 @@ async function loadPicker(){
     return;
   }
   var works = res.data || [];
+  var shared = [];
+  try { var sh = await db.rpc('lore_shared_with_me_list'); shared = (sh && Array.isArray(sh.data)) ? sh.data : []; } catch(e) {}
+  if(!works.length && shared.length){
+    document.getElementById('page').innerHTML =
+      '<div class="page-header"><i class="ti ti-book-2"></i><div class="page-title">The Lorebook</div></div>'
+      + sharedPickerHtml(shared);
+    return;
+  }
   if(!works.length){
     showState('ti-books-off', 'No stories yet',
       'A Lorebook belongs to a story. <a href="publish.html">Publish one</a> and its cards will live here.');
@@ -779,6 +809,25 @@ async function loadPicker(){
               + (n ? n + ' card' + (n === 1 ? '' : 's') : 'no cards yet') + '</div>'
           + '</div>'
           + '<i class="ti ti-chevron-right picker-arrow"></i></a>';
+      }).join('')
+    + sharedPickerHtml(shared);
+}
+
+/* Lorebooks friends have shared with this user (view only). */
+function sharedPickerHtml(list){
+  if(!list || !list.length) return '';
+  return '<div class="page-subtitle" style="margin-top:26px;"><i class="ti ti-users"></i> Shared with you by friends \u2014 view only</div>'
+    + list.map(function(w){
+        var u = safeUrl(w.cover_url);
+        var cover = u ? '<img loading="lazy" decoding="async" src="' + esc(u) + '" alt=""/>' : '<i class="ti ti-book"></i>';
+        return '<a class="picker-card" href="lorebook.html?work=' + encodeURIComponent(w.id) + '">'
+          + '<div class="picker-cover">' + cover + '</div>'
+          + '<div style="flex:1;min-width:0;">'
+            + '<div class="picker-title">' + esc(w.title) + '</div>'
+            + '<div class="picker-stats">by ' + esc(w.owner_name || 'a friend') + ' &middot; '
+              + (w.cards ? w.cards + ' card' + (w.cards === 1 ? '' : 's') : 'no cards yet') + '</div>'
+          + '</div>'
+          + '<i class="ti ti-eye picker-arrow"></i></a>';
       }).join('');
 }
 
@@ -793,12 +842,13 @@ async function loadWork(){
 
   var sum = await db.rpc('my_lorebook', { p_work_id: workId });
   if(!sum.data || sum.data.ok !== true){
-    showState('ti-lock', 'Not your story',
-      'A Lorebook is only visible to the story\u2019s author. <a href="lorebook.html">Back to your Lorebooks</a>.');
+    showState('ti-lock', 'Not available',
+      'This Lorebook is private. Only its author, and friends they choose to share it with, can open it. <a href="lorebook.html">Back to your Lorebooks</a>.');
     return;
   }
   LOREKEEPER = sum.data.lorekeeper === true;
   LORESCOUT = sum.data.lorescout === true;
+  if(sum.data.role === 'viewer') enterViewerMode(sum.data.owner_name);
 
   var out = await Promise.all([
     Promise.resolve(db.from('works').select('id,title,lore_reader_on,lore_recaps_on').eq('id', workId).maybeSingle()).catch(function(){ return {}; }),
@@ -1183,18 +1233,22 @@ function render(){
   var html =
     '<div class="page-header"><i class="ti ti-book-2"></i>'
     + '<div class="page-title">' + esc(work.title) + '</div></div>'
-    + '<div class="page-subtitle">' + (work.lore_reader_on
+    + (VIEWER
+      ? '<div class="lb-viewbar"><i class="ti ti-eye"></i> <span><b>View only.</b> ' + esc(OWNER_NAME || 'Your friend')
+        + ' shared this Lorebook with you. You can read every card and the relationship board, but not change anything.</span></div>'
+      : '')
+    + '<div class="page-subtitle"' + (VIEWER ? ' style="display:none;"' : '') + '>' + (work.lore_reader_on
         ? 'Your Lorebook. Readers see a spoiler-safe guide of the plain facts \u2014 never your notes or secrets.'
         : 'Your Lorebook. Private to you \u2014 readers never see any of it.') + '</div>'
     + '<div class="view-tabs">'
       + tab('decks', 'ti-cards', 'Decks')
       + tab('board', 'ti-arrows-shuffle', 'Relationships')
-      + tab('notes', 'ti-notebook', 'Notes', NOTES.filter(function(n){ return n.status === 'open'; }).length)
+      + (VIEWER ? '' : tab('notes', 'ti-notebook', 'Notes', NOTES.filter(function(n){ return n.status === 'open'; }).length)
       + tab('checks', 'ti-shield-check', 'Checks', open)
       + tab('reader', 'ti-eye', 'Beta reader')
       + tab('export', 'ti-download', 'Export')
       + tab('download', 'ti-file-download', 'Download')
-      + tab('readers', 'ti-shield-check', 'Readers')
+      + tab('readers', 'ti-shield-check', 'Readers'))
     + '</div>'
     + '<div id="view-body"></div>';
   document.getElementById('page').innerHTML = html;
@@ -1205,7 +1259,7 @@ function tab(key, icon, label, pip){
     + '<i class="ti ' + icon + '"></i> ' + label
     + (pip ? '<span class="pip">' + pip + '</span>' : '') + '</button>';
 }
-function setView(v){ view = v; render(); }
+function setView(v){ if(VIEWER && v !== 'decks' && v !== 'board') v = 'decks'; view = v; render(); }
 
 function renderView(){
   if(view === 'decks')  return renderDecks();
@@ -4622,7 +4676,12 @@ function renderReaders(){
   });
   var guideUrl = 'guide.html?work=' + encodeURIComponent(workId);
   document.getElementById('view-body').innerHTML =
-    '<div class="finding"><div class="finding-msg"><i class="ti ti-shield-check"></i> Story guide for readers</div>'
+    '<div class="finding" id="lb-share"><div class="finding-msg"><i class="ti ti-users"></i> Share with a friend</div>'
+    + '<div style="font-size:13px;color:var(--text2);margin:6px 0 12px;line-height:1.6;">'
+    + 'Friends you pick can open this whole Lorebook \u2014 every card, secrets included, and the relationship board \u2014 '
+    + 'but cannot change anything. Good for co-writers and beta readers. If you stop being friends, their access ends on its own.</div>'
+    + '<div id="lb-share-list" style="font-size:13px;color:var(--text3);">Loading your friends\u2026</div></div>'
+    + '<div class="finding"><div class="finding-msg"><i class="ti ti-shield-check"></i> Story guide for readers</div>'
     + '<div style="font-size:13px;color:var(--text2);margin:6px 0 12px;line-height:1.6;">'
     + 'Readers get a <b>Story guide</b> button on your story page. It shows the plain facts from your cards '
     + '— names, looks, jobs, places — but only what is true up to the furthest chapter <i>they</i> have read. '
@@ -4652,6 +4711,100 @@ function renderReaders(){
         return '<b style="color:var(--text2);">' + esc(d.title) + ':</b> ' + safe[d.kind].map(esc).join(', ');
       }).join('<br>')
     + '</div></details>';
+  loadShareList();
+}
+
+/* ── SHARING (owner) ───────────────────────────────────────────────── */
+async function loadShareList(){
+  var box = document.getElementById('lb-share-list');
+  if(!box) return;
+  var r = await db.rpc('lore_share_list', { p_work_id: workId });
+  if(!document.getElementById('lb-share-list')) return;
+  var d = r && r.data;
+  if(!d || !d.ok){ box.textContent = 'Could not load your friends. Try again in a moment.'; return; }
+  if(!d.friends.length){
+    box.innerHTML = 'You have no friends on DawnScribe yet. Add someone as a friend first, then share with them here.';
+    return;
+  }
+  var n = d.friends.filter(function(f){ return f.shared; }).length;
+  box.innerHTML = '<div style="margin-bottom:8px;">' + (n ? 'Shared with <b style="color:var(--text);">' + n + '</b> friend' + (n === 1 ? '' : 's') + '.' : 'Not shared with anyone yet.') + '</div>'
+    + d.friends.map(function(f){
+        var av = safeUrl(f.avatar);
+        return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border);">'
+          + '<div style="width:30px;height:30px;border-radius:50%;overflow:hidden;background:var(--bg3);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text3);">'
+          + (av ? '<img src="' + esc(av) + '" alt="" style="width:100%;height:100%;object-fit:cover;"/>' : esc(String(f.name || '?').charAt(0).toUpperCase())) + '</div>'
+          + '<div style="flex:1;min-width:0;color:var(--text);">' + esc(f.name) + (f.username ? ' <span style="color:var(--text3);">@' + esc(f.username) + '</span>' : '') + '</div>'
+          + '<button class="btn ' + (f.shared ? '' : 'ghost') + '" data-fid="' + esc(f.id) + '" data-on="' + (f.shared ? '0' : '1') + '">'
+          + (f.shared ? '<i class="ti ti-eye-off"></i> Stop sharing' : '<i class="ti ti-share"></i> Share') + '</button></div>';
+      }).join('');
+  Array.prototype.forEach.call(box.querySelectorAll('button[data-fid]'), function(b){
+    b.onclick = async function(){
+      b.disabled = true;
+      var on = b.getAttribute('data-on') === '1';
+      var res = await db.rpc('lore_share_set', { p_work_id: workId, p_friend_id: b.getAttribute('data-fid'), p_on: on });
+      if(!res || res.error || !res.data || !res.data.ok){
+        b.disabled = false;
+        toast((res && res.data && res.data.error) || 'Could not change that', 'ti-x', true);
+        return;
+      }
+      toast(on ? 'Shared. They\u2019ll get a notification.' : 'Stopped sharing');
+      loadShareList();
+    };
+  });
+}
+
+/* ── VIEW-ONLY MODE (a friend reading a shared Lorebook) ───────────────
+   The database already refuses every write from a viewer; this makes the
+   page honest about it: edit controls hidden, fields read-only, and any
+   write that slips through answers with a polite toast instead of an error. */
+function enterViewerMode(ownerName){
+  VIEWER = true;
+  OWNER_NAME = ownerName || '';
+  document.body.classList.add('lb-viewer');
+  var back = document.getElementById('nav-back');
+  if(back) back.innerHTML = '<i class="ti ti-arrow-left"></i> Lorebooks';
+  var toCh = document.getElementById('nav-chapters');
+  if(toCh) toCh.style.display = 'none';
+
+  var told = 0;
+  function blocked(){
+    if(Date.now() - told > 2500){ told = Date.now(); toast('This Lorebook is view only', 'ti-eye', true); }
+    var res = { data: null, error: { message: 'View only' } };
+    var stub = new Proxy(function(){}, {
+      get: function(_, k){ if(k === 'then') return function(ok, bad){ return Promise.resolve(res).then(ok, bad); }; return function(){ return stub; }; },
+      apply: function(){ return stub; }
+    });
+    return stub;
+  }
+  var realFrom = db.from.bind(db);
+  db.from = function(t){
+    var b = realFrom(t);
+    ['insert', 'update', 'upsert', 'delete'].forEach(function(m){ b[m] = blocked; });
+    return b;
+  };
+  var realRpc = db.rpc.bind(db);
+  var READ_RPCS = { lore_card_appearances: 1, lore_shared_with_me_list: 1, my_lorebook: 1 };
+  db.rpc = function(name){ return READ_RPCS[name] ? realRpc.apply(null, arguments) : blocked(); };
+  try {
+    var st = db.storage, realSFrom = st.from.bind(st);
+    st.from = function(bkt){
+      var b = realSFrom(bkt);
+      ['upload', 'update', 'remove', 'move'].forEach(function(m){ b[m] = blocked; });
+      return b;
+    };
+  } catch(e) {}
+
+  // Fields the editor draws later become read-only as they appear.
+  function lock(rootEl){
+    Array.prototype.forEach.call((rootEl || document).querySelectorAll('input, textarea, select, [contenteditable="true"]'), function(el){
+      if(el.id === 'lb-q' || el.type === 'search') return;
+      if(el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'radio' || el.type === 'file' || el.type === 'range' || el.type === 'color') el.disabled = true;
+      else if(el.isContentEditable) el.setAttribute('contenteditable', 'false');
+      else el.readOnly = true;
+    });
+  }
+  lock();
+  new MutationObserver(function(){ lock(); }).observe(document.body, { childList: true, subtree: true });
 }
 async function toggleRecaps(btn){
   var next = !work.lore_recaps_on;
