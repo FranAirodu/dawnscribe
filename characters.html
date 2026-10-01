@@ -432,9 +432,14 @@
     @media (prefers-reduced-motion:reduce){.np-ink-b{animation:none;clip-path:none}.np-ink-drop,.np-ink-ring{display:none}.np-ink-txt,.np-ink-hint{animation:none;opacity:1}}
     .np-swatches{display:flex;flex-wrap:wrap;gap:14px 8px;margin-bottom:22px;padding-top:6px;}
     .np-sw{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:6px 0 0;width:68px;}
-    .np-sw > span:not(.np-star){width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.18);box-shadow:0 2px 8px rgba(0,0,0,.4);}
+    .np-well{display:block;line-height:0;color:transparent;transition:transform .15s;}
+    .np-sw:hover .np-well{transform:translateY(-2px);}
+    .np-sw.on .np-well{color:var(--text,#f1f0ff);}
+    .np-wave{animation:npSlosh 3s ease-in-out infinite;animation-delay:var(--d,0s);}
+    @keyframes npSlosh{0%,100%{transform:translateX(0)}50%{transform:translateX(-12px)}}
+    @media (prefers-reduced-motion:reduce){.np-wave{animation:none}}
     .np-sw em{font-style:normal;font-size:10.5px;color:var(--text3,#8a8aa8);white-space:nowrap;max-width:68px;overflow:hidden;text-overflow:ellipsis;}
-    .np-sw.on > span:not(.np-star){outline:2px solid var(--text,#f1f0ff);outline-offset:3px;}
+    
     .np-sw.on em{color:var(--text,#f1f0ff);font-weight:700;}
     .np-sw.locked span{opacity:.55;}
     .np-sw i{position:absolute;top:9px;font-size:15px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.9);}
@@ -865,6 +870,24 @@
     return (st.font || 'cinzel') !== NP_PICK.font || (st.color || null) !== NP_PICK.color
       || (st.tfont || null) !== NP_PICK.tfont || (st.tcolor || null) !== NP_PICK.tcolor;
   }
+  /* Colour swatches are little glass inkwells with the ink sloshing inside. */
+  var NP_WELL_N = 0;
+  function npInkwell(c){
+    var n = ++NP_WELL_N, fill = c, defs = '';
+    if (c === 'rainbow') {
+      defs = '<linearGradient id="npwg' + n + '" x1="0" x2="1"><stop offset="0" stop-color="#ffd214"/><stop offset=".25" stop-color="#ff552d"/>'
+        + '<stop offset=".5" stop-color="#ff3caf"/><stop offset=".75" stop-color="#7c3aed"/><stop offset="1" stop-color="#0ab4ff"/></linearGradient>';
+      fill = 'url(#npwg' + n + ')';
+    } else fill = esc(c);
+    return '<span class="np-well" style="--d:' + (-(String(c).split('').reduce(function(a, ch){ return a + ch.charCodeAt(0); }, 0) % 30) / 10).toFixed(1) + 's"><svg width="40" height="46" viewBox="0 0 40 46" aria-hidden="true"><defs>' + defs
+      + '<clipPath id="npwc' + n + '"><path d="M8 18 h24 v20 a4 4 0 0 1 -4 4 h-16 a4 4 0 0 1 -4 -4Z"/></clipPath></defs>'
+      + '<rect class="np-well-ring" x="4" y="7" width="32" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="2"/>'
+      + '<rect x="14" y="9" width="12" height="6" rx="1.5" fill="#c9a86a"/>'
+      + '<g clip-path="url(#npwc' + n + ')"><rect x="8" y="18" width="24" height="24" fill="rgba(255,255,255,.08)"/>'
+      + '<path class="np-wave" d="M0 26 q4 -3 8 0 t8 0 t8 0 t8 0 t8 0 t8 0 v20 h-48Z" fill="' + fill + '"/></g>'
+      + '<path d="M8 18 h24 v20 a4 4 0 0 1 -4 4 h-16 a4 4 0 0 1 -4 -4Z" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/>'
+      + '<path d="M11 22 v12" stroke="#fff" stroke-width="1.5" opacity=".45" stroke-linecap="round"/></svg></span>';
+  }
   function nameplateHtml(){
     if (!NP || !window.DSNameplate) return '<div class="aura-card"><div class="aura-sub">Loading your nameplate…</div></div>';
     var t = npTitle(NP_T);
@@ -903,7 +926,7 @@
       var swatch = function(hex, label){
         var on = (npTgtColor() || null) === (hex || null);
         return '<button class="np-sw' + (on ? ' on' : '') + '" onclick="npPickColor(' + (hex ? '\'' + esc(hex) + '\'' : 'null') + ',\'' + tgt + '\')" aria-label="' + esc(label) + '">'
-          + '<span style="background:' + (hex ? esc(hex) : (window.DSNameplate && DSNameplate.isColorFont(curFont.family)) ? 'conic-gradient(#ffd214,#ff552d,#ff3caf,#7c3aed,#0ab4ff,#37db52,#ffd214)' : esc(isName ? AURA.hex : '#e6e6ee')) + ';"></span><em>' + esc(label) + '</em>' + (hex ? npStar('color', hex) : '') + '</button>';
+          + npInkwell(hex || ((window.DSNameplate && DSNameplate.isColorFont(curFont.family)) ? 'rainbow' : (isName ? AURA.hex : '#e6e6ee'))) + '<em>' + esc(label) + '</em>' + (hex ? npStar('color', hex) : '') + '</button>';
       };
       var plainTile = '<button class="np-font' + (NP_PICK.tfont ? '' : ' on') + '" onclick="npPickFont(null,\'title\')">'
         + '<span class="np-font-name" style="font-family:Lato,sans-serif;font-size:15px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;">' + esc(t.title) + '</span>'
