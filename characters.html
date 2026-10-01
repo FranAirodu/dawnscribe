@@ -353,6 +353,20 @@
     .np-look button:disabled{opacity:.3;cursor:default;}
     .np-shuffle{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text2,#9b9bc0);}
     .np-buy{background:var(--gold,#f59e0b);}
+    /* Font shuffle: shown when a font is rolled */
+    .np-fs-stage{position:relative;border-radius:14px;overflow:hidden;transition:box-shadow .5s;}
+    .np-fs-stage .ds-np{text-align:left;}
+    .np-fs-stage .ds-np-name{transition:transform .12s;}
+    .np-fs-stage.tick .ds-np-name{transform:translateY(-2px);}
+    .np-fs-stage.land{box-shadow:0 0 0 2px var(--accent,#2dd4bf),0 0 40px -4px var(--accent,#2dd4bf);}
+    .np-fs-stage.land .ds-np-name{animation:npFsLand .5s cubic-bezier(.2,1.6,.4,1);}
+    .np-fs-flash{position:absolute;inset:0;background:radial-gradient(circle at 25% 50%,rgba(255,255,255,.55),transparent 60%);opacity:0;pointer-events:none;}
+    .np-fs-stage.land .np-fs-flash{animation:npFsFlash .6s ease-out;}
+    .np-fs-ov .np-ink-txt,.np-fs-ov .np-ink-hint{animation:none;opacity:0;transition:opacity .4s;}
+    .np-fs-ov.done .np-ink-txt,.np-fs-ov.done .np-ink-hint{opacity:1;}
+    .np-ink-txt b.fs{color:var(--accent,#2dd4bf);text-shadow:0 0 14px var(--accent,#2dd4bf);}
+    @keyframes npFsLand{0%{transform:scale(1.25)}100%{transform:scale(1)}}
+    @keyframes npFsFlash{0%{opacity:1}100%{opacity:0}}
     /* Ink drop: shown when a font colour is rolled */
     .np-ink-ov{position:fixed;inset:0;z-index:9999;background:rgba(4,4,10,.78);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:16px;cursor:pointer;opacity:0;transition:opacity .25s;}
     .np-ink-ov.in{opacity:1;}
@@ -989,6 +1003,47 @@
     if (r.error || d.status !== 'success') { toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); return true; }
     return false;
   }
+  /* Font shuffle: the name flickers through fonts like a slot machine,
+     slows down and lands on the new one. Tap anywhere to close. */
+  function npFontShuffle(plate, newFamily, label, titleName){
+    if (!window.DSNameplate) return;
+    var pool = NP.fonts.map(function(f){ return f.family; }).filter(function(f){ return f && f !== newFamily; });
+    for (var i = pool.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
+    pool = pool.slice(0, 14);
+    pool.forEach(function(f){ DSNameplate.ensureFont(f); });
+    DSNameplate.ensureFont(newFamily);
+    var ov = document.createElement('div');
+    ov.className = 'np-ink-ov np-fs-ov';
+    ov.innerHTML = '<div class="np-ink-card"><div class="np-fs-stage">' + DSNameplate.html(plate, { size: 'lg' }) + '<span class="np-fs-flash"></span></div>'
+      + '<div class="np-ink-txt"><b class="fs">' + esc(label) + '</b> unlocked for ' + esc(titleName) + '</div>'
+      + '<div class="np-ink-hint">Tap anywhere to continue</div></div>';
+    document.body.appendChild(ov);
+    requestAnimationFrame(function(){ ov.classList.add('in'); });
+    var stage = ov.querySelector('.np-fs-stage'), nameEl = ov.querySelector('.ds-np-name');
+    var setFam = function(f){ if (nameEl) nameEl.style.fontFamily = "'" + f.replace(/'/g, '') + "',Georgia,serif"; };
+    var closed = false;
+    var land = function(){
+      if (closed) return;
+      setFam(newFamily); stage.classList.remove('tick'); stage.classList.add('land'); ov.classList.add('done');
+    };
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || !pool.length) land();
+    else {
+      var k = 0, delay = 60;
+      var step = function(){
+        if (closed) return;
+        if (k >= pool.length) { land(); return; }
+        setFam(pool[k++]); stage.classList.toggle('tick');
+        delay = Math.round(delay * 1.18);
+        setTimeout(step, delay);
+      };
+      setTimeout(step, 300);
+    }
+    var close = function(){ closed = true; ov.classList.remove('in'); setTimeout(function(){ ov.remove(); }, 250); document.removeEventListener('keydown', onKey); };
+    var onKey = function(e){ if (e.key === 'Escape' || e.key === 'Enter') close(); };
+    ov.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+  }
   window.npRollFont = async function(){
     var b = document.getElementById('np-roll-font'); if (b) { b.disabled = true; b.innerHTML = '<i class="ti ti-loader"></i> Rolling…'; }
     var r = await db.rpc('roll_title_font', { p_title: NP_T }); var d = (r && r.data) || {};
@@ -996,8 +1051,10 @@
     if (window.DSNameplate) DSNameplate.ensureFont(d.family);
     refreshEmbers(d.balance);
     var keep = NP_T, pick = Object.assign({}, NP_PICK); await npReload(); NP_T = keep; NP_PICK = pick;
-    toast('New font for ' + (npTitle(NP_T) || {}).title + ': ' + d.label + '. Pick it for your name or your title, then press Accept.', 'ti-typography');
     render();
+    var tName = (npTitle(NP_T) || {}).title || 'this title';
+    npFontShuffle(Object.assign(npPreviewPlate(), { font_family: d.family, font_size: d.size || 1 }), d.family, d.label, tName);
+    toast('New font for ' + tName + ': ' + d.label + '. Pick it for your name or your title, then press Accept.', 'ti-typography');
   };
   /* Ink drop: a drop of the new colour falls on the nameplate and spreads
      over the old look. Tap anywhere to close. */
