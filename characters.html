@@ -319,6 +319,18 @@
     .np-wear{font-family:Lato,sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);
       border:1px solid var(--accent);border-radius:8px;padding:0 6px;}
     .np-roll-row{margin:-4px 0 12px;}
+    .np-font{position:relative;}
+    .np-sw{position:relative;}
+    .np-star{position:absolute;top:6px;right:8px;font-size:17px;line-height:1;color:var(--text3,#8a8aa8);cursor:pointer;opacity:.55;transition:opacity .15s,transform .15s;}
+    .np-star:hover{opacity:1;transform:scale(1.15);}
+    .np-star.on{color:#f5c542;opacity:1;text-shadow:0 0 8px rgba(245,197,66,.5);}
+    .np-sw .np-star{top:-6px;right:2px;font-size:14px;}
+    .np-accept{position:sticky;bottom:14px;z-index:20;margin-top:18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+      background:var(--bg2,#12121a);border:1px solid var(--accent);border-radius:12px;padding:10px 14px;
+      box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 16px rgba(var(--aura-rgb,45,212,191),.2);}
+    .np-accept span{flex:1;min-width:160px;font-size:13.5px;color:var(--text2,#9b9bc0);}
+    .np-accept b{color:var(--text,#f1f0ff);}
+    .np-accept i{color:var(--accent);}
     .np-target{display:inline-flex;margin-top:14px;border:1px solid var(--border,rgba(255,255,255,.1));border-radius:10px;overflow:hidden;}
     .np-target button{background:none;border:none;color:var(--text2,#9b9bc0);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;display:flex;gap:6px;align-items:center;}
     .np-target button.on{background:rgba(var(--aura-rgb,45,212,191),.14);color:var(--accent);}
@@ -557,10 +569,12 @@
       db.from('user_banner_favorites').select('cosmetic_item_id').eq('user_id', ME.id),
       db.rpc('ensure_starter_title').then(function(){ return Promise.all([db.rpc('my_title_styles'), db.rpc('my_nameplate_rotation')]); })
         .then(function(x){ NP_ROT = (x[1] && x[1].data) || { looks: [], mode: 'daily', shuffle: false }; NP_ROT_SAVED = JSON.stringify(NP_ROT); return x[0]; }),
+      db.from('user_nameplate_favs').select('kind,item').eq('user_id', ME.id).then(function(r){
+        NP_FAV = { font: {}, color: {} }; (r.data || []).forEach(function(f){ NP_FAV[f.kind][f.item] = 1; }); return r; }),
       db.rpc('get_nameplates', { p_user_ids: [ME.id] })
     ]);
     npApply(res[11] && res[11].data);
-    NP_ME = (res[12] && res[12].data && res[12].data[0]) || null;
+    NP_ME = (res[13] && res[13].data && res[13].data[0]) || null;
     CHARS = res[0].data || [];
     MINE = {};
     (res[1].data || []).forEach(function(r){ MINE[r.character_id] = r; });
@@ -727,6 +741,23 @@
      A title with no font of its own keeps the plain small-caps look and
      draws its colours from the name's font (same rule as the server). */
   var NP_TGT = 'name';
+  var NP_FAV = { font: {}, color: {} };
+  function npFavFirst(list, kind, keyOf){
+    return list.filter(function(x){ return NP_FAV[kind][keyOf(x)]; }).concat(list.filter(function(x){ return !NP_FAV[kind][keyOf(x)]; }));
+  }
+  function npStar(kind, item){
+    var on = !!NP_FAV[kind][item];
+    return '<span class="np-star' + (on ? ' on' : '') + '" role="button" tabindex="0" title="' + (on ? 'Remove from favourites' : 'Add to favourites') + '"'
+      + ' onclick="event.stopPropagation();npToggleFav(\'' + kind + '\',\'' + esc(item) + '\')">' + (on ? '\u2605' : '\u2606') + '</span>';
+  }
+  window.npToggleFav = async function(kind, item){
+    var on = !!NP_FAV[kind][item];
+    if (on) delete NP_FAV[kind][item]; else NP_FAV[kind][item] = 1;
+    render();
+    var r = on ? await db.from('user_nameplate_favs').delete().eq('user_id', ME.id).eq('kind', kind).eq('item', item)
+               : await db.from('user_nameplate_favs').insert({ user_id: ME.id, kind: kind, item: item });
+    if (r.error) { if (on) NP_FAV[kind][item] = 1; else delete NP_FAV[kind][item]; render(); toast('Could not save that favourite.', 'ti-alert-triangle', true); }
+  };
   function npTgtFont(){ return NP_TGT === 'name' ? NP_PICK.font : NP_PICK.tfont; }
   function npTgtColorFont(){ return NP_TGT === 'name' ? NP_PICK.font : (NP_PICK.tfont || NP_PICK.font); }
   function npTgtColor(){ return NP_TGT === 'name' ? NP_PICK.color : NP_PICK.tcolor; }
@@ -770,14 +801,14 @@
       var on = f.key === npTgtFont();
       var how = f.source === 'starter' ? 'Starter' : f.source === 'tag' ? 'From ' + esc(f.tag) : 'Rolled';
       var cols = npOwnedColors(t, f.key).length;
-      return '<button class="np-font' + (on ? ' on' : '') + '" onclick="npPickFont(\'' + esc(f.key) + '\')" title="' + esc(f.label) + '">'
+      return '<button class="np-font' + (on ? ' on' : '') + '" onclick="npPickFont(\'' + esc(f.key) + '\')" title="' + esc(f.label) + '">' + npStar('font', f.key)
         + '<span class="np-font-name" style="font-family:\'' + esc(f.family) + '\',serif;font-size:' + Math.round(22 * (f.size || 1)) + 'px;">' + esc(isName ? name : t.title) + '</span>'
         + '<span class="np-font-label">' + esc(f.label) + ' <em>' + how + (cols ? ' · ' + cols + ' colour' + (cols === 1 ? '' : 's') : '') + '</em></span></button>';
     };
     var swatch = function(hex, label){
       var on = (npTgtColor() || null) === (hex || null);
       return '<button class="np-sw' + (on ? ' on' : '') + '" onclick="npPickColor(' + (hex ? '\'' + esc(hex) + '\'' : 'null') + ')" aria-label="' + esc(label) + '">'
-        + '<span style="background:' + esc(hex || (isName ? AURA.hex : '#e6e6ee')) + ';"></span><em>' + esc(label) + '</em></button>';
+        + '<span style="background:' + esc(hex || (isName ? AURA.hex : '#e6e6ee')) + ';"></span><em>' + esc(label) + '</em>' + (hex ? npStar('color', hex) : '') + '</button>';
     };
     var free = NP.colors.filter(function(c){ return c.free; });
     var curFont = npFont(npTgtColorFont()) || {};
@@ -791,7 +822,7 @@
       + '<div class="aura-head"><i class="ti ti-typography"></i> ' + esc(t.title) + (wearing ? ' <span class="np-wear">Wearing</span>' : '') + '</div>'
       + '<div class="np-preview" id="np-preview">' + DSNameplate.html(npPreviewPlate(), { size: 'lg' }) + '</div>'
       + '<div class="np-actions">'
-      +   '<button class="aura-roll" onclick="npSave()"' + (npDirty() ? '' : ' disabled') + '><i class="ti ti-check"></i> Save style</button>'
+      +   '<button class="aura-roll" onclick="npSave()"' + (npDirty() ? '' : ' disabled') + '><i class="ti ti-check"></i> Accept</button>'
       +   (npDirty() ? '<button class="aura-reset" onclick="npUndo()">Undo</button>' : '')
       +   (!wearing ? '<button class="aura-reset" onclick="npWear()"><i class="ti ti-feather"></i> Wear this title</button>' : '')
       + '</div>'
@@ -804,15 +835,18 @@
           'Rolled fonts only work on this title. ' + rolledHere + ' of ' + rollable + ' rolled here.')
       + '<div class="np-roll-row"><button class="aura-roll" id="np-roll-font" onclick="npRollFont()"' + (rolledHere < rollable ? '' : ' disabled') + '>'
       +   '<i class="ti ti-dice-5"></i> Roll a font for ' + esc(t.title) + ' &middot; ' + NP.font_cost + ' Embers</button></div>'
-      + '<div class="np-fonts">' + (isName ? '' : plainTile) + fonts.map(fontTile).join('') + '</div>'
+      + '<div class="np-fonts">' + (isName ? '' : plainTile) + npFavFirst(fonts, 'font', function(f){ return f.key; }).map(fontTile).join('') + '</div>'
 
       + sectionHead('ti-palette', 'Colours for ' + esc(curFont.label || 'this font') + ' <span class="cnt">' + (owned.length + free.length + 1) + '</span>',
           'Colours belong to this font on this title. White and your aura are always free. ' + owned.length + ' of ' + paidTotal + ' rolled.')
       + '<div class="np-roll-row"><button class="aura-roll" id="np-roll-color" onclick="npRollColor()"' + (owned.length < paidTotal ? '' : ' disabled') + '>'
       +   '<i class="ti ti-dice-5"></i> Roll a colour for ' + esc(curFont.label || 'this font') + ' &middot; ' + NP.color_cost + ' Embers</button></div>'
       + '<div class="np-swatches">' + swatch(null, isName ? 'My aura' : 'Default') + free.map(function(c){ return swatch(c.hex, c.label); }).join('')
-      +   owned.map(function(h){ var c = npColor(h); return c ? swatch(c.hex, c.label) : ''; }).join('') + '</div>'
-      + npRotationHtml();
+      +   npFavFirst(owned, 'color', function(h){ return h; }).map(function(h){ var c = npColor(h); return c ? swatch(c.hex, c.label) : ''; }).join('') + '</div>'
+      + npRotationHtml()
+      + (npDirty() ? '<div class="np-accept"><span><i class="ti ti-pencil"></i> Unsaved changes to <b>' + esc(t.title) + '</b></span>'
+          + '<button class="aura-reset" onclick="npUndo()">Undo</button>'
+          + '<button class="aura-roll" onclick="npSave()"><i class="ti ti-check"></i> Accept</button></div>' : '');
   }
 
   /* ── ROTATION ──
