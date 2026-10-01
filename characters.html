@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="escapeUtils.js"></script>
+  <script src="nameplate.js"></script>
   <style>
     :root {
       --bg:#0f1117; --bg2:#161b27; --bg3:#1e2535; --bg4:#252d3d;
@@ -300,6 +301,34 @@
       box-shadow:0 4px 14px rgba(0,0,0,.35);}
     @media (max-width:600px){.spend-ex-flame,.spend-ex-banner{width:84px;}.spend-ex-banner img{width:84px;height:34px;}}
     @media (prefers-reduced-motion:reduce){.spend-ex-flame svg .f-body{animation:none;}}
+    .spend-ex-font{width:120px;}
+    .spend-ex-font b{font-size:22px;font-weight:400;color:var(--accent);line-height:1.2;max-width:120px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+      text-shadow:0 0 10px rgba(var(--aura-rgb,45,212,191),.35);}
+    @media (max-width:600px){.spend-ex-font{width:84px;}.spend-ex-font b{font-size:16px;max-width:84px;}}
+    .np-preview{margin:14px 0 8px;max-width:640px;}
+    .np-preview .ds-np{min-height:150px;}
+    .np-hint{font-size:12.5px;color:var(--text3,#8a8aa8);margin-bottom:8px;}
+    .np-hint a{color:var(--accent);font-weight:700;text-decoration:none;}
+    .np-hint b{color:var(--text,#f1f0ff);}
+    .np-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+    .np-buy{background:var(--gold,#f59e0b);}
+    .np-swatches{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px;}
+    .np-sw{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:0;width:54px;}
+    .np-sw span{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.18);box-shadow:0 2px 8px rgba(0,0,0,.4);}
+    .np-sw em{font-style:normal;font-size:10.5px;color:var(--text3,#8a8aa8);white-space:nowrap;}
+    .np-sw.on span{outline:2px solid var(--text,#f1f0ff);outline-offset:3px;}
+    .np-sw.on em{color:var(--text,#f1f0ff);font-weight:700;}
+    .np-sw.locked span{opacity:.55;}
+    .np-sw i{position:absolute;top:9px;font-size:15px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.9);}
+    .np-fonts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:24px;}
+    .np-font{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;padding:12px 14px;border-radius:12px;cursor:pointer;
+      background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.08));color:var(--text,#f1f0ff);min-height:76px;}
+    .np-font:hover{border-color:rgba(var(--aura-rgb,45,212,191),.5);}
+    .np-font.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 14px rgba(var(--aura-rgb,45,212,191),.25);}
+    .np-font.locked{cursor:default;opacity:.5;}
+    .np-font-name{line-height:1.15;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+    .np-font-label{font-size:11px;color:var(--text3,#8a8aa8);font-family:Lato,sans-serif;}
+    .np-font-label em{font-style:normal;color:var(--accent);margin-left:4px;}
     .spend-intro{font-size:14px;color:var(--text2,#9b9bc0);margin:4px 0 6px;line-height:1.6;}
     .spend-intro i{color:var(--accent);}
     .spend-intro a{color:var(--accent);font-weight:700;text-decoration:none;}
@@ -398,7 +427,7 @@
   // Tabs by WHAT you collect. Remembered, and reachable as characters.html#banners.
   // Spend Embers is the front door: every way to use Embers in one place.
   // A #hash link still opens a specific tab.
-  var TABS = ['spend','characters','banners','aura'];
+  var TABS = ['spend','characters','banners','nameplate','aura'];
   var TAB = 'spend';
   try { var _h = (location.hash || '').replace('#', ''); if (TABS.indexOf(_h) >= 0) TAB = _h; } catch(e) {}
   // Keep the top bar's Ember count honest after any roll or pledge. The aura
@@ -499,8 +528,14 @@
         .eq('user_id', ME.id),
       db.from('user_avatars').select('equipped, banner_rotation_ids, banner_rotation_mode, banner_rotation_index, banner_last_rotated_at')
         .eq('user_id', ME.id).maybeSingle(),
-      db.from('user_banner_favorites').select('cosmetic_item_id').eq('user_id', ME.id)
+      db.from('user_banner_favorites').select('cosmetic_item_id').eq('user_id', ME.id),
+      db.rpc('my_nameplate'),
+      db.rpc('get_nameplates', { p_user_ids: [ME.id] })
     ]);
+    NP = (res[11] && res[11].data && res[11].data.ok) ? res[11].data : null;
+    NP_ME = (res[12] && res[12].data && res[12].data[0]) || null;
+    if (NP && !NP_PICK) NP_PICK = { font: (NP.choice && NP.choice.font) || 'cinzel', color: (NP.choice && NP.choice.color) || null };
+    if (window.DSNameplate && NP) NP.fonts.forEach(function(f){ DSNameplate.ensureFont(f.family); });
     CHARS = res[0].data || [];
     MINE = {};
     (res[1].data || []).forEach(function(r){ MINE[r.character_id] = r; });
@@ -641,6 +676,112 @@
     return '<a class="spend-link" href="#spend" onclick="setTab(\'spend\');return false;">'
       + '<i class="ti ti-flame"></i> ' + label + ' <span>on Spend Embers \u2192</span></a>';
   }
+  // ── NAMEPLATE TAB ─────────────────────────────────────────────
+  /* Your name over your banner art, in the font and colour you pick. Fonts:
+     6 starters, more from rolls and from reading certain tags. Colours:
+     White and your aura are free, the rest cost a few Embers each. Picking
+     only previews; Save writes it. */
+  var NP = null, NP_ME = null, NP_PICK = null;
+  function npFont(key){ return NP ? NP.fonts.filter(function(f){ return f.key === key; })[0] : null; }
+  function npColor(hex){ return NP && hex ? NP.colors.filter(function(c){ return c.hex === hex; })[0] : null; }
+  function npPreviewPlate(){
+    var f = npFont(NP_PICK.font) || {};
+    return Object.assign({}, NP_ME || {}, {
+      font_family: f.family || 'Cinzel', font_size: f.size || 1,
+      color_hex: NP_PICK.color, aura_hex: AURA.hex
+    });
+  }
+  function npDirty(){
+    var cur = (NP && NP.choice) || {};
+    return (cur.font || 'cinzel') !== NP_PICK.font || (cur.color || null) !== NP_PICK.color;
+  }
+  function nameplateHtml(){
+    if (!NP || !window.DSNameplate) return '<div class="aura-card"><div class="aura-sub">Loading your nameplate\u2026</div></div>';
+    var name = (NP_ME && (NP_ME.display_name || NP_ME.username)) || 'You';
+    var owned = NP.fonts.filter(function(f){ return f.owned; }).length;
+    var pc = npColor(NP_PICK.color);
+    var colorLocked = pc && !pc.owned;
+    var fontTile = function(f){
+      var on = f.key === NP_PICK.font;
+      var how = f.owned ? '' : (f.source === 'tag' ? 'Read ' + esc(f.tag) : 'Roll to win');
+      return '<button class="np-font' + (on ? ' on' : '') + (f.owned ? '' : ' locked') + '"'
+        + (f.owned ? ' onclick="npPickFont(\'' + esc(f.key) + '\')"' : ' disabled') + ' title="' + esc(f.label) + (how ? ' \u00b7 ' + how : '') + '">'
+        + '<span class="np-font-name" style="font-family:\'' + esc(f.family) + '\',serif;font-size:' + Math.round(22 * (f.size || 1)) + 'px;">' + esc(name) + '</span>'
+        + '<span class="np-font-label">' + (f.owned ? '' : '<i class="ti ti-lock"></i> ') + esc(f.label)
+        + (how ? ' <em>' + how + '</em>' : '') + '</span></button>';
+    };
+    var swatch = function(hex, label, ownedC){
+      var on = (NP_PICK.color || null) === (hex || null);
+      var shown = hex || AURA.hex;
+      return '<button class="np-sw' + (on ? ' on' : '') + (ownedC ? '' : ' locked') + '" onclick="npPickColor(' + (hex ? '\'' + esc(hex) + '\'' : 'null') + ')"'
+        + ' title="' + esc(label) + (ownedC ? '' : ' \u00b7 ' + NP.color_cost + ' Embers') + '" aria-label="' + esc(label) + '">'
+        + '<span style="background:' + esc(shown) + ';"></span>' + (ownedC ? '' : '<i class="ti ti-lock"></i>')
+        + '<em>' + esc(label) + '</em></button>';
+    };
+    return '<div class="aura-card">'
+      + '<div class="aura-head"><i class="ti ti-typography"></i> Your nameplate</div>'
+      + '<div class="aura-sub">Your name over your banner, the way people see you around DawnScribe. Pick a font and a colour, then press <b>Save nameplate</b>.</div>'
+      + '<div class="np-preview" id="np-preview">' + DSNameplate.html(npPreviewPlate(), { size: 'lg' }) + '</div>'
+      + '<div class="np-hint">' + (NP_ME && NP_ME.banner_url ? '' : 'No banner yet, so the card shows a plain backdrop. <a href="#banners" onclick="setTab(\'banners\');return false;">Pick a banner</a>. ')
+      +   (NP_ME && NP_ME.title ? 'Title: <b>' + esc(NP_ME.title) + '</b> \u00b7 change it on your <a href="profile.html">profile</a>.' : 'Earn a title by reading a tag, then show it from your <a href="profile.html">profile</a>.') + '</div>'
+      + '<div class="np-actions">'
+      +   '<button class="aura-roll" onclick="npSave()"' + (npDirty() && !colorLocked ? '' : ' disabled') + '><i class="ti ti-check"></i> Save nameplate</button>'
+      +   (colorLocked ? '<button class="aura-roll np-buy" onclick="npBuyColor()"><i class="ti ti-lock-open"></i> Unlock ' + esc(pc.label) + ' &middot; ' + NP.color_cost + ' Embers</button>' : '')
+      +   (npDirty() ? '<button class="aura-reset" onclick="npReset()">Undo changes</button>' : '')
+      + '</div>'
+      + '</div>'
+      + sectionHead('ti-palette', 'Colour', 'White and your aura colour are free. Every other colour is ' + NP.color_cost + ' Embers, once, and works with every font.')
+      + '<div class="np-swatches">' + swatch(null, 'My aura', true) + NP.colors.map(function(c){ return swatch(c.hex, c.label, c.owned); }).join('') + '</div>'
+      + sectionHead('ti-typography', 'Font <span class="cnt">' + owned + ' of ' + NP.fonts.length + '</span>',
+          'Win more on <a href="#spend" onclick="setTab(\'spend\');return false;" style="color:var(--accent);">Spend Embers</a>, or unlock the special ones by reading their tag.')
+      + '<div class="np-fonts">' + NP.fonts.filter(function(f){ return f.owned; }).map(fontTile).join('')
+      +   NP.fonts.filter(function(f){ return !f.owned; }).map(fontTile).join('') + '</div>';
+  }
+  function npRepaintPreview(){
+    var el = document.getElementById('np-preview');
+    if (el && window.DSNameplate) el.innerHTML = DSNameplate.html(npPreviewPlate(), { size: 'lg' });
+  }
+  window.npPickFont = function(key){ NP_PICK.font = key; render(); };
+  window.npPickColor = function(hex){ NP_PICK.color = hex; render(); };
+  window.npReset = function(){ NP_PICK = { font: (NP.choice && NP.choice.font) || 'cinzel', color: (NP.choice && NP.choice.color) || null }; render(); };
+  window.npSave = async function(){
+    var r = await db.rpc('set_my_nameplate', { p_font: NP_PICK.font, p_color: NP_PICK.color });
+    if (r.error || !r.data || !r.data.ok) { toast((r.data && r.data.error) || 'Could not save that.', 'ti-alert-triangle', true); return; }
+    NP.choice = { font: NP_PICK.font, color: NP_PICK.color };
+    if (window.DSNameplate) DSNameplate.forget(ME.id);
+    toast('Nameplate saved', 'ti-typography');
+    render();
+  };
+  window.npBuyColor = async function(){
+    var c = npColor(NP_PICK.color);
+    if (!c) return;
+    var r = await db.rpc('buy_nameplate_color', { p_hex: c.hex });
+    var d = (r && r.data) || {};
+    if (d.status === 'insufficient_embers') { toast('You need ' + (d.cost || NP.color_cost) + ' Embers for that.', 'ti-flame', true); return; }
+    if (r.error || (d.status !== 'success' && d.status !== 'owned')) { toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); return; }
+    c.owned = true;
+    refreshEmbers(d.balance);
+    toast(c.label + ' unlocked. Press Save to wear it.', 'ti-palette');
+    render();
+  };
+  window.rollFont = async function(){
+    var btn = document.getElementById('roll-font');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Rolling\u2026'; }
+    var r = await db.rpc('roll_nameplate_font');
+    var d = (r && r.data) || {};
+    if (d.status === 'insufficient_embers') { toast('You need ' + (d.cost || 30) + ' Embers for that.', 'ti-flame', true); render(); return; }
+    if (d.status === 'all_unlocked') { toast('You have every font you can roll, for now.', 'ti-check'); render(); return; }
+    if (r.error || d.status !== 'success') { toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); render(); return; }
+    if (window.DSNameplate) DSNameplate.ensureFont(d.family);
+    refreshEmbers(d.balance);
+    var f = npFont(d.key); if (f) f.owned = true;
+    NP_PICK.font = d.key;
+    TAB = 'nameplate';
+    try { history.replaceState(null, '', '#nameplate'); } catch(e) {}
+    toast('New font: ' + d.label + '. It\u2019s previewing on your nameplate.', 'ti-typography');
+    render();
+  };
+
   var SPEND_EX_AURA = '#84cc16';   // Lime
   var SPEND_EX_BANNER = 'https://cajjyyskpmjnpcxcfeuk.supabase.co/storage/v1/object/public/cosmetic-assets/landscapes/writers-desk-bastartu.webp';
   function spendHtml(){
@@ -648,7 +789,8 @@
     var auraDone = allAurasOwned();
     var html = '<div class="spend-intro"><i class="ti ti-flame"></i> Everything you can do with your Embers. '
       + 'What you win lands in <a href="#characters" onclick="setTab(\'characters\');return false;">Characters</a>, '
-      + '<a href="#banners" onclick="setTab(\'banners\');return false;">Banners</a> or '
+      + '<a href="#banners" onclick="setTab(\'banners\');return false;">Banners</a>, '
+      + '<a href="#nameplate" onclick="setTab(\'nameplate\');return false;">Nameplate</a> or '
       + '<a href="#aura" onclick="setTab(\'aura\');return false;">Aura</a>.</div>';
     if (opening.length) {
       html += sectionHead('ti-users-group', 'Open a character together',
@@ -669,7 +811,20 @@
     var bannerEx = '<div class="spend-ex spend-ex-banner" title="Example: Writer\u2019s Desk">'
       + '<img src="' + SPEND_EX_BANNER + '" alt="" loading="lazy" onerror="this.parentNode.style.display=\'none\'"/>'
       + '<span>Writer\u2019s Desk</span></div>';
+    var fontLeft = NP ? NP.fonts.filter(function(f){ return f.source === 'roll' && !f.owned; }).length : 0;
+    var fontEx = '<div class="spend-ex spend-ex-font" title="Example: Monoton"><b style="font-family:\'Monoton\',serif;">'
+      + esc((NP_ME && (NP_ME.display_name || NP_ME.username)) || 'Name').slice(0, 10) + '</b><span>Monoton</span></div>';
+    if (window.DSNameplate) DSNameplate.ensureFont('Monoton');
+    var fontRow = '<div class="rand-row">' + fontEx
+      +   '<div class="rand-info"><div class="rand-name"><i class="ti ti-typography"></i> A nameplate font</div>'
+      +   '<div class="aura-sub" style="margin:2px 0 0;">' + (!NP ? 'Loading\u2026'
+             : fontLeft ? 'Your name, written a whole new way. Every roll is a font you don\u2019t have yet.'
+             : 'You have every font you can roll, for now.') + '</div></div>'
+      +   '<button class="aura-roll" id="roll-font" onclick="rollFont()"' + (NP && fontLeft ? '' : ' disabled') + '>'
+      +   '<i class="ti ti-dice-5"></i> Roll &middot; ' + ((NP && NP.font_cost) || 30) + ' Embers</button>'
+      + '</div>';
     var rows = [
+      { cost: (NP && NP.font_cost) || 30, html: fontRow },
       { cost: AURA_COST, html: auraRow },
       { cost: RAND.banner.cost, html: randRow('banner', 'A profile banner', 'ti-photo', 'Wear it on your profile.', bannerEx) },
       { cost: RAND.character.cost, html: randRow('character', 'A character', 'ti-user-heart', 'Winners join your crew.') }
@@ -687,7 +842,7 @@
         + ' role="tab" aria-selected="' + (TAB === key) + '"><i class="ti ' + icon + '"></i> ' + label + '</button>';
     };
     return '<div class="ctabs" role="tablist">' + t('spend', 'ti-flame', 'Spend Embers') + t('characters', 'ti-users', 'Characters')
-      + t('banners', 'ti-photo', 'Banners') + t('aura', 'ti-color-swatch', 'Aura') + '</div>';
+      + t('banners', 'ti-photo', 'Banners') + t('nameplate', 'ti-typography', 'Nameplate') + t('aura', 'ti-color-swatch', 'Aura') + '</div>';
   }
 
   function render(){
@@ -696,6 +851,7 @@
     if (TAB === 'banners') html += bannersHtml();
     else if (TAB === 'aura') html += auraHtml();
     else if (TAB === 'characters') html += charactersHtml();
+    else if (TAB === 'nameplate') html += nameplateHtml();
     else html += spendHtml();
     document.getElementById('view').innerHTML = html;
   }

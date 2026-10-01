@@ -51,6 +51,7 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%230d9488%22/%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2244%22%20r%3D%2214%22%20fill%3D%22%23fbbf24%22/%3E%3Cg%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2232%22%20y1%3D%2214%22%20x2%3D%2232%22%20y2%3D%2224%22/%3E%3Cline%20x1%3D%2214%22%20y1%3D%2224%22%20x2%3D%2221%22%20y2%3D%2231%22/%3E%3Cline%20x1%3D%2250%22%20y1%3D%2224%22%20x2%3D%2243%22%20y2%3D%2231%22/%3E%3C/g%3E%3Crect%20y%3D%2244%22%20width%3D%2264%22%20height%3D%2220%22%20fill%3D%22%230d9488%22/%3E%3C/svg%3E" />
   <title>DawnScribe — Profile</title>
   <meta property="og:image" content="https://www.dawnscribe.com/og-default.png" />
+  <script src="nameplate.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="storagePaths.js"></script>
   <script src="escapeUtils.js"></script>
@@ -166,6 +167,24 @@
     .ds-avatar-figure.clickable{pointer-events:auto;cursor:pointer;transition:filter 0.2s, transform 0.2s;}
     .ds-avatar-figure.clickable:hover{filter:drop-shadow(0 6px 16px rgba(0,0,0,0.45)) drop-shadow(0 0 10px rgba(var(--aura-rgb,45,212,191),0.45));transform:translateY(-3px);}
     .ds-avatar-figure.visible{display:block;}
+    /* Nameplate over the banner. Starts right of the standing character so
+       the two never overlap; the banner's own art is the card. */
+    .banner-plate{position:absolute;left:0;right:0;bottom:0;z-index:2;pointer-events:none;
+      background:linear-gradient(0deg,rgba(6,6,14,.72) 0%,rgba(6,6,14,.35) 55%,transparent 100%);padding:60px 0 18px;}
+    .banner-plate-inner{max-width:960px;margin:0 auto;padding:0 24px 0 calc(var(--ds-avatar-h) * 2 / 3 + 36px);display:flex;align-items:flex-end;gap:14px;}
+    .banner-plate.no-figure .banner-plate-inner{padding-left:24px;}
+    #banner-plate-name{min-width:0;flex:1;}
+    #banner-plate-name .ds-np-name{font-size:clamp(30px,4.2vw,56px) !important;}
+    .banner-plate-edit{pointer-events:auto;flex-shrink:0;font-size:12px;font-weight:700;color:#fff;text-decoration:none;background:rgba(0,0,0,.45);
+      border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:6px 10px;display:none;align-items:center;gap:5px;backdrop-filter:blur(4px);}
+    body.is-owner .banner-plate-edit{display:inline-flex;}
+    .banner-wrap.has-plate .banner-edit-btn,.banner-wrap.has-plate .banner-credit-chip{bottom:auto;top:14px;z-index:3;}
+    /* Title under the standing character */
+    .ds-figure-title{position:absolute;top:46px;left:12px;width:calc(var(--ds-avatar-h) * 2 / 3);z-index:5;text-align:center;
+      font-family:'Lato',sans-serif;font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+      line-height:1.35;text-shadow:0 0 10px rgba(var(--aura-rgb,45,212,191),.35);}
+    .ds-figure-title i{margin-right:4px;}
+    @media (max-width:720px){ .banner-plate-inner{padding-left:156px;} .ds-figure-title{top:34px;left:2px;width:140px;font-size:10px;} }
     .ds-avatar-figure svg{width:100%;height:100%;display:block;}
     /* Character art is a PNG/WebP figure, bottom-aligned so every character
        stands on the same ground line regardless of how tall they are drawn. */
@@ -655,6 +674,11 @@
     <a class="banner-edit-btn owner-only" id="banner-edit-btn" href="characters.html#banners" style="text-decoration:none;">
       <i class="ti ti-photo-edit"></i> Change Banner
     </a>
+    <!-- Nameplate: the member's name written across their banner art -->
+    <div class="banner-plate" id="banner-plate" style="display:none;">
+      <div class="banner-plate-inner"><div id="banner-plate-name"></div>
+        <a class="banner-plate-edit owner-only" href="characters.html#nameplate"><i class="ti ti-typography"></i> Nameplate</a></div>
+    </div>
   </div>
 
   <!-- PROFILE SECTIONS WRAP -->
@@ -667,6 +691,7 @@
   <!-- PROFILE HEADER -->
   <div class="profile-header">
     <a class="ds-avatar-figure" id="ds-avatar-figure" aria-hidden="true"></a>
+    <div class="ds-figure-title" id="ds-figure-title" style="display:none;"></div>
     <div class="avatar-row">
       <div class="avatar-row-left">
       </div>
@@ -1273,7 +1298,7 @@
             loadActivity(profileData.id);
             loadShowcase(profileData.id, true);
             loadArtistPage(profileData.id, true);
-            loadProfileTitle(profileData.id, true);
+            loadProfileTitle(profileData.id, true).then(function(){ loadProfileNameplate(profileData.id); });
             renderProfileTipUI(profileData.id, session);
             loadCurrencyWallet(session.user.id);
           }
@@ -1291,7 +1316,7 @@
             loadReadingList(profileData.id);
             loadShowcase(profileData.id, false);
             loadArtistPage(profileData.id, false);
-            loadProfileTitle(profileData.id, false);
+            loadProfileTitle(profileData.id, false).then(function(){ loadProfileNameplate(profileData.id); });
             renderProfileTipUI(profileData.id, session);
           }
           if (!session) {
@@ -3263,6 +3288,45 @@ async function handleFriendBtn() {
        Earned by reading a tag (see ds_grant_tag_titles). One is shown
        under the name; the owner picks which from the ones they've earned. */
     var _pt = { mine: null };
+    /* ── NAMEPLATE ──────────────────────────────────────────────
+       Name across the banner in the member's font and colour; their
+       title sits under the standing character instead of under the name. */
+    async function loadProfileNameplate(profileId) {
+      try {
+        if (!window.DSNameplate) return;
+        DSNameplate.forget(profileId);
+        var m = await DSNameplate.load([profileId]);
+        var p = m[profileId];
+        if (!p) return;
+        var plate = document.getElementById('banner-plate');
+        document.getElementById('banner-plate-name').innerHTML = DSNameplate.html(p, { size: 'lg', bare: true, noTitle: true });
+        var fig = document.getElementById('ds-avatar-figure');
+        plate.classList.toggle('no-figure', !(fig && fig.classList.contains('visible')));
+        plate.style.display = '';
+        document.getElementById('banner-wrap').classList.add('has-plate');
+        var dn = document.getElementById('display-name');
+        if (dn) dn.style.display = 'none';            // the banner carries the name now
+        var ft = document.getElementById('ds-figure-title');
+        if (ft) {
+          ft.innerHTML = p.title ? '<i class="ti ti-feather"></i>' + escHtml(p.title) : '';
+          ft.style.display = p.title && fig && fig.classList.contains('visible') ? '' : 'none';
+        }
+        // Title moved under the character, so the old line only keeps its button.
+        var pt = document.getElementById('profile-title');
+        if (pt && fig && fig.classList.contains('visible')) pt.style.display = 'none';
+        // The character art loads on its own and can land after this; when it
+        // does, slide the name over and put the title under it.
+        if (fig && !fig._npWatch) {
+          fig._npWatch = true;
+          new MutationObserver(function(){
+            var vis = fig.classList.contains('visible');
+            plate.classList.toggle('no-figure', !vis);
+            if (ft) ft.style.display = p.title && vis ? '' : 'none';
+            if (pt && vis) pt.style.display = 'none';
+          }).observe(fig, { attributes: true, attributeFilter: ['class'] });
+        }
+      } catch (e) { console.warn('[nameplate]', e); }
+    }
     async function loadProfileTitle(profileId, isOwner) {
       var row = document.getElementById('profile-title-row');
       var el = document.getElementById('profile-title');
@@ -3297,7 +3361,7 @@ async function handleFriendBtn() {
         if (r.error || !r.data || !r.data.ok) { showToast((r.data && r.data.error) || 'Could not change title', 'ti-alert-triangle'); return; }
         sel.style.display = 'none';
         showToast(sel.value ? 'Title updated' : 'Title hidden', 'ti-check');
-        loadProfileTitle(currentProfileId, true);
+        loadProfileTitle(currentProfileId, true).then(function(){ loadProfileNameplate(currentProfileId); });
       };
     }
 
