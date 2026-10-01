@@ -326,6 +326,13 @@
     .np-font:hover{border-color:rgba(var(--aura-rgb,45,212,191),.5);}
     .np-font.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 14px rgba(var(--aura-rgb,45,212,191),.25);}
     .np-font.locked{cursor:default;opacity:.5;}
+    .np-group{margin:0 0 14px;background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.08));border-radius:12px;padding:0 14px;}
+    .np-group summary{cursor:pointer;list-style:none;padding:12px 0;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .np-group summary::-webkit-details-marker{display:none;}
+    .np-group summary i{color:var(--accent);}
+    .np-group summary em{font-style:normal;font-weight:400;font-size:12px;color:var(--text3,#8a8aa8);flex-basis:100%;margin-left:26px;}
+    .np-group[open] summary{border-bottom:1px solid var(--border,rgba(255,255,255,.08));margin-bottom:12px;}
+    .np-group .np-fonts{margin-bottom:14px;}
     .np-font-name{line-height:1.15;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
     .np-font-label{font-size:11px;color:var(--text3,#8a8aa8);font-family:Lato,sans-serif;}
     .np-font-label em{font-style:normal;color:var(--accent);margin-left:4px;}
@@ -535,7 +542,8 @@
     NP = (res[11] && res[11].data && res[11].data.ok) ? res[11].data : null;
     NP_ME = (res[12] && res[12].data && res[12].data[0]) || null;
     if (NP && !NP_PICK) NP_PICK = { font: (NP.choice && NP.choice.font) || 'cinzel', color: (NP.choice && NP.choice.color) || null };
-    if (window.DSNameplate && NP) NP.fonts.forEach(function(f){ DSNameplate.ensureFont(f.family); });
+    // Only fonts you own load up front; locked ones load as they scroll into view.
+    if (window.DSNameplate && NP) NP.fonts.forEach(function(f){ if (f.owned) DSNameplate.ensureFont(f.family); });
     CHARS = res[0].data || [];
     MINE = {};
     (res[1].data || []).forEach(function(r){ MINE[r.character_id] = r; });
@@ -681,7 +689,7 @@
      6 starters, more from rolls and from reading certain tags. Colours:
      White and your aura are free, the rest cost a few Embers each. Picking
      only previews; Save writes it. */
-  var NP = null, NP_ME = null, NP_PICK = null;
+  var NP = null, NP_ME = null, NP_PICK = null, npTile = null;
   function npFont(key){ return NP ? NP.fonts.filter(function(f){ return f.key === key; })[0] : null; }
   function npColor(hex){ return NP && hex ? NP.colors.filter(function(c){ return c.hex === hex; })[0] : null; }
   function npPreviewPlate(){
@@ -701,10 +709,10 @@
     var owned = NP.fonts.filter(function(f){ return f.owned; }).length;
     var pc = npColor(NP_PICK.color);
     var colorLocked = pc && !pc.owned;
-    var fontTile = function(f){
+    var fontTile = npTile = function(f){
       var on = f.key === NP_PICK.font;
       var how = f.owned ? '' : (f.source === 'tag' ? 'Read ' + esc(f.tag) : 'Roll to win');
-      return '<button class="np-font' + (on ? ' on' : '') + (f.owned ? '' : ' locked') + '"'
+      return '<button class="np-font' + (on ? ' on' : '') + (f.owned ? '' : ' locked') + '"' + (f.owned ? '' : ' data-fam="' + esc(f.family) + '"')
         + (f.owned ? ' onclick="npPickFont(\'' + esc(f.key) + '\')"' : ' disabled') + ' title="' + esc(f.label) + (how ? ' \u00b7 ' + how : '') + '">'
         + '<span class="np-font-name" style="font-family:\'' + esc(f.family) + '\',serif;font-size:' + Math.round(22 * (f.size || 1)) + 'px;">' + esc(name) + '</span>'
         + '<span class="np-font-label">' + (f.owned ? '' : '<i class="ti ti-lock"></i> ') + esc(f.label)
@@ -734,9 +742,30 @@
       + '<div class="np-swatches">' + swatch(null, 'My aura', true) + NP.colors.map(function(c){ return swatch(c.hex, c.label, c.owned); }).join('') + '</div>'
       + sectionHead('ti-typography', 'Font <span class="cnt">' + owned + ' of ' + NP.fonts.length + '</span>',
           'Win more on <a href="#spend" onclick="setTab(\'spend\');return false;" style="color:var(--accent);">Spend Embers</a>, or unlock the special ones by reading their tag.')
-      + '<div class="np-fonts">' + NP.fonts.filter(function(f){ return f.owned; }).map(fontTile).join('')
-      +   NP.fonts.filter(function(f){ return !f.owned; }).map(fontTile).join('') + '</div>';
+      + '<div class="np-fonts">' + NP.fonts.filter(function(f){ return f.owned; }).map(fontTile).join('') + '</div>'
+      + npLockedGroup('roll', 'ti-dice-5', 'Win by rolling', 'Each roll on Spend Embers gives you one of these.')
+      + npLockedGroup('tag', 'ti-book', 'Unlock by reading', 'Earn any title in the tag and the font is yours.');
   }
+  function npLockedGroup(src, icon, title, sub){
+    var list = NP.fonts.filter(function(f){ return !f.owned && f.source === src; });
+    if (!list.length) return '';
+    var open = NP_OPEN[src] ? ' open' : '';
+    return '<details class="np-group"' + open + ' ontoggle="NP_OPEN[\'' + src + '\']=this.open;npLazyFonts()">'
+      + '<summary><i class="ti ' + icon + '"></i> ' + title + ' <span class="cnt">' + list.length + '</span><em>' + sub + '</em></summary>'
+      + '<div class="np-fonts">' + list.map(function(f){ return npTile(f); }).join('') + '</div></details>';
+  }
+  var NP_OPEN = window.NP_OPEN = {};
+  // Load a locked font's file only when its tile is actually on screen.
+  var npIO = null;
+  window.npLazyFonts = function(){
+    if (!window.DSNameplate) return;
+    var tiles = document.querySelectorAll('.np-font[data-fam]');
+    if (!('IntersectionObserver' in window)) { Array.prototype.forEach.call(tiles, function(t){ DSNameplate.ensureFont(t.getAttribute('data-fam')); }); return; }
+    if (!npIO) npIO = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if (e.isIntersecting) { DSNameplate.ensureFont(e.target.getAttribute('data-fam')); npIO.unobserve(e.target); } });
+    }, { rootMargin: '200px' });
+    Array.prototype.forEach.call(tiles, function(t){ npIO.observe(t); });
+  };
   function npRepaintPreview(){
     var el = document.getElementById('np-preview');
     if (el && window.DSNameplate) el.innerHTML = DSNameplate.html(npPreviewPlate(), { size: 'lg' });
@@ -851,7 +880,7 @@
     if (TAB === 'banners') html += bannersHtml();
     else if (TAB === 'aura') html += auraHtml();
     else if (TAB === 'characters') html += charactersHtml();
-    else if (TAB === 'nameplate') html += nameplateHtml();
+    else if (TAB === 'nameplate') { html += nameplateHtml(); setTimeout(function(){ if (window.npLazyFonts) npLazyFonts(); }, 0); }
     else html += spendHtml();
     document.getElementById('view').innerHTML = html;
   }
