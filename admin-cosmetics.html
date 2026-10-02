@@ -157,6 +157,7 @@
       <button class="tab-btn" data-tab="review" onclick="showTab('review')"><i class="ti ti-inbox"></i> To review <span class="pill" id="review-count" style="display:none;"></span></button>
       <button class="tab-btn" data-tab="banners" onclick="showTab('banners')"><i class="ti ti-photo"></i> Banners</button>
       <button class="tab-btn" data-tab="rewards" onclick="showTab('rewards')"><i class="ti ti-eye-off"></i> Reading rewards</button>
+      <button class="tab-btn" data-tab="btitles" onclick="showTab('btitles')"><i class="ti ti-feather"></i> Badge titles</button>
     </div>
 
     <!-- ══ CHARACTERS ══ -->
@@ -237,6 +238,15 @@
       </div>
       <div id="reward-table"></div>
     </section>
+
+    <!-- ══ BADGE TITLES ══ -->
+    <section class="tab" id="tab-btitles">
+      <p class="page-sub">Titles people earn automatically: one at each Amethyst, Emerald and Celestite gem of a badge, one for a one-time badge, and one for each prestige rank from Obsidian up. Rename one and everyone who holds it sees the new name. Turning one off hides it from nameplates and stops new people earning it.</p>
+      <div class="row" style="margin-bottom:12px;">
+        <div class="f"><label for="bt-q">Search</label><input type="text" id="bt-q" placeholder="Badge or title…" oninput="renderBadgeTitles()"/></div>
+      </div>
+      <div id="bt-list"><p style="color:var(--text3);font-size:13px;">Loading…</p></div>
+    </section>
   </div>
 
   <div class="toast" id="toast" role="status"></div>
@@ -281,7 +291,47 @@
   function showTab(t) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
     document.querySelectorAll('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + t));
+    if (t === 'btitles' && !BTITLES) loadBadgeTitles();
   }
+
+  // ════════════════════════════════════════════════════════════════
+  //  BADGE TITLES (earned at badge gems and prestige ranks)
+  // ════════════════════════════════════════════════════════════════
+  let BTITLES = null;
+  async function loadBadgeTitles() {
+    const { data, error } = await db.rpc('admin_badge_titles');
+    if (error || !data || !data.ok) { document.getElementById('bt-list').innerHTML = '<p style="color:var(--text3);">Could not load titles.</p>'; return; }
+    BTITLES = data.titles || [];
+    renderBadgeTitles();
+  }
+  window.renderBadgeTitles = function() {
+    if (!BTITLES) return;
+    const q = (document.getElementById('bt-q').value || '').trim().toLowerCase();
+    const list = BTITLES.filter(t => !q || t.badge.toLowerCase().includes(q) || t.title.toLowerCase().includes(q));
+    const groups = [];
+    list.forEach(t => { let g = groups[groups.length - 1]; if (!g || g.badge !== t.badge) groups.push(g = { badge: t.badge, category: t.category, rows: [] }); g.rows.push(t); });
+    document.getElementById('bt-list').innerHTML = groups.length ? groups.map(g =>
+      '<div class="editor" style="margin-bottom:10px;padding:12px 14px;">' +
+        '<div style="font-size:13px;font-weight:700;margin-bottom:8px;">' + esc(g.badge) + ' <small style="color:var(--text3);font-weight:400;">' + esc(g.category) + '</small></div>' +
+        g.rows.map(t =>
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">' +
+            '<span style="min-width:96px;font-size:12px;color:' + esc(t.gem_color || 'var(--text2)') + ';">' + (t.one_time ? 'Earned' : '&#9670; ' + esc(t.gem || ('Gem ' + t.gem_tier))) + '</span>' +
+            '<input type="text" id="bt-' + t.id + '" value="' + esc(t.title) + '" maxlength="40" style="flex:1;min-width:160px;"/>' +
+            '<label style="font-size:12px;display:flex;gap:4px;align-items:center;"><input type="checkbox" id="bta-' + t.id + '"' + (t.active ? ' checked' : '') + '/> On</label>' +
+            '<span style="font-size:12px;color:var(--text3);min-width:70px;">' + t.holders + ' holder' + (t.holders === 1 ? '' : 's') + '</span>' +
+            '<button class="btn" onclick="saveBadgeTitle(\'' + t.id + '\')"><i class="ti ti-device-floppy"></i> Save</button>' +
+          '</div>').join('') +
+      '</div>').join('') : '<p style="color:var(--text3);font-size:13px;">No titles match.</p>';
+  };
+  window.saveBadgeTitle = async function(id) {
+    const title = document.getElementById('bt-' + id).value.trim();
+    const active = document.getElementById('bta-' + id).checked;
+    if (title.length < 2 || title.length > 40) { toast('Titles must be 2 to 40 characters.', true); return; }
+    const { data, error } = await db.rpc('admin_save_tag_title', { p_id: id, p_title: title, p_chapters: 1, p_active: active });
+    if (error || !data || !data.ok) { toast('Could not save: ' + (error ? error.message : (data && data.error)), true); return; }
+    const t = BTITLES.find(x => x.id === id); if (t) { t.title = title; t.active = active; }
+    toast('Title saved.');
+  };
 
   // ════════════════════════════════════════════════════════════════
   //  LOAD
