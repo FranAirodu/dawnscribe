@@ -445,6 +445,13 @@
     .sf-sub{font-size:14px;color:#e6e6ee;max-width:420px;margin:8px auto 0;text-shadow:0 1px 4px rgba(0,0,0,.9);}
     .sf-hint{margin-top:12px;font-size:12px;color:#9a9ab8;}
     /* Background tab */
+    .bg-styles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin:6px 0 24px;}
+    .bg-style{display:flex;flex-direction:column;gap:6px;background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.08));border-radius:14px;padding:10px;cursor:pointer;text-align:left;color:var(--text,#eee);transition:transform .15s,border-color .15s;}
+    .bg-style:hover{transform:translateY(-2px);border-color:var(--accent);}
+    .bg-style .bg-art.big{width:100%;height:120px;}
+    .bg-style.locked .bg-art{filter:grayscale(.6) brightness(.7);}
+    .bg-style-name{font-weight:800;font-size:15px;}
+    .bg-style-name em{font-style:normal;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:0 5px;margin-left:4px;}
     .bg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:6px 0 24px;}
     .bg-tile{display:flex;flex-direction:column;gap:6px;background:none;border:0;padding:0;cursor:pointer;text-align:left;color:var(--text,#eee);}
     .bg-art{position:relative;display:block;height:78px;border-radius:12px;overflow:hidden;border:2px solid rgba(255,255,255,.08);transition:border-color .15s,transform .15s;
@@ -1345,9 +1352,8 @@
   }
   function bgHtml(){
     var styles = BG.styles || [];
-    if (!BG_STYLE) BG_STYLE = bgParse(BG.choice).style;
-    var s = bgStyle(BG_STYLE) || styles[0];
-    if (!s) return '<div class="aura-card"><div class="aura-sub">Loading backgrounds…</div></div>';
+    if (!styles.length) return '<div class="aura-card"><div class="aura-sub">Loading backgrounds\u2026</div></div>';
+    var s = BG_STYLE ? bgStyle(BG_STYLE) : null;
     var lockedLeft = styles.filter(function(x){ return !x.owned; }).length;
     var pick = BG_PICK && BG_PICK !== BG.choice;
     var info = {}; (BG.palette || []).forEach(function(p){ info[p.hex] = p; });
@@ -1369,10 +1375,24 @@
       + '</div>'
       + (pick ? '<div class="aura-pick">Previewing <b>' + esc(bgName(BG_PICK)) + '</b> behind the page. Nothing is saved until you press Use this background.</div>' : '')
       + '</div>'
-      + sectionHead('ti-layout-grid', 'Styles <span class="cnt">' + (styles.length - lockedLeft) + ' of ' + styles.length + '</span>',
-          'Pick a style, then pick its colour. Each style has its own colours.')
-      + '<div class="np-titles">' + styles.map(bgStyleChip).join('') + '</div>'
-      + (lockedLeft ? '<div class="np-roll-row"><button class="aura-roll" id="bg-roll-style" onclick="bgRollStyle()"><i class="ti ti-dice-5"></i> Roll a new style &middot; ' + (BG.style_cost || 25) + ' Embers</button></div>' : '');
+    ;
+    if (!s) {
+      var curStyle = bgParse(BG.choice).style;
+      return html
+        + sectionHead('ti-layout-grid', 'Styles <span class="cnt">' + (styles.length - lockedLeft) + ' of ' + styles.length + '</span>',
+            'Pick a style to see its colours. Each style has its own colours.')
+        + '<div class="np-roll-row"><button class="aura-roll" id="bg-roll-style" onclick="bgRollStyle()"' + (lockedLeft ? '' : ' disabled') + '><i class="ti ti-dice-5"></i> '
+        +   (lockedLeft ? 'Roll a new style &middot; ' + (BG.style_cost || 25) + ' Embers' : 'You have every style, for now') + '</button></div>'
+        + '<div class="bg-styles">' + styles.map(function(x){
+            var shown = x.key === curStyle ? bgParse(BG.choice).hex : BG_TEAL;
+            return '<button class="bg-style' + (x.owned ? '' : ' locked') + '" onclick="bgPickStyle(\'' + esc(x.key) + '\')">'
+              + bgArt(x.key, shown, true)
+              + '<span class="bg-style-name">' + (x.owned ? '' : '<i class="ti ti-lock"></i> ') + esc(x.label)
+              + (x.key === curStyle ? ' <em>Using</em>' : '') + '</span>'
+              + '<span class="bg-sub">' + (x.owned ? ((x.colors || []).length + 1) + ' of ' + (bgPaidTotal() + 1) + ' colours' : 'Locked \u00b7 ' + esc(x.description || '')) + '</span></button>';
+          }).join('') + '</div>';
+    }
+    html += '<div class="np-roll-row"><button class="aura-reset" onclick="bgPickStyle(null)"><i class="ti ti-arrow-left"></i> All styles</button></div>';
     if (!s.owned) {
       return html + '<div class="aura-card bg-locked">' + bgArt(s.key, BG_TEAL, true)
         + '<div><div class="aura-head"><i class="ti ti-lock"></i> ' + esc(s.label) + '</div><div class="aura-sub">' + esc(s.description || '')
@@ -1389,10 +1409,20 @@
     var done = bgAllOwned();
     return '<div class="rand-row"><div class="spend-ex">' + bgArt('constellations', '#2dd4bf') + '<span>Constellations</span></div>'
       + '<div class="rand-info"><div class="rand-name"><i class="ti ti-sparkles"></i> A background</div>'
-      + '<div class="aura-sub" style="margin:2px 0 0;">' + (done ? 'You have them all, for now. New ones will wake this up.' : 'New styles and colours for the moving scene behind every page.') + '</div></div>'
-      + '<button class="aura-roll" onclick="setTab(\'background\')"' + (done ? ' disabled' : '') + '><i class="ti ti-arrow-right"></i> Choose &middot; from ' + Math.min(BG.cost || 15, BG.style_cost || 25) + ' Embers</button></div>';
+      + '<div class="aura-sub" style="margin:2px 0 0;">' + (done ? 'You have them all, for now. New ones will wake this up.' : (bgStylesLeft() ? 'A new style for the moving scene behind every page. Colours for each style are on the Background tab.' : 'A new colour for one of your background styles.')) + '</div></div>'
+      + '<button class="aura-roll" onclick="bgSpendRoll()"' + (done ? ' disabled' : '') + '><i class="ti ti-dice-5"></i> Roll &middot; ' + (bgStylesLeft() ? (BG.style_cost || 25) : (BG.cost || 15)) + ' Embers</button></div>';
   }
-  window.bgPickStyle = function(k){ BG_STYLE = k; render(); };
+  function bgStylesLeft(){ return (BG.styles || []).filter(function(x){ return !x.owned; }).length; }
+  // Spend tab: roll a new style while any are left, otherwise a colour for a style that still has some.
+  window.bgSpendRoll = async function(){
+    setTab('background');
+    if (bgStylesLeft()) { BG_STYLE = null; render(); return bgRollStyle(); }
+    var open = (BG.styles || []).filter(function(x){ return x.owned && (x.colors || []).length < bgPaidTotal(); });
+    if (!open.length) return;
+    BG_STYLE = open[Math.floor(Math.random() * open.length)].key; render();
+    return bgRoll();
+  };
+  window.bgPickStyle = function(k){ BG_STYLE = k || null; render(); };
   window.bgPick = function(c){ BG_PICK = c; if (window.dsSetBackground) dsSetBackground(c); render(); };
   window.bgUndo = function(){ BG_PICK = null; if (window.dsSetBackground) dsSetBackground(BG.choice); render(); };
   window.bgSave = async function(){
@@ -1516,7 +1546,7 @@
   };
   // Leaving the tab without saving puts the saved background back.
   var _bgSetTab = window.setTab;
-  window.setTab = function(t){ if (t !== 'background' && BG_PICK) { BG_PICK = null; if (window.dsSetBackground) dsSetBackground(BG.choice); } _bgSetTab(t); };
+  window.setTab = function(t){ if (t !== 'background') BG_STYLE = null; if (t !== 'background' && BG_PICK) { BG_PICK = null; if (window.dsSetBackground) dsSetBackground(BG.choice); } _bgSetTab(t); };
   function tabsHtml(){
     var t = function(key, icon, label){
       return '<button class="ctab' + (TAB === key ? ' on' : '') + '" onclick="setTab(\'' + key + '\')"'
