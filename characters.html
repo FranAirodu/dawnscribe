@@ -445,22 +445,30 @@
     .sf-sub{font-size:14px;color:#e6e6ee;max-width:420px;margin:8px auto 0;text-shadow:0 1px 4px rgba(0,0,0,.9);}
     .sf-hint{margin-top:12px;font-size:12px;color:#9a9ab8;}
     /* Background tab */
-    .bg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px;}
+    .bg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:6px 0 24px;}
     .bg-tile{display:flex;flex-direction:column;gap:6px;background:none;border:0;padding:0;cursor:pointer;text-align:left;color:var(--text,#eee);}
-    .bg-art{position:relative;display:block;height:84px;border-radius:12px;overflow:hidden;border:2px solid rgba(255,255,255,.08);transition:border-color .15s,transform .15s;}
+    .bg-art{position:relative;display:block;height:78px;border-radius:12px;overflow:hidden;border:2px solid rgba(255,255,255,.08);transition:border-color .15s,transform .15s;
+      background:radial-gradient(circle at 25% 30%,color-mix(in srgb,var(--bc) 75%,transparent) 0,transparent 58%),radial-gradient(circle at 80% 80%,color-mix(in srgb,var(--bc) 45%,transparent) 0,transparent 55%),#0b0b12;}
+    .bg-art.big{width:200px;height:110px;flex:none;}
     .bg-tile:hover .bg-art{transform:translateY(-2px);}
     .bg-tile.on .bg-art{border-color:var(--accent);box-shadow:0 0 0 2px rgba(var(--aura-rgb,45,212,191),.35);}
-    .bg-dim{position:absolute;inset:0;background:rgba(8,8,16,.55);}
-    .bg-art i{position:absolute;width:4px;height:4px;border-radius:50%;opacity:.85;box-shadow:0 0 6px currentColor;animation:bgRise 5s linear infinite;}
-    .bg-tile.calm .bg-art i{animation:none;}
+    .bg-art i{position:absolute;width:4px;height:4px;border-radius:50%;background:var(--bl);box-shadow:0 0 6px var(--bc);animation:bgRise 5s linear infinite;}
+    .bg-art b{position:absolute;font:italic 15px Georgia,serif;color:var(--bl);opacity:.7;animation:bgRise 6s linear infinite;}
+    .bg-snow i{background:#fff;opacity:.9;animation-name:bgFall;width:3px;height:3px;}
+    .bg-constellations i{animation:bgTwinkle 2.4s ease-in-out infinite;width:3px;height:3px;}
+    .bg-art svg{position:absolute;inset:0;width:100%;height:100%;}
+    .bg-art polyline{fill:none;stroke:var(--bl);stroke-width:.6;opacity:.45;vector-effect:non-scaling-stroke;}
     @keyframes bgRise{0%{transform:translateY(14px);opacity:0}20%{opacity:.9}100%{transform:translateY(-40px);opacity:0}}
+    @keyframes bgFall{0%{transform:translate(0,-30px);opacity:0}20%{opacity:.9}100%{transform:translate(8px,40px);opacity:0}}
+    @keyframes bgTwinkle{0%,100%{opacity:.3}50%{opacity:1}}
     .bg-lab{font-weight:700;font-size:13px;}
     .bg-lab em{font-style:normal;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:0 5px;margin-left:4px;}
     .bg-sub{font-size:11.5px;color:var(--text3,#8a8aa8);margin-top:-4px;}
-    .bg-mini{position:relative;display:block;width:96px;height:44px;border-radius:9px;overflow:hidden;background:radial-gradient(circle at 25% 30%,#2dd4bfcc 0,transparent 60%),radial-gradient(circle at 80% 80%,#2dd4bf88 0,transparent 55%),#0b0b12;}
-    .bg-mini i{position:absolute;width:3px;height:3px;border-radius:50%;background:#7ff0dd;animation:bgRise 4s linear infinite;}
-    .bg-mini i:nth-child(1){left:20%;top:70%}.bg-mini i:nth-child(2){left:55%;top:60%;animation-delay:-1.3s}.bg-mini i:nth-child(3){left:80%;top:75%;animation-delay:-2.6s}
-    @media (prefers-reduced-motion:reduce){.bg-art i,.bg-mini i{animation:none}}
+    .np-tchip.locked{opacity:.6;}
+    .bg-locked{display:flex;gap:16px;align-items:center;flex-wrap:wrap;}
+    .spend-ex .bg-art{width:96px;height:44px;border-radius:9px;}
+    @media (prefers-reduced-motion:reduce){.bg-art i,.bg-art b{animation:none}}
+
     .np-swatches{display:flex;flex-wrap:wrap;gap:14px 8px;margin-bottom:22px;padding-top:6px;}
     .np-sw{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:6px 0 0;width:68px;}
     .np-well{display:block;line-height:0;color:transparent;transition:transform .15s;}
@@ -697,7 +705,7 @@
       db.rpc('get_nameplates', { p_user_ids: [ME.id] })
     ]);
     npApply(res[11] && res[11].data);
-    try { var bgr = await db.rpc('my_backgrounds'); BG = (bgr && bgr.data && bgr.data.ok) ? bgr.data : BG; } catch(e) {}
+    await bgReload();
     NP_ME = (res[13] && res[13].data && res[13].data[0]) || null;
     CHARS = res[0].data || [];
     MINE = {};
@@ -1267,7 +1275,7 @@
     var rows = [
       { cost: (NP && NP.font_cost) || 20, html: fontRow },
       { cost: AURA_COST, html: auraRow },
-      { cost: (BG && BG.cost) || 15, html: bgSpendRow() },
+      { cost: Math.min((BG && BG.cost) || 15, (BG && BG.style_cost) || 25), html: bgSpendRow() },
       { cost: RAND.banner.cost, html: randRow('banner', 'A profile banner', 'ti-photo', 'Wear it on your profile.', bannerEx) },
       { cost: RAND.character.cost, html: randRow('character', 'A character', 'ti-user-heart', 'Winners join your crew.') }
     ].sort(function(a, b){ return (Number(a.cost) || 0) - (Number(b.cost) || 0); });
@@ -1282,90 +1290,132 @@
   }
 
   /* ── BACKGROUND ──────────────────────────────────────────────
-     The drifting site background, in any colour the member has unlocked.
-     Teal is free and the default. The choice is kept on the account
-     and in a small browser note so every page shows it instantly
-     (monthlyBg.js reads it). */
-  var BG = { cost: 15, choice: 'teal', unlocked: [], palette: [] };
-  var BG_PICK = null;
-  var BG_MONTHS = ['Frost','Thaw','Blossom','Ember Dawn','Verdant','Tidewater','Solstice','Harvest','Crimson Dusk','Twilight Rose','Celestial','Aurora'];
-  function bgName(c){
-    if (c === 'month') return 'Follow the month';
-    if (c === 'teal') return 'DawnScribe teal';
-    if (c === 'calm') return 'Calm';
-    var p = (BG.palette || []).filter(function(x){ return x.hex === c; })[0];
-    return p ? p.label : c;
+     Backgrounds work like nameplate fonts: a STYLE (Drifting Embers,
+     Floating Letters, Constellations, Snowfall, ...) followed by its
+     COLOURS. Drifting Embers is free for everyone, and teal is free in every
+     style. Other styles and colours are rolled with Embers. A choice is
+     stored as "style:#hex"; monthlyBg.js draws it on every page. */
+  var BG = { cost: 15, style_cost: 25, choice: 'embers:#2dd4bf', styles: [], palette: [] };
+  var BG_PICK = null, BG_STYLE = null;
+  var BG_TEAL = '#2dd4bf';
+  function bgParse(c){
+    c = String(c || '').toLowerCase();
+    var p = c.split(':');
+    if (p.length < 2) return { style: 'embers', hex: /^#[0-9a-f]{6}$/.test(c) ? c : BG_TEAL };
+    return { style: p[0], hex: p[1] };
   }
-  function bgAllOwned(){ return (BG.palette || []).length > 0 && (BG.unlocked || []).length >= BG.palette.length; }
-  function bgTile(c, sub, hex){
-    var on = (BG_PICK || BG.choice) === c, cur = BG.choice === c;
-    var col = hex || '#2dd4bf';
-    var art = c === 'month' || c === 'calm'
-      ? 'conic-gradient(from 200deg,#78b4ff,#6ed2c8,#ff8cbe,#ff8c28,#3cc864,#1e78dc,#ffc832,#c87828,#c8283c,#be4696,#9650ff,#28dc96,#78b4ff)'
-      : 'radial-gradient(circle at 25% 30%,' + col + 'cc 0,transparent 55%),radial-gradient(circle at 80% 78%,' + col + '88 0,transparent 50%),#0b0b12';
-    var dots = '';
-    for (var i = 0; i < 7; i++) dots += '<i style="left:' + ((i * 37 + (col.charCodeAt(2) || 3)) % 92 + 4) + '%;top:' + ((i * 53 + (col.charCodeAt(4) || 7)) % 80 + 8) + '%;animation-delay:' + (-i * 0.7) + 's;background:' + (c === 'month' || c === 'calm' ? '#fff' : col) + ';"></i>';
-    return '<button class="bg-tile' + (on ? ' on' : '') + (c === 'calm' ? ' calm' : '') + '" onclick="bgPick(\'' + esc(c) + '\')" title="' + esc(bgName(c)) + '">'
-      + '<span class="bg-art" style="background:' + art + ';">' + (c === 'month' || c === 'calm' ? '<span class="bg-dim"></span>' : '') + dots + '</span>'
-      + '<span class="bg-lab">' + esc(bgName(c)) + (cur ? ' <em>Using</em>' : '') + '</span>'
-      + (sub ? '<span class="bg-sub">' + sub + '</span>' : '') + '</button>';
+  function bgStyle(k){ return (BG.styles || []).filter(function(s){ return s.key === k; })[0] || null; }
+  function bgColorName(hex){
+    if (hex === BG_TEAL) return 'DawnScribe teal';
+    var p = (BG.palette || []).filter(function(x){ return x.hex === hex; })[0];
+    return p ? p.label : hex;
+  }
+  function bgName(c){ var x = bgParse(c), s = bgStyle(x.style); return (s ? s.label : 'Background') + ' · ' + bgColorName(x.hex); }
+  function bgPaidTotal(){ return (BG.palette || []).filter(function(p){ return p.hex !== BG_TEAL; }).length; }
+  function bgAllOwned(){
+    var st = BG.styles || [];
+    if (!st.length) return false;
+    return st.every(function(s){ return s.owned && (s.colors || []).length >= bgPaidTotal(); });
+  }
+  // Small moving preview of a style in a colour, for tiles and chips.
+  function bgArt(style, hex, big){
+    var n = parseInt(hex.slice(1), 16), lite = 'rgb(' + [n >> 16 & 255, n >> 8 & 255, n & 255].map(function(c){ return Math.round(c + (255 - c) * .45); }).join(',') + ')';
+    var h = '<span class="bg-art bg-' + esc(style) + (big ? ' big' : '') + '" style="--bc:' + esc(hex) + ';--bl:' + lite + ';">';
+    var seedN = (hex.charCodeAt(2) || 3) + (hex.charCodeAt(5) || 7);
+    for (var i = 0; i < 8; i++) {
+      var x = (i * 37 + seedN) % 90 + 5, y = (i * 53 + seedN * 3) % 78 + 10;
+      if (style === 'letters') h += '<b style="left:' + x + '%;top:' + y + '%;animation-delay:' + (-i * .8) + 's;">' + 'AeQgRs&kMy'.charAt((i + seedN) % 10) + '</b>';
+      else h += '<i style="left:' + x + '%;top:' + y + '%;animation-delay:' + (-i * .7) + 's;"></i>';
+    }
+    if (style === 'constellations') h += '<svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="12,70 30,40 52,55 70,25 88,45" /><polyline points="30,40 40,15" /></svg>';
+    return h + '</span>';
+  }
+  function bgStyleChip(s){
+    var on = BG_STYLE === s.key;
+    return '<button class="np-tchip' + (on ? ' on' : '') + (s.owned ? '' : ' locked') + '" onclick="bgPickStyle(\'' + esc(s.key) + '\')">'
+      + (s.owned ? '' : '<i class="ti ti-lock"></i> ') + '<b>' + esc(s.label) + '</b>'
+      + (s.owned ? ' <span class="cnt">' + ((s.colors || []).length + 1) + '</span>' : '') + '</button>';
+  }
+  function bgTile(style, hex, rare){
+    var c = style + ':' + hex, cur = (BG_PICK || BG.choice) === c, using = BG.choice === c;
+    return '<button class="bg-tile' + (cur ? ' on' : '') + '" onclick="bgPick(\'' + esc(c) + '\')" title="' + esc(bgName(c)) + '">'
+      + bgArt(style, hex)
+      + '<span class="bg-lab">' + esc(bgColorName(hex)) + (using ? ' <em>Using</em>' : '') + '</span>'
+      + (hex === BG_TEAL ? '<span class="bg-sub">Free</span>' : rare ? '<span class="bg-sub">✦ Rare</span>' : '') + '</button>';
   }
   function bgHtml(){
-    var owned = (BG.palette || []).filter(function(p){ return (BG.unlocked || []).indexOf(p.hex) >= 0; })
-      .map(function(p){ return { hex: p.hex, hsl: hexHsl(p.hex), rare: p.rare }; })
+    var styles = BG.styles || [];
+    if (!BG_STYLE) BG_STYLE = bgParse(BG.choice).style;
+    var s = bgStyle(BG_STYLE) || styles[0];
+    if (!s) return '<div class="aura-card"><div class="aura-sub">Loading backgrounds…</div></div>';
+    var lockedLeft = styles.filter(function(x){ return !x.owned; }).length;
+    var pick = BG_PICK && BG_PICK !== BG.choice;
+    var info = {}; (BG.palette || []).forEach(function(p){ info[p.hex] = p; });
+    var cols = (s.colors || []).filter(function(h){ return h !== BG_TEAL; })
+      .map(function(h){ return { hex: h, hsl: hexHsl(h) }; })
       .sort(function(a, b){
         var ga = a.hsl.s < 0.12, gb = b.hsl.s < 0.12;
         if (ga !== gb) return ga ? 1 : -1;
         var ha = Math.round(a.hsl.h / 12), hb = Math.round(b.hsl.h / 12);
         return ha !== hb ? ha - hb : b.hsl.l - a.hsl.l;
       });
-    var left = (BG.palette || []).length - owned.length;
-    var pick = BG_PICK && BG_PICK !== BG.choice;
-    return '<div class="aura-card">'
+    var paid = bgPaidTotal(), left = paid - cols.length;
+    var html = '<div class="aura-card">'
       + '<div class="aura-head"><i class="ti ti-sparkles"></i> Your background</div>'
-      + '<div class="aura-sub">The drifting light behind every page. Tap one to preview it, then press <b>Use this background</b>.</div>'
-      + '<div class="bg-grid">'
-      +   bgTile('teal', 'Free', '#2dd4bf')
-      +   owned.map(function(o){ return bgTile(o.hex, o.rare ? '✦ Rare' : '', o.hex); }).join('')
-      + '</div>'
-      + '<div class="np-actions" style="margin-top:14px;">'
+      + '<div class="aura-sub">The moving scene behind every page. Using: <b>' + esc(bgName(BG.choice)) + '</b>.</div>'
+      + '<div class="np-actions" style="margin-top:10px;">'
       +   '<button class="aura-roll" onclick="bgSave()"' + (pick ? '' : ' disabled') + '><i class="ti ti-check"></i> Use this background</button>'
       +   (pick ? '<button class="aura-reset" onclick="bgUndo()">Undo</button>' : '')
       + '</div>'
-      + (pick ? '<div class="aura-pick">Previewing <b>' + esc(bgName(BG_PICK)) + '</b>. Nothing is saved until you press Use this background.</div>' : '')
+      + (pick ? '<div class="aura-pick">Previewing <b>' + esc(bgName(BG_PICK)) + '</b> behind the page. Nothing is saved until you press Use this background.</div>' : '')
       + '</div>'
-      + sectionHead('ti-dice-5', 'Unlock more <span class="cnt">' + owned.length + ' of ' + (BG.palette || []).length + '</span>',
-          'Every colour from the aura collection, as a background. Every roll is one you don’t have yet.')
+      + sectionHead('ti-layout-grid', 'Styles <span class="cnt">' + (styles.length - lockedLeft) + ' of ' + styles.length + '</span>',
+          'Pick a style, then pick its colour. Each style has its own colours.')
+      + '<div class="np-titles">' + styles.map(bgStyleChip).join('') + '</div>'
+      + (lockedLeft ? '<div class="np-roll-row"><button class="aura-roll" id="bg-roll-style" onclick="bgRollStyle()"><i class="ti ti-dice-5"></i> Roll a new style &middot; ' + (BG.style_cost || 25) + ' Embers</button></div>' : '');
+    if (!s.owned) {
+      return html + '<div class="aura-card bg-locked">' + bgArt(s.key, BG_TEAL, true)
+        + '<div><div class="aura-head"><i class="ti ti-lock"></i> ' + esc(s.label) + '</div><div class="aura-sub">' + esc(s.description || '')
+        + ' Roll a new style to unlock it. Every roll is a style you don’t have yet.</div></div></div>';
+    }
+    return html
+      + sectionHead('ti-palette', esc(s.label) + ' colours <span class="cnt">' + (cols.length + 1) + ' of ' + (paid + 1) + '</span>',
+          esc(s.description || '') + ' Colours belong to this style. Teal is always free.')
       + '<div class="np-roll-row"><button class="aura-roll" id="bg-roll" onclick="bgRoll()"' + (left > 0 ? '' : ' disabled') + '>'
-      +   '<i class="ti ti-dice-5"></i> ' + (left > 0 ? 'Roll a background · ' + (BG.cost || 15) + ' Embers' : 'You have them all, for now') + '</button></div>';
+      +   '<i class="ti ti-dice-5"></i> ' + (left > 0 ? 'Roll a colour for ' + esc(s.label) + ' · ' + (BG.cost || 15) + ' Embers' : 'You have every colour for this style, for now') + '</button></div>'
+      + '<div class="bg-grid">' + bgTile(s.key, BG_TEAL) + cols.map(function(c){ return bgTile(s.key, c.hex, (info[c.hex] || {}).rare); }).join('') + '</div>';
   }
   function bgSpendRow(){
     var done = bgAllOwned();
-    return '<div class="rand-row"><div class="spend-ex"><span class="bg-mini"><i></i><i></i><i></i></span><span>Teal</span></div>'
+    return '<div class="rand-row"><div class="spend-ex">' + bgArt('constellations', '#2dd4bf') + '<span>Constellations</span></div>'
       + '<div class="rand-info"><div class="rand-name"><i class="ti ti-sparkles"></i> A background</div>'
-      + '<div class="aura-sub" style="margin:2px 0 0;">' + (done ? 'You have them all, for now. New ones will wake this button up.' : 'A new colour for the drifting light behind every page.') + '</div></div>'
-      + '<button class="aura-roll" onclick="setTab(\'background\');bgRoll();"' + (done ? ' disabled' : '') + '><i class="ti ti-dice-5"></i> Roll &middot; ' + ((BG && BG.cost) || 15) + ' Embers</button></div>';
+      + '<div class="aura-sub" style="margin:2px 0 0;">' + (done ? 'You have them all, for now. New ones will wake this up.' : 'New styles and colours for the moving scene behind every page.') + '</div></div>'
+      + '<button class="aura-roll" onclick="setTab(\'background\')"' + (done ? ' disabled' : '') + '><i class="ti ti-arrow-right"></i> Choose &middot; from ' + Math.min(BG.cost || 15, BG.style_cost || 25) + ' Embers</button></div>';
   }
+  window.bgPickStyle = function(k){ BG_STYLE = k; render(); };
   window.bgPick = function(c){ BG_PICK = c; if (window.dsSetBackground) dsSetBackground(c); render(); };
   window.bgUndo = function(){ BG_PICK = null; if (window.dsSetBackground) dsSetBackground(BG.choice); render(); };
   window.bgSave = async function(){
     var c = BG_PICK; if (!c) return;
     var r = await db.rpc('set_background', { p_choice: c });
     if (r.error || !r.data || !r.data.ok) { toast((r.data && r.data.error) || 'Could not save that.', 'ti-alert-triangle', true); return; }
-    BG.choice = c; BG_PICK = null;
-    if (window.dsSetBackground) dsSetBackground(c);
-    toast(bgName(c) + ' is your background now', 'ti-sparkles'); render();
+    BG.choice = r.data.choice || c; BG_PICK = null;
+    if (window.dsSetBackground) dsSetBackground(BG.choice);
+    toast(bgName(BG.choice) + ' is your background now', 'ti-sparkles'); render();
   };
+  async function bgReload(){
+    try { var r = await db.rpc('my_backgrounds'); if (r && r.data && r.data.ok) BG = r.data; } catch(e) {}
+  }
   /* Light burst: when a background is won, a single spark appears in the
      middle of the screen, pulses twice and bursts. The new colour floods
      outward in a ring, replacing the old background as it spreads, and
      particles fly out then settle into the normal drift. */
-  function bgStarfall(hex, label, rare){
+  function bgStarfall(hex, label, rare, choice, kicker){
     return new Promise(function(resolve){
       var ov = document.createElement('div');
       ov.className = 'sf-ov';
       ov.style.setProperty('--sf', hex);
-      ov.innerHTML = '<canvas></canvas><div class="sf-txt"><div class="sf-kick">Background unlocked</div>'
+      ov.innerHTML = '<canvas></canvas><div class="sf-txt"><div class="sf-kick">' + esc(kicker || 'Background unlocked') + '</div>'
         + '<div class="sf-name">' + esc(label || 'A new background') + '</div>'
         + (rare ? '<div class="roll-rare">✦ Rare</div>' : '')
         + '<div class="sf-sub">It’s previewing behind the page now. Press <b>Use this background</b> to keep it.</div>'
@@ -1384,7 +1434,7 @@
       var t0 = performance.now(), closed = false, burst = false, ready = false;
       requestAnimationFrame(function(){ ov.classList.add('in'); });
       var reduce = reducedMotion();
-      if (reduce) { burst = true; if (window.dsSetBackground) dsSetBackground(hex); ov.classList.add('swap', 'done'); ready = true; }
+      if (reduce) { burst = true; if (window.dsSetBackground) dsSetBackground(choice || hex); ov.classList.add('swap', 'done'); ready = true; }
       function frame(now){
         if (closed || reduce) return;
         var t = now - t0;
@@ -1397,7 +1447,7 @@
           g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.25, 'rgba(' + lite + ',.9)'); g.addColorStop(1, 'rgba(' + col + ',0)');
           cx.fillStyle = g; cx.beginPath(); cx.arc(X, Y, rr * 5, 0, Math.PI * 2); cx.fill();
         } else {
-          if (!burst) { burst = true; if (window.dsSetBackground) dsSetBackground(hex); ov.classList.add('swap'); }
+          if (!burst) { burst = true; if (window.dsSetBackground) dsSetBackground(choice || hex); ov.classList.add('swap'); }
           var k = Math.min(1, (t - 900) / 1000), e = 1 - Math.pow(1 - k, 3), rad = e * R;
           // flood behind the ring, fading as it settles
           cx.fillStyle = 'rgba(' + col + ',' + (0.28 * (1 - k)) + ')';
@@ -1425,7 +1475,7 @@
       requestAnimationFrame(frame);
       var close = function(){
         if (closed) return; closed = true;
-        if (!burst && window.dsSetBackground) dsSetBackground(hex);
+        if (!burst && window.dsSetBackground) dsSetBackground(choice || hex);
         ov.classList.remove('in'); setTimeout(function(){ ov.remove(); }, 300);
         document.removeEventListener('keydown', onKey); resolve();
       };
@@ -1435,15 +1485,31 @@
     });
   }
   window.bgRoll = async function(){
+    var s = bgStyle(BG_STYLE); if (!s) return;
     var b = document.getElementById('bg-roll'); if (b) { b.disabled = true; b.innerHTML = '<i class="ti ti-loader"></i> Rolling…'; }
-    var r = await db.rpc('roll_background'); var d = (r && r.data) || {};
+    var r = await db.rpc('roll_bg_color', { p_style: s.key }); var d = (r && r.data) || {};
     if (d.status === 'insufficient_embers') { toast('You need ' + (d.cost || BG.cost) + ' Embers for that.', 'ti-flame', true); render(); return; }
-    if (d.status === 'all_unlocked') { toast('You have every background, for now.', 'ti-check'); render(); return; }
+    if (d.status === 'all_unlocked') { toast('You have every colour for this style, for now.', 'ti-check'); render(); return; }
     if (r.error || d.status !== 'success') { toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); render(); return; }
     refreshEmbers(d.balance);
-    BG.unlocked = (BG.unlocked || []).concat([d.hex]);
-    BG_PICK = d.hex;
-    await bgStarfall(d.hex, d.label, !!d.rare);
+    s.colors = (s.colors || []).concat([d.hex]);
+    BG_PICK = s.key + ':' + d.hex;
+    await bgStarfall(d.hex, s.label + ' · ' + (d.label || 'A new colour'), !!d.rare, BG_PICK);
+    TAB = 'background';
+    try { history.replaceState(null, '', '#background'); } catch(e) {}
+    render();
+  };
+  window.bgRollStyle = async function(){
+    var b = document.getElementById('bg-roll-style'); if (b) { b.disabled = true; b.innerHTML = '<i class="ti ti-loader"></i> Rolling…'; }
+    var r = await db.rpc('roll_bg_style'); var d = (r && r.data) || {};
+    if (d.status === 'insufficient_embers') { toast('You need ' + (d.cost || BG.style_cost) + ' Embers for that.', 'ti-flame', true); render(); return; }
+    if (d.status === 'all_unlocked') { toast('You have every style, for now.', 'ti-check'); render(); return; }
+    if (r.error || d.status !== 'success') { toast('Something went wrong. No Embers were taken.', 'ti-alert-triangle', true); render(); return; }
+    refreshEmbers(d.balance);
+    await bgReload();
+    BG_STYLE = d.key;
+    BG_PICK = d.key + ':' + BG_TEAL;
+    await bgStarfall(BG_TEAL, d.label || 'A new style', false, BG_PICK, 'New style unlocked');
     TAB = 'background';
     try { history.replaceState(null, '', '#background'); } catch(e) {}
     render();

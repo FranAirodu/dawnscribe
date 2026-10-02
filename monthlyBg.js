@@ -1,7 +1,6 @@
 /* ── DAWNSCRIBE MONTHLY BACKGROUND ─────────────────────────────────
-   The drifting particle background that changes theme every month:
-   Jan Frost, Feb Thaw, Mar Blossom, Apr Ember Dawn, May Verdant, Jun Tidewater,
-   Jul Solstice, Aug Harvest, Sep Crimson Dusk, Oct Twilight Rose, Nov Celestial, Dec Aurora.
+   The drifting particle background behind every page. DawnScribe teal is
+   the default; members can switch to any background they have unlocked.
 
    ONE copy lives here, and it runs on EVERY page. nav.js and accent.js both
    load this file (whichever runs first wins; the guard stops a double run).
@@ -14,9 +13,10 @@
    shows through. Cards and panels keep their own backgrounds.
    Reduced-motion users get one still frame; the loop pauses in hidden tabs.
 
-   Members can pick their own background on the Characters page
-   (Background tab): 'month' (default, follows the calendar), 'teal' (free),
-   'calm' (this month's look, standing still) or any colour they unlocked.
+   Backgrounds work like nameplate fonts: a STYLE (Drifting Embers, Floating
+   Letters, Constellations, Snowfall, ...) plus a COLOUR. A choice is stored
+   as "style:#hex". Drifting Embers in teal is the default and is free.
+   To add a style: add it to STYLES below and a row to the bg_styles table.
    The pick is kept in a small browser note (localStorage 'ds_bg_choice') so
    it shows instantly, and checked against their account once per visit.
    window.dsSetBackground(choice) switches it live.
@@ -24,20 +24,6 @@
 (function () {
   if (window.__dsMonthlyBg) return;
   window.__dsMonthlyBg = true;
-
-  var FROST     = { dark:'180,220,255', count:70, spd:[0.06,0.14], sz:[0.5,2.8], drift:0.06, glows:[{x:0.1,y:0.2,r:500,c:'120,180,255'},{x:0.8,y:0.75,r:420,c:'80,140,220'},{x:0.5,y:0.5,r:350,c:'160,210,255'}] };
-  var EMBER     = { dark:'255,180,60',  count:75, spd:[0.10,0.22], sz:[0.4,2.4], drift:0.10, glows:[{x:0.5,y:0.9,r:520,c:'255,140,40'},{x:0.2,y:0.5,r:380,c:'255,100,20'},{x:0.8,y:0.3,r:300,c:'255,160,60'}] };
-  var VERDANT   = { dark:'80,220,120',  count:68, spd:[0.08,0.18], sz:[0.5,2.5], drift:0.14, glows:[{x:0.7,y:0.3,r:460,c:'60,200,100'},{x:0.15,y:0.8,r:380,c:'30,160,80'},{x:0.5,y:0.6,r:300,c:'100,230,140'}] };
-  var SOLSTICE  = { dark:'255,210,60',  count:80, spd:[0.12,0.25], sz:[0.4,2.2], drift:0.08, glows:[{x:0.5,y:0.15,r:520,c:'255,200,50'},{x:0.85,y:0.6,r:440,c:'45,212,191'},{x:0.15,y:0.7,r:360,c:'255,180,40'}] };
-  var CRIMSON   = { dark:'255,90,100',  count:62, spd:[0.05,0.13], sz:[0.6,3.0], drift:0.07, glows:[{x:0.2,y:0.6,r:480,c:'200,40,60'},{x:0.75,y:0.2,r:400,c:'255,80,80'},{x:0.5,y:0.9,r:340,c:'220,60,80'}] };
-  var CELESTIAL = { dark:'190,130,255', count:90, spd:[0.04,0.11], sz:[0.3,2.0], drift:0.04, glows:[{x:0.35,y:0.4,r:500,c:'150,80,255'},{x:0.8,y:0.8,r:420,c:'100,40,200'},{x:0.1,y:0.7,r:360,c:'200,120,255'}] };
-  var THAW      = { dark:'170,240,225', count:66, spd:[0.07,0.16], sz:[0.5,2.6], drift:0.08, glows:[{x:0.2,y:0.3,r:480,c:'110,210,200'},{x:0.8,y:0.7,r:400,c:'150,225,240'},{x:0.5,y:0.55,r:320,c:'90,190,170'}] };
-  var BLOSSOM   = { dark:'255,185,215', count:72, spd:[0.06,0.15], sz:[0.6,2.8], drift:0.16, glows:[{x:0.75,y:0.25,r:470,c:'255,140,190'},{x:0.2,y:0.75,r:400,c:'240,120,170'},{x:0.5,y:0.5,r:320,c:'255,190,220'}] };
-  var TIDEWATER = { dark:'110,200,255', count:74, spd:[0.08,0.17], sz:[0.5,2.4], drift:0.12, glows:[{x:0.5,y:0.85,r:520,c:'30,120,220'},{x:0.15,y:0.35,r:400,c:'20,160,200'},{x:0.85,y:0.25,r:330,c:'80,190,255'}] };
-  var HARVEST   = { dark:'255,190,110', count:70, spd:[0.07,0.16], sz:[0.5,2.7], drift:0.12, glows:[{x:0.25,y:0.7,r:480,c:'200,120,40'},{x:0.8,y:0.35,r:400,c:'170,90,30'},{x:0.5,y:0.2,r:320,c:'230,160,70'}] };
-  var TWILIGHT  = { dark:'240,150,210', count:76, spd:[0.05,0.13], sz:[0.4,2.4], drift:0.07, glows:[{x:0.3,y:0.25,r:480,c:'190,70,150'},{x:0.75,y:0.75,r:420,c:'130,60,170'},{x:0.5,y:0.5,r:330,c:'230,110,170'}] };
-  var AURORA    = { dark:'150,255,200', count:84, spd:[0.04,0.12], sz:[0.3,2.2], drift:0.05, glows:[{x:0.2,y:0.25,r:500,c:'40,220,150'},{x:0.75,y:0.35,r:440,c:'140,80,255'},{x:0.5,y:0.8,r:360,c:'60,200,220'}] };
-  var THEMES = [FROST, THAW, BLOSSOM, EMBER, VERDANT, TIDEWATER, SOLSTICE, HARVEST, CRIMSON, TWILIGHT, CELESTIAL, AURORA];
 
   function rgbOf(hex) {
     var n = parseInt(String(hex).replace('#', ''), 16);
@@ -50,25 +36,86 @@
     return { dark: s(mix(c, [255, 255, 255], 0.35)), count: 74, spd: [0.06, 0.16], sz: [0.4, 2.6], drift: 0.08,
       glows: [{ x: 0.2, y: 0.3, r: 500, c: s(c) }, { x: 0.8, y: 0.75, r: 420, c: s(mix(c, [0, 0, 0], 0.35)) }, { x: 0.55, y: 0.5, r: 330, c: s(mix(c, [255, 255, 255], 0.25)) }] };
   }
-  function readChoice() { try { return localStorage.getItem('ds_bg_choice') || 'month'; } catch (e) { return 'month'; } }
-  function themeFor(choice) {
-    if (choice === 'teal') return themeFromHex('#2dd4bf');
-    if (/^#[0-9a-f]{6}$/i.test(choice || '')) return themeFromHex(choice);
-    return THEMES[new Date().getMonth()];
+  /* A choice is "style:#hex", e.g. "embers:#2dd4bf". Older notes held just a
+     colour (or "teal"); those mean Drifting Embers. */
+  function parseChoice(c) {
+    c = String(c || '').toLowerCase();
+    if (c === 'teal' || c === 'month' || c === 'calm' || !c) return { style: 'embers', hex: '#2dd4bf' };
+    if (/^#[0-9a-f]{6}$/.test(c)) return { style: 'embers', hex: c };
+    var p = c.split(':');
+    return { style: STYLES[p[0]] ? p[0] : 'embers', hex: /^#[0-9a-f]{6}$/.test(p[1] || '') ? p[1] : '#2dd4bf' };
   }
+  function readChoice() { try { return localStorage.getItem('ds_bg_choice') || 'embers:#2dd4bf'; } catch (e) { return 'embers:#2dd4bf'; } }
 
-  var canvas, ctx, T, particles = [], still = false, looping = false;
+  var canvas, ctx, T, S, particles = [], still = false, looping = false;
+  var GLYPHS = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz&\u00a7\u00b6~,.;:!?\u2019\u201c\u201d';
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+
+  /* Each style: seed() makes its particles, step(p) moves one, paint(p) draws it.
+     All styles share the colour glows from themeFromHex. */
+  var STYLES = {
+    embers: {
+      seed: function () { return { r: rnd(T.sz[0], T.sz[1]), speed: rnd(T.spd[0], T.spd[1]), drift: (Math.random() - 0.5) * T.drift }; },
+      count: 74,
+      step: function (p) { p.y -= p.speed; p.x += p.drift; },
+      paint: function (p, a) { ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(' + T.dark + ',' + a + ')'; ctx.fill(); }
+    },
+    letters: {
+      count: 46,
+      seed: function () { return { ch: GLYPHS.charAt(Math.floor(Math.random() * GLYPHS.length)), size: rnd(11, 26), speed: rnd(0.08, 0.22),
+        drift: (Math.random() - 0.5) * 0.12, rot: rnd(-0.4, 0.4), spin: (Math.random() - 0.5) * 0.002, serif: Math.random() < 0.6 }; },
+      step: function (p) { p.y -= p.speed; p.x += p.drift; p.rot += p.spin; },
+      paint: function (p, a) {
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        ctx.font = (p.serif ? 'italic ' : '') + Math.round(p.size) + 'px ' + (p.serif ? 'Georgia,serif' : 'Cinzel,Georgia,serif');
+        ctx.fillStyle = 'rgba(' + T.dark + ',' + (a * 0.55) + ')'; ctx.fillText(p.ch, 0, 0); ctx.restore();
+      }
+    },
+    constellations: {
+      count: function () { return Math.max(30, Math.min(80, Math.round(window.innerWidth * window.innerHeight / 26000))); },
+      seed: function () { return { r: rnd(0.6, 2.2), vx: (Math.random() - 0.5) * 0.12, vy: (Math.random() - 0.5) * 0.12 }; },
+      step: function (p) {
+        p.x += p.vx; p.y += p.vy;
+        if (p.y < -10) p.y = canvas.height + 10; else if (p.y > canvas.height + 10) p.y = -10;
+        if (p.x < -10) p.x = canvas.width + 10; else if (p.x > canvas.width + 10) p.x = -10;
+      },
+      before: function () {
+        // faint lines between nearby stars
+        var max = 150, n = particles.length;
+        ctx.lineWidth = 0.7;
+        for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) {
+          var A = particles[i], B = particles[j], dx = A.x - B.x, dy = A.y - B.y, d = dx * dx + dy * dy;
+          if (d < max * max) {
+            ctx.strokeStyle = 'rgba(' + T.dark + ',' + (0.22 * (1 - Math.sqrt(d) / max)) + ')';
+            ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+          }
+        }
+      },
+      paint: function (p, a) {
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(' + T.dark + ',' + Math.min(1, a + 0.25) + ')'; ctx.fill();
+      }
+    },
+    snow: {
+      count: 90,
+      seed: function () { return { r: rnd(0.8, 3.2), speed: rnd(0.25, 0.7), sway: rnd(0.2, 0.7), ph: Math.random() * 6.28 }; },
+      step: function (p) { p.ph += 0.01; p.y += p.speed * (0.6 + p.r / 4); p.x += Math.sin(p.ph) * p.sway * 0.4; },
+      paint: function (p, a) { ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(' + T.snow + ',' + Math.min(1, a + 0.2) + ')'; ctx.fill(); }
+    }
+  };
+  function themeFor(choice) {
+    var c = parseChoice(choice), th = themeFromHex(c.hex);
+    th.snow = mix(rgbOf(c.hex), [255, 255, 255], 0.7).join(',');
+    th.style = c.style;
+    return th;
+  }
   function seed() {
     particles = [];
-    for (var i = 0; i < T.count; i++) {
-      particles.push({
-        x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight,
-        r: Math.random() * (T.sz[1] - T.sz[0]) + T.sz[0],
-        speed: Math.random() * (T.spd[1] - T.spd[0]) + T.spd[0],
-        drift: (Math.random() - 0.5) * T.drift,
-        opacity: Math.random() * 0.55 + 0.18,
-        pulse: Math.random() * Math.PI * 2, pulseSpeed: Math.random() * 0.008 + 0.003
-      });
+    var n = typeof S.count === 'function' ? S.count() : S.count;
+    for (var i = 0; i < n; i++) {
+      var p = S.seed();
+      p.x = Math.random() * window.innerWidth; p.y = Math.random() * window.innerHeight;
+      p.opacity = Math.random() * 0.55 + 0.18; p.pulse = Math.random() * Math.PI * 2; p.pulseSpeed = Math.random() * 0.008 + 0.003;
+      particles.push(p);
     }
   }
   function draw() {
@@ -80,19 +127,19 @@
       grad.addColorStop(1, 'rgba(' + g.c + ',0)');
       ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(gx, gy, g.r, 0, Math.PI * 2); ctx.fill();
     });
+    if (S.before) S.before();
     particles.forEach(function (p) {
-      if (!still) { p.pulse += p.pulseSpeed; p.y -= p.speed; p.x += p.drift; }
-      if (p.y < -10) { p.y = canvas.height + 10; p.x = Math.random() * canvas.width; }
-      if (p.x < -10 || p.x > canvas.width + 10) { p.x = Math.random() * canvas.width; }
-      var a = p.opacity * (0.45 + 0.55 * Math.sin(p.pulse));
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(' + T.dark + ',' + a + ')'; ctx.fill();
+      if (!still) { p.pulse += p.pulseSpeed; S.step(p); }
+      if (p.y < -30) { p.y = canvas.height + 20; p.x = Math.random() * canvas.width; }
+      if (p.y > canvas.height + 30) { p.y = -20; p.x = Math.random() * canvas.width; }
+      if (p.x < -30 || p.x > canvas.width + 30) { p.x = Math.random() * canvas.width; }
+      S.paint(p, p.opacity * (0.45 + 0.55 * Math.sin(p.pulse)));
     });
   }
   function apply(choice) {
     T = themeFor(choice);
-    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    still = reduce || choice === 'calm';
+    S = STYLES[T.style] || STYLES.embers;
+    still = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     seed(); draw();
     if (!still && !looping) {
       looping = true;
@@ -101,7 +148,7 @@
     }
   }
   window.dsSetBackground = function (choice) {
-    choice = String(choice || 'month').toLowerCase();
+    choice = String(choice || 'embers:#2dd4bf').toLowerCase();
     try { localStorage.setItem('ds_bg_choice', choice); } catch (e) {}
     if (ctx) apply(choice);
   };
@@ -115,7 +162,7 @@
       var v = r && r.data;
       if (!v || !v.ok) return;
       try { sessionStorage.setItem('ds_bg_synced', '1'); } catch (e) {}
-      if ((v.choice || 'month') !== readChoice()) window.dsSetBackground(v.choice || 'month');
+      if ((v.choice || 'embers:#2dd4bf') !== readChoice()) window.dsSetBackground(v.choice || 'embers:#2dd4bf');
     }, function () {});
   }
 
