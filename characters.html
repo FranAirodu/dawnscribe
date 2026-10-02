@@ -767,6 +767,18 @@
       return db.rpc('ds_character_progress', { p_character_id: c.id });
     }));
     opening.forEach(function(c, i){ c._progress = (progs[i] && progs[i].data) || null; });
+    // "Coming soon": a campaign with no art yet. The server refuses pledges
+    // for these too (ds_pledge_embers), so the bar can never fill on nothing.
+    if (opening.length) {
+      try {
+        var pr = await db.from('ds_character_poses').select('character_id')
+          .in('character_id', opening.map(function(c){ return c.id; }))
+          .not('figure_path', 'is', null);
+        var hasArt = {};
+        ((pr && pr.data) || []).forEach(function(r){ hasArt[r.character_id] = 1; });
+        if (!(pr && pr.error)) opening.forEach(function(c){ c._soon = !hasArt[c.id]; });
+      } catch(e) {}
+    }
     render();
   }
 
@@ -802,6 +814,17 @@
     return { goal: goal, have: have, pct: goal ? Math.min(100, Math.round(have / goal * 100)) : 0, backers: p.backers || 0 };
   }
   function openingCard(c){
+    if (c._soon) {
+      return '<div class="op-card" onclick="openChar(\'' + esc(c.id) + '\')">'
+        + '<div class="op-art">' + silhouetteHtml() + '</div>'
+        + '<div class="op-body">'
+        +   '<div class="op-kicker"><i class="ti ti-hourglass"></i> Coming soon</div>'
+        +   '<div class="op-name">' + esc(c.name) + '</div>'
+        +   '<div class="op-sub">' + esc(c.subtitle || sourceLabel(c)) + '</div>'
+        +   '<div class="op-cta">Their art is on its way. Once it arrives, everyone can chip in Embers to open them.'
+        +     ' <span class="op-go">Take a look <i class="ti ti-arrow-right"></i></span></div>'
+        + '</div></div>';
+    }
     var g = progressOf(c);
     return '<div class="op-card" onclick="openChar(\'' + esc(c.id) + '\')">'
       + '<div class="op-art">' + silhouetteHtml() + '</div>'
@@ -2166,7 +2189,7 @@
                : silhouetteHtml())
       +   (own ? '<div class="ch-tag mine">Yours</div>'
               : (c.availability==='ember_unlock' && !c.unlocked_at
-                  ? '<div class="ch-tag">Opening</div>' : ''))
+                  ? '<div class="ch-tag">' + (c._soon ? 'Coming soon' : 'Opening') + '</div>' : ''))
       + '</div>'
       + '<div class="ch-body">'
       +   '<div class="ch-name">' + esc(c.name) + '</div>'
@@ -2277,6 +2300,11 @@
     if(c.availability === 'purchase'){
       return '<div class="panel"><h3>In the shop</h3>'
         + '<p>This one is bought outright, and stays yours.</p></div>';
+    }
+    if(c._soon){
+      return '<div class="panel"><h3><i class="ti ti-hourglass"></i> Coming soon</h3>'
+        + '<p>Their art is on its way. When it arrives, everyone can give Embers to open them, '
+        + 'and everybody who helped gets them.</p></div>';
     }
     var goal = (prog && prog.goal) || c.ember_unlock_price || 0;
     var have = (prog && prog.pledged) || 0;
