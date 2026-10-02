@@ -3707,6 +3707,18 @@ async function handleFriendBtn() {
       loadArtistPage(_ap.profileId, true);
     }
 
+    window.setShopFirst = async function(box) {
+      var on = box.checked; box.disabled = true;
+      var r = await db.rpc('set_shop_first', { p_on: on });
+      box.disabled = false;
+      if (r.error || !r.data || !r.data.ok) { box.checked = !on; showToast('Could not save that.', 'ti-alert-triangle'); return; }
+      var tabBtn = document.getElementById('tab-showcase'), works = document.querySelector('[data-tab="works"]');
+      if (tabBtn && tabBtn.parentNode) {
+        if (on) tabBtn.parentNode.insertBefore(tabBtn, tabBtn.parentNode.firstElementChild);
+        else if (works) tabBtn.parentNode.appendChild(tabBtn);
+      }
+      showToast(on ? 'Visitors now land on your Creator Shop' : 'Visitors now land on your Works', 'ti-check');
+    };
     async function loadShowcase(profileId, isOwner) {
       var container = document.getElementById('showcase-container');
       var tabBtn = document.getElementById('tab-showcase');
@@ -3737,6 +3749,15 @@ async function handleFriendBtn() {
         if (!banners.length && !chars.length && !isOwner) return;
         tabBtn.style.display = '';
 
+        // Creators can open their profile on the Creator Shop: the tab moves
+        // to the front and visitors land on it (unless a link asks for a tab).
+        var shopFirst = false;
+        try { var sf = await db.rpc('get_shop_first', { p_user_id: profileId }); shopFirst = !!sf.data; } catch (_) {}
+        if (shopFirst) {
+          if (tabBtn.parentNode && tabBtn.parentNode.firstElementChild !== tabBtn) tabBtn.parentNode.insertBefore(tabBtn, tabBtn.parentNode.firstElementChild);
+          if (!/[#&]tab=/.test(window.location.hash)) switchTab(tabBtn);
+        }
+
         var html = '';
 
         if (isOwner) {
@@ -3753,6 +3774,9 @@ async function handleFriendBtn() {
                 'Everything is reviewed before it goes live.' +
               '</div>' +
             '</div>' +
+            '<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text2);margin:-6px 0 16px;cursor:pointer;">' +
+              '<input type="checkbox"' + (shopFirst ? ' checked' : '') + ' onchange="setShopFirst(this)"/> ' +
+              'Open my profile on the Creator Shop <span style="color:var(--text3);font-size:12px;">(visitors see it first)</span></label>' +
             '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">' +
               '<a href="banner-create.html" class="showcase-create-btn showcase-create-banner"><i class="ti ti-photo"></i> New Banner</a>' +
               '<a href="character-create.html" class="showcase-create-btn showcase-create-cosmetic"><i class="ti ti-user-heart"></i> New Character</a>' +
