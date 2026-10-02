@@ -205,6 +205,7 @@
         <div class="row" style="align-items:end;">
           <div class="f"><label for="cost-banner">Banner roll</label><input type="number" id="cost-banner" min="1" max="100000"/></div>
           <div class="f"><label for="cost-character">Character roll</label><input type="number" id="cost-character" min="1" max="100000"/></div>
+          <div class="f"><label for="cost-aura">Aura colour roll</label><input type="number" id="cost-aura" min="1" max="100000"/></div>
           <div class="f"><button class="btn btn-main" onclick="saveRollCosts()"><i class="ti ti-device-floppy"></i> Save prices</button></div>
         </div>
         <p id="pool-info" style="font-size:12px;color:var(--text3);"></p>
@@ -295,7 +296,7 @@
       db.from('ds_reading_rewards').select('*').order('created_at', { ascending: false }),
       db.from('prestige_tiers').select('*').order('tier'),
       db.from('tags').select('name, category').order('name'),
-      db.from('site_settings').select('key, value').in('key', ['randomizer_banner_cost', 'randomizer_character_cost']),
+      db.from('site_settings').select('key, value').in('key', ['randomizer_banner_cost', 'randomizer_character_cost', 'randomizer_aura_cost']),
     ]);
     if (c.error) { toast('Could not load characters: ' + c.error.message, true); return; }
     CHARS = c.data || [];
@@ -308,6 +309,7 @@
     const cost = {}; (st.data || []).forEach(x => cost[x.key] = x.value);
     document.getElementById('cost-banner').value = cost.randomizer_banner_cost ?? 10;
     document.getElementById('cost-character').value = cost.randomizer_character_cost ?? 500;
+    document.getElementById('cost-aura').value = cost.randomizer_aura_cost ?? 15;
 
     const pids = [...new Set(CHARS.flatMap(x => [x.creator_id, x.author_id]).filter(Boolean))];
     const wids = [...new Set(CHARS.map(x => x.work_id).filter(Boolean))];
@@ -799,8 +801,13 @@
   window.saveRollCosts = async function() {
     const b = parseInt(document.getElementById('cost-banner').value, 10);
     const c = parseInt(document.getElementById('cost-character').value, 10);
-    if (!(b >= 1) || !(c >= 1)) { toast('Both prices must be at least 1 Ember.', true); return; }
+    const a = parseInt(document.getElementById('cost-aura').value, 10);
+    if (!(b >= 1) || !(c >= 1) || !(a >= 1)) { toast('Every price must be at least 1 Ember.', true); return; }
     const { data, error } = await db.rpc('ds_admin_set_roll_costs', { p_banner: b, p_character: c });
+    if (!error && data && data.status === 'success') {
+      const ar = await db.rpc('ds_admin_set_aura_cost', { p_aura: a });
+      if (ar.error || !ar.data || ar.data.status !== 'success') { toast('Aura price did not save.', true); return; }
+    }
     if (error || !data || data.status !== 'success') { toast('Could not save: ' + (error ? error.message : (data && data.error)), true); return; }
     toast('Roll prices saved.');
   };
