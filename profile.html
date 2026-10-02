@@ -588,6 +588,13 @@
     .ap-stat b{display:block;font-size:18px;color:var(--text);}
     .ap-stat span{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;}
     .ap-sec{margin-bottom:22px;}
+    .ap-donated{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;}
+    .ap-don{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--card,#14141c);aspect-ratio:3/1;display:flex;align-items:center;justify-content:center;}
+    .ap-don.char{aspect-ratio:3/4;max-width:240px;}
+    .ap-don img{width:100%;height:100%;object-fit:cover;display:block;}
+    .ap-don.char img{object-fit:contain;}
+    .ap-don > .ti{font-size:32px;color:var(--text3);}
+    .ap-don-cap{position:absolute;left:0;right:0;bottom:0;padding:18px 12px 8px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.75));}
     .ap-sec-t{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:7px;margin-bottom:10px;}
     .ap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;}
     .ap-tile{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--bg3);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:24px;padding:0;cursor:pointer;}
@@ -3384,6 +3391,7 @@ async function handleFriendBtn() {
         }
         _ap.data = r.data;
         try { var sh = await db.rpc('get_artist_shop', { p_user_id: profileId }); _ap.shop = sh.data || []; } catch (_) { _ap.shop = []; }
+        try { var dn = await db.rpc('ds_artist_donations', { p_user_id: profileId }); _ap.donated = dn.data || []; } catch (_) { _ap.donated = []; }
         _ap.buyers = null;
         if (isOwner) { try { var by = await db.rpc('get_my_buyers'); _ap.buyers = by.data || null; } catch (_) {} }
         tab.style.display = '';
@@ -3400,7 +3408,21 @@ async function handleFriendBtn() {
         : '<div class="ap-status closed"><i class="ti ti-circle-x"></i> Commissions closed' + (d.slots ? ' <span>· queue full</span>' : '') + '</div>';
       var tags = (d.style_tags || []).map(function(t){ return '<span class="ap-tag">' + e(t) + '</span>'; }).join('');
       var parts = [rights.banners ? 'Banners' : '', rights.characters ? 'Characters' : '', 'Book covers'].filter(Boolean).join(' · ');
-      var html = '<div class="ap-card">' + status +
+      var donated = _ap.donated || [];
+      var html = '';
+      if (donated.length) {
+        html += '<div class="ap-sec"><div class="ap-sec-t"><i class="ti ti-gift"></i> Donated to DawnScribe</div>' +
+          '<div class="ap-muted" style="font-size:12px;margin-bottom:8px;">Given to the free randomizer, so every reader has a chance to own it.</div>' +
+          '<div class="ap-donated">' + donated.map(function(x){
+            var img = x.kind === 'character'
+              ? (x.path ? (/^https?:\/\//.test(x.path) ? x.path : SUPABASE_URL + '/storage/v1/object/public/characters/' + x.path) : '')
+              : safeUrl(x.image_url);
+            return '<div class="ap-don ' + (x.kind === 'character' ? 'char' : '') + '">' +
+              (img ? '<img src="' + e(img) + '" alt="' + e(x.name) + '" loading="lazy"/>' : '<i class="ti ti-photo"></i>') +
+              '<div class="ap-don-cap"><i class="ti ' + (x.kind === 'character' ? 'ti-user-heart' : 'ti-photo') + '"></i> ' + e(x.name) + '</div></div>';
+          }).join('') + '</div></div>';
+      }
+      html += '<div class="ap-card">' + status +
         (d.headline ? '<div class="ap-headline">' + e(d.headline) + '</div>' : '') +
         '<div class="ap-muted" style="margin-top:4px;"><i class="ti ti-brush"></i> Takes: ' + parts + '</div>' +
         (tags ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">' + tags + '</div>' : '') +
@@ -3408,7 +3430,7 @@ async function handleFriendBtn() {
       '</div>';
 
       // Trust stats — counted by the database, never typed in.
-      html += '<div class="ap-stats">' +
+      if ((st.completed || 0) > 0 || st.on_time_pct != null || st.reply_hours != null) html += '<div class="ap-stats">' +
         '<div class="ap-stat"><b>' + (st.completed || 0) + '</b><span>completed</span></div>' +
         '<div class="ap-stat"><b>' + (st.on_time_pct == null ? '—' : st.on_time_pct + '%') + '</b><span>on time</span></div>' +
         '<div class="ap-stat"><b>' + (st.reply_hours == null ? '—' : (st.reply_hours < 24 ? 'Under a day' : Math.round(st.reply_hours / 24) + ' day' + (Math.round(st.reply_hours / 24) === 1 ? '' : 's'))) + '</b><span>usually replies</span></div>' +
@@ -3439,7 +3461,7 @@ async function handleFriendBtn() {
 
       // Portfolio
       var pins = d.pins || [];
-      html += '<div class="ap-sec"><div class="ap-sec-t"><i class="ti ti-layout-grid"></i> Portfolio</div>' +
+      if (pins.length || _ap.isOwner) html += '<div class="ap-sec"><div class="ap-sec-t"><i class="ti ti-layout-grid"></i> Portfolio</div>' +
         (pins.length ? '<div class="ap-grid">' + pins.map(function(w){
           var img = safeUrl(w.cover_url);
           return '<a class="ap-tile" href="artwork.html?id=' + encodeURIComponent(w.id) + '" title="' + e(w.title) + '">' + (img ? '<img src="' + img + '" alt="" loading="lazy"/>' : '<i class="ti ti-photo"></i>') + '</a>';
@@ -3465,7 +3487,7 @@ async function handleFriendBtn() {
       var seenBits = [];
       if (seen.banners) seenBits.push('<a href="marketplace.html" class="ap-chip"><i class="ti ti-photo"></i> ' + seen.banners + ' banner' + (seen.banners === 1 ? '' : 's') + ' in the shop</a>');
       if (seen.characters) seenBits.push('<a href="characters.html" class="ap-chip"><i class="ti ti-user-heart"></i> ' + seen.characters + ' character' + (seen.characters === 1 ? '' : 's') + '</a>');
-      html += '<div class="ap-sec"><div class="ap-sec-t"><i class="ti ti-sparkles"></i> Seen on DawnScribe</div>' +
+      if (covers.length || seenBits.length) html += '<div class="ap-sec"><div class="ap-sec-t"><i class="ti ti-sparkles"></i> Seen on DawnScribe</div>' +
         (covers.length ? '<div class="ap-covers">' + covers.map(function(w){
           var img = safeUrl(w.cover_url);
           return '<a href="story.html?id=' + encodeURIComponent(w.id) + '" class="ap-cover" title="' + e(w.title) + '">' + (img ? '<img src="' + img + '" alt="" loading="lazy"/>' : '') + '<span>' + e(w.title) + '</span></a>';
