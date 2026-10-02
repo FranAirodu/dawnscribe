@@ -453,6 +453,9 @@
     .bg-style-name{font-weight:800;font-size:15px;}
     .bg-style-name em{font-style:normal;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:0 5px;margin-left:4px;}
     .bg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:6px 0 24px;}
+    .bg-tile,.bg-style{position:relative;}
+    .bg-tile .np-star,.bg-style .np-star{z-index:2;top:6px;right:8px;text-shadow:0 1px 3px rgba(0,0,0,.8);}
+    .bg-style .np-star{top:16px;right:18px;}
     .bg-tile{display:flex;flex-direction:column;gap:6px;background:none;border:0;padding:0;cursor:pointer;text-align:left;color:var(--text,#eee);}
     .bg-art{position:relative;display:block;height:78px;border-radius:12px;overflow:hidden;border:2px solid rgba(255,255,255,.08);transition:border-color .15s,transform .15s;
       background:radial-gradient(circle at 25% 30%,color-mix(in srgb,var(--bc) 75%,transparent) 0,transparent 58%),radial-gradient(circle at 80% 80%,color-mix(in srgb,var(--bc) 45%,transparent) 0,transparent 55%),#0b0b12;}
@@ -1346,7 +1349,7 @@
   function bgTile(style, hex, rare){
     var c = style + ':' + hex, cur = (BG_PICK || BG.choice) === c, using = BG.choice === c;
     return '<button class="bg-tile' + (cur ? ' on' : '') + '" onclick="bgPick(\'' + esc(c) + '\')" title="' + esc(bgName(c)) + '">'
-      + bgArt(style, hex)
+      + npStar('color', 'bg:' + c) + bgArt(style, hex)
       + '<span class="bg-lab">' + esc(bgColorName(hex)) + (using ? ' <em>Using</em>' : '') + '</span>'
       + (hex === BG_TEAL ? '<span class="bg-sub">Free</span>' : rare ? '<span class="bg-sub">✦ Rare</span>' : '') + '</button>';
   }
@@ -1370,10 +1373,10 @@
       + '<div class="aura-head"><i class="ti ti-sparkles"></i> Your background</div>'
       + '<div class="aura-sub">The moving scene behind every page. Using: <b>' + esc(bgName(BG.choice)) + '</b>.</div>'
       + '<div class="np-actions" style="margin-top:10px;">'
-      +   '<button class="aura-roll" onclick="bgSave()"' + (pick ? '' : ' disabled') + '><i class="ti ti-check"></i> Use this background</button>'
+      +   '<button class="aura-roll" onclick="bgSave()"' + (pick ? '' : ' disabled') + '><i class="ti ti-check"></i> Accept</button>'
       +   (pick ? '<button class="aura-reset" onclick="bgUndo()">Undo</button>' : '')
       + '</div>'
-      + (pick ? '<div class="aura-pick">Previewing <b>' + esc(bgName(BG_PICK)) + '</b> behind the page. Nothing is saved until you press Use this background.</div>' : '')
+      + (pick ? '<div class="aura-pick">Previewing <b>' + esc(bgName(BG_PICK)) + '</b> behind the page. Nothing is saved until you press Accept.</div>' : '')
       + '</div>'
     ;
     if (!s) {
@@ -1383,10 +1386,11 @@
             'Pick a style to see its colours. Each style has its own colours.')
         + '<div class="np-roll-row"><button class="aura-roll" id="bg-roll-style" onclick="bgRollStyle()"' + (lockedLeft ? '' : ' disabled') + '><i class="ti ti-dice-5"></i> '
         +   (lockedLeft ? 'Roll a new style &middot; ' + (BG.style_cost || 25) + ' Embers' : 'You have every style, for now') + '</button></div>'
-        + '<div class="bg-styles">' + styles.map(function(x){
+        + '<div class="bg-styles">' + styles.filter(function(x){ return NP_FAV.color['bgstyle:' + x.key]; })
+            .concat(styles.filter(function(x){ return !NP_FAV.color['bgstyle:' + x.key]; })).map(function(x){
             var shown = x.key === curStyle ? bgParse(BG.choice).hex : BG_TEAL;
             return '<button class="bg-style' + (x.owned ? '' : ' locked') + '" onclick="bgPickStyle(\'' + esc(x.key) + '\')">'
-              + bgArt(x.key, shown, true)
+              + (x.owned ? npStar('color', 'bgstyle:' + x.key) : '') + bgArt(x.key, shown, true)
               + '<span class="bg-style-name">' + (x.owned ? '' : '<i class="ti ti-lock"></i> ') + esc(x.label)
               + (x.key === curStyle ? ' <em>Using</em>' : '') + '</span>'
               + '<span class="bg-sub">' + (x.owned ? ((x.colors || []).length + 1) + ' of ' + (bgPaidTotal() + 1) + ' colours' : 'Locked \u00b7 ' + esc(x.description || '')) + '</span></button>';
@@ -1403,7 +1407,14 @@
           esc(s.description || '') + ' Colours belong to this style. Teal is always free.')
       + '<div class="np-roll-row"><button class="aura-roll" id="bg-roll" onclick="bgRoll()"' + (left > 0 ? '' : ' disabled') + '>'
       +   '<i class="ti ti-dice-5"></i> ' + (left > 0 ? 'Roll a colour for ' + esc(s.label) + ' · ' + (BG.cost || 15) + ' Embers' : 'You have every colour for this style, for now') + '</button></div>'
-      + '<div class="bg-grid">' + bgTile(s.key, BG_TEAL) + cols.map(function(c){ return bgTile(s.key, c.hex, (info[c.hex] || {}).rare); }).join('') + '</div>';
+      + '<div class="bg-grid">' + (function(){
+          var all = [{ hex: BG_TEAL }].concat(cols), fav = function(c){ return !!NP_FAV.color['bg:' + s.key + ':' + c.hex]; };
+          return all.filter(fav).concat(all.filter(function(c){ return !fav(c); }))
+            .map(function(c){ return bgTile(s.key, c.hex, (info[c.hex] || {}).rare); }).join('');
+        })() + '</div>'
+      + (pick ? '<div class="np-accept"><span><i class="ti ti-sparkles"></i> Previewing <b>' + esc(bgName(BG_PICK)) + '</b></span>'
+          + '<button class="aura-reset" onclick="bgUndo()">Undo</button>'
+          + '<button class="aura-roll" onclick="bgSave()"><i class="ti ti-check"></i> Accept</button></div>' : '');
   }
   function bgSpendRow(){
     var done = bgAllOwned();
@@ -1448,7 +1459,7 @@
       ov.innerHTML = '<canvas></canvas><div class="sf-txt"><div class="sf-kick">' + esc(kicker || 'Background unlocked') + '</div>'
         + '<div class="sf-name">' + esc(label || 'A new background') + '</div>'
         + (rare ? '<div class="roll-rare">✦ Rare</div>' : '')
-        + '<div class="sf-sub">It’s previewing behind the page now. Press <b>Use this background</b> to keep it.</div>'
+        + '<div class="sf-sub">It’s previewing behind the page now. Press <b>Accept</b> to keep it.</div>'
         + '<div class="sf-hint">Tap anywhere to continue</div></div>';
       document.body.appendChild(ov);
       var cv = ov.querySelector('canvas'), cx = cv.getContext('2d');
