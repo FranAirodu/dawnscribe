@@ -312,6 +312,13 @@
     .np-hint b{color:var(--text,#f1f0ff);}
     .np-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
     .np-titles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+    .np-tfilter{display:flex;gap:6px;margin:0 0 12px;}
+    .np-tfilter button{background:transparent;border:1px solid var(--border,#2a2a3a);color:var(--text2,#b8b8cc);border-radius:999px;padding:5px 14px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;}
+    .np-tfilter button span{opacity:.6;margin-left:4px;font-weight:400;}
+    .np-tfilter button.on{border-color:var(--accent,#39ff14);color:var(--text,#fff);background:rgba(255,255,255,.04);}
+    .np-tfilter button:disabled{opacity:.45;cursor:default;}
+    .np-tchip .np-star{position:static;display:inline-block;margin-left:8px;font-size:15px;vertical-align:middle;}
+    .np-thint{font-size:12px;color:var(--text3,#8a8aa8);margin:-8px 0 16px;}
     .np-tchip{display:flex;align-items:center;gap:8px;background:var(--bg2,#12121a);border:1px solid var(--border,rgba(255,255,255,.08));
       border-radius:20px;padding:6px 14px;cursor:pointer;color:var(--text,#f1f0ff);font-size:15px;}
     .np-tchip.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
@@ -883,6 +890,8 @@
      A title with no font of its own keeps the plain small-caps look and
      draws its colours from the name's font (same rule as the server). */
   var NP_TGT = 'name';
+  var NP_TFILT = 'all';
+  window.npTitleFilter = function(x){ NP_TFILT = x; render(); };
   var NP_FAV = { font: {}, color: {} };
   function npFavFirst(list, kind, keyOf){
     return list.filter(function(x){ return NP_FAV[kind][keyOf(x)]; }).concat(list.filter(function(x){ return !NP_FAV[kind][keyOf(x)]; }));
@@ -914,6 +923,7 @@
       color_hex: NP_PICK.color, aura_hex: AURA.hex, title: t.title,
       title_font_family: tf ? tf.family : null, title_font_size: tf ? tf.size : 1, title_color_hex: NP_PICK.tcolor });
   }
+  function npPending(){ return npDirty() || (!!NP_T && NP_T !== NP.active); }
   function npDirty(){
     var t = npTitle(NP_T); if (!t) return false;
     var st = t.style || {};
@@ -948,11 +958,21 @@
     var paidTotal = NP.colors.filter(function(c){ return !c.free; }).length;
     var free = NP.colors.filter(function(c){ return c.free; });
 
-    var titleChips = NP.titles.map(function(x){
+    var tFav = function(x){ return !!NP_FAV.color['title:' + x.id]; };
+    var favCount = NP.titles.filter(tFav).length;
+    if (NP_TFILT === 'fav' && !favCount) NP_TFILT = 'all';
+    var shownTitles = NP_TFILT === 'fav' ? NP.titles.filter(tFav)
+      : NP.titles.filter(tFav).concat(NP.titles.filter(function(x){ return !tFav(x); }));
+    var titleTabs = '<div class="np-tfilter" role="tablist" aria-label="Which titles to show">'
+      + '<button class="' + (NP_TFILT === 'all' ? 'on' : '') + '" onclick="npTitleFilter(\'all\')">All <span>' + NP.titles.length + '</span></button>'
+      + '<button class="' + (NP_TFILT === 'fav' ? 'on' : '') + '" onclick="npTitleFilter(\'fav\')"' + (favCount ? '' : ' disabled title="Star a title to add it here"') + '>\u2605 Favourites <span>' + favCount + '</span></button>'
+      + '</div>';
+    var titleChips = shownTitles.map(function(x){
       var st = x.style || {}, f = npFont(st.font) || {};
       return '<button class="np-tchip' + (x.id === t.id ? ' on' : '') + '" onclick="npPickTitle(\'' + esc(x.id) + '\')">'
-        + '<b style="' + ((window.DSNameplate && DSNameplate.isColorFont(f.family)) ? DSNameplate.paletteStyle(f.family, '#ffffff') : '') + 'font-family:\'' + esc(f.family || 'Cinzel') + '\',serif;">' + esc(x.title) + '</b>'
-        + (x.id === NP.active ? '<span class="np-wear">Wearing</span>' : '') + '</button>';
+        + '<b style="font-family:\'Cinzel\',serif;">' + esc(x.title) + '</b>'
+        + (x.id === NP.active ? '<span class="np-wear">Wearing</span>' : '')
+        + npStar('color', 'title:' + x.id) + '</button>';
     }).join('');
 
     /* One block per line of the nameplate: 'name' or 'title'. Each has its
@@ -1011,14 +1031,15 @@
     }
 
     return sectionHead('ti-feather', 'Pick a title', 'Each title has its own fonts and colours. Your nameplate shows the title you’re wearing.')
-      + '<div class="np-titles">' + titleChips + '</div>'
+      + titleTabs + '<div class="np-titles">' + titleChips + '</div>'
+      + (!favCount ? '<div class="np-thint">Tip: tap \u2606 on a title to add it to your favourites.</div>' : '')
       + '<div class="aura-card">'
       + '<div class="aura-head"><i class="ti ti-typography"></i> ' + esc(t.title) + (wearing ? ' <span class="np-wear">Wearing</span>' : '') + '</div>'
       + '<div class="np-preview" id="np-preview">' + DSNameplate.html(npPreviewPlate(), { size: 'lg' }) + '</div>'
       + '<div class="np-actions">'
-      +   '<button class="aura-roll" onclick="npSave()"' + (npDirty() ? '' : ' disabled') + '><i class="ti ti-check"></i> Accept</button>'
-      +   (npDirty() ? '<button class="aura-reset" onclick="npUndo()">Undo</button>' : '')
-      +   (!wearing ? '<button class="aura-reset" onclick="npWear()"><i class="ti ti-feather"></i> Wear this title</button>' : '')
+      +   '<button class="aura-roll" onclick="npSave()"' + (npPending() ? '' : ' disabled') + '><i class="ti ti-check"></i> Accept</button>'
+      +   (npPending() ? '<button class="aura-reset" onclick="npUndo()">Undo</button>' : '')
+      +   (wearing && !npDirty() ? '<span class="np-thint" style="margin:0;align-self:center;">You\u2019re wearing this title.</span>' : '')
       + '</div></div>'
 
       + sectionHead('ti-typography', 'Fonts on ' + esc(t.title),
@@ -1029,7 +1050,7 @@
       + '</div>'
       + styleBlock(NP_TGT)
       + npRotationHtml()
-      + (npDirty() ? '<div class="np-accept"><span><i class="ti ti-pencil"></i> Unsaved changes to <b>' + esc(t.title) + '</b></span>'
+      + (npPending() ? '<div class="np-accept"><span><i class="ti ti-pencil"></i> ' + (npDirty() ? 'Unsaved changes to' : 'Wear') + ' <b>' + esc(t.title) + '</b>?</span>'
           + '<button class="aura-reset" onclick="npUndo()">Undo</button>'
           + '<button class="aura-roll" onclick="npSave()"><i class="ti ti-check"></i> Accept</button></div>' : '');
   }
@@ -1104,16 +1125,19 @@
     render();
   };
   window.npPickColor = function(hex, tgt){ if (tgt) NP_TGT = tgt; if (NP_TGT === 'name') NP_PICK.color = hex; else NP_PICK.tcolor = hex; render(); };
-  window.npUndo = function(){ npResetPick(); render(); };
+  window.npUndo = function(){ if (!npDirty() && NP.active && NP_T !== NP.active && window.npPickTitle) { npPickTitle(NP.active); return; } npResetPick(); render(); };
   async function npReload(){
     var r = await db.rpc('my_title_styles');
     npApply(r && r.data);
   }
   window.npSave = async function(){
+    var wearAfter = NP_T !== NP.active;
+    if (!npDirty()) { if (wearAfter) await window.npWear(); return; }
     var r = await db.rpc('save_title_style', { p_title: NP_T, p_font: NP_PICK.font, p_color: NP_PICK.color, p_title_font: NP_PICK.tfont, p_title_color: NP_PICK.tcolor });
     if (r.error || !r.data || !r.data.ok) { toast((r.data && r.data.error) || 'Could not save that.', 'ti-alert-triangle', true); return; }
     var keep = NP_T; await npReload(); NP_T = keep; npResetPick();
     if (window.DSNameplate) DSNameplate.forget(ME.id);
+    if (wearAfter) { await window.npWear(); return; }
     toast('Style saved', 'ti-typography'); render();
   };
   window.npWear = async function(){
