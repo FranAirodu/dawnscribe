@@ -446,6 +446,70 @@ window.dsApplyAccent = dsApplyAccent;
       }
     }
     @keyframes ds-fadeDown { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+/* -- PHONE & TABLET LAYOUT (2026-10-02) -------------------------------
+   Breakpoints:  <=1024 tablet / <=700 phone / <=360 small phone.
+   On phones the quill/ember/check-in/message buttons move (the real nodes,
+   so ids and handlers survive) into a tray at the top of the avatar menu;
+   see dsMobileTray() in nav.js. Dropdowns become full-width sheets under
+   the bar so they can never hang off the edge of the screen. */
+/* Tray lives in the avatar menu; only shown on phones. */
+.ds-mobile-tray { display:none; }
+@media (max-width:1024px){
+  nav { padding-left:14px !important; padding-right:14px !important; gap:10px; }
+  .ds-nav-right { gap:6px !important; }
+  .quill-wrap, .ember-wrap { padding:7px 9px; font-size:13px; }
+}
+@media (max-width:900px){
+  /* Icon-only search; the word and chevron are text/extra icons. */
+  .search-trigger-btn { padding:8px 10px; font-size:0 !important; gap:0 !important; }
+  .search-trigger-btn > .ti-search { font-size:16px; }
+  .search-trigger-btn > .ti-chevron-down { display:none; }
+}
+@media (max-width:700px){
+  html, body { overflow-x:hidden; }
+  nav { padding-left:10px !important; padding-right:10px !important; gap:8px; }
+  nav > *:not(.ds-nav-right) { min-width:0; }
+  .ds-nav-right, nav > .nav-right { gap:5px !important; flex-shrink:0; }
+  /* "Back to home" and the home page's Publish/Showcase: icon only. */
+  nav .back-btn, nav .nav-btn-group .btn { font-size:0 !important; gap:0 !important; padding:8px 10px !important; white-space:nowrap; }
+  nav .back-btn i, nav .nav-btn-group .btn i { font-size:16px !important; }
+  nav .nav-btn-group { gap:5px !important; }
+  .ds-nav-right > .quill-wrap, nav > .nav-right > .quill-wrap,
+  .ds-nav-right > .ember-wrap, nav > .nav-right > .ember-wrap,
+  .ds-nav-right > .checkin-btn, nav > .nav-right > .checkin-btn,
+  .ds-nav-right > .dm-wrap, nav > .nav-right > .dm-wrap { display:none !important; }
+  .notif-btn, .user-avatar-btn, .search-trigger-btn { width:36px; height:36px; padding:0; justify-content:center; }
+  .notif-dropdown, .user-dropdown, .search-dropdown {
+    position:fixed !important; top:62px !important; left:8px !important; right:8px !important;
+    width:auto !important; max-width:none !important;
+    max-height:calc(100vh - 74px); max-height:calc(100dvh - 74px); overflow-y:auto;
+  }
+  .ds-mobile-tray { display:flex; flex-wrap:wrap; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border); }
+  .ds-mobile-tray .dm-btn { display:flex; align-items:center; justify-content:center; width:38px; height:38px; border-radius:8px; background:var(--bg3); border:1px solid var(--border); color:var(--text2); }
+}
+@media (max-width:360px){
+  nav { padding-left:6px !important; padding-right:6px !important; gap:6px; }
+  .ds-nav-right, nav > .nav-right { gap:3px !important; }
+  .notif-btn, .user-avatar-btn, .search-trigger-btn { width:32px; height:32px; }
+}
+/* Phone fixes for page bodies that load nav.js (found by a 390px scan of
+   every page, 2026-10-02). Each line is the one container that overflowed. */
+@media (max-width:700px){
+  .tab-nav, .ctabs { overflow-x:auto; flex-wrap:nowrap; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  .tab-nav::-webkit-scrollbar, .ctabs::-webkit-scrollbar { display:none; }
+  .tab-nav > *, .ctabs > * { flex-shrink:0; }
+  .stats-bar { flex-wrap:wrap; }
+  .story-body { grid-template-columns:minmax(0,1fr) !important; }
+  .owner-bar { flex-wrap:wrap; }
+  .page-header { flex-wrap:wrap; row-gap:10px; }
+  .page-wrap > main.content, body > .page { min-width:0; max-width:100%; box-sizing:border-box; }
+  #ln-drawer { width:100% !important; max-width:100% !important; }
+  /* Search page: the search box gets its own full-width row under the bar. */
+  nav:has(> .nav-search-bar) { gap:6px !important; flex-wrap:wrap; height:auto; padding-top:8px; padding-bottom:8px; row-gap:8px; }
+  nav > .nav-search-bar { order:5; flex:1 0 100%; width:100%; }
+  nav > .tag-mode-btn { font-size:0 !important; gap:0 !important; padding:8px 10px !important; }
+  nav > .tag-mode-btn i { font-size:16px !important; }
+}
   `;
   var styleEl = document.createElement('style');
   styleEl.textContent = css;
@@ -617,6 +681,31 @@ window.dsApplyAccent = dsApplyAccent;
     rightWrap.innerHTML = navHtml;
     nav.appendChild(rightWrap);
   }
+
+  /* Phones: move quills / embers / check-in / messages into the avatar menu.
+     The real nodes move (not copies) so ids, counters and handlers keep
+     working; a marker comment remembers where each one goes back. */
+  (function dsMobileTray(){
+    var right = document.querySelector('.ds-nav-right') || document.querySelector('nav > .nav-right');
+    var dd = document.getElementById('user-dropdown');
+    if (!right || !dd || !window.matchMedia) return;
+    var nodes = [document.getElementById('quill-wrap'), document.getElementById('ember-wrap'),
+                 document.getElementById('ds-checkin-btn'), right.querySelector('.dm-wrap')]
+                .filter(Boolean);
+    var marks = nodes.map(function(n){ var c = document.createComment('ds-tray'); n.parentNode.insertBefore(c, n); return c; });
+    var tray = document.createElement('div');
+    tray.className = 'ds-mobile-tray';
+    dd.insertBefore(tray, dd.querySelector('.user-dropdown-menu') || dd.firstChild.nextSibling);
+    var mq = window.matchMedia('(max-width:700px)');
+    function apply(){
+      nodes.forEach(function(n, i){
+        if (mq.matches) tray.appendChild(n);
+        else marks[i].parentNode.insertBefore(n, marks[i].nextSibling);
+      });
+    }
+    apply();
+    if (mq.addEventListener) mq.addEventListener('change', apply); else if (mq.addListener) mq.addListener(apply);
+  })();
 
   /* ── HELPERS ─────────────────────────────────────────────────── */
   // Escapes single quotes too: several sinks below build attributes with single
